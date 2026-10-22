@@ -25,5 +25,19 @@
     "erasableSyntaxOnly": true,
     "skipLibCheck": true
   },
-  "include": ["./**/*.ts", "../worker"]
+  // Los módulos de `src` que se listan acá son los **puros**: lógica de
+  // pantalla sin React y sin DOM. Se enumeran uno por uno en vez de con un
+  // glob a propósito. Primero, porque un proyecto `composite` exige que todo
+  // archivo de entrada esté listado, así que importar uno sin listarlo falla
+  // el `typecheck`. Y segundo, porque la `lib` de este proyecto es ES2022 sin
+  // DOM: si alguien le mete un `window` a uno de estos módulos, deja de
+  // compilar acá, que es justo la barrera que los mantiene probables en este
+  // runner.
+  "include": [
+    "./**/*.ts",
+    "../worker",
+    "../src/ruteo.ts",
+    "../src/pantallas/clientes/formulario.ts",
+    "../src/pantallas/clientes/presentacion.ts"
+  ]
 }

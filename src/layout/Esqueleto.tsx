@@ -13,6 +13,8 @@
  */
 import type { ReactNode } from "react";
 
+import { Enlace } from "./Enlace";
+
 type Props = {
   readonly children: ReactNode;
   /** Ruta vigente, para marcar el ítem activo de la navegación. */
@@ -31,12 +33,22 @@ type ItemDeNavegacion = {
  */
 const SECCIONES: readonly ItemDeNavegacion[] = [
   { rotulo: "Inicio", href: "/" },
-  { rotulo: "Clientes" },
+  { rotulo: "Clientes", href: "/clientes" },
   { rotulo: "Áreas y tipos de proceso" },
   { rotulo: "Procesos" },
   { rotulo: "Pendientes" },
   { rotulo: "Bitácora" },
 ] as const;
+
+/**
+ * Una sección queda marcada también en sus rutas hijas: estando en el detalle
+ * de un cliente, «Clientes» sigue siendo donde uno está. `/` es la excepción,
+ * porque es prefijo de todo.
+ */
+function esSeccionActiva(ruta: string, href: string): boolean {
+  if (href === "/") return ruta === "/";
+  return ruta === href || ruta.startsWith(`${href}/`);
+}
 
 export function Esqueleto({ children, ruta }: Props) {
   return (
@@ -61,13 +73,15 @@ export function Esqueleto({ children, ruta }: Props) {
                   <span className="etiqueta etiqueta--tenue">pendiente</span>
                 </span>
               ) : (
-                <a
+                <Enlace
                   className="navegacion__item"
                   href={seccion.href}
-                  aria-current={ruta === seccion.href ? "page" : undefined}
+                  ariaCurrent={
+                    esSeccionActiva(ruta, seccion.href) ? "page" : undefined
+                  }
                 >
                   {seccion.rotulo}
-                </a>
+                </Enlace>
               )}
             </li>
           ))}
@@ -80,13 +94,13 @@ export function Esqueleto({ children, ruta }: Props) {
         */}
         <div className="navegacion__diagnostico">
           <p className="navegacion__titulo">Diagnóstico</p>
-          <a
+          <Enlace
             className="navegacion__item"
             href="/banco-de-pruebas"
-            aria-current={ruta === "/banco-de-pruebas" ? "page" : undefined}
+            ariaCurrent={ruta === "/banco-de-pruebas" ? "page" : undefined}
           >
             Banco de pruebas del layout
-          </a>
+          </Enlace>
         </div>
       </nav>
 

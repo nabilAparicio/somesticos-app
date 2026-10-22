@@ -10,11 +10,26 @@
  */
 import { autenticar, type DependenciasDeAcceso } from "./acceso/puerta";
 import type { Rechazo } from "./acceso/rechazo";
+import { rutasDeClientes } from "./clientes/rutas";
+import {
+  servicioSobreD1,
+  type ServicioDeClientes,
+} from "./clientes/repositorio";
 import type {
   AccesoDenegado,
   HealthReport,
   IdentidadActual,
 } from "./contract";
+import { TENANT_UNICO_ID } from "./db/ids";
+
+export interface DependenciasDelManejador extends DependenciasDeAcceso {
+  /**
+   * El dominio de clientes. Se puede sustituir para probar que una petición
+   * sin identidad **no llega hasta él**: con el servicio real, un 403 no
+   * distingue "no se ejecutó" de "se ejecutó y después se rechazó".
+   */
+  clientes?: ServicioDeClientes;
+}
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
   try {
@@ -70,7 +85,7 @@ function respuestaDeRechazo(rechazo: Rechazo): Response {
 export async function manejar(
   request: Request,
   env: Env,
-  dependencias: DependenciasDeAcceso = {},
+  dependencias: DependenciasDelManejador = {},
 ): Promise<Response> {
   const url = new URL(request.url);
 
@@ -90,6 +105,17 @@ export async function manejar(
       headers: { "cache-control": "no-store" },
     });
   }
+
+  // El servicio se construye recién acá, después de la puerta: antes no hay a
+  // nombre de quién consultar nada.
+  const clientes = await rutasDeClientes(
+    request,
+    url,
+    acceso.valor,
+    TENANT_UNICO_ID,
+    dependencias.clientes ?? servicioSobreD1(env.DB),
+  );
+  if (clientes !== null) return clientes;
 
   return noEncontrado();
 }

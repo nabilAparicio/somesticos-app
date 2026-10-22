@@ -174,6 +174,80 @@ test.describe("la página no scrollea en horizontal", () => {
     });
   }
 
+  /*
+   * El formulario de cliente (T-5) es el contenido nuevo con más riesgo
+   * responsivo del sistema, y por una razón concreta: un `<input>` trae un
+   * ancho intrínseco propio —el viejo `size=20`, unos 170px— que no sale de
+   * ninguna hoja de estilos. En una rejilla angosta eso es un ancho fijo
+   * encubierto, que es exactamente lo que §9 prohíbe.
+   *
+   * Corre sin identidad de Access, que es lo que hay en `vite dev`: el
+   * catálogo de tipos contesta 403 y el formulario **igual se dibuja**, que
+   * es el comportamiento buscado (el tipo es opcional; un campo prescindible
+   * no puede bloquear el alta). Por eso la primera prueba verifica que lo
+   * que se está midiendo sea el formulario de verdad y no una página de
+   * error: una pantalla con un solo párrafo nunca desborda, y medirla sería
+   * la misma vacuidad que T-4 encontró en su propia rejilla.
+   */
+  const ALTA = "/clientes/nuevo";
+
+  test("la pantalla de alta se dibuja aunque la API no conteste", async ({
+    page,
+  }) => {
+    await page.goto(ALTA);
+
+    const controles = page.locator(
+      "form .campo__control:visible, form input, form select, form textarea",
+    );
+    await expect(controles.first()).toBeVisible();
+    expect(
+      await page.locator("form input, form select, form textarea").count(),
+      "el formulario de alta tiene que traer todos sus campos",
+    ).toBeGreaterThanOrEqual(8);
+
+    // Y el campo obligatorio está rotulado como tal: el criterio de T-5 es
+    // que con nombre y un contacto alcance, y eso se tiene que poder leer.
+    await expect(page.getByLabel(/Nombre/)).toBeVisible();
+  });
+
+  for (const ancho of ANCHOS) {
+    test(`a ${String(ancho)}px de ancho, sobre el alta de cliente`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: ancho, height: ALTO });
+      await page.goto(ALTA);
+      await page.evaluate(() => document.fonts.ready);
+      await page.locator("form .campo__control").first().waitFor();
+
+      const { scrollWidth, clientWidth, culpables } = await medirDesborde(page);
+
+      expect(
+        scrollWidth,
+        `el documento se sale a ${String(ancho)}px. Se salen del ancho: ` +
+          (culpables.length > 0 ? culpables.join(" | ") : "(ninguno medible)"),
+      ).toBeLessThanOrEqual(clientWidth);
+    });
+  }
+
+  for (const ancho of [320, 768, 2560] as const) {
+    test(`a ${String(ancho)}px de ancho, sobre el listado de clientes`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: ancho, height: ALTO });
+      await page.goto("/clientes");
+      await page.evaluate(() => document.fonts.ready);
+      await page.getByRole("heading", { name: "Clientes" }).waitFor();
+
+      const { scrollWidth, clientWidth, culpables } = await medirDesborde(page);
+
+      expect(
+        scrollWidth,
+        `el documento se sale a ${String(ancho)}px. Se salen del ancho: ` +
+          (culpables.length > 0 ? culpables.join(" | ") : "(ninguno medible)"),
+      ).toBeLessThanOrEqual(clientWidth);
+    });
+  }
+
   test("la tabla scrollea dentro de su contenedor, no en la página", async ({
     page,
   }) => {

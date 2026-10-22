@@ -128,7 +128,7 @@ se renumera.
       Esta tarea instala Playwright y agrega `pnpm test:e2e`.
       Ruta: delegada. Forecast ~350.*
 
-- [ ] **T-5 · Clientes.** Alta mínima (nombre y un contacto), tipo desde catálogo, par genérico
+- [x] **T-5 · Clientes.** Alta mínima (nombre y un contacto), tipo desde catálogo, par genérico
       `documento_tipo`/`documento_numero`, `representante_legal` según tipo, listado, detalle,
       edición.
       *Criterio: se puede dar de alta un prospecto con nombre y teléfono solamente.
@@ -218,6 +218,7 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
+| T-5 | (este commit) | Rojo observado: 27 de 35 fallas en la API y el archivo de UI sin cargar. Final: los cinco comandos en 0 · **test 189/189** · **e2e 43/43**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de tenencia (5 muertas). | Pendiente de evaluar |
 | T-4 | `3893ccb` | Rojo observado: 10 fallas de e2e sin hoja de estilos. Final: typecheck 0 · test 0 (122/122) · lint 0 · build 0 · **e2e 0 (22/22)**. Verificación del orquestador: los cinco códigos de salida, más la reproducción propia de la mutación B. | **Escalada sin veredicto.** Lineaje `review-9705305831e89372`, riesgo alto, cuatro lentes. Ver abajo. |
 | T-3 | `4a9118f` | Rojo observado: 26 fallas por `manejar is not a function`. Final: typecheck 0 · test **122/122**, exit 0 · lint 0. Verificación del orquestador: los tres códigos de salida, inspección propia del bundle, y pruebas de mutación sobre la compuerta de artefacto y sobre la cobertura de `origenRemoto`. | **Aprobada y acusada** tras TRES rondas de corrección. Lineajes `review-4dbfcc0616c91689` → `review-6a5f14d2c564cb45` → `review-155e9995d4c99a7e`, autoridad quemada. 4 hallazgos CRÍTICOS, los 4 reales, los 4 corregidos. |
 | T-2 | `eb08588` + `5486347` | Rojo observado primero: 59 fallas por `no such table`. Después: `pnpm typecheck` verde · `pnpm test` **64/64 en verde** · `pnpm lint` verde. Verificación del orquestador: los tres recorridos, más una prueba de mutación propia que confirmó que las pruebas de rechazo muerden. | Concedida y acusada. Lineaje `review-3469d152112ea53a`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 6 hallazgos informativos, los 6 reales, los 6 corregidos. |
@@ -361,6 +362,45 @@ Diferido con razón: **la lógica de `Inicio` sigue sin prueba unitaria.** T-4 c
 punta a punta, que era su alcance. La cobertura de `src/` que T-1 había diferido acá pasa a T-5,
 que es cuando aparece la primera pantalla con lógica propia.
 
+### Agujero abierto por T-5: no hay cómo poblar `tipo_cliente`
+
+La migración no siembra filas y no existe pantalla de administración del catálogo, así que **en
+una instalación limpia el desplegable de tipo de cliente sale vacío para siempre**. La API de
+lectura está; falta el CRUD. No es un defecto de T-5: excede su alcance y habría empujado la
+rebanada por encima de su presupuesto. **Entra en T-6**, junto a las áreas y los tipos de proceso,
+que son exactamente el mismo problema de catálogo.
+
+### Decisiones de T-5 que quedan asentadas
+
+- **`PUT`, no `PATCH`.** El formulario manda siempre el juego completo. Con `PATCH` hay que
+  distinguir "no mandé el campo" de "lo quiero vacío", que es la ambigüedad por la que vaciar un
+  dato nunca termina de funcionar.
+- **404 y no 403 para recursos de otro tenant**, y en el `PUT` **la existencia se comprueba antes
+  de validar el cuerpo**: si no, un cuerpo inválido contra un id ajeno contestaría 422, y ese 422
+  ya confirma que el id existe.
+- **Lo válido y lo seleccionable son cosas distintas.** Un `tipo_cliente_id` es válido si existe
+  en el tenant, sin exigir `activo = 1`; si se exigiera, dar de baja un tipo dejaría sin poder
+  guardar a todos sus clientes y editar un teléfono fallaría con un error incomprensible. Qué se
+  puede *elegir* lo decide la pantalla; qué es *válido* lo decide el servidor.
+- **Teléfono: al menos un dígito, sin validar formato.** Los números llegan de mil formas y un
+  falso rechazo cuesta el prospecto. Lo que sí atrapa es "no sé" escrito en el campo, que deja un
+  cliente incontactable con apariencia de contactable.
+- **El catálogo que no carga no bloquea el alta.** El tipo es opcional; bloquear por él
+  convertiría un campo prescindible en requisito.
+- **Dos copias de la validación, declaradas como tales**: la del navegador avisa, la del servidor
+  autoriza. La mutación 3 comprueba que cada copia tiene cobertura propia — aflojar la del
+  navegador mata exactamente una prueba, la de UI.
+- `representante_legal` quedó opcional siempre: `tipo_cliente` es un catálogo de etiquetas sin
+  ninguna marca que distinga una persona de una entidad. Exigirlo por tipo pide una columna nueva,
+  o sea una migración.
+
+Tres pruebas de mutación, todas revertidas y verificadas: aflojar el contacto obligatorio mata 3;
+romper el filtro de tenencia mata 5; aflojar la validación del navegador mata 1. Ninguna mató
+pruebas ajenas.
+
+También quedó sin registrar en `bitacora` el alta y la edición de clientes, a propósito: T-10
+cablea el registro en un solo lugar, y esparcirlo ahora obligaría a deshacerlo.
+
 ### La revisión de T-4 escaló y quedó sin veredicto
 
 Primera revisión de cuatro lentes del proyecto (`risk`, `resilience`, `readability`,
@@ -411,4 +451,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-5: clientes, con alta mínima de nombre y un contacto.
+T-6: áreas, tipos de proceso y plantillas — **y el CRUD de `tipo_cliente`, que T-5 dejó sin forma de poblar**.

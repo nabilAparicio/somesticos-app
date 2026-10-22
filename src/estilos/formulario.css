@@ -1,0 +1,195 @@
+/**
+ * Formularios, botones, avisos y listas de definiciones: lo que T-5 agrega al
+ * sistema visual de T-4.
+ *
+ * La regla de §9 se sostiene también acá, y con un control de formulario es
+ * donde más se rompe: un `<input>` tiene **ancho propio por defecto** —el
+ * famoso `size=20`, unos 170px— y en una rejilla angosta eso es un ancho fijo
+ * encubierto que empuja la página. Por eso cada control lleva
+ * `inline-size: 100%` y `min-inline-size: 0`, y ningún `width` en píxeles
+ * aparece en este archivo.
+ */
+
+/* ======================================================================
+   Campos
+   ====================================================================== */
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-3xs);
+  min-width: 0;
+}
+
+.campo__rotulo {
+  font-size: var(--texto-s);
+  font-weight: var(--peso-medio);
+}
+
+.campo__marca {
+  color: var(--color-acento);
+  font-size: var(--texto-xs);
+  font-weight: var(--peso-normal);
+  text-transform: lowercase;
+}
+
+.campo__marca--tenue {
+  color: var(--color-tinta-apagada);
+}
+
+.campo__control {
+  /* Las dos líneas que desarman el ancho intrínseco del control. */
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+
+  padding: var(--espacio-xs) var(--espacio-s);
+  border: 1px solid var(--color-borde-fuerte);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+  color: var(--color-tinta);
+  /* Sin esto los controles no heredan la tipografía del documento, y en iOS
+     un `font-size` menor a 16px hace que el navegador acerque la pantalla al
+     enfocar: un zoom involuntario que sí produce scroll horizontal. */
+  font: inherit;
+  font-size: var(--texto-m);
+  line-height: var(--linea-normal);
+}
+
+.campo__control:focus-visible {
+  border-color: var(--color-foco);
+}
+
+.campo__control--prosa {
+  /* La altura la define el contenido; el usuario puede estirarla, pero solo
+     en vertical: `resize: both` deja arrastrar un textarea más ancho que la
+     página. */
+  resize: vertical;
+  min-block-size: 6lh;
+  font-family: var(--fuente-texto);
+}
+
+.campo__ayuda {
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+}
+
+/* La búsqueda no compite con el ancho de la columna: tope en `ch`, como la
+   prosa, porque lo que se escribe ahí es texto. */
+.campo--busqueda .campo__control {
+  max-inline-size: 44ch;
+}
+
+/* ======================================================================
+   Botones
+   ====================================================================== */
+
+.boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--espacio-xs);
+  /* Mide lo que mide su texto y nunca más que su hueco. */
+  max-inline-size: 100%;
+  padding: var(--espacio-xs) var(--espacio-m);
+  border: 1px solid var(--color-borde-fuerte);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+  color: var(--color-tinta);
+  font: inherit;
+  font-size: var(--texto-s);
+  font-weight: var(--peso-medio);
+  line-height: var(--linea-ajustada);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.boton:hover {
+  background: var(--color-superficie-tenue);
+}
+
+.boton--primario {
+  border-color: var(--color-acento);
+  background: var(--color-acento);
+  color: var(--color-superficie);
+}
+
+.boton--primario:hover {
+  /* Sin un segundo tono de acento en los tokens: se aclara con opacidad en
+     vez de inventar un color que nadie eligió. */
+  opacity: 0.88;
+  background: var(--color-acento);
+}
+
+.boton--tenue {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-tinta-apagada);
+}
+
+.boton:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* ======================================================================
+   Avisos
+   ====================================================================== */
+
+.aviso {
+  min-width: 0;
+  padding: var(--espacio-s) var(--espacio-m);
+  border: var(--borde-fino);
+  border-inline-start: 3px solid var(--color-borde-fuerte);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+  /* Tope de legibilidad, no ancho: a 320px mide 320px. */
+  max-inline-size: 72ch;
+  font-size: var(--texto-s);
+}
+
+.aviso--error {
+  border-inline-start-color: var(--color-acento);
+  background: var(--color-acento-tenue);
+}
+
+.lista-de-fallas {
+  margin: 0;
+  padding-inline-start: var(--espacio-m);
+  list-style: disc;
+}
+
+/* ======================================================================
+   Listas de definiciones (el detalle)
+   ====================================================================== */
+
+.definiciones {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-s);
+  min-width: 0;
+  margin: 0;
+}
+
+.definicion {
+  min-width: 0;
+}
+
+.definicion__rotulo {
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.definicion__valor {
+  margin: 0;
+  /* Un RUC o un correo largo se parte en vez de empujar su columna. */
+  overflow-wrap: anywhere;
+}
+
+.notas {
+  /* Las notas se cargan con saltos de línea y así se tienen que leer. */
+  white-space: pre-wrap;
+}

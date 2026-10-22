@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { HealthReport, IdentidadActual } from "../../worker/contract";
+import { Enlace } from "../layout/Enlace";
 import { Fila } from "../layout/Fila";
 import { Pila } from "../layout/Pila";
 import { Prosa } from "../layout/Prosa";
@@ -91,10 +92,12 @@ export function Inicio() {
 
       <Prosa>
         <p>
-          Todavía no hay clientes ni procesos cargados: esta tajada arranca con
-          la fundación. Lo que sigue es el alta de clientes, el catálogo de
-          áreas y tipos de proceso con sus plantillas de etapas, y el proceso
-          con su plan de trabajo.
+          La primera pantalla de producto ya está:{" "}
+          <Enlace href="/clientes">clientes</Enlace>. Dar de alta un prospecto
+          cuesta un nombre y un teléfono, que es lo que se sabe de alguien que
+          acaba de llamar. Lo que sigue es el catálogo de áreas y tipos de
+          proceso con sus plantillas de etapas, y el proceso con su plan de
+          trabajo.
         </p>
       </Prosa>
 
