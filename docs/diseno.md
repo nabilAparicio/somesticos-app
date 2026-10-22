@@ -123,7 +123,7 @@ solo en el código, el primer script de importación mete un huérfano.
 | **I-5** | El snapshot de una cotización emitida se escribe una sola vez y no se reescribe jamás. |
 | **I-6** | Toda nota, todo pendiente y toda entrada de bitácora tienen autor. |
 | **I-7** | El saldo de gastos nunca se almacena. Siempre se deriva. |
-| **I-8** | Toda tabla lleva `tenant_id` y ninguna consulta se escribe sin filtrar por él (ver §7). |
+| **I-8** | Toda tabla lleva `tenant_id` y ninguna consulta se escribe sin filtrar por él (ver §7). Incluye las tablas hijas: el listado de §6 lo omite por brevedad, pero la columna va en todas. |
 
 **Consecuencia práctica de I-1 e I-2:** el alta de cliente pide lo mínimo — nombre y un medio de
 contacto — y todo lo demás es opcional. Si exigiera un formulario completo, el invariante
@@ -177,8 +177,10 @@ Motor: **Cloudflare D1** (SQLite). Notas de portabilidad respecto al diseño Pos
 
 **Dinero**
 
-- `cuota` — `id`, `proceso_id`, `concepto`, `monto` o `porcentaje`, `vence_en` o `hito`,
-  `pagada_en`.
+- `cuota` — `id`, `proceso_id`, `concepto`, `monto`, `porcentaje`, `vence_en`, `hito`,
+  `pagada_en`. Dos `CHECK` de exclusividad: exactamente uno de `monto` o `porcentaje`, y
+  exactamente uno de `vence_en` o `hito`. Sin esas restricciones, una cuota con monto **y**
+  porcentaje es un total ambiguo que nadie detecta hasta que las cifras no cierran.
 - `movimiento_gasto` — `id`, `proceso_id`, `fecha`, `concepto`, `monto`,
   `tipo` (`gasto|anticipo`), `comprobante_key` (objeto en R2), `usuario_id`.
 

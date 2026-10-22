@@ -76,6 +76,10 @@ pnpm test
 pnpm lint
 ```
 
+`pnpm test:e2e` se suma a partir de T-4, que es la tarea que instala Playwright. Los tres
+comandos de arriba existen desde T-1: un plan que exige un comando que ninguna tarea provee es
+un plan que falla en la primera tarea.
+
 **Política test-first:** las invariantes y las reglas de dominio tienen prueba en ROJO antes de la
 implementación. Una invariante se prueba demostrando que la base **rechaza** la escritura
 inválida, no que la acepta cuando es válida.
@@ -95,15 +99,20 @@ se renumera.
 
 - [ ] **T-1 · Esqueleto Workers + D1.** `wrangler.jsonc` con binding de D1, Worker de entrada,
       SPA con Vite, configuración de Vitest con `cloudflareTest()`, y un endpoint de salud con su
-      prueba. Al terminar, `pnpm test` corre en verde contra el runtime real.
-      *Ruta: delegada (múltiples archivos de configuración interdependientes). Forecast ~250.*
+      prueba. **Incluye el linter y el typecheck**: los tres comandos de §Verificación existen y
+      corren desde esta tarea, o el resto del plan exige algo que nadie instaló.
+      *Criterio: `pnpm typecheck`, `pnpm test` y `pnpm lint` corren en verde.
+      Ruta: delegada (múltiples archivos de configuración interdependientes). Forecast ~300.*
 
 - [ ] **T-2 · Esquema inicial y migración.** Tablas `tenant`, `usuario`, `tipo_cliente`,
       `cliente`, `area`, `tipo_proceso`, `etapa_plantilla`, `proceso`, `proceso_etapa`, `nota`,
-      `pendiente`, `bitacora`. Invariantes I-1, I-2, I-3, I-6 y I-8 como restricciones. `CHECK`
+      `pendiente`, `bitacora`. Invariantes I-1, I-2, I-6 y I-8 como restricciones. `CHECK`
       en vez de `ENUM`, montos en centavos enteros.
-      *Criterio: existe una prueba por invariante que demuestra el rechazo. Ruta: delegada.
-      Forecast ~400.*
+      **I-3 no entra acá:** exige que el cliente de un proceso coincida con el de su cotización,
+      y en esta tajada no existe `cotizacion`. Se implementa y se prueba en la tajada 2, junto
+      con la tabla que la hace expresable.
+      *Criterio: existe una prueba por invariante implementada que demuestra el rechazo.
+      Ruta: delegada. Forecast ~400.*
 
 - [ ] **T-3 · Acceso e identidad.** Cloudflare Access delante de la aplicación; resolución de la
       identidad de Access contra la tabla `usuario`. Sin registro propio, sin contraseñas.
@@ -113,8 +122,11 @@ se renumera.
 - [ ] **T-4 · Base visual responsiva.** Tokens, esqueleto de página en grid, componentes de
       layout, consultas de contenedor, tope de ancho en `ch` para prosa, contenedor de tabla con
       scroll propio. Sin un solo ancho fijo que no sea de un ícono.
-      *Criterio: la página no scrollea en horizontal en ningún ancho entre 320px y 2560px.
-      Ruta: delegada. Forecast ~300.*
+      *Criterio: la página no scrollea en horizontal en ningún ancho entre 320px y 2560px,
+      verificado con una prueba de Playwright que recorre un juego de viewports y afirma
+      `scrollWidth <= clientWidth` en el documento. El criterio sin runner no es un criterio.
+      Esta tarea instala Playwright y agrega `pnpm test:e2e`.
+      Ruta: delegada. Forecast ~350.*
 
 - [ ] **T-5 · Clientes.** Alta mínima (nombre y un contacto), tipo desde catálogo, par genérico
       `documento_tipo`/`documento_numero`, `representante_legal` según tipo, listado, detalle,
@@ -133,9 +145,9 @@ se renumera.
       crear el proceso. Sobre el proceso ya creado: agregar, quitar y reordenar etapas. Quitar
       solo aplica a etapas pendientes; una etapa alcanzada no se borra. La vista separa lo
       cumplido de lo que falta, porque "lo que viene" es la mitad del valor.
-      *Criterio: cambiar una plantilla no altera ningún proceso ya abierto; y un proceso con
-      plantilla aplicada admite pasos nuevos sin tocar la plantilla. Ruta: delegada.
-      Forecast ~550.*
+      *Criterios: cambiar una plantilla no altera ningún proceso ya abierto; un proceso con
+      plantilla aplicada admite pasos nuevos sin tocar la plantilla; e intentar borrar una etapa
+      ya alcanzada se RECHAZA, con prueba que lo demuestre. Ruta: delegada. Forecast ~600.*
 
 - [ ] **T-11 · Guardar como plantilla.** Desde un proceso cuyo plan se ajustó a mano, crear una
       plantilla nueva con esos pasos, o actualizar una existente. Copia de `proceso_etapa` hacia
@@ -174,18 +186,18 @@ se renumera.
 
 ## Entrega
 
-**Forecast:** ~3450 líneas autoradas (altas más bajas, archivos generados excluidos).
+**Forecast:** ~3600 líneas autoradas (altas más bajas, archivos generados excluidos).
 
 Eso excede con holgura el presupuesto de entrega de ~400 líneas por rebanada, así que la tajada se
 reparte. Límites propuestos:
 
 | Rebanada | Tareas | Forecast |
 |---|---|---|
-| R1 · Fundación | T-1, T-2 | ~650 |
-| R2 · Entrada y piel | T-3, T-4 | ~500 |
+| R1 · Fundación | T-1, T-2 | ~700 |
+| R2 · Entrada y piel | T-3, T-4 | ~550 |
 | R3 · Clientes | T-5 | ~400 |
 | R4 · Áreas, tipos y plantillas | T-6 | ~450 |
-| R5 · Procesos y plan de trabajo | T-7, T-11 | ~700 |
+| R5 · Procesos y plan de trabajo | T-7, T-11 | ~750 |
 | R6 · Notas, pendientes y bitácora | T-8, T-9, T-10 | ~750 |
 
 **Estrategia de entrega:** `ask-on-risk` (por defecto).
@@ -200,12 +212,19 @@ Empujar al remoto, abrir pull requests y hacer merge siguen siendo decisiones de
 
 ## Progreso
 
-Sin empezar. Ninguna tarea tiene commit todavía.
+Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 
 | Tarea | Commit | Checks observados | Revisión |
 |---|---|---|---|
-| — | — | — | — |
+| — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
+| T-1 | — | — | — |
+
+Los siete hallazgos de esa revisión se verificaron uno por uno, resultaron todos reales y se
+corrigieron en el commit siguiente: I-3 no expresable en esta tajada, I-8 sin `tenant_id` en las
+tablas hijas, criterio responsivo sin runner, `cuota` sin `CHECK` de exclusividad, regla de etapa
+alcanzada sin prueba de rechazo, `pnpm lint` sin tarea que lo provea, y este mismo "próximo paso"
+contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-Elegir la estrategia de encadenado, crear la rama de la funcionalidad y empezar por T-1.
+T-1: esqueleto Workers + D1 con los tres comandos de verificación funcionando.
