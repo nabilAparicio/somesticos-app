@@ -217,7 +217,25 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 | Tarea | Commit | Checks observados | Revisión |
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
-| T-1 | (ver abajo) | `pnpm install` verde · `pnpm typecheck` verde · `pnpm test` **3/3 en verde** (vitest 4.1.12) · `pnpm lint` verde, 9 archivos. Verificación del orquestador: `pnpm test` recorrido de nuevo, 3/3. | Pendiente de evaluar |
+| T-1 | `b4edd18` + correcciones | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
+
+Primer intento de revisión de T-1 (lineaje `review-74dd041a1c7aed53`) murió en
+`lens_context_budget_exceeded`: 19.659 líneas cambiadas no entraban en el presupuesto de la
+lente. No se creó autoridad, así que no hubo nada que abandonar. Se resolvió sacando el archivo
+generado del control de versiones (ver arriba), lo que bajó el candidato a 3.402 líneas y el
+riesgo de alto a medio.
+
+Hallazgos de la revisión de T-1 y qué se hizo con cada uno:
+
+| Hallazgo | Resolución |
+|---|---|
+| La SPA ignoraba el status de la respuesta | Corregido: 200 y 503 son respuestas válidas con cuerpo; cualquier otra es falla de transporte y no se parsea como reporte. |
+| La rama `degraded`/503 no tenía prueba | Corregido: prueba con inyección de falla en el binding. |
+| La rama 404 no tenía prueba | Corregido. |
+| Aserción de timestamp débil, falta la de cabecera | Corregido: ida y vuelta por `toISOString` y cercanía a ahora, más `cache-control`. |
+| El handler se invocaba fuera de banda | Corregido salvo en la prueba de falla inyectada, donde es la única vía; queda comentado por qué. |
+| `typecheck` dependía de un generado no versionado | Corregido: `typecheck` y `build` generan los tipos ellos mismos. El hallazgo apuntaba a una decisión tomada minutos antes y tenía razón. |
+| `src/` sin cobertura de pruebas | **Diferido a T-4** con razón: la SPA actual es un andamio de tres líneas sin estilos, y T-4 instala Playwright. |
 
 Versiones fijadas en T-1: `vitest` 4.1.12, `@cloudflare/vitest-plugin` 1.4.7, `wrangler` 4.152.0,
 `vite` 8.3.5, `react` 19.3.1, `typescript` 5.9.3, `eslint` 10.13.0.

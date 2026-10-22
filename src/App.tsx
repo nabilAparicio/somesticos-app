@@ -14,7 +14,15 @@ export function App() {
     const controller = new AbortController();
 
     fetch("/api/health", { signal: controller.signal })
-      .then((response) => response.json() as Promise<HealthReport>)
+      .then((response) => {
+        // 503 is a valid, meaningful answer here: the service reports itself
+        // degraded and the body still carries the report. Anything else is a
+        // transport or routing failure and must not be parsed as a report.
+        if (response.status !== 200 && response.status !== 503) {
+          throw new Error(`respuesta inesperada: HTTP ${String(response.status)}`);
+        }
+        return response.json() as Promise<HealthReport>;
+      })
       .then((report) => setHealth({ kind: "ready", report }))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
