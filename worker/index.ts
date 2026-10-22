@@ -1,8 +1,20 @@
 /**
  * Entry Worker. Serves the API; everything else falls through to the SPA
  * assets (see `assets.run_worker_first` in wrangler.jsonc).
+ *
+ * `/api/health` es público a propósito: un endpoint de salud detrás de
+ * autenticación no sirve para monitorear, y no revela nada que importe. Todo
+ * lo demás bajo `/api/` exige una identidad resuelta contra `usuario`,
+ * **incluidas las rutas que no existen**: si el 404 saliera antes de la
+ * puerta, cualquiera podría enumerar la API sin entrar.
  */
-import type { HealthReport } from "./contract";
+import { autenticar, type DependenciasDeAcceso } from "./acceso/puerta";
+import type { Rechazo } from "./acceso/rechazo";
+import type {
+  AccesoDenegado,
+  HealthReport,
+  IdentidadActual,
+} from "./contract";
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
   try {
@@ -27,20 +39,63 @@ async function health(env: Env): Promise<Response> {
   });
 }
 
+function noEncontrado(): Response {
+  return Response.json({ error: "not_found" }, { status: 404 });
+}
+
+function metodoNoPermitido(permitidos: string): Response {
+  return Response.json(
+    { error: "method_not_allowed" },
+    { status: 405, headers: { allow: permitidos } },
+  );
+}
+
+function respuestaDeRechazo(rechazo: Rechazo): Response {
+  const cuerpo: AccesoDenegado = {
+    error: "acceso_denegado",
+    motivo: rechazo.motivo,
+  };
+
+  return Response.json(cuerpo, {
+    status: rechazo.estado,
+    headers: { "cache-control": "no-store" },
+  });
+}
+
+/**
+ * El manejador real. Toma sus dependencias explícitas para que las pruebas
+ * puedan sustituir el origen de las claves públicas —y solo eso— sin tocar la
+ * verificación ni el ruteo.
+ */
+export async function manejar(
+  request: Request,
+  env: Env,
+  dependencias: DependenciasDeAcceso = {},
+): Promise<Response> {
+  const url = new URL(request.url);
+
+  if (url.pathname === "/api/health") {
+    if (request.method !== "GET") return metodoNoPermitido("GET");
+    return health(env);
+  }
+
+  const acceso = await autenticar(request, env, dependencias);
+  if (!acceso.ok) return respuestaDeRechazo(acceso.rechazo);
+
+  if (url.pathname === "/api/yo") {
+    if (request.method !== "GET") return metodoNoPermitido("GET");
+
+    const identidad: IdentidadActual = acceso.valor;
+    return Response.json(identidad, {
+      headers: { "cache-control": "no-store" },
+    });
+  }
+
+  return noEncontrado();
+}
+
 export default {
-  async fetch(request, env): Promise<Response> {
-    const url = new URL(request.url);
-
-    if (url.pathname === "/api/health") {
-      if (request.method !== "GET") {
-        return Response.json(
-          { error: "method_not_allowed" },
-          { status: 405, headers: { allow: "GET" } },
-        );
-      }
-      return health(env);
-    }
-
-    return Response.json({ error: "not_found" }, { status: 404 });
+  fetch(request, env): Promise<Response> {
+    return manejar(request, env);
   },
 } satisfies ExportedHandler<Env>;

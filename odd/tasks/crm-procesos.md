@@ -114,7 +114,7 @@ se renumera.
       *Criterio: existe una prueba por invariante implementada que demuestra el rechazo.
       Ruta: delegada. Forecast ~400.*
 
-- [ ] **T-3 · Acceso e identidad.** Cloudflare Access delante de la aplicación; resolución de la
+- [x] **T-3 · Acceso e identidad.** Cloudflare Access delante de la aplicación; resolución de la
       identidad de Access contra la tabla `usuario`. Sin registro propio, sin contraseñas.
       *Criterio: una petición sin identidad válida no llega al dominio. Ruta: delegada.
       Forecast ~200.*
@@ -218,7 +218,8 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-2 | `eb08588` + correcciones | Rojo observado primero: 59 fallas por `no such table`. Después: `pnpm typecheck` verde · `pnpm test` **64/64 en verde** · `pnpm lint` verde. Verificación del orquestador: los tres recorridos, más una prueba de mutación propia que confirmó que las pruebas de rechazo muerden. | Concedida y acusada. Lineaje `review-3469d152112ea53a`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 6 hallazgos informativos, los 6 reales, los 6 corregidos. |
+| T-3 | (este commit) | Rojo observado: 26 fallas por `manejar is not a function`. Después: typecheck 0 · test **98/98**, exit 0 · lint 0. Verificación del orquestador: los tres códigos de salida, más inspección propia del bundle construido. | Pendiente de evaluar |
+| T-2 | `eb08588` + `5486347` | Rojo observado primero: 59 fallas por `no such table`. Después: `pnpm typecheck` verde · `pnpm test` **64/64 en verde** · `pnpm lint` verde. Verificación del orquestador: los tres recorridos, más una prueba de mutación propia que confirmó que las pruebas de rechazo muerden. | Concedida y acusada. Lineaje `review-3469d152112ea53a`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 6 hallazgos informativos, los 6 reales, los 6 corregidos. |
 
 **T-2** quedó con `migrations/0001_esquema_inicial.sql` (12 tablas, índices, dos triggers de
 inmutabilidad de `nota`, semilla de un tenant) y 59 pruebas de rechazo en `test/esquema.spec.ts`.
@@ -290,6 +291,34 @@ historia revisable, y en cambio hacía que el candidato de T-1 excediera el pres
 contexto de la lente: la revisión se volvía imposible, no difícil. Está en `.gitignore` y lo
 produce un `postinstall`, así que un clon limpio lo tiene antes del primer `typecheck`.
 
+**T-3** puso la puerta de Access delante de todo `/api/` menos salud. Lo que quedó asentado:
+
+- La vía de desarrollo local **no es una variable de entorno con una guarda**: `import.meta.env.DEV`
+  es una constante de compilación, así que en el artefacto desplegable la función queda reducida a
+  `return null;` y la lectura de `ACCESO_DEV_EMAIL` **no existe**. Verificado sobre
+  `dist/app_cotizador/index.js` por el escritor y de nuevo, por separado, por el orquestador. No hay
+  secreto que pueda encender código que no está en el bundle.
+- **503 para configuración ausente o certificados caídos, 403 para todo lo demás.** Los dos cierran
+  la puerta; separarlos es para el operador, porque un 403 uniforme haría que un despliegue a medias
+  se viera igual que un intruso.
+- **El 404 va después de la puerta.** Una ruta inexistente responde 403 hasta que el llamante prueba
+  quién es, para que la API no se pueda enumerar desde afuera.
+- Correos comparados en minúsculas; `usuario.email` debe guardarse así. Queda pendiente un
+  `CHECK (email = lower(email))` para la tarea que traiga administración de usuarios.
+- Sin caché propio de claves: se usa el de la red (`cf.cacheTtl: 300`) y no un `Map` en estado
+  global del Worker, que sobrevive entre peticiones de distintos usuarios y después nadie sabe
+  invalidar.
+- Prueba de mutación sobre 6 invariantes de seguridad (no verificar firma, ignorar `aud`, ignorar
+  `exp`, ignorar `activo = 0`, no filtrar por `tenant_id`, aceptar cualquier `alg`): las 6 detectadas.
+
+### Pasos de tablero pendientes de un humano
+
+Access no se configura desde acá. Falta, en Cloudflare Zero Trust: crear la aplicación self-hosted
+sobre el dominio desplegado, agregarle una política *Allow* con los correos de las dos personas,
+copiar el AUD tag y el dominio del team a `ACCESO_TEAM_DOMAIN` y `ACCESO_AUD` en `wrangler.jsonc`,
+e **insertar las filas en `usuario` con esos mismos correos en minúsculas**: sin fila no entra
+nadie, aunque Access lo apruebe. Para desarrollo local, un `.dev.vars` con `ACCESO_DEV_EMAIL`.
+
 ### Cabos sueltos conocidos
 
 - **`database_id` en `wrangler.jsonc` es un placeholder** (`00000000-…`). No hay base D1
@@ -305,4 +334,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-3: acceso e identidad con Cloudflare Access, resuelto contra la tabla `usuario`.
+T-4: base visual responsiva, con la prueba de Playwright que recorre viewports.

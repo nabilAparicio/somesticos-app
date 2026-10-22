@@ -15,6 +15,23 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  // Configuración de Cloudflare Access. Nunca va en el código: el AUD y el
+  // dominio del team cambian por despliegue y por cuenta. Ninguno de los dos
+  // es secreto —el AUD viaja dentro de cada token y el dominio es público—,
+  // así que `vars` alcanza y no hace falta `wrangler secret`.
+  //
+  // Los dos valores de abajo son **marcadores**, igual que `database_id`: no
+  // hay aplicación de Access creada todavía. Un AUD que no coincide hace que
+  // todo token se rechace, así que el placeholder falla cerrado; pero hay que
+  // reemplazarlo antes del primer despliegue o nadie va a poder entrar.
+  //
+  // `ACCESO_DEV_EMAIL` **no se declara acá a propósito**: lo que está en este
+  // archivo se despliega. Esa variable vive solo en `.dev.vars`/`.env`, que
+  // son locales y están en `.gitignore`.
+  "vars": {
+    "ACCESO_TEAM_DOMAIN": "https://CAMBIAR-NOMBRE-DEL-TEAM.cloudflareaccess.com",
+    "ACCESO_AUD": "CAMBIAR-POR-EL-AUD-DE-LA-APLICACION-DE-ACCESS"
+  },
   "d1_databases": [
     {
       "binding": "DB",

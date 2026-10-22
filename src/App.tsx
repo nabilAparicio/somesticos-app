@@ -1,14 +1,43 @@
 import { useEffect, useState } from "react";
 
-import type { HealthReport } from "../worker/contract";
+import type { HealthReport, IdentidadActual } from "../worker/contract";
 
 type HealthState =
   | { kind: "loading" }
   | { kind: "ready"; report: HealthReport }
   | { kind: "error"; message: string };
 
+type IdentityState =
+  | { kind: "loading" }
+  | { kind: "ready"; identity: IdentidadActual }
+  | { kind: "denied" };
+
 export function App() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
+  const [identity, setIdentity] = useState<IdentityState>({ kind: "loading" });
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    // Who got in. The screen itself is T-4; this is only the one line that
+    // shows the resolved identity, so the gate is visible from the browser.
+    fetch("/api/yo", { signal: controller.signal })
+      .then(async (response) =>
+        response.status === 200
+          ? ({
+              kind: "ready",
+              identity: (await response.json()) as IdentidadActual,
+            } as const)
+          : ({ kind: "denied" } as const),
+      )
+      .then(setIdentity)
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setIdentity({ kind: "denied" });
+      });
+
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -38,6 +67,8 @@ export function App() {
   return (
     <main>
       <h1>Bufete</h1>
+      {identity.kind === "ready" && <p>Entró {identity.identity.nombre}.</p>}
+      {identity.kind === "denied" && <p>Sin identidad reconocida.</p>}
       <h2>Estado del sistema</h2>
       {health.kind === "loading" && <p>Consultando…</p>}
       {health.kind === "error" && <p>No se pudo consultar: {health.message}</p>}

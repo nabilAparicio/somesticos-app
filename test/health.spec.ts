@@ -76,10 +76,14 @@ describe("GET /api/health", () => {
 });
 
 describe("unknown API routes", () => {
-  it("answers 404 instead of falling through to the SPA", async () => {
+  // T-3 moved the gate in front of routing: an unknown path is answered with
+  // 403 until the caller proves who they are, so the API cannot be enumerated
+  // from outside. The 404 that follows a valid identity is asserted in
+  // `test/acceso.spec.ts`.
+  it("demands an identity before deciding the route does not exist", async () => {
     const response = await exports.default.fetch(request("/api/no-existe"));
 
-    expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: "not_found" });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "acceso_denegado" });
   });
 });
