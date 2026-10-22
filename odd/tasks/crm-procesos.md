@@ -218,7 +218,7 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-3 | (este commit) | Rojo observado: 26 fallas por `manejar is not a function`. Después: typecheck 0 · test **98/98**, exit 0 · lint 0. Verificación del orquestador: los tres códigos de salida, más inspección propia del bundle construido. | Pendiente de evaluar |
+| T-3 | `4a9118f` | Rojo observado: 26 fallas por `manejar is not a function`. Final: typecheck 0 · test **122/122**, exit 0 · lint 0. Verificación del orquestador: los tres códigos de salida, inspección propia del bundle, y pruebas de mutación sobre la compuerta de artefacto y sobre la cobertura de `origenRemoto`. | **Aprobada y acusada** tras TRES rondas de corrección. Lineajes `review-4dbfcc0616c91689` → `review-6a5f14d2c564cb45` → `review-155e9995d4c99a7e`, autoridad quemada. 4 hallazgos CRÍTICOS, los 4 reales, los 4 corregidos. |
 | T-2 | `eb08588` + `5486347` | Rojo observado primero: 59 fallas por `no such table`. Después: `pnpm typecheck` verde · `pnpm test` **64/64 en verde** · `pnpm lint` verde. Verificación del orquestador: los tres recorridos, más una prueba de mutación propia que confirmó que las pruebas de rechazo muerden. | Concedida y acusada. Lineaje `review-3469d152112ea53a`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 6 hallazgos informativos, los 6 reales, los 6 corregidos. |
 
 **T-2** quedó con `migrations/0001_esquema_inicial.sql` (12 tablas, índices, dos triggers de
@@ -310,6 +310,21 @@ produce un `postinstall`, así que un clon limpio lo tiene antes del primer `typ
   invalidar.
 - Prueba de mutación sobre 6 invariantes de seguridad (no verificar firma, ignorar `aud`, ignorar
   `exp`, ignorar `activo = 0`, no filtrar por `tenant_id`, aceptar cualquier `alg`): las 6 detectadas.
+
+Los cuatro CRÍTICOS de T-3 y qué se hizo con cada uno:
+
+| Hallazgo | Resolución |
+|---|---|
+| La vía de desarrollo se consultaba antes de todo, y **ninguna prueba ejercía la forma de producción**: la suite probaba que la vía funciona y nunca que está ausente | Pasó a dependencia inyectable, se movió detrás de la guarda de configuración, y hay pruebas que corren el camino desplegado. |
+| El helper `entorno()` esparcía el `env` real, **heredando el `ACCESO_DEV_EMAIL` de `.dev.vars`** — el archivo que este mismo plan manda crear. En una máquina con ese archivo, casi toda la batería de rechazos observaba otro motivo. La suite dependía de estado local sin versionar. | `entorno()` anula la variable explícitamente, con una prueba que lo vigila. |
+| La compuerta de artefacto buscaba `env.ACCESO_DEV_EMAIL`, atada a un identificador que el empaquetador renombra; una desestructuración la evadía. Y **nada probaba que la compuerta fallara alguna vez**. | Busca el nombre del binding, que no se puede renombrar. Detección en módulo puro, con cinco formas de regresión probadas y dos casos limpios. |
+| `origenRemoto`, el default de producción de la única dependencia no inyectada, **no tenía una sola línea probada**: cada petición desplegada pasaba por ahí. | Seam de pedido y 11 pruebas: la URL (incluido el dominio con barra final, que es como viene del tablero), el caché de red, el filtro de JWK y siete formas de falla. |
+
+Nota de proceso: cada corrección cambia el candidato, lo que obliga a enmendar el commit y ejecutar
+`gentle-ai review recover --disposition=scope_changed` hacia un lineaje sucesor que vuelve a
+revisar. El validador dirigido falló una vez con `provider_capture_result_refused` —defecto del
+proveedor, no del código: `mutation_outcome: not_started`— y se recuperó relanzando el mismo slot
+reofrecido, que es la vía documentada.
 
 ### Pasos de tablero pendientes de un humano
 
