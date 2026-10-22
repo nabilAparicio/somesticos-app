@@ -46,7 +46,7 @@ const TABLAS_CON_TENANT = [
 
 type TablaConTenant = (typeof TABLAS_CON_TENANT)[number];
 
-function insertar(tabla: string, fila: Fila): Promise<unknown> {
+function insertar(tabla: string, fila: Fila): Promise<D1Result> {
   const columnas = Object.keys(fila);
   const sql =
     `INSERT INTO ${tabla} (${columnas.join(", ")}) ` +
@@ -230,7 +230,20 @@ describe("fila válida de referencia", () => {
   // Sin esto, una fila base mal armada haría pasar todas las pruebas de
   // rechazo de su tabla por el motivo equivocado.
   it.each(TABLAS_CON_TENANT)("%s acepta su fila válida", async (tabla) => {
-    await expect(insertar(tabla, filaValida(tabla, ctx))).resolves.toBeTruthy();
+    const fila = filaValida(tabla, ctx);
+    const resultado = await insertar(tabla, fila);
+
+    // `resolves` sola solo prueba que no tiró. Que la fila exista es otra
+    // cosa, y es la que hace de contrapeso a las pruebas de rechazo.
+    expect(resultado.meta.changes).toBe(1);
+
+    const guardada = await env.DB.prepare(
+      `SELECT id FROM ${tabla} WHERE id = ?`,
+    )
+      .bind(fila.id)
+      .first<{ id: string }>();
+
+    expect(guardada?.id).toBe(fila.id);
   });
 });
 
@@ -348,8 +361,31 @@ describe("valores cerrados con CHECK, no con ENUM", () => {
 describe("momentos en ISO 8601 UTC", () => {
   const noSonMomentos = ["2026-10-22", "ayer", "22/10/2026", ""];
 
+  // Los de arriba son errores evidentes y cualquier validación los ataja. Los
+  // peligrosos son estos: fechas de verdad, en una forma que no es la canónica.
+  // Si el `CHECK` dejara pasar una sola de estas, la columna tendría dos
+  // formatos y el orden lexicográfico dejaría de coincidir con el cronológico.
+  const casiMomentos = [
+    "2026-10-22T13:45:00Z", // sin milisegundos
+    "2026-10-22T13:45:00.000+00:00", // desfase en vez de Z
+    "2026-10-22 13:45:00.000Z", // espacio en vez de T
+    "2026-10-22T13:45:00.000", // sin zona
+    "2026-10-22T09:45:00.000-04:00", // el mismo instante, otra zona
+  ];
+
   it.each(noSonMomentos)(
     "rechaza %o como momento de creación de una nota",
+    async (valor) => {
+      const fila = { ...filaValida("nota", ctx), creada_en: valor };
+
+      await expect(insertar("nota", fila)).rejects.toThrow(
+        /CHECK constraint failed/,
+      );
+    },
+  );
+
+  it.each(casiMomentos)(
+    "rechaza %o, que es una fecha real pero no la forma canónica",
     async (valor) => {
       const fila = { ...filaValida("nota", ctx), creada_en: valor };
 
@@ -464,5 +500,50 @@ describe("límites de la tajada 1", () => {
     expect(filas.results.map((fila) => fila.name)).not.toContain(
       "cotizacion_linea_id",
     );
+  });
+});
+
+describe("usuario · correo único dentro del bufete", () => {
+  it("rechaza dos usuarios con el mismo correo en el mismo tenant", async () => {
+    const correo = "repetido@bufete.test";
+
+    await insertar("usuario", { ...filaValida("usuario", ctx), email: correo });
+
+    await expect(
+      insertar("usuario", {
+        ...filaValida("usuario", ctx),
+        id: nuevoId(),
+        email: correo,
+      }),
+    ).rejects.toThrow(/UNIQUE constraint failed/);
+  });
+});
+
+describe("pendiente · el cierre es todo o nada", () => {
+  // Las dos mitades sueltas ya se rechazan más arriba. Falta el contrapeso:
+  // que el cierre completo sí entre. Sin esta prueba, un `CHECK` que
+  // rechazara *todo* cierre pasaría desapercibido.
+  it("acepta un pendiente cerrado con sus dos columnas puestas", async () => {
+    const momento = ahoraIso();
+    const fila: Fila = {
+      ...filaValida("pendiente", ctx),
+      cerrado_en: momento,
+      cerrado_por: ctx.usuarioId,
+    };
+    const id = fila.id;
+
+    const resultado = await insertar("pendiente", fila);
+    expect(resultado.meta.changes).toBe(1);
+
+    const guardado = await env.DB.prepare(
+      "SELECT cerrado_en, cerrado_por FROM pendiente WHERE id = ?",
+    )
+      .bind(id)
+      .first<{ cerrado_en: string; cerrado_por: string }>();
+
+    expect(guardado).toEqual({
+      cerrado_en: momento,
+      cerrado_por: ctx.usuarioId,
+    });
   });
 });

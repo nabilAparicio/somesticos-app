@@ -1,7 +1,7 @@
 # crm-procesos — Tajada 1: CRM usable
 
 **Creado:** 22 de octubre de 2026
-**Estado:** sin empezar
+**Estado:** en curso — T-1 y T-2 cerradas
 **Diseño de referencia:** `docs/diseno.md` (fuente de verdad)
 
 ---
@@ -106,7 +106,7 @@ se renumera.
 
 - [x] **T-2 · Esquema inicial y migración.** Tablas `tenant`, `usuario`, `tipo_cliente`,
       `cliente`, `area`, `tipo_proceso`, `etapa_plantilla`, `proceso`, `proceso_etapa`, `nota`,
-      `pendiente`, `bitacora`. Invariantes I-1, I-2, I-6 y I-8 como restricciones. `CHECK`
+      `pendiente`, `bitacora`. Invariantes I-2, I-6 y I-8 como restricciones. `CHECK`
       en vez de `ENUM`, montos en centavos enteros.
       **I-3 no entra acá:** exige que el cliente de un proceso coincida con el de su cotización,
       y en esta tajada no existe `cotizacion`. Se implementa y se prueba en la tajada 2, junto
@@ -218,7 +218,7 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-2 | (este commit) | Rojo observado primero: 59 fallas por `no such table`. Después: `pnpm typecheck` verde · `pnpm test` **64/64 en verde** · `pnpm lint` verde. Verificación del orquestador: los tres recorridos, más una prueba de mutación propia que confirmó que las pruebas de rechazo muerden. | Pendiente de evaluar |
+| T-2 | `eb08588` + correcciones | Rojo observado primero: 59 fallas por `no such table`. Después: `pnpm typecheck` verde · `pnpm test` **64/64 en verde** · `pnpm lint` verde. Verificación del orquestador: los tres recorridos, más una prueba de mutación propia que confirmó que las pruebas de rechazo muerden. | Concedida y acusada. Lineaje `review-3469d152112ea53a`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 6 hallazgos informativos, los 6 reales, los 6 corregidos. |
 
 **T-2** quedó con `migrations/0001_esquema_inicial.sql` (12 tablas, índices, dos triggers de
 inmutabilidad de `nota`, semilla de un tenant) y 59 pruebas de rechazo en `test/esquema.spec.ts`.
@@ -247,6 +247,21 @@ Decisiones de T-2 que no estaban en el diseño y quedan asentadas:
 Señalado por el escritor para más adelante, no hecho: un `CHECK` de que el cliente tenga al menos
 un medio de contacto (es regla del formulario de alta, T-5), y un trigger que verifique que
 `nota.proceso_etapa_id` pertenezca al mismo proceso que la nota (candidato para T-8).
+
+Hallazgos de la revisión de T-2 y qué se hizo con cada uno:
+
+| Hallazgo | Resolución |
+|---|---|
+| El control positivo era vacuo: `resolves.toBeTruthy()` solo probaba que no tiró | Corregido: ahora afirma `meta.changes === 1` y relee la fila. |
+| `env` se importaba de dos módulos distintos (`cloudflare:workers` y `cloudflare:test`) | Unificado en `cloudflare:workers`; de `cloudflare:test` solo viene `applyD1Migrations`. |
+| El plan decía que T-2 implementaba I-1, y I-1 no es expresable sin `cotizacion` | Corregido en el plan. Era un error del documento, no del código. |
+| Las pruebas de fecha solo rechazaban errores evidentes | **El mejor hallazgo.** Se agregaron 5 fechas *reales* en forma no canónica: sin milisegundos, con desfase `+00:00`, con espacio en vez de `T`, sin zona, y el mismo instante en otra zona. Las cinco se rechazan. |
+| El `CHECK` de cierre de `pendiente` no tenía contrapeso | Agregada la prueba de que un cierre completo sí entra: sin ella, un `CHECK` que rechazara *todo* cierre habría pasado desapercibido. |
+| `UNIQUE (tenant_id, email)` sin prueba de rechazo | Agregada. |
+
+Durante esa corrección el orquestador casi reporta verde un `typecheck` que fallaba, por filtrar
+la salida en vez de mirar el código de salida. Queda como regla: **los comandos de verificación
+se juzgan por su código de salida**, no por lo que se ve en pantalla.
 
 Primer intento de revisión de T-1 (lineaje `review-74dd041a1c7aed53`) murió en
 `lens_context_budget_exceeded`: 19.659 líneas cambiadas no entraban en el presupuesto de la
