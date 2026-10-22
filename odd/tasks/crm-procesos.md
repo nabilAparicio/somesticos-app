@@ -104,7 +104,7 @@ se renumera.
       *Criterio: `pnpm typecheck`, `pnpm test` y `pnpm lint` corren en verde.
       Ruta: delegada (múltiples archivos de configuración interdependientes). Forecast ~300.*
 
-- [ ] **T-2 · Esquema inicial y migración.** Tablas `tenant`, `usuario`, `tipo_cliente`,
+- [x] **T-2 · Esquema inicial y migración.** Tablas `tenant`, `usuario`, `tipo_cliente`,
       `cliente`, `area`, `tipo_proceso`, `etapa_plantilla`, `proceso`, `proceso_etapa`, `nota`,
       `pendiente`, `bitacora`. Invariantes I-1, I-2, I-6 y I-8 como restricciones. `CHECK`
       en vez de `ENUM`, montos en centavos enteros.
@@ -217,7 +217,36 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 | Tarea | Commit | Checks observados | Revisión |
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
-| T-1 | `b4edd18` + correcciones | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
+| T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
+| T-2 | (este commit) | Rojo observado primero: 59 fallas por `no such table`. Después: `pnpm typecheck` verde · `pnpm test` **64/64 en verde** · `pnpm lint` verde. Verificación del orquestador: los tres recorridos, más una prueba de mutación propia que confirmó que las pruebas de rechazo muerden. | Pendiente de evaluar |
+
+**T-2** quedó con `migrations/0001_esquema_inicial.sql` (12 tablas, índices, dos triggers de
+inmutabilidad de `nota`, semilla de un tenant) y 59 pruebas de rechazo en `test/esquema.spec.ts`.
+Rojo observado antes de implementar: 59 fallas por `no such table`. El escritor además corrió una
+prueba de mutación borrando restricciones a propósito, y el orquestador repitió una por su cuenta
+—aflojar los `CHECK` de fecha hizo fallar exactamente las 4 pruebas de fecha y ninguna otra—,
+que es la evidencia de que las pruebas de rechazo muerden y no pasan en el vacío.
+
+Decisiones de T-2 que no estaban en el diseño y quedan asentadas:
+
+- El `CHECK` de formato ISO no se puede escribir con `GLOB`: D1 rechaza el patrón completo con
+  `LIKE or GLOB pattern too complex`. Se usa la ida y vuelta `col IS strftime('%Y-%m-%dT%H:%M:%fZ',
+  col)`, con `IS` y no `=` **porque un `CHECK` que evalúa a `NULL` pasa en SQLite** y con `=`
+  cualquier basura habría entrado.
+- `proceso.estado` cerrado en `('abierto','cerrado')`; el diseño nombraba la columna sin enumerar.
+- `pendiente.creado_en` agregado: sin él no hay cómo ordenar pendientes por antigüedad.
+- `nota.proceso_etapa_id` y `pendiente.proceso_etapa_id` son `NOT NULL`: una nota sin etapa no es
+  una nota de este modelo.
+- Sin `ON DELETE CASCADE` en ninguna FK. La política de borrado es comportamiento de T-6 y T-7.
+- Sin índice único sobre `orden`: T-7 reordena etapas y en SQLite un `UPDATE orden = orden + 1`
+  viola un único transitoriamente, fila por fila.
+- `UNIQUE (tenant_id, email)` en `usuario`, que T-3 va a usar para resolver la identidad de Access.
+- Dos pruebas de frontera verifican que las cinco tablas de la tajada 2 **no** existen y que
+  `proceso` no tiene `cotizacion_linea_id`, para que el límite no se erosione sin que nadie lo note.
+
+Señalado por el escritor para más adelante, no hecho: un `CHECK` de que el cliente tenga al menos
+un medio de contacto (es regla del formulario de alta, T-5), y un trigger que verifique que
+`nota.proceso_etapa_id` pertenezca al mismo proceso que la nota (candidato para T-8).
 
 Primer intento de revisión de T-1 (lineaje `review-74dd041a1c7aed53`) murió en
 `lens_context_budget_exceeded`: 19.659 líneas cambiadas no entraban en el presupuesto de la
@@ -261,4 +290,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-2: esquema inicial y migración, con una prueba de rechazo por cada invariante implementada.
+T-3: acceso e identidad con Cloudflare Access, resuelto contra la tabla `usuario`.

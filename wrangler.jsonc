@@ -21,7 +21,11 @@
       "database_name": "app-cotizador",
       // Placeholder: no remote database has been provisioned yet. Local
       // development and tests use Miniflare's local D1, which ignores this id.
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Already the default, but stated so that `wrangler d1 migrations apply`
+      // and `readD1Migrations()` in vitest.config.ts are visibly reading the
+      // same directory.
+      "migrations_dir": "migrations"
     }
   ]
 }
