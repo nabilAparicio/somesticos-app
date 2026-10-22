@@ -1,0 +1,371 @@
+/**
+ * El sistema de layout: el armazón de la página y los cinco primitivos.
+ *
+ * Reparto de §9, y se respeta sin excepciones:
+ *  - **grid** para el armazón, que es bidimensional (encabezado / navegación
+ *    / contenido);
+ *  - **flexbox** para acomodar contenido dentro de una franja, que es
+ *    unidimensional (`.pila`, `.fila`);
+ *  - **grid con `auto-fit`** para la rejilla de tarjetas, que es un reflujo
+ *    de pistas y no un acomodo de franja.
+ *
+ * `minmax(0, 1fr)` y `min-width: 0` aparecen por todos lados y no son
+ * decoración: una pista de grid y un ítem de flex valen `auto` por defecto,
+ * que es el tamaño *mínimo del contenido*. Con eso, una tabla ancha o una URL
+ * larga estiran su columna, la columna estira el armazón y el armazón estira
+ * la página. Esa es, casi siempre, la causa real del scroll horizontal.
+ */
+
+/* ======================================================================
+   Armazón
+   ====================================================================== */
+
+/*
+ * El contenedor de consulta del armazón. Va en `#root` y no en `.esqueleto`
+ * porque un elemento no puede consultarse a sí mismo: quien cambia de forma
+ * es `.esqueleto`, así que el contenedor tiene que ser su padre.
+ *
+ * Es una consulta de **contenedor** y no una `@media` a propósito (§9): lo
+ * que decide si la navegación es columna lateral o franja apilada es el
+ * espacio que el armazón realmente tiene, no el tamaño de la ventana.
+ */
+#root {
+  container: armazon / inline-size;
+}
+
+.esqueleto {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "encabezado"
+    "navegacion"
+    "contenido";
+  gap: var(--espacio-m);
+  align-content: start;
+  min-block-size: 100svh;
+  padding: var(--espacio-m);
+}
+
+@container armazon (min-width: 48rem) {
+  .esqueleto {
+    /* La lateral se mueve entre un mínimo y un máximo; el contenido se lleva
+       el resto y puede encogerse hasta cero, que es lo que `minmax(0, 1fr)`
+       autoriza y `auto` prohibiría. */
+    grid-template-columns:
+      minmax(var(--lateral-min), var(--lateral-max))
+      minmax(0, 1fr);
+    grid-template-areas:
+      "encabezado encabezado"
+      "navegacion contenido";
+    gap: var(--espacio-l) var(--espacio-xl);
+    padding: var(--espacio-l) var(--espacio-xl);
+  }
+}
+
+.esqueleto__encabezado {
+  grid-area: encabezado;
+  container: encabezado / inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--espacio-xs) var(--espacio-m);
+  min-width: 0;
+  padding-block-end: var(--espacio-s);
+  border-block-end: var(--borde-fino);
+}
+
+.marca {
+  display: flex;
+  align-items: center;
+  gap: var(--espacio-xs);
+  min-width: 0;
+}
+
+.marca__sello {
+  /* La excepción declarada de §9: un ícono tiene un tamaño propio. Es la
+     única medida fija de todo el sistema de layout. */
+  flex: 0 0 auto;
+  inline-size: var(--tamano-icono);
+  block-size: var(--tamano-icono);
+  display: grid;
+  place-items: center;
+  border-radius: var(--radio-s);
+  background: var(--color-acento-tenue);
+  color: var(--color-acento);
+  font-size: var(--texto-m);
+  line-height: 1;
+}
+
+.marca__nombre {
+  font-size: var(--texto-xl);
+  font-weight: var(--peso-fuerte);
+  letter-spacing: 0.01em;
+}
+
+.esqueleto__lema {
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-s);
+}
+
+/* El lema solo se separa del nombre cuando el encabezado tiene de verdad el
+   espacio para los dos en un renglón. Lo mide sobre su propio hueco. */
+@container encabezado (min-width: 30rem) {
+  .esqueleto__lema {
+    margin-inline-start: auto;
+  }
+}
+
+.esqueleto__navegacion {
+  grid-area: navegacion;
+  min-width: 0;
+}
+
+.navegacion__lista {
+  /* Franja unidimensional: flexbox. En angosto envuelve; en la columna
+     lateral se vuelve vertical. */
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-3xs) var(--espacio-xs);
+}
+
+@container armazon (min-width: 48rem) {
+  .navegacion__lista {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: var(--espacio-3xs);
+  }
+}
+
+.navegacion__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--espacio-xs);
+  min-width: 0;
+  padding: var(--espacio-2xs) var(--espacio-xs);
+  border-radius: var(--radio-m);
+  color: var(--color-tinta);
+  font-size: var(--texto-s);
+  text-decoration: none;
+}
+
+.navegacion__item:hover {
+  background: var(--color-superficie-tenue);
+}
+
+.navegacion__item[aria-current="page"] {
+  background: var(--color-acento-tenue);
+  color: var(--color-acento);
+  font-weight: var(--peso-medio);
+}
+
+.navegacion__item--pendiente {
+  color: var(--color-tinta-apagada);
+  cursor: default;
+}
+
+.navegacion__item--pendiente:hover {
+  background: none;
+}
+
+.navegacion__diagnostico {
+  margin-block-start: var(--espacio-m);
+  padding-block-start: var(--espacio-xs);
+  border-block-start: var(--borde-fino);
+}
+
+.navegacion__titulo {
+  padding-inline: var(--espacio-xs);
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.esqueleto__contenido {
+  grid-area: contenido;
+  /* Sin esto, un hijo ancho (una tabla, por ejemplo) estira la pista y con
+     ella la página entera. */
+  min-width: 0;
+  /* Tope, nunca ancho: a 320px mide 320px menos el padding. */
+  max-inline-size: var(--tope-contenido);
+  padding-block: var(--espacio-s);
+}
+
+/* ======================================================================
+   Primitivos
+   ====================================================================== */
+
+/* --- Pila: apilado vertical con hueco uniforme (flexbox) --- */
+.pila {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-m);
+  min-width: 0;
+}
+
+.pila--ceñido {
+  gap: var(--espacio-xs);
+}
+
+.pila--holgado {
+  gap: var(--espacio-xl);
+}
+
+/* --- Fila: franja horizontal que envuelve (flexbox) --- */
+.fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espacio-xs) var(--espacio-s);
+  min-width: 0;
+}
+
+.fila--centro {
+  justify-content: center;
+}
+
+.fila--entre {
+  justify-content: space-between;
+}
+
+/* --- Rejilla: pistas que se reacomodan solas (grid, sin breakpoints) --- */
+.rejilla {
+  display: grid;
+  gap: var(--espacio-m);
+  /*
+   * `auto-fit` decide cuántas columnas entran; nadie las enumera.
+   *
+   * El `min()` de adentro es lo que hace que esto sea responsivo de verdad:
+   * `minmax(18rem, 1fr)` impone una pista de 18rem aunque el contenedor mida
+   * 320px, y la rejilla se sale. Con `min(18rem, 100%)` el mínimo cede
+   * cuando no hay espacio, que es exactamente el comportamiento que §9 pide.
+   */
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(var(--rejilla-minimo, 16rem), 100%), 1fr)
+  );
+}
+
+/* --- Prosa: columna de texto con tope en `ch` --- */
+.prosa {
+  /* `max-inline-size`, no `inline-size`: es un tope de legibilidad, no una
+     medida. Si el hueco es más angosto, la prosa es más angosta. */
+  max-inline-size: var(--prosa-tope, 68ch);
+  overflow-wrap: anywhere;
+}
+
+.prosa > * + * {
+  margin-block-start: var(--espacio-m);
+}
+
+/* --- Tarjeta: se adapta a SU hueco, no a la ventana --- */
+.tarjeta {
+  /*
+   * El caso de libro de las consultas de contenedor. La misma tarjeta vive
+   * en una rejilla de cuatro columnas a 2560px —donde mide unos 300px— y a
+   * ancho completo en un celular. El viewport no sabe nada de eso.
+   */
+  container: tarjeta / inline-size;
+  min-width: 0;
+  border: var(--borde-fino);
+  border-radius: var(--radio-l);
+  background: var(--color-superficie);
+}
+
+.tarjeta__cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-xs);
+  padding: var(--espacio-s);
+}
+
+.tarjeta__titulo {
+  font-size: var(--texto-m);
+}
+
+.tarjeta p {
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-s);
+}
+
+@container tarjeta (min-width: 22rem) {
+  .tarjeta__cuerpo {
+    gap: var(--espacio-s);
+    padding: var(--espacio-l);
+  }
+
+  .tarjeta__titulo {
+    font-size: var(--texto-l);
+  }
+
+  .tarjeta p {
+    font-size: var(--texto-m);
+  }
+}
+
+/* --- Contenedor de tabla: el desbordamiento vive acá adentro --- */
+.tabla-contenedor {
+  container: tabla / inline-size;
+  /* Las dos líneas que impiden que una tabla ancha empuje la página. */
+  min-width: 0;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  /* Que el gesto de scroll de la tabla no se contagie a la página. */
+  overscroll-behavior-x: contain;
+  border: var(--borde-fino);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+}
+
+.tabla {
+  border-collapse: collapse;
+  inline-size: 100%;
+}
+
+.tabla__rotulo {
+  padding: var(--espacio-s);
+  border-block-end: var(--borde-fino);
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-s);
+  text-align: start;
+}
+
+.tabla th,
+.tabla td {
+  padding: var(--espacio-s);
+  border-block-end: var(--borde-fino);
+  font-size: var(--texto-s);
+  text-align: start;
+  vertical-align: top;
+}
+
+.tabla thead th {
+  position: sticky;
+  inset-block-start: 0;
+  background: var(--color-superficie-tenue);
+  font-weight: var(--peso-medio);
+  white-space: nowrap;
+}
+
+.tabla tbody th {
+  font-weight: var(--peso-medio);
+}
+
+.tabla tbody tr:last-child th,
+.tabla tbody tr:last-child td {
+  border-block-end: none;
+}
+
+/* Cuando a la tabla le toca un hueco angosto, aprieta el aire en vez de
+   obligar a scrollear más. Lo mide sobre su propio hueco, no sobre la
+   ventana: el mismo listado va a vivir dentro de la columna de contenido y,
+   más adelante, dentro de un panel más angosto. */
+@container tabla (max-width: 30rem) {
+  .tabla th,
+  .tabla td,
+  .tabla__rotulo {
+    padding: var(--espacio-xs);
+    font-size: var(--texto-xs);
+  }
+}

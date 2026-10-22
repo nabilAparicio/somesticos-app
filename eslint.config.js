@@ -5,7 +5,15 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", ".wrangler/**", "worker/worker-configuration.d.ts"],
+    ignores: [
+      "dist/**",
+      ".wrangler/**",
+      "worker/worker-configuration.d.ts",
+      // Artefactos de Playwright: salida de una corrida, no código fuente.
+      "test-results/**",
+      "playwright-report/**",
+      ".playwright/**",
+    ],
   },
   js.configs.recommended,
   tseslint.configs.recommended,
@@ -20,6 +28,15 @@ export default tseslint.config(
     files: ["worker/**/*.ts", "test/**/*.ts"],
     languageOptions: {
       globals: globals.worker,
+    },
+  },
+  {
+    // Las pruebas de Playwright corren en Node, pero los cuerpos de
+    // `page.evaluate` se evalúan en el navegador: en un mismo archivo
+    // conviven los dos juegos de globales.
+    files: ["e2e/**/*.ts"],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
     },
   },
   {

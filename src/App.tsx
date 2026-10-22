@@ -1,87 +1,43 @@
+/**
+ * Raíz de la SPA: resuelve la ruta y la monta dentro del armazón.
+ *
+ * El ruteo es deliberadamente mínimo —`location.pathname` y un `switch`— y no
+ * una librería. Hoy hay dos rutas y ninguna lleva parámetros; traer un router
+ * ahora sería elegir su modelo de datos antes de saber qué pantallas van a
+ * existir. T-5 en adelante dirán si hace falta.
+ *
+ * El Worker ya manda todo lo que no sea `/api/*` al `index.html`
+ * (`not_found_handling: "single-page-application"` en `wrangler.jsonc`), así
+ * que una ruta profunda abierta en frío llega hasta acá.
+ */
 import { useEffect, useState } from "react";
 
-import type { HealthReport, IdentidadActual } from "../worker/contract";
+import { Esqueleto } from "./layout/Esqueleto";
+import { BancoDePruebas } from "./pantallas/BancoDePruebas";
+import { Inicio } from "./pantallas/Inicio";
 
-type HealthState =
-  | { kind: "loading" }
-  | { kind: "ready"; report: HealthReport }
-  | { kind: "error"; message: string };
-
-type IdentityState =
-  | { kind: "loading" }
-  | { kind: "ready"; identity: IdentidadActual }
-  | { kind: "denied" };
+function rutaActual(): string {
+  return window.location.pathname;
+}
 
 export function App() {
-  const [health, setHealth] = useState<HealthState>({ kind: "loading" });
-  const [identity, setIdentity] = useState<IdentityState>({ kind: "loading" });
+  const [ruta, setRuta] = useState(rutaActual);
 
   useEffect(() => {
-    const controller = new AbortController();
+    // Sin esto, el botón de atrás del navegador deja la pantalla vieja.
+    const alNavegar = () => {
+      setRuta(rutaActual());
+    };
 
-    // Who got in. The screen itself is T-4; this is only the one line that
-    // shows the resolved identity, so the gate is visible from the browser.
-    fetch("/api/yo", { signal: controller.signal })
-      .then(async (response) =>
-        response.status === 200
-          ? ({
-              kind: "ready",
-              identity: (await response.json()) as IdentidadActual,
-            } as const)
-          : ({ kind: "denied" } as const),
-      )
-      .then(setIdentity)
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        setIdentity({ kind: "denied" });
-      });
-
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    fetch("/api/health", { signal: controller.signal })
-      .then((response) => {
-        // 503 is a valid, meaningful answer here: the service reports itself
-        // degraded and the body still carries the report. Anything else is a
-        // transport or routing failure and must not be parsed as a report.
-        if (response.status !== 200 && response.status !== 503) {
-          throw new Error(`respuesta inesperada: HTTP ${String(response.status)}`);
-        }
-        return response.json() as Promise<HealthReport>;
-      })
-      .then((report) => setHealth({ kind: "ready", report }))
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setHealth({
-          kind: "error",
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
-
-    return () => controller.abort();
+    window.addEventListener("popstate", alNavegar);
+    return () => {
+      window.removeEventListener("popstate", alNavegar);
+    };
   }, []);
 
   return (
-    <main>
-      <h1>Bufete</h1>
-      {identity.kind === "ready" && <p>Entró {identity.identity.nombre}.</p>}
-      {identity.kind === "denied" && <p>Sin identidad reconocida.</p>}
-      <h2>Estado del sistema</h2>
-      {health.kind === "loading" && <p>Consultando…</p>}
-      {health.kind === "error" && <p>No se pudo consultar: {health.message}</p>}
-      {health.kind === "ready" && (
-        <dl>
-          <dt>Servicio</dt>
-          <dd>{health.report.status}</dd>
-          <dt>D1</dt>
-          <dd>{health.report.d1}</dd>
-          <dt>Momento</dt>
-          <dd>{health.report.timestamp}</dd>
-        </dl>
-      )}
-    </main>
+    <Esqueleto ruta={ruta}>
+      {ruta === "/banco-de-pruebas" ? <BancoDePruebas /> : <Inicio />}
+    </Esqueleto>
   );
 }

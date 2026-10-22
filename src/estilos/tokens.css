@@ -1,0 +1,85 @@
+/**
+ * Tokens de diseño: color, espaciado, tipografía y radios.
+ *
+ * Un solo esquema, sobrio. No hay modo oscuro ni temas: el bufete no lo pidió
+ * y un segundo esquema duplica la superficie que hay que mantener y probar.
+ *
+ * Lo que acá NO hay es ancho fijo (`docs/diseno.md` §9). Las únicas medidas
+ * de layout son **topes y mínimos** —`--tope-*`, `--lateral-min/max`— y la
+ * única medida verdaderamente fija, `--tamano-icono`, es la excepción que §9
+ * declara: un ícono sí tiene un tamaño propio.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---------- Color ---------- */
+  /* Papel, no blanco puro: una pantalla de texto todo el día cansa menos. */
+  --color-fondo: #f6f5f2;
+  --color-superficie: #ffffff;
+  --color-superficie-tenue: #efece6;
+  --color-borde: #dedad1;
+  --color-borde-fuerte: #bdb7aa;
+  --color-tinta: #1d1b17;
+  --color-tinta-apagada: #605a50;
+  --color-acento: #6b4f1f;
+  --color-acento-tenue: #efe6d4;
+  --color-foco: #2f6f9e;
+
+  /* ---------- Espaciado ---------- */
+  /* Los tres escalones grandes son fluidos: el aire crece con la pantalla,
+     y así no hacen falta breakpoints para que no se vea apretado. */
+  --espacio-3xs: 0.25rem;
+  --espacio-2xs: 0.375rem;
+  --espacio-xs: 0.5rem;
+  --espacio-s: 0.75rem;
+  --espacio-m: 1rem;
+  --espacio-l: clamp(1.25rem, 1.1rem + 0.6vw, 1.75rem);
+  --espacio-xl: clamp(1.5rem, 1.1rem + 1.6vw, 2.75rem);
+  --espacio-2xl: clamp(2rem, 1.25rem + 3vw, 4.5rem);
+
+  /* ---------- Tipografía ---------- */
+  --fuente-texto:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --fuente-mono:
+    ui-monospace, "SFMono-Regular", "JetBrains Mono", "Cascadia Mono", Menlo,
+    Consolas, monospace;
+
+  --texto-xs: 0.78rem;
+  --texto-s: 0.875rem;
+  --texto-m: 1rem;
+  --texto-l: clamp(1.05rem, 1rem + 0.25vw, 1.2rem);
+  --texto-xl: clamp(1.2rem, 1.08rem + 0.6vw, 1.55rem);
+  --texto-2xl: clamp(1.5rem, 1.25rem + 1.2vw, 2.25rem);
+
+  --linea-ajustada: 1.22;
+  --linea-normal: 1.55;
+  --peso-normal: 400;
+  --peso-medio: 550;
+  --peso-fuerte: 650;
+
+  /* ---------- Radios y bordes ---------- */
+  --radio-s: 0.25rem;
+  --radio-m: 0.5rem;
+  --radio-l: 0.875rem;
+  --radio-pildora: 999rem;
+  --borde-fino: 1px solid var(--color-borde);
+
+  /* ---------- Medidas de layout: topes y mínimos, nunca anchos ---------- */
+  /* Tope de la columna de contenido. Más allá de esto el ojo se pierde
+     recorriendo de un borde al otro de un monitor de 2560px. */
+  --tope-contenido: 82rem;
+  /* La barra lateral se mueve entre estos dos; el grid elige dentro del
+     rango con `minmax()`. Ninguno de los dos es un ancho impuesto. */
+  --lateral-min: 11rem;
+  --lateral-max: 17rem;
+  /* Único punto de cambio del armazón, y se consulta sobre el contenedor,
+     no sobre el viewport. */
+  --umbral-lateral: 48rem;
+  /* Tope por defecto de una columna de prosa, en caracteres (§9). */
+  --prosa-tope: 68ch;
+
+  /* La excepción declarada de §9: un ícono tiene tamaño propio. */
+  --tamano-icono: 1.5rem;
+}

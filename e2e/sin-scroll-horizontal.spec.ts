@@ -1,0 +1,197 @@
+/**
+ * El criterio de T-4: la página no scrollea en horizontal en ningún ancho
+ * entre 320px y 2560px.
+ *
+ * La trampa de este criterio es que **una página vacía nunca scrollea**. Si
+ * esta prueba recorriera viewports sobre una pantalla con un título y dos
+ * párrafos, pasaría siempre y no probaría nada. Por eso corre sobre
+ * `/banco-de-pruebas`, la ruta que junta a propósito el contenido que rompe
+ * un layout mal hecho: una tabla de nueve columnas, una URL sin puntos de
+ * corte y una rejilla de tarjetas.
+ *
+ * Y por eso el primer `test` de este archivo no mira el layout: verifica que
+ * el banco de pruebas **siga siendo hostil**. El día que alguien le acorte el
+ * texto a la tabla "para que se vea mejor", el criterio se vuelve vacuo sin
+ * que nadie se entere; esa prueba es la que avisa.
+ */
+import { expect, test, type Page } from "@playwright/test";
+
+const BANCO = "/banco-de-pruebas";
+
+/**
+ * Los extremos del criterio (320 y 2560) y, en el medio, los anchos donde un
+ * layout suele quebrarse: el celular más angosto que todavía se usa, los
+ * celulares corrientes, la tableta en vertical y en horizontal, el portátil,
+ * y los dos saltos a escritorio grande. Se incluyen también 1px por debajo y
+ * por encima del único punto de cambio del armazón (48rem = 768px), que es
+ * donde la navegación pasa de apilada a columna lateral: un cambio de layout
+ * sin prueba a ambos lados del umbral es un cambio sin probar.
+ */
+const ANCHOS = [
+  320, 360, 390, 414, 480, 600, 767, 768, 769, 834, 1024, 1180, 1280, 1440,
+  1600, 1920, 2560,
+] as const;
+
+const ALTO = 900;
+
+type Desborde = {
+  readonly scrollWidth: number;
+  readonly clientWidth: number;
+  readonly culpables: readonly string[];
+};
+
+/**
+ * Además de la medición del criterio, devuelve qué elementos se salen del
+ * ancho del documento. Sin eso, una falla dice "1347 > 320" y deja al
+ * siguiente buscando a mano cuál de doscientos nodos fue.
+ */
+async function medirDesborde(page: Page): Promise<Desborde> {
+  return page.evaluate(() => {
+    const raiz = document.documentElement;
+    const limite = raiz.clientWidth;
+
+    const culpables: string[] = [];
+    for (const elemento of Array.from(document.body.querySelectorAll("*"))) {
+      const caja = elemento.getBoundingClientRect();
+      if (caja.width === 0 && caja.height === 0) continue;
+      if (caja.right <= limite + 0.5 && caja.left >= -0.5) continue;
+
+      const clases =
+        typeof elemento.className === "string" && elemento.className !== ""
+          ? `.${elemento.className.trim().split(/\s+/).join(".")}`
+          : "";
+      culpables.push(
+        `${elemento.tagName.toLowerCase()}${clases} ` +
+          `[left=${String(Math.round(caja.left))} right=${String(Math.round(caja.right))}]`,
+      );
+      if (culpables.length === 8) break;
+    }
+
+    return {
+      scrollWidth: raiz.scrollWidth,
+      clientWidth: limite,
+      culpables,
+    };
+  });
+}
+
+test.describe("la página no scrollea en horizontal", () => {
+  test("el banco de pruebas sigue siendo contenido hostil", async ({
+    page,
+  }) => {
+    await page.goto(BANCO);
+
+    // Una tabla ancha de verdad: con menos columnas, o con celdas cortas,
+    // cabría a 320px y el criterio dejaría de medir algo.
+    const columnas = await page.locator("table thead th").count();
+    expect(columnas, "la tabla del banco necesita muchas columnas").toBeGreaterThanOrEqual(9);
+
+    const celdaMasLarga = await page
+      .locator("table tbody tr")
+      .first()
+      .evaluate((fila) =>
+        Math.max(
+          ...Array.from(fila.children, (celda) =>
+            (celda.textContent ?? "").trim().length,
+          ),
+        ),
+      );
+    expect(
+      celdaMasLarga,
+      "las celdas tienen que llevar texto de dominio largo",
+    ).toBeGreaterThanOrEqual(60);
+
+    // Una palabra sin puntos de corte: lo que desborda un contenedor al que
+    // le falta `overflow-wrap`.
+    const tokenMasLargo = await page.evaluate(() =>
+      Math.max(
+        ...(document.body.innerText.split(/\s+/).map((t) => t.length) || [0]),
+      ),
+    );
+    expect(
+      tokenMasLargo,
+      "hace falta una URL o palabra larga sin espacios",
+    ).toBeGreaterThanOrEqual(60);
+
+    // Suficientes tarjetas para que la rejilla tenga algo que reacomodar.
+    const tarjetas = await page.locator(".rejilla .tarjeta").count();
+    expect(tarjetas, "la rejilla necesita varias tarjetas").toBeGreaterThanOrEqual(9);
+
+    // Y al menos una rejilla cuyo mínimo de columna sea MAYOR que la columna
+    // de contenido a 320px. Sin ella, quitarle el `min(…, 100%)` a `.rejilla`
+    // no rompe ninguna prueba: se comprobó por mutación y pasaba igual,
+    // porque 18rem todavía entraban. Un mínimo que no entra es lo que hace
+    // que esa regla sea verificable.
+    const minimoMasGrande = await page.evaluate(() =>
+      Math.max(
+        ...Array.from(document.querySelectorAll<HTMLElement>(".rejilla"), (r) =>
+          Number.parseFloat(
+            r.style.getPropertyValue("--rejilla-minimo").replace("rem", ""),
+          ),
+        ).filter((n) => !Number.isNaN(n)),
+        0,
+      ),
+    );
+    expect(
+      minimoMasGrande,
+      "hace falta una rejilla con un mínimo de columna que no entre a 320px",
+    ).toBeGreaterThanOrEqual(22);
+  });
+
+  for (const ancho of ANCHOS) {
+    test(`a ${String(ancho)}px de ancho, sobre el banco de pruebas`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: ancho, height: ALTO });
+      await page.goto(BANCO);
+      // Las fuentes cambian las métricas del texto; medir antes de que
+      // carguen mide otro layout.
+      await page.evaluate(() => document.fonts.ready);
+
+      const { scrollWidth, clientWidth, culpables } = await medirDesborde(page);
+
+      expect(
+        scrollWidth,
+        `el documento se sale a ${String(ancho)}px. Se salen del ancho: ` +
+          (culpables.length > 0 ? culpables.join(" | ") : "(ninguno medible)"),
+      ).toBeLessThanOrEqual(clientWidth);
+    });
+  }
+
+  for (const ancho of [320, 768, 2560] as const) {
+    test(`a ${String(ancho)}px de ancho, sobre el inicio`, async ({ page }) => {
+      await page.setViewportSize({ width: ancho, height: ALTO });
+      await page.goto("/");
+      await page.evaluate(() => document.fonts.ready);
+
+      const { scrollWidth, clientWidth, culpables } = await medirDesborde(page);
+
+      expect(
+        scrollWidth,
+        `el documento se sale a ${String(ancho)}px. Se salen del ancho: ` +
+          (culpables.length > 0 ? culpables.join(" | ") : "(ninguno medible)"),
+      ).toBeLessThanOrEqual(clientWidth);
+    });
+  }
+
+  test("la tabla scrollea dentro de su contenedor, no en la página", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: ALTO });
+    await page.goto(BANCO);
+    await page.evaluate(() => document.fonts.ready);
+
+    // La otra mitad de §9: que la página no scrollee es la mitad buena solo
+    // si la tabla sigue siendo alcanzable. Una tabla "arreglada" con
+    // `overflow: hidden` también pasaría el criterio y escondería datos.
+    const contenedor = page.locator(".tabla-contenedor").first();
+    const medidas = await contenedor.evaluate((nodo) => ({
+      scrollWidth: nodo.scrollWidth,
+      clientWidth: nodo.clientWidth,
+      overflowX: getComputedStyle(nodo).overflowX,
+    }));
+
+    expect(medidas.scrollWidth).toBeGreaterThan(medidas.clientWidth);
+    expect(medidas.overflowX).toBe("auto");
+  });
+});

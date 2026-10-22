@@ -119,7 +119,7 @@ se renumera.
       *Criterio: una petición sin identidad válida no llega al dominio. Ruta: delegada.
       Forecast ~200.*
 
-- [ ] **T-4 · Base visual responsiva.** Tokens, esqueleto de página en grid, componentes de
+- [x] **T-4 · Base visual responsiva.** Tokens, esqueleto de página en grid, componentes de
       layout, consultas de contenedor, tope de ancho en `ch` para prosa, contenedor de tabla con
       scroll propio. Sin un solo ancho fijo que no sea de un ícono.
       *Criterio: la página no scrollea en horizontal en ningún ancho entre 320px y 2560px,
@@ -218,6 +218,7 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
+| T-4 | (este commit) | Rojo observado: 10 fallas de e2e sin hoja de estilos. Final: typecheck 0 · test 0 (122/122) · lint 0 · build 0 · **e2e 0 (22/22)**. Verificación del orquestador: los cinco códigos de salida, más la reproducción propia de la mutación B. | Pendiente de evaluar |
 | T-3 | `4a9118f` | Rojo observado: 26 fallas por `manejar is not a function`. Final: typecheck 0 · test **122/122**, exit 0 · lint 0. Verificación del orquestador: los tres códigos de salida, inspección propia del bundle, y pruebas de mutación sobre la compuerta de artefacto y sobre la cobertura de `origenRemoto`. | **Aprobada y acusada** tras TRES rondas de corrección. Lineajes `review-4dbfcc0616c91689` → `review-6a5f14d2c564cb45` → `review-155e9995d4c99a7e`, autoridad quemada. 4 hallazgos CRÍTICOS, los 4 reales, los 4 corregidos. |
 | T-2 | `eb08588` + `5486347` | Rojo observado primero: 59 fallas por `no such table`. Después: `pnpm typecheck` verde · `pnpm test` **64/64 en verde** · `pnpm lint` verde. Verificación del orquestador: los tres recorridos, más una prueba de mutación propia que confirmó que las pruebas de rechazo muerden. | Concedida y acusada. Lineaje `review-3469d152112ea53a`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 6 hallazgos informativos, los 6 reales, los 6 corregidos. |
 
@@ -326,6 +327,40 @@ revisar. El validador dirigido falló una vez con `provider_capture_result_refus
 proveedor, no del código: `mutation_outcome: not_started`— y se recuperó relanzando el mismo slot
 reofrecido, que es la vía documentada.
 
+**T-4** dejó la base visual y, con ella, el hallazgo más instructivo de la tajada.
+
+El escritor verificó su propia prueba por mutación y descubrió que **era vacua**. Al quitarle el
+`min(…, 100%)` de adentro del `minmax()` de la rejilla —la regla que evita que una columna fuerce
+scroll horizontal— las 22 pruebas seguían pasando. La causa: el mínimo más grande del banco era
+`18rem` = 288px, y la columna de contenido a 320px mide exactamente 288px. **La regla defensiva
+nunca llegaba a actuar.** Agregó una rejilla de mínimo `24rem`, que a 320px no entra, y una
+aserción que exige que el banco contenga una rejilla con mínimo ≥22rem. Con eso la mutación mata
+3 pruebas. El orquestador la reprodujo por separado: 19 de 22, exit 1.
+
+**Una regla defensiva solo está probada si el contenido la fuerza a actuar.** Es la misma lección
+que vienen dando las tres revisiones de T-3, en otra forma.
+
+Decisiones de T-4 que quedan asentadas:
+
+- **El banco de pruebas se defiende solo.** Hay un test que verifica que siga siendo hostil: ≥9
+  columnas, celdas de ≥60 caracteres, un token sin espacios de ≥60, ≥9 tarjetas y una rejilla con
+  mínimo ≥22rem. El día que alguien acorte el texto "para que se vea mejor", el criterio no se
+  vuelve vacuo en silencio.
+- **Nada de `overflow-x: hidden` en `html`/`body`.** Haría pasar el criterio escondiendo el
+  defecto y dejando contenido inalcanzable. Está escrito como comentario en `base.css` para que
+  nadie lo "arregle" así.
+- **Un solo punto de cambio en todo el sistema** (48rem), y es consulta de contenedor, no
+  `@media`. Los viewports 767/768/769 se prueban a ambos lados del umbral.
+- **Sin router.** Dos rutas, ninguna con parámetros: `location.pathname` más un `switch`, con
+  `popstate` para que el botón de atrás funcione. Traer una librería ahora es elegir su modelo de
+  datos antes de saber qué pantallas van a existir.
+- El contenedor de consulta del armazón vive en `#root` y no en `.esqueleto`, porque un elemento
+  no puede consultarse a sí mismo.
+
+Diferido con razón: **la lógica de `Inicio` sigue sin prueba unitaria.** T-4 cubrió el layout de
+punta a punta, que era su alcance. La cobertura de `src/` que T-1 había diferido acá pasa a T-5,
+que es cuando aparece la primera pantalla con lógica propia.
+
 ### Pasos de tablero pendientes de un humano
 
 Access no se configura desde acá. Falta, en Cloudflare Zero Trust: crear la aplicación self-hosted
@@ -349,4 +384,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-4: base visual responsiva, con la prueba de Playwright que recorre viewports.
+T-5: clientes, con alta mínima de nombre y un contacto.

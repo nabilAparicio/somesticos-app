@@ -9,3 +9,8 @@ dist/
 # Generado por `pnpm cf-typegen` (y por postinstall). 16k lineas que no
 # aportan historia revisable y harian imposible revisar cualquier commit.
 worker/worker-configuration.d.ts
+
+# Artefactos de Playwright (`pnpm test:e2e`).
+test-results/
+playwright-report/
+.playwright/
