@@ -1,7 +1,11 @@
 node_modules/
 dist/
 .wrangler/
-.dev.vars
+.dev.vars*
 *.local
 .DS_Store
 .atl/
+
+# Generado por `pnpm cf-typegen` (y por postinstall). 16k lineas que no
+# aportan historia revisable y harian imposible revisar cualquier commit.
+worker/worker-configuration.d.ts

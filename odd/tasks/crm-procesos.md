@@ -97,7 +97,7 @@ Cada tarea cierra con al menos un commit de unidad de trabajo en la rama de la f
 con sus pruebas y documentación al lado, en Conventional Commits. El identificador es estable: no
 se renumera.
 
-- [ ] **T-1 · Esqueleto Workers + D1.** `wrangler.jsonc` con binding de D1, Worker de entrada,
+- [x] **T-1 · Esqueleto Workers + D1.** `wrangler.jsonc` con binding de D1, Worker de entrada,
       SPA con Vite, configuración de Vitest con `cloudflareTest()`, y un endpoint de salud con su
       prueba. **Incluye el linter y el typecheck**: los tres comandos de §Verificación existen y
       corren desde esta tarea, o el resto del plan exige algo que nadie instaló.
@@ -217,7 +217,23 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 | Tarea | Commit | Checks observados | Revisión |
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
-| T-1 | — | — | — |
+| T-1 | (ver abajo) | `pnpm install` verde · `pnpm typecheck` verde · `pnpm test` **3/3 en verde** (vitest 4.1.12) · `pnpm lint` verde, 9 archivos. Verificación del orquestador: `pnpm test` recorrido de nuevo, 3/3. | Pendiente de evaluar |
+
+Versiones fijadas en T-1: `vitest` 4.1.12, `@cloudflare/vitest-plugin` 1.4.7, `wrangler` 4.152.0,
+`vite` 8.3.5, `react` 19.3.1, `typescript` 5.9.3, `eslint` 10.13.0.
+
+**`worker/worker-configuration.d.ts` no se versiona.** Son 16.268 líneas que genera
+`wrangler types`. Se regenera byte por byte idéntico (verificado), así que no aporta ninguna
+historia revisable, y en cambio hacía que el candidato de T-1 excediera el presupuesto de
+contexto de la lente: la revisión se volvía imposible, no difícil. Está en `.gitignore` y lo
+produce un `postinstall`, así que un clon limpio lo tiene antes del primer `typecheck`.
+
+### Cabos sueltos conocidos
+
+- **`database_id` en `wrangler.jsonc` es un placeholder** (`00000000-…`). No hay base D1
+  provisionada; Miniflare lo ignora en local y las pruebas pasan igual. Hay que reemplazarlo por
+  el identificador real antes del primer despliegue, y mientras tanto nada que dependa de D1
+  remota funciona.
 
 Los siete hallazgos de esa revisión se verificaron uno por uno, resultaron todos reales y se
 corrigieron en el commit siguiente: I-3 no expresable en esta tajada, I-8 sin `tenant_id` en las
@@ -227,4 +243,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-1: esqueleto Workers + D1 con los tres comandos de verificación funcionando.
+T-2: esquema inicial y migración, con una prueba de rechazo por cada invariante implementada.

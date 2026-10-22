@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "app-cotizador",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-10-19",
+  "observability": {
+    "enabled": true
+  },
+  // The SPA is served by this Worker through Workers Static Assets.
+  // `directory` is intentionally omitted: the Cloudflare Vite plugin points it
+  // at the client build output. `run_worker_first` makes the API take priority
+  // over the single-page-application fallback.
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "app-cotizador",
+      // Placeholder: no remote database has been provisioned yet. Local
+      // development and tests use Miniflare's local D1, which ignores this id.
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}
