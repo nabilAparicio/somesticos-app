@@ -218,7 +218,7 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-4 | (este commit) | Rojo observado: 10 fallas de e2e sin hoja de estilos. Final: typecheck 0 · test 0 (122/122) · lint 0 · build 0 · **e2e 0 (22/22)**. Verificación del orquestador: los cinco códigos de salida, más la reproducción propia de la mutación B. | Pendiente de evaluar |
+| T-4 | `3893ccb` | Rojo observado: 10 fallas de e2e sin hoja de estilos. Final: typecheck 0 · test 0 (122/122) · lint 0 · build 0 · **e2e 0 (22/22)**. Verificación del orquestador: los cinco códigos de salida, más la reproducción propia de la mutación B. | **Escalada sin veredicto.** Lineaje `review-9705305831e89372`, riesgo alto, cuatro lentes. Ver abajo. |
 | T-3 | `4a9118f` | Rojo observado: 26 fallas por `manejar is not a function`. Final: typecheck 0 · test **122/122**, exit 0 · lint 0. Verificación del orquestador: los tres códigos de salida, inspección propia del bundle, y pruebas de mutación sobre la compuerta de artefacto y sobre la cobertura de `origenRemoto`. | **Aprobada y acusada** tras TRES rondas de corrección. Lineajes `review-4dbfcc0616c91689` → `review-6a5f14d2c564cb45` → `review-155e9995d4c99a7e`, autoridad quemada. 4 hallazgos CRÍTICOS, los 4 reales, los 4 corregidos. |
 | T-2 | `eb08588` + `5486347` | Rojo observado primero: 59 fallas por `no such table`. Después: `pnpm typecheck` verde · `pnpm test` **64/64 en verde** · `pnpm lint` verde. Verificación del orquestador: los tres recorridos, más una prueba de mutación propia que confirmó que las pruebas de rechazo muerden. | Concedida y acusada. Lineaje `review-3469d152112ea53a`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 6 hallazgos informativos, los 6 reales, los 6 corregidos. |
 
@@ -360,6 +360,33 @@ Decisiones de T-4 que quedan asentadas:
 Diferido con razón: **la lógica de `Inicio` sigue sin prueba unitaria.** T-4 cubrió el layout de
 punta a punta, que era su alcance. La cobertura de `src/` que T-1 había diferido acá pasa a T-5,
 que es cuando aparece la primera pantalla con lógica propia.
+
+### La revisión de T-4 escaló y quedó sin veredicto
+
+Primera revisión de cuatro lentes del proyecto (`risk`, `resilience`, `readability`,
+`reliability`). Las cuatro se admitieron. El resultado fue `state: escalated` y, al consultar la
+continuación, un `stop` con `native_stop_required` **sin transición ofrecida y sin exponer qué
+escaló**.
+
+`gentle-ai review inspect-authority` reporta el almacén sano: `complete: true`, `valid: true`, un
+borde de recuperación válido, cero anomalías, cero diagnósticos de entrada y `sanctioned_exits`
+vacío. No hay autoridad corrupta que reparar; sencillamente no hay camino de vuelta ni forma de
+leer los hallazgos.
+
+Consecuencias, declaradas para que nadie las descubra después:
+
+- **El código de T-4 no está en duda por esto.** Los cinco comandos pasan por código de salida y
+  la mutación de la rejilla se reprodujo de forma independiente. Una revisión nunca autorizó ni
+  bloqueó la entrega: eso siempre fue política ordinaria del repositorio.
+- **T-4 queda sin recibo de revisión.** No se finge uno. Si alguna vez hace falta, se pide una
+  revisión nueva sobre un candidato nuevo.
+- Se consultó al usuario si reportar el aparente defecto del proveedor. Eligió **continuar sin
+  reportar**, así que no se tocó GitHub. Tampoco se ejecutó la invocación de rechazo del
+  proveedor: el contrato manda fallar cerrado cuando el contexto de continuación es ambiguo, y
+  acá lo era, porque ese candidato ya había pasado el consentimiento.
+- Error propio que conviene no repetir: las cuatro lentes deben lanzarse **concurrentes y en el
+  orden del proveedor**. El primer intento perdió la cuarta por un bucle mal escrito y hubo que
+  relanzarla sola, bastante después. Se desconoce si el escalonamiento influyó en el escalado.
 
 ### Pasos de tablero pendientes de un humano
 
