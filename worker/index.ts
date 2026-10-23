@@ -133,11 +133,16 @@ export async function manejar(
   );
   if (clientes !== null) return clientes;
 
+  // Un solo servicio de catálogos para las dos rutas: desde T-11, guardar el
+  // plan de un proceso como plantilla escribe por el mismo puerto que la
+  // pantalla de catálogos, y no por una segunda copia.
+  const servicioDeCatalogos = dependencias.catalogos ?? catalogosSobreD1(env.DB);
+
   const catalogos = await rutasDeCatalogos(
     request,
     url,
     TENANT_UNICO_ID,
-    dependencias.catalogos ?? catalogosSobreD1(env.DB),
+    servicioDeCatalogos,
   );
   if (catalogos !== null) return catalogos;
 
@@ -146,6 +151,7 @@ export async function manejar(
     url,
     TENANT_UNICO_ID,
     dependencias.procesos ?? procesosSobreD1(env.DB),
+    servicioDeCatalogos,
   );
   if (procesos !== null) return procesos;
 

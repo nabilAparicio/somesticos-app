@@ -112,6 +112,7 @@ let tipoResidenciaId: string;
 let tipoSinPlantillaId: string;
 let tipoAjenoId: string;
 let procesoAjenoId: string;
+let areaAjenaId: string;
 
 function entorno(): Env {
   // Hermético: un `.dev.vars` local con `ACCESO_DEV_EMAIL` no puede decidir
@@ -250,7 +251,7 @@ beforeEach(async () => {
   tipoAjenoId = nuevoId();
   procesoAjenoId = nuevoId();
 
-  const areaAjenaId = nuevoId();
+  areaAjenaId = nuevoId();
 
   await env.DB.batch([
     env.DB.prepare("INSERT INTO tenant (id, nombre) VALUES (?, ?)").bind(
@@ -1189,5 +1190,612 @@ describe("los métodos no permitidos se rechazan", () => {
 
     expect(respuesta.status).toBe(405);
     expect(respuesta.headers.get("allow")).toBe("PUT");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-11 · Guardar el plan de un proceso como plantilla
+//
+// El camino que el diseño señala como el más usado para crear una plantilla:
+// se abre un proceso, se le acomodan los pasos sobre la marcha, y cuando
+// queda bien se guarda (`docs/diseno.md` §6, «Etapas: plantilla y plan de
+// trabajo»).
+//
+// Las tres propiedades que esta sección existe para fijar:
+//
+//  1. **Se copian TODAS las etapas, en su orden actual.** Cumplidas y
+//     pendientes por igual: una plantilla es un plan, y en un plan no hay
+//     nada «ya hecho». `alcanzada_en` no viaja porque la tabla de plantilla
+//     no tiene esa columna, y una prueba vigila que no la tenga.
+//  2. **Guardar la plantilla no toca ningún proceso abierto**, ni siquiera
+//     el de origen. Es la misma propiedad de siempre, pero éste es el punto
+//     donde más gente va a suponer lo contrario.
+//  3. **Un tipo nuevo no reasigna el proceso de origen.** La decisión de
+//     T-11, probada por relectura: el proceso sigue apuntando a su tipo
+//     viejo.
+// ---------------------------------------------------------------------------
+
+interface TipoEnElCable {
+  id: string;
+  areaId: string;
+  areaNombre: string | null;
+  nombre: string;
+  descripcion: string | null;
+  activo: boolean;
+}
+
+interface PlantillaGuardadaEnElCable {
+  tipo: TipoEnElCable;
+  etapas: { id: string; nombre: string; orden: number }[];
+}
+
+function guardarComoPlantilla(
+  procesoId: string,
+  cuerpo: unknown,
+): Promise<Response> {
+  return comoAutor(
+    conCuerpo(`/api/procesos/${procesoId}/plantilla`, "POST", cuerpo),
+  );
+}
+
+/** La plantilla releída por la API de T-6, con su orden. */
+async function plantillaCompletaDe(
+  tipoId: string,
+): Promise<{ nombre: string; orden: number }[]> {
+  const respuesta = await comoAutor(
+    peticion(`/api/tipos-proceso/${tipoId}/etapas`),
+  );
+  expect(respuesta.status).toBe(200);
+  return (
+    (await respuesta.json()) as {
+      etapas: { nombre: string; orden: number }[];
+    }
+  ).etapas.map((etapa) => ({ nombre: etapa.nombre, orden: etapa.orden }));
+}
+
+async function cuantosTipos(tenantId: string): Promise<number> {
+  const fila = await env.DB.prepare(
+    "SELECT count(*) AS n FROM tipo_proceso WHERE tenant_id = ?",
+  )
+    .bind(tenantId)
+    .first<{ n: number }>();
+  return fila?.n ?? 0;
+}
+
+async function cuantasEtapasDePlantilla(tipoId: string): Promise<number> {
+  const fila = await env.DB.prepare(
+    "SELECT count(*) AS n FROM etapa_plantilla WHERE tipo_proceso_id = ?",
+  )
+    .bind(tipoId)
+    .first<{ n: number }>();
+  return fila?.n ?? 0;
+}
+
+describe("guardar el plan de un proceso como plantilla rechaza lo que no puede guardar", () => {
+  it("rechaza guardar desde un proceso de OTRO TENANT", async () => {
+    const respuesta = await guardarComoPlantilla(procesoAjenoId, {
+      destino: "actualizar",
+    });
+
+    expect(respuesta.status).toBe(404);
+    // Y no escribió: la plantilla del vecino sigue vacía.
+    expect(await cuantasEtapasDePlantilla(tipoAjenoId)).toBe(0);
+  });
+
+  it("rechaza actualizar la plantilla de un TIPO DE PROCESO de otro tenant", async () => {
+    // Una fila cruzada a mano: la llave foránea de `proceso.tipo_proceso_id`
+    // no lleva el tenant, así que esto es expresable en la base y tiene que
+    // ser inexpresable por la API. Sin el filtro de tenencia en el destino,
+    // guardar acá escribiría en la plantilla del bufete vecino.
+    const procesoCruzadoId = nuevoId();
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO proceso (id, tenant_id, cliente_id, tipo_proceso_id," +
+          " origen, titulo, estado, abierto_en)" +
+          " VALUES (?, ?, ?, ?, 'directo', ?, 'abierto', ?)",
+      ).bind(
+        procesoCruzadoId,
+        TENANT_UNICO_ID,
+        clienteId,
+        tipoAjenoId,
+        "Proceso con el tipo del vecino",
+        new Date().toISOString(),
+      ),
+      env.DB.prepare(
+        "INSERT INTO proceso_etapa (id, tenant_id, proceso_id, nombre, orden)" +
+          " VALUES (?, ?, ?, ?, 0)",
+      ).bind(nuevoId(), TENANT_UNICO_ID, procesoCruzadoId, "Un paso nuestro"),
+    ]);
+
+    const respuesta = await guardarComoPlantilla(procesoCruzadoId, {
+      destino: "actualizar",
+    });
+
+    expect(respuesta.status).toBe(404);
+    expect(await cuantasEtapasDePlantilla(tipoAjenoId)).toBe(0);
+  });
+
+  it("rechaza crear un tipo nuevo SIN NOMBRE", async () => {
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "nuevo",
+      areaId,
+      nombre: "   ",
+    });
+
+    expect(respuesta.status).toBe(422);
+    expect(await fallasDe(respuesta)).toContain("nombre_requerido");
+    // Y no se creó nada: siguen los dos tipos de la preparación.
+    expect(await cuantosTipos(TENANT_UNICO_ID)).toBe(2);
+  });
+
+  it("rechaza crear un tipo nuevo SIN ÁREA", async () => {
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "nuevo",
+      nombre: "Residencia por matrimonio, versión corta",
+    });
+
+    expect(respuesta.status).toBe(422);
+    expect(await fallasDe(respuesta)).toContain("area_requerida");
+    expect(await cuantosTipos(TENANT_UNICO_ID)).toBe(2);
+  });
+
+  it("rechaza crear un tipo nuevo en un ÁREA DE OTRO TENANT", async () => {
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "nuevo",
+      areaId: areaAjenaId,
+      nombre: "Residencia por matrimonio, versión corta",
+    });
+
+    expect(respuesta.status).toBe(422);
+    expect(await fallasDe(respuesta)).toContain("area_desconocida");
+    expect(await cuantosTipos(TENANT_UNICO_ID)).toBe(2);
+    expect(await cuantosTipos(OTRO_TENANT_ID)).toBe(1);
+  });
+
+  it("rechaza crear un tipo nuevo en un ÁREA INEXISTENTE", async () => {
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "nuevo",
+      areaId: nuevoId(),
+      nombre: "Residencia por matrimonio, versión corta",
+    });
+
+    expect(respuesta.status).toBe(422);
+    expect(await fallasDe(respuesta)).toContain("area_desconocida");
+    expect(await cuantosTipos(TENANT_UNICO_ID)).toBe(2);
+  });
+
+  it("rechaza guardar desde un proceso SIN ETAPAS: no hay plan que guardar", async () => {
+    const proceso = await crearProceso({
+      clienteId,
+      tipoProcesoId: tipoSinPlantillaId,
+      titulo: "Consulta de una hora sobre un contrato",
+    });
+    expect((await releer(proceso.id)).etapas).toEqual([]);
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "actualizar",
+    });
+
+    expect(respuesta.status).toBe(422);
+    expect(await fallasDe(respuesta)).toContain("plan_vacio");
+    expect(await cuantasEtapasDePlantilla(tipoSinPlantillaId)).toBe(0);
+  });
+
+  it("rechaza un plan vacío también cuando el destino es un tipo nuevo", async () => {
+    const proceso = await crearProceso({
+      clienteId,
+      tipoProcesoId: tipoSinPlantillaId,
+      titulo: "Consulta de una hora sobre un contrato",
+    });
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "nuevo",
+      areaId,
+      nombre: "Consulta sin trámite",
+    });
+
+    expect(respuesta.status).toBe(422);
+    expect(await fallasDe(respuesta)).toContain("plan_vacio");
+    // El tipo nuevo tampoco se creó: el plan vacío se comprueba antes.
+    expect(await cuantosTipos(TENANT_UNICO_ID)).toBe(2);
+  });
+
+  it("rechaza un destino que no es ninguno de los dos", async () => {
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "sincronizar-todo",
+    });
+
+    expect(respuesta.status).toBe(422);
+    expect(await fallasDe(respuesta)).toContain("destino_invalido");
+  });
+
+  it("rechaza un cuerpo sin destino", async () => {
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {});
+
+    expect(respuesta.status).toBe(422);
+    expect(await fallasDe(respuesta)).toContain("destino_invalido");
+  });
+
+  it("rechaza un cuerpo que ni siquiera es JSON", async () => {
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await comoAutor(
+      peticion(`/api/procesos/${proceso.id}/plantilla`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{",
+      }),
+    );
+
+    expect(respuesta.status).toBe(400);
+  });
+
+  it("rechaza GET sobre la plantilla de un proceso: guardar es una escritura", async () => {
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await comoAutor(
+      peticion(`/api/procesos/${proceso.id}/plantilla`),
+    );
+
+    expect(respuesta.status).toBe(405);
+    expect(respuesta.headers.get("allow")).toBe("POST");
+  });
+
+  it("no pasa sin identidad de Access, y el dominio no se toca", async () => {
+    const usos: string[] = [];
+    const registrar = (metodo: string) => () => {
+      usos.push(metodo);
+      return Promise.reject(new Error(`no se debió llamar a ${metodo}`));
+    };
+
+    const procesos = Object.fromEntries(
+      ["listar", "obtener", "crear", "reemplazarEtapas", "avanzar"].map(
+        (metodo) => [metodo, registrar(metodo)],
+      ),
+    ) as unknown as ServicioDeProcesos;
+
+    const respuesta = await manejar(
+      conCuerpo(`/api/procesos/${nuevoId()}/plantilla`, "POST", {
+        destino: "nuevo",
+        areaId,
+        nombre: "Lo que sea",
+      }),
+      entorno(),
+      { correoDeDesarrollo: () => null, procesos },
+    );
+
+    expect(respuesta.status).toBe(403);
+    expect(usos, "el dominio se ejecutó sin identidad").toEqual([]);
+    expect(await cuantosTipos(TENANT_UNICO_ID)).toBe(2);
+  });
+});
+
+describe("la plantilla queda con los pasos del plan, en el mismo orden", () => {
+  it("copia el plan ajustado a mano sobre la plantilla del tipo", async () => {
+    const proceso = await procesoDeResidencia();
+
+    // El plan se ajusta a mano, que es de donde sale el valor de esta
+    // función: se quita un paso, se agrega otro, y se reordena.
+    const actual = (await releer(proceso.id)).etapas;
+    const ajustado = [
+      { id: actual[0].id, nombre: actual[0].nombre },
+      { id: actual[2].id, nombre: actual[2].nombre },
+      { id: actual[1].id, nombre: "Presentación ante Migración, con cita" },
+      { id: null, nombre: "Apostilla del acta de matrimonio" },
+    ];
+    expect((await guardarPlan(proceso.id, ajustado)).status).toBe(200);
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "actualizar",
+    });
+    expect(respuesta.status).toBe(200);
+
+    expect(await plantillaCompletaDe(tipoResidenciaId)).toEqual([
+      { nombre: PLAN_DE_RESIDENCIA[0], orden: 0 },
+      { nombre: PLAN_DE_RESIDENCIA[2], orden: 1 },
+      { nombre: "Presentación ante Migración, con cita", orden: 2 },
+      { nombre: "Apostilla del acta de matrimonio", orden: 3 },
+    ]);
+  });
+
+  it("copia TAMBIÉN las etapas cumplidas: una plantilla es un plan entero", async () => {
+    const proceso = await procesoDeResidencia();
+    expect((await avanzar(proceso.id)).status).toBe(200);
+    expect((await avanzar(proceso.id)).status).toBe(200);
+
+    // Dos cumplidas y dos pendientes, y la plantilla tiene que llevarse las
+    // cuatro: en un plan no hay nada «ya hecho».
+    const antes = (await releer(proceso.id)).etapas;
+    expect(antes.filter((e) => e.alcanzadaEn !== null)).toHaveLength(2);
+
+    expect(
+      (await guardarComoPlantilla(proceso.id, { destino: "actualizar" }))
+        .status,
+    ).toBe(200);
+
+    expect(
+      (await plantillaCompletaDe(tipoResidenciaId)).map((e) => e.nombre),
+    ).toEqual([...PLAN_DE_RESIDENCIA]);
+  });
+
+  it("reemplaza la plantilla: no acumula los pasos viejos", async () => {
+    const proceso = await procesoDeResidencia();
+    const actual = (await releer(proceso.id)).etapas;
+
+    // El plan se recorta a dos pasos. La plantilla tenía cuatro.
+    expect(
+      (
+        await guardarPlan(
+          proceso.id,
+          actual.slice(0, 2).map((e) => ({ id: e.id, nombre: e.nombre })),
+        )
+      ).status,
+    ).toBe(200);
+
+    expect(
+      (await guardarComoPlantilla(proceso.id, { destino: "actualizar" }))
+        .status,
+    ).toBe(200);
+
+    expect(await plantillaDe(tipoResidenciaId)).toEqual([
+      PLAN_DE_RESIDENCIA[0],
+      PLAN_DE_RESIDENCIA[1],
+    ]);
+  });
+
+  it("la respuesta trae el tipo y la plantilla ya guardada", async () => {
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "actualizar",
+    });
+    expect(respuesta.status).toBe(200);
+
+    const cuerpo = (await respuesta.json()) as PlantillaGuardadaEnElCable;
+    expect(cuerpo.tipo.id).toBe(tipoResidenciaId);
+    expect(cuerpo.etapas.map((e) => e.nombre)).toEqual([
+      ...PLAN_DE_RESIDENCIA,
+    ]);
+    expect(cuerpo.etapas.map((e) => e.orden)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("`alcanzada_en` no se copia: la tabla de plantilla no tiene esa columna", async () => {
+    const proceso = await procesoDeResidencia();
+    expect((await avanzar(proceso.id)).status).toBe(200);
+    expect(
+      (await guardarComoPlantilla(proceso.id, { destino: "actualizar" }))
+        .status,
+    ).toBe(200);
+
+    const { results } = await env.DB.prepare(
+      "SELECT name FROM pragma_table_info('etapa_plantilla')",
+    ).all<{ name: string }>();
+
+    expect(results.map((fila) => fila.name)).toEqual([
+      "id",
+      "tenant_id",
+      "tipo_proceso_id",
+      "nombre",
+      "orden",
+    ]);
+  });
+
+  it("las etapas de la plantilla son filas nuevas, no las del proceso", async () => {
+    const proceso = await procesoDeResidencia();
+    const delProceso = (await releer(proceso.id)).etapas.map((e) => e.id);
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "actualizar",
+    });
+    const cuerpo = (await respuesta.json()) as PlantillaGuardadaEnElCable;
+
+    for (const etapa of cuerpo.etapas) {
+      expect(delProceso).not.toContain(etapa.id);
+    }
+  });
+});
+
+describe("CRITERIO: guardar la plantilla no modifica ningún proceso abierto", () => {
+  it("el proceso de ORIGEN no cambió, ni su plan ni su tipo", async () => {
+    const proceso = await procesoDeResidencia();
+    expect((await avanzar(proceso.id)).status).toBe(200);
+
+    const antes = await releer(proceso.id);
+
+    expect(
+      (await guardarComoPlantilla(proceso.id, { destino: "actualizar" }))
+        .status,
+    ).toBe(200);
+
+    const despues = await releer(proceso.id);
+    expect(despues.etapas).toEqual(antes.etapas);
+    expect(despues.proceso.tipoProcesoId).toBe(antes.proceso.tipoProcesoId);
+    expect(despues.proceso.etapasCumplidas).toBe(1);
+    expect(despues.proceso.etapaVigente).toBe(PLAN_DE_RESIDENCIA[1]);
+  });
+
+  it("NINGÚN otro proceso abierto del mismo tipo cambió", async () => {
+    const origen = await procesoDeResidencia("Residencia de Marta Quintero");
+    const vecino = await crearProceso({
+      clienteId: otroClienteId,
+      tipoProcesoId: tipoResidenciaId,
+      titulo: "Residencia del socio de Inversiones del Istmo",
+    });
+
+    const vecinoAntes = await releer(vecino.id);
+
+    // El plan del origen se cambia de arriba abajo y después se guarda.
+    expect(
+      (
+        await guardarPlan(origen.id, [
+          { id: null, nombre: "Un plan completamente distinto" },
+          { id: null, nombre: "Con dos pasos y nada más" },
+        ])
+      ).status,
+    ).toBe(200);
+    expect(
+      (await guardarComoPlantilla(origen.id, { destino: "actualizar" }))
+        .status,
+    ).toBe(200);
+
+    const vecinoDespues = await releer(vecino.id);
+    expect(vecinoDespues.etapas).toEqual(vecinoAntes.etapas);
+    expect(await nombresDelPlan(vecino.id)).toEqual([...PLAN_DE_RESIDENCIA]);
+  });
+
+  it("un proceso abierto DESPUÉS sí nace con la plantilla nueva", async () => {
+    const origen = await procesoDeResidencia();
+    expect(
+      (
+        await guardarPlan(origen.id, [
+          { id: null, nombre: "Un plan completamente distinto" },
+          { id: null, nombre: "Con dos pasos y nada más" },
+        ])
+      ).status,
+    ).toBe(200);
+    expect(
+      (await guardarComoPlantilla(origen.id, { destino: "actualizar" }))
+        .status,
+    ).toBe(200);
+
+    const nuevo = await crearProceso({
+      clienteId: otroClienteId,
+      tipoProcesoId: tipoResidenciaId,
+      titulo: "Residencia abierta después de guardar la plantilla",
+    });
+
+    expect(await nombresDelPlan(nuevo.id)).toEqual([
+      "Un plan completamente distinto",
+      "Con dos pasos y nada más",
+    ]);
+  });
+});
+
+describe("guardar el plan como un TIPO DE PROCESO NUEVO", () => {
+  it("crea el tipo en el área pedida, vigente, con el plan como plantilla", async () => {
+    const proceso = await procesoDeResidencia();
+    expect((await avanzar(proceso.id)).status).toBe(200);
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "nuevo",
+      areaId,
+      nombre: "Residencia permanente por matrimonio, trámite acelerado",
+      descripcion: "La variante con cita previa en Migración.",
+    });
+
+    expect(respuesta.status).toBe(201);
+    const cuerpo = (await respuesta.json()) as PlantillaGuardadaEnElCable;
+    expect(respuesta.headers.get("location")).toBe(
+      `/api/tipos-proceso/${cuerpo.tipo.id}`,
+    );
+
+    expect(cuerpo.tipo.areaId).toBe(areaId);
+    expect(cuerpo.tipo.nombre).toBe(
+      "Residencia permanente por matrimonio, trámite acelerado",
+    );
+    expect(cuerpo.tipo.descripcion).toBe(
+      "La variante con cita previa en Migración.",
+    );
+    expect(cuerpo.tipo.activo).toBe(true);
+    expect(cuerpo.tipo.id).not.toBe(tipoResidenciaId);
+
+    // Releído por la API de catálogos, que es la prueba de que quedó escrito.
+    expect(
+      (await plantillaCompletaDe(cuerpo.tipo.id)).map((e) => e.nombre),
+    ).toEqual([...PLAN_DE_RESIDENCIA]);
+  });
+
+  it("DECISIÓN DE T-11: el proceso de origen sigue apuntando a su tipo viejo", async () => {
+    const proceso = await procesoDeResidencia();
+    const antes = await releer(proceso.id);
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "nuevo",
+      areaId,
+      nombre: "Residencia permanente por matrimonio, trámite acelerado",
+    });
+    expect(respuesta.status).toBe(201);
+    const creado = (await respuesta.json()) as PlantillaGuardadaEnElCable;
+
+    const despues = await releer(proceso.id);
+    expect(despues.proceso.tipoProcesoId).toBe(tipoResidenciaId);
+    expect(despues.proceso.tipoProcesoId).not.toBe(creado.tipo.id);
+    expect(despues.etapas).toEqual(antes.etapas);
+  });
+
+  it("no toca la plantilla del tipo viejo", async () => {
+    const proceso = await procesoDeResidencia();
+    const actual = (await releer(proceso.id)).etapas;
+    expect(
+      (
+        await guardarPlan(
+          proceso.id,
+          actual.slice(0, 1).map((e) => ({ id: e.id, nombre: e.nombre })),
+        )
+      ).status,
+    ).toBe(200);
+
+    expect(
+      (
+        await guardarComoPlantilla(proceso.id, {
+          destino: "nuevo",
+          areaId,
+          nombre: "Residencia express",
+        })
+      ).status,
+    ).toBe(201);
+
+    expect(await plantillaDe(tipoResidenciaId)).toEqual([
+      ...PLAN_DE_RESIDENCIA,
+    ]);
+  });
+
+  it("el tipo nuevo aparece en el catálogo y sirve para abrir un proceso", async () => {
+    const proceso = await procesoDeResidencia();
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "nuevo",
+      areaId,
+      nombre: "Residencia permanente, variante acelerada",
+    });
+    const creado = (await respuesta.json()) as PlantillaGuardadaEnElCable;
+
+    const listado = await comoAutor(peticion("/api/tipos-proceso"));
+    const tipos = ((await listado.json()) as { tipos: TipoEnElCable[] }).tipos;
+    expect(tipos.map((t) => t.id)).toContain(creado.tipo.id);
+
+    const abierto = await crearProceso({
+      clienteId: otroClienteId,
+      tipoProcesoId: creado.tipo.id,
+      titulo: "Residencia acelerada de un cliente nuevo",
+    });
+    expect(await nombresDelPlan(abierto.id)).toEqual([...PLAN_DE_RESIDENCIA]);
+  });
+
+  it("recorta el nombre y la descripción del tipo nuevo", async () => {
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "nuevo",
+      areaId,
+      nombre: "  Residencia express  ",
+      descripcion: "   ",
+    });
+
+    expect(respuesta.status).toBe(201);
+    const cuerpo = (await respuesta.json()) as PlantillaGuardadaEnElCable;
+    expect(cuerpo.tipo.nombre).toBe("Residencia express");
+    expect(cuerpo.tipo.descripcion).toBeNull();
   });
 });

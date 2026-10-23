@@ -39,6 +39,12 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   etapa_alcanzada_no_se_mueve:
     "Una etapa ya cumplida no se puede mover, y no se puede meter un paso" +
     " nuevo por delante de ella. Lo que falta se agrega después.",
+  destino_invalido:
+    "Hay que elegir si se actualiza la plantilla de este tipo de proceso o" +
+    " si se crea un tipo nuevo.",
+  plan_vacio:
+    "Este proceso no tiene plan todavía: no hay pasos que guardar como" +
+    " plantilla.",
 };
 
 export function mensajeDeFalla(motivo: MotivoDeFalla): string {

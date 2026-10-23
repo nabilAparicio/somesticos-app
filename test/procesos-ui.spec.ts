@@ -45,6 +45,14 @@ import {
   type PasoDelPlan,
 } from "../src/pantallas/procesos/plan";
 import {
+  AVISO_GUARDAR_NO_SINCRONIZA,
+  AVISO_TIPO_NUEVO_NO_REASIGNA,
+  BORRADOR_DE_GUARDADO_VACIO,
+  aPeticionDeGuardado,
+  resumenDelPlan,
+  validarGuardado,
+} from "../src/pantallas/procesos/plantilla";
+import {
   avanceDe,
   filtrarProcesos,
   ordenarProcesos,
@@ -55,6 +63,7 @@ import { enlaceDe, resolverRuta } from "../src/ruteo";
 const PROCESO_ID = "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f";
 const CLIENTE_ID = "11111111-2222-4333-8444-555555555555";
 const TIPO_ID = "66666666-7777-4888-8999-aaaaaaaaaaaa";
+const AREA_ID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
 
 const MOMENTO = "2026-10-20T14:30:00.000Z";
 
@@ -533,5 +542,130 @@ describe("las rutas de procesos", () => {
     expect(enlaceDe({ nombre: "proceso", id: "a b/c" })).toBe(
       "/procesos/a%20b%2Fc",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-11 · Guardar el plan como plantilla, desde la pantalla del proceso
+// ---------------------------------------------------------------------------
+
+describe("el borrador de «guardar como plantilla»", () => {
+  const CON_PLAN = 4;
+
+  it("con el destino «actualizar» no pide nada más", () => {
+    expect(
+      validarGuardado({ ...BORRADOR_DE_GUARDADO_VACIO }, CON_PLAN),
+    ).toEqual([]);
+  });
+
+  it("rechaza guardar un plan vacío: no hay plan que guardar", () => {
+    expect(
+      validarGuardado({ ...BORRADOR_DE_GUARDADO_VACIO }, 0).map(
+        (falla) => falla.motivo,
+      ),
+    ).toEqual(["plan_vacio"]);
+  });
+
+  it("un tipo nuevo exige nombre y área", () => {
+    const motivos = validarGuardado(
+      { ...BORRADOR_DE_GUARDADO_VACIO, destino: "nuevo" },
+      CON_PLAN,
+    ).map((falla) => falla.motivo);
+
+    expect(motivos).toContain("nombre_requerido");
+    expect(motivos).toContain("area_requerida");
+  });
+
+  it("un nombre de solo espacios no es un nombre", () => {
+    const motivos = validarGuardado(
+      {
+        destino: "nuevo",
+        areaId: AREA_ID,
+        nombre: "   ",
+        descripcion: "",
+      },
+      CON_PLAN,
+    ).map((falla) => falla.motivo);
+
+    expect(motivos).toEqual(["nombre_requerido"]);
+  });
+
+  it("acepta un tipo nuevo completo", () => {
+    expect(
+      validarGuardado(
+        {
+          destino: "nuevo",
+          areaId: AREA_ID,
+          nombre: "Residencia permanente, variante acelerada",
+          descripcion: "",
+        },
+        CON_PLAN,
+      ),
+    ).toEqual([]);
+  });
+
+  it("manda solo el destino cuando se actualiza la plantilla del tipo", () => {
+    expect(aPeticionDeGuardado({ ...BORRADOR_DE_GUARDADO_VACIO })).toEqual({
+      destino: "actualizar",
+    });
+  });
+
+  it("manda el área, el nombre y la descripción recortados para un tipo nuevo", () => {
+    expect(
+      aPeticionDeGuardado({
+        destino: "nuevo",
+        areaId: ` ${AREA_ID} `,
+        nombre: "  Residencia express  ",
+        descripcion: "  La variante con cita previa.  ",
+      }),
+    ).toEqual({
+      destino: "nuevo",
+      areaId: AREA_ID,
+      nombre: "Residencia express",
+      descripcion: "La variante con cita previa.",
+    });
+  });
+
+  it("una descripción en blanco viaja como nula, no como cadena vacía", () => {
+    expect(
+      aPeticionDeGuardado({
+        destino: "nuevo",
+        areaId: AREA_ID,
+        nombre: "Residencia express",
+        descripcion: "   ",
+      }),
+    ).toEqual({
+      destino: "nuevo",
+      areaId: AREA_ID,
+      nombre: "Residencia express",
+      descripcion: null,
+    });
+  });
+
+  it("dice cuántos pasos se guardan, contando los cumplidos", () => {
+    expect(resumenDelPlan(4, 2)).toBe(
+      "Se guardan los 4 pasos del plan, los 2 ya cumplidos incluidos.",
+    );
+    expect(resumenDelPlan(3, 0)).toBe("Se guardan los 3 pasos del plan.");
+    expect(resumenDelPlan(1, 0)).toBe("Se guarda el único paso del plan.");
+    expect(resumenDelPlan(0, 0)).toBe(
+      "Este proceso no tiene plan todavía: no hay nada que guardar.",
+    );
+  });
+});
+
+describe("los avisos de guardar como plantilla dicen lo que el diseño pide", () => {
+  it("avisa que guardar NO sincroniza los procesos ya abiertos, ni éste", () => {
+    // El punto donde más gente va a suponer lo contrario: acaba de ajustar
+    // un plan y lo está «guardando», así que es natural creer que eso lo
+    // sincroniza todo (`docs/diseno.md` §6).
+    expect(AVISO_GUARDAR_NO_SINCRONIZA).toMatch(/no cambia/i);
+    expect(AVISO_GUARDAR_NO_SINCRONIZA).toMatch(/procesos ya abiertos/i);
+    expect(AVISO_GUARDAR_NO_SINCRONIZA).toMatch(/ni siquiera éste/i);
+  });
+
+  it("avisa que un tipo nuevo no reasigna el proceso de origen", () => {
+    expect(AVISO_TIPO_NUEVO_NO_REASIGNA).toMatch(/sigue siendo/i);
+    expect(AVISO_TIPO_NUEVO_NO_REASIGNA).toMatch(/tipo/i);
   });
 });

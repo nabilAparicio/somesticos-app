@@ -25,6 +25,7 @@
 import { useEffect, useState } from "react";
 
 import type {
+  Area,
   DetalleDeProceso as Detalle,
   FallaDeValidacion,
 } from "../../../worker/contract";
@@ -37,12 +38,24 @@ import { Prosa } from "../../layout/Prosa";
 import { Rejilla } from "../../layout/Rejilla";
 import { mensajeDeFalla } from "../../mensajes";
 import { enlaceDe } from "../../ruteo";
+import { cargarAreas } from "../catalogos/api";
 import {
   avanzarEtapa,
   cargarProceso,
+  guardarComoPlantilla,
   guardarPlan,
   textoDeProblema,
 } from "./api";
+import { tipoSeleccionables } from "./formulario";
+import {
+  AVISO_GUARDAR_NO_SINCRONIZA,
+  AVISO_TIPO_NUEVO_NO_REASIGNA,
+  BORRADOR_DE_GUARDADO_VACIO,
+  aPeticionDeGuardado,
+  resumenDelPlan,
+  validarGuardado,
+  type BorradorDeGuardado,
+} from "./plantilla";
 import {
   AVISO_PLAN_PROPIO,
   AYUDA_DE_CARA_AL_CLIENTE,
@@ -85,6 +98,18 @@ export function DetalleDeProceso({ id }: Props) {
   const [avisoDelPlan, setAvisoDelPlan] = useState<string | null>(null);
   const [trabajando, setTrabajando] = useState(false);
 
+  /* --- T-11: guardar el plan como plantilla ---------------------------- */
+  const [guardado, setGuardado] = useState<BorradorDeGuardado>(
+    BORRADOR_DE_GUARDADO_VACIO,
+  );
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [fallasDelGuardado, setFallasDelGuardado] = useState<
+    FallaDeValidacion[]
+  >([]);
+  const [avisoDelGuardado, setAvisoDelGuardado] = useState<
+    { tono: "neutro" | "error"; texto: string } | null
+  >(null);
+
   useEffect(() => {
     const control = new AbortController();
 
@@ -107,6 +132,26 @@ export function DetalleDeProceso({ id }: Props) {
       control.abort();
     };
   }, [id]);
+
+  /**
+   * Las áreas solo se piden cuando hacen falta: el destino por defecto
+   * —actualizar la plantilla del tipo que el proceso ya tiene— no las usa, y
+   * ésa va a ser la mayoría de las veces.
+   */
+  useEffect(() => {
+    if (guardado.destino !== "nuevo") return undefined;
+
+    const control = new AbortController();
+
+    void cargarAreas(control.signal).then((resultado) => {
+      if (control.signal.aborted) return;
+      if (resultado.estado === "ok") setAreas(resultado.valor);
+    });
+
+    return () => {
+      control.abort();
+    };
+  }, [guardado.destino]);
 
   /** Lo que el servidor dejó guardado manda sobre lo que la pantalla creía. */
   function asentar(detalle: Detalle) {
@@ -153,6 +198,51 @@ export function DetalleDeProceso({ id }: Props) {
     }
 
     asentar(resultado.valor);
+  }
+
+  /**
+   * Guardar el plan como plantilla.
+   *
+   * Lo que se copia es **lo que está guardado**, no el borrador que se está
+   * editando en pantalla: el servidor lee `proceso_etapa`. Si hay cambios
+   * sin guardar, la pantalla lo dice en vez de copiar algo que nadie guardó.
+   */
+  async function guardarPlantilla(pasos: number) {
+    if (trabajando) return;
+
+    const previas = validarGuardado(guardado, pasos);
+    setFallasDelGuardado(previas);
+    setAvisoDelGuardado(null);
+    if (previas.length > 0) return;
+
+    setTrabajando(true);
+    const resultado = await guardarComoPlantilla(
+      id,
+      aPeticionDeGuardado(guardado),
+    );
+    setTrabajando(false);
+
+    if (resultado.estado === "invalido") {
+      setFallasDelGuardado(resultado.fallas);
+      return;
+    }
+    if (resultado.estado !== "ok") {
+      setAvisoDelGuardado({
+        tono: "error",
+        texto: textoDeProblema(resultado, "ese tipo de proceso"),
+      });
+      return;
+    }
+
+    const pasosGuardados = resultado.valor.etapas.length;
+    setGuardado(BORRADOR_DE_GUARDADO_VACIO);
+    setAvisoDelGuardado({
+      tono: "neutro",
+      texto:
+        `La plantilla quedó guardada en «${resultado.valor.tipo.nombre}»` +
+        ` con ${String(pasosGuardados)} pasos. Este proceso y los demás ya` +
+        " abiertos siguen con el plan que tenían.",
+    });
   }
 
   if (estado.fase === "cargando") return <p>Consultando…</p>;
@@ -448,6 +538,157 @@ export function DetalleDeProceso({ id }: Props) {
                 Hay cambios sin guardar
               </span>
             )}
+          </Fila>
+        </Pila>
+      </section>
+
+      {/* ---------------------------------------------------------------
+          T-11 · Guardar el plan como plantilla.
+
+          El diseño señala este camino como el que más se va a usar para
+          crear una plantilla, y por eso está acá y no en Catálogos: se
+          acomodan los pasos sobre la marcha y, cuando queda bien, se
+          guarda para la próxima.
+          --------------------------------------------------------------- */}
+      <section aria-labelledby="guardar-plantilla">
+        <Pila>
+          <h2 id="guardar-plantilla">Guardar como plantilla</h2>
+
+          <Prosa como="p" className="texto-apagado">
+            {resumenDelPlan(estado.detalle.etapas.length, cumplidas.length)}
+          </Prosa>
+
+          {sinGuardar && (
+            <Aviso tono="error">
+              Hay cambios en el plan que no se guardaron todavía. Lo que se
+              copia a la plantilla es el plan guardado, así que conviene
+              apretar «Guardar plan» primero.
+            </Aviso>
+          )}
+
+          {fallasDelGuardado.length > 0 && (
+            <Aviso tono="error">
+              <ul className="lista-de-fallas">
+                {fallasDelGuardado.map((falla) => (
+                  <li key={`${falla.campo}-${falla.motivo}`}>
+                    {mensajeDeFalla(falla.motivo)}
+                  </li>
+                ))}
+              </ul>
+            </Aviso>
+          )}
+
+          {avisoDelGuardado !== null && (
+            <Aviso tono={avisoDelGuardado.tono}>{avisoDelGuardado.texto}</Aviso>
+          )}
+
+          <fieldset className="campo">
+            <legend className="campo__rotulo">A dónde se guarda</legend>
+
+            <label className="campo__casilla">
+              <input
+                type="radio"
+                name="destino-de-plantilla"
+                value="actualizar"
+                checked={guardado.destino === "actualizar"}
+                onChange={() => {
+                  setGuardado((anterior) => ({
+                    ...anterior,
+                    destino: "actualizar",
+                  }));
+                }}
+              />
+              <span>
+                {`Actualizar la plantilla de «${
+                  proceso.tipoProcesoNombre ?? VACIO
+                }»`}
+              </span>
+            </label>
+
+            <label className="campo__casilla">
+              <input
+                type="radio"
+                name="destino-de-plantilla"
+                value="nuevo"
+                checked={guardado.destino === "nuevo"}
+                onChange={() => {
+                  setGuardado((anterior) => ({
+                    ...anterior,
+                    destino: "nuevo",
+                  }));
+                }}
+              />
+              <span>Crear un tipo de proceso nuevo con este plan</span>
+            </label>
+          </fieldset>
+
+          {guardado.destino === "nuevo" && (
+            <Rejilla minimo="16rem">
+              <div className="campo">
+                <label className="campo__rotulo" htmlFor="campo-area-nueva">
+                  Área del tipo nuevo
+                  <span className="campo__marca"> · obligatorio</span>
+                </label>
+                <select
+                  id="campo-area-nueva"
+                  className="campo__control"
+                  value={guardado.areaId}
+                  onChange={(evento) => {
+                    setGuardado((anterior) => ({
+                      ...anterior,
+                      areaId: evento.target.value,
+                    }));
+                  }}
+                >
+                  <option value="">Elegir área…</option>
+                  {tipoSeleccionables(areas, guardado.areaId).map((area) => (
+                    <option key={area.id} value={area.id}>
+                      {area.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="campo">
+                <label className="campo__rotulo" htmlFor="campo-tipo-nuevo">
+                  Nombre del tipo nuevo
+                  <span className="campo__marca"> · obligatorio</span>
+                </label>
+                <input
+                  id="campo-tipo-nuevo"
+                  className="campo__control"
+                  type="text"
+                  value={guardado.nombre}
+                  onChange={(evento) => {
+                    setGuardado((anterior) => ({
+                      ...anterior,
+                      nombre: evento.target.value,
+                    }));
+                  }}
+                />
+              </div>
+            </Rejilla>
+          )}
+
+          {/* El aviso va acá, pegado al botón: es el momento en que alguien
+              acaba de ajustar un plan y supone que guardarlo sincroniza
+              todo. No en un manual. */}
+          <Aviso>{AVISO_GUARDAR_NO_SINCRONIZA}</Aviso>
+          {guardado.destino === "nuevo" && (
+            <Aviso>{AVISO_TIPO_NUEVO_NO_REASIGNA}</Aviso>
+          )}
+
+          <Fila>
+            <button
+              type="button"
+              className="boton"
+              disabled={trabajando}
+              onClick={() => {
+                void guardarPlantilla(estado.detalle.etapas.length);
+              }}
+            >
+              Guardar como plantilla
+            </button>
           </Fila>
         </Pila>
       </section>

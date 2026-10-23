@@ -132,7 +132,19 @@ export type MotivoDeFalla =
    * promete un paso *antes* de algo que ya pasó no se puede dibujar separado
    * en cumplido y pendiente, que es lo que la pantalla tiene que mostrar.
    */
-  | "etapa_alcanzada_no_se_mueve";
+  | "etapa_alcanzada_no_se_mueve"
+  /* --- Guardar el plan como plantilla (T-11) --- */
+  /**
+   * El destino no es ninguno de los dos: actualizar la plantilla del tipo al
+   * que pertenece el proceso, o crear un tipo nuevo con este plan.
+   */
+  | "destino_invalido"
+  /**
+   * Un proceso sin etapas no tiene plan que guardar. Guardarlo igual
+   * **vaciaría** la plantilla del tipo —`reemplazarEtapas` reemplaza— y el
+   * próximo proceso nacería sin pasos sin que nadie lo pidiera.
+   */
+  | "plan_vacio";
 
 export interface FallaDeValidacion {
   campo: string;
@@ -376,4 +388,50 @@ export interface RespuestaDeProceso {
 /** El 409 de avanzar cuando el plan ya no tiene nada por delante. */
 export interface SinEtapasPendientes {
   error: "sin_etapas_pendientes";
+}
+
+/* ==========================================================================
+   Guardar el plan de un proceso como plantilla (T-11)
+
+   El camino que el diseño señala como el más usado para crear una plantilla:
+   se abre un proceso, se le acomodan los pasos sobre la marcha, y cuando
+   queda bien se guarda (`docs/diseno.md` §6, «Etapas: plantilla y plan de
+   trabajo»). Es una copia de `proceso_etapa` hacia `etapa_plantilla`.
+
+   **Las etapas no viajan en el cuerpo.** El plan ya está guardado en el
+   servidor: mandarlo de vuelta sería dejar que la pantalla decidiera qué se
+   copia, y abriría la puerta a guardar como plantilla algo que el proceso no
+   tiene. Lo único que viaja es el destino.
+
+   `alcanzadaEn` no aparece por ningún lado, y no es un olvido: una plantilla
+   es un plan, y en un plan no hay nada «ya hecho». `etapa_plantilla` no
+   tiene esa columna y no debe tenerla.
+   ========================================================================== */
+
+/**
+ * A dónde va el plan.
+ *
+ *  - `actualizar`: reemplaza las etapas de la plantilla del tipo al que el
+ *    proceso ya pertenece.
+ *  - `nuevo`: crea un tipo de proceso nuevo, en un área existente, con este
+ *    plan como su plantilla.
+ *
+ * **El proceso de origen no se reasigna** cuando el destino es un tipo
+ * nuevo: sigue apuntando a su tipo viejo. Es la decisión de T-11, y sale de
+ * la misma promesa que la pantalla hace — guardar una plantilla no modifica
+ * ningún proceso abierto, y el de origen es un proceso abierto.
+ */
+export type DatosDeGuardadoDePlantilla =
+  | { destino: "actualizar" }
+  | {
+      destino: "nuevo";
+      areaId: string;
+      nombre: string;
+      descripcion: string | null;
+    };
+
+/** El tipo de proceso de destino y su plantilla recién escrita. */
+export interface PlantillaGuardada {
+  tipo: TipoProceso;
+  etapas: EtapaPlantilla[];
 }

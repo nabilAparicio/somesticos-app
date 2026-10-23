@@ -46,6 +46,7 @@
     "../src/formatos.ts",
     "../src/pantallas/procesos/formulario.ts",
     "../src/pantallas/procesos/plan.ts",
+    "../src/pantallas/procesos/plantilla.ts",
     "../src/pantallas/procesos/presentacion.ts"
   ]
 }

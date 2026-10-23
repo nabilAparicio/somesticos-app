@@ -8,6 +8,13 @@
  *   GET    /api/procesos/{id}              detalle: el proceso y su plan
  *   PUT    /api/procesos/{id}/etapas       el plan entero, ordenado
  *   POST   /api/procesos/{id}/avanzar      marca alcanzada la próxima pendiente
+ *   POST   /api/procesos/{id}/plantilla    guarda el plan como plantilla (T-11)
+ *
+ * `plantilla` cuelga del **proceso** y no de `/api/tipos-proceso`, porque lo
+ * que identifica la operación es de dónde sale el plan: el tipo de destino
+ * se deduce del proceso, o se crea. Es un `POST` y no un `PUT` por lo mismo
+ * que el alta: puede terminar creando una fila nueva, y entonces contesta
+ * 201 con su `location`.
  *
  * **No hay `GET /api/procesos/{id}/etapas`**: el detalle ya trae el plan, y
  * una segunda lectura del mismo dato sería una segunda forma de quedar
@@ -39,15 +46,22 @@
  * 422, y ese 422 ya confirma que el id existe.
  */
 
+import type { ServicioDeCatalogos } from "../catalogos/repositorio";
 import type {
   DatosInvalidos,
   DetalleDeProceso,
   FallaDeValidacion,
+  PlantillaGuardada,
   RespuestaDeProceso,
   RespuestaDeProcesos,
   SinEtapasPendientes,
 } from "../contract";
-import { normalizarEtapas, normalizarProceso } from "./dominio";
+import {
+  normalizarEtapas,
+  normalizarGuardadoDePlantilla,
+  normalizarProceso,
+} from "./dominio";
+import { guardarPlanComoPlantilla } from "./plantilla";
 import type { ResultadoDeEscritura, ServicioDeProcesos } from "./repositorio";
 
 const SIN_CACHE = { "cache-control": "no-store" } as const;
@@ -216,14 +230,74 @@ async function manejarAvance(
 }
 
 /**
+ * T-11: el plan del proceso, copiado a una plantilla.
+ *
+ * El 201 se reserva para el destino que **creó** un tipo de proceso, con su
+ * `location` apuntando al catálogo: es una fila nueva que la pantalla de
+ * catálogos ya sabe mostrar. Actualizar una plantilla existente es un 200,
+ * porque no nació nada.
+ */
+async function manejarGuardadoDePlantilla(
+  request: Request,
+  tenantId: string,
+  procesoId: string,
+  procesos: ServicioDeProcesos,
+  catalogos: ServicioDeCatalogos,
+): Promise<Response> {
+  if (request.method !== "POST") return metodoNoPermitido("POST");
+
+  const leido = await leerCuerpo(request);
+  if (!leido.ok) return leido.respuesta;
+
+  // La existencia del proceso manda sobre la validación del cuerpo: un 422
+  // contra un proceso ajeno confirmaría que ese identificador existe.
+  if ((await procesos.obtener(tenantId, procesoId)) === null) {
+    return noEncontrado();
+  }
+
+  const normalizado = normalizarGuardadoDePlantilla(leido.valor);
+  if (!normalizado.ok) return invalido(normalizado.fallas);
+
+  const resultado = await guardarPlanComoPlantilla(
+    tenantId,
+    procesoId,
+    normalizado.datos,
+    procesos,
+    catalogos,
+  );
+  if (resultado.estado === "no_encontrado") return noEncontrado();
+  if (resultado.estado === "invalido") return invalido(resultado.fallas);
+
+  const cuerpo: PlantillaGuardada = {
+    tipo: resultado.tipo,
+    etapas: resultado.etapas,
+  };
+
+  return resultado.creado
+    ? json(cuerpo, {
+        status: 201,
+        headers: {
+          location: `/api/tipos-proceso/${resultado.tipo.id}`,
+          ...SIN_CACHE,
+        },
+      })
+    : json(cuerpo);
+}
+
+/**
  * Devuelve `null` cuando la ruta no es de procesos, para que quien llama siga
  * buscando y termine en su propio 404.
+ *
+ * Recibe **dos** puertos desde T-11: guardar el plan como plantilla lee de
+ * procesos y escribe en catálogos, y la escritura es la misma
+ * `reemplazarEtapas` que usa la pantalla de catálogos.
  */
 export async function rutasDeProcesos(
   request: Request,
   url: URL,
   tenantId: string,
   servicio: ServicioDeProcesos,
+  catalogos: ServicioDeCatalogos,
 ): Promise<Response | null> {
   const segmentos = segmentosDe(url.pathname);
   if (segmentos[0] !== "api") return null;
@@ -244,6 +318,15 @@ export async function rutasDeProcesos(
     }
     if (segmentos[3] === "avanzar") {
       return manejarAvance(request, tenantId, id, servicio);
+    }
+    if (segmentos[3] === "plantilla") {
+      return manejarGuardadoDePlantilla(
+        request,
+        tenantId,
+        id,
+        servicio,
+        catalogos,
+      );
     }
     return null;
   }

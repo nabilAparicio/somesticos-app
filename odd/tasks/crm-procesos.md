@@ -149,11 +149,12 @@ se renumera.
       plantilla aplicada admite pasos nuevos sin tocar la plantilla; e intentar borrar una etapa
       ya alcanzada se RECHAZA, con prueba que lo demuestre. Ruta: delegada. Forecast ~600.*
 
-- [ ] **T-11 · Guardar como plantilla.** Desde un proceso cuyo plan se ajustó a mano, crear una
+- [x] **T-11 · Guardar como plantilla.** Desde un proceso cuyo plan se ajustó a mano, crear una
       plantilla nueva con esos pasos, o actualizar una existente. Copia de `proceso_etapa` hacia
       `etapa_plantilla`.
-      *Ruta: inline (un camino mecánico sobre tablas que T-6 y T-7 ya dejaron listas).
-      Forecast ~150.*
+      *Ruta: **delegada**, corregida sobre la estimación original de inline. Con pruebas de rechazo,
+      contrapesos que releen y mutaciones, toca worker, front y dos archivos de prueba: el
+      disparador de escritor se cumple. Forecast real ~400.*
 
 - [ ] **T-8 · Notas.** Crear ancladas a la etapa vigente, con autor y fecha. Línea de tiempo del
       proceso. Inmutables.
@@ -218,7 +219,8 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-7 | (este commit) | Rojo observado: 42 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 372/372** · **e2e 94/94**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de lo alcanzado (4 muertas). | Pendiente de evaluar |
+| T-11 | (este commit) | Rojo observado: 24 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 410/410** · **e2e 98/98**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación del plan vacío (2 muertas). | Pendiente de evaluar |
+| T-7 | `bff83c5` | Rojo observado: 42 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 372/372** · **e2e 94/94**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de lo alcanzado (4 muertas). | Pendiente de evaluar |
 | T-6 | `326901b` | Rojo observado: 44 fallas de API, el archivo de UI sin cargar y 25 e2e en rojo. Final: los cinco en 0 · **test 287/287** · **e2e 68/68**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de borrado (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
 | T-5 | `c9f51fc` | Rojo observado: 27 de 35 fallas en la API y el archivo de UI sin cargar. Final: los cinco comandos en 0 · **test 189/189** · **e2e 43/43**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de tenencia (5 muertas). | Pendiente de evaluar |
 | T-4 | `3893ccb` | Rojo observado: 10 fallas de e2e sin hoja de estilos. Final: typecheck 0 · test 0 (122/122) · lint 0 · build 0 · **e2e 0 (22/22)**. Verificación del orquestador: los cinco códigos de salida, más la reproducción propia de la mutación B. | **Escalada sin veredicto.** Lineaje `review-9705305831e89372`, riesgo alto, cuatro lentes. Ver abajo. |
@@ -371,6 +373,36 @@ una instalación limpia el desplegable de tipo de cliente sale vacío para siemp
 lectura está; falta el CRUD. No es un defecto de T-5: excede su alcance y habría empujado la
 rebanada por encima de su presupuesto. **Entra en T-6**, junto a las áreas y los tipos de proceso,
 que son exactamente el mismo problema de catálogo.
+
+### T-11 decidió: guardar como tipo nuevo NO reasigna el proceso de origen
+
+El proceso sigue apuntando a su tipo viejo. El argumento es el que importa:
+
+1. Reasignarlo rompería **la promesa que la misma pantalla acaba de hacer** —"guardar no modifica
+   ningún proceso abierto"— justo en el caso donde nadie lo esperaría.
+2. `tipo_proceso_id` es cómo el listado, los filtros y la futura bitácora clasifican trabajo **ya
+   ocurrido**. Mover el proceso a un tipo recién inventado reescribe lo que el listado dice del
+   pasado.
+3. Si "actualizar" nunca reasigna y "nuevo" sí, las dos mitades de la misma función se comportan
+   distinto, y esa asimetría es la que hace que alguien guarde esperando una cosa y obtenga otra.
+
+Queda dicho en pantalla, probado por relectura y documentado en el código. Reasignar un proceso
+puede existir más adelante, pero como acción propia y visible.
+
+### Tercera migración señalada, esta vez por T-11
+
+`proceso.tipo_proceso_id` es una llave foránea **que no incluye el tenant**, así que una fila
+cruzada entre bufetes es expresable en la base: un proceso de un tenant apuntando al tipo de
+otro. Hoy lo sostiene el código. La prueba de rechazo correspondiente tuvo que **insertar esa
+fila cruzada a mano** para poder ejercitarse, lo cual es la confirmación de que la base la
+permite.
+
+Se suma a las dos que ya había señalado T-6. Las tres son llaves foráneas compuestas o triggers,
+o sea una migración, y conviene hacerlas juntas:
+
+1. Unicidad de nombre en `area`, `tipo_cliente` y `tipo_proceso` por tenant.
+2. Que `etapa_plantilla.tenant_id` coincida con el de su `tipo_proceso`.
+3. Que `proceso.tipo_proceso_id` y `proceso.cliente_id` pertenezcan al mismo tenant que el proceso.
 
 ### T-7 decidió: el avance de etapa es de una sola dirección
 
@@ -526,4 +558,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-11: guardar como plantilla, desde un proceso cuyo plan ya se ajustó a mano.
+T-8: notas ancladas a etapa, inmutables, en la línea de tiempo del proceso.

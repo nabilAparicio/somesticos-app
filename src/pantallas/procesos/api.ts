@@ -17,8 +17,10 @@ import {
 } from "../../api/peticiones";
 import type {
   DatosDeEtapa,
+  DatosDeGuardadoDePlantilla,
   DatosDeProceso,
   DetalleDeProceso,
+  PlantillaGuardada,
   Proceso,
   RespuestaDeProceso,
   RespuestaDeProcesos,
@@ -105,5 +107,26 @@ export function avanzarEtapa(
   return pedir<DetalleDeProceso>(
     `${PROCESOS}/${encodeURIComponent(procesoId)}/avanzar`,
     { method: "POST" },
+  );
+}
+
+/**
+ * Guarda el plan de este proceso como plantilla (T-11).
+ *
+ * **No manda las etapas.** El plan ya está guardado en el servidor, que es
+ * quien lo lee: mandarlo de vuelta dejaría que esta pantalla decidiera qué
+ * se copia. Lo único que viaja es el destino.
+ *
+ * La respuesta trae el tipo de destino con su plantilla recién escrita, y
+ * **no un detalle de proceso**: esta escritura no toca ningún proceso, así
+ * que no hay nada del proceso que redibujar.
+ */
+export function guardarComoPlantilla(
+  procesoId: string,
+  datos: DatosDeGuardadoDePlantilla,
+): Promise<Resultado<PlantillaGuardada>> {
+  return pedir<PlantillaGuardada>(
+    `${PROCESOS}/${encodeURIComponent(procesoId)}/plantilla`,
+    cuerpo(datos, "POST"),
   );
 }

@@ -18,6 +18,7 @@
 import { normalizarEtapas } from "../catalogos/dominio";
 import type { Normalizacion } from "../catalogos/dominio";
 import type {
+  DatosDeGuardadoDePlantilla,
   DatosDeProceso,
   FallaDeValidacion,
   MotivoDeFalla,
@@ -109,6 +110,59 @@ export function normalizarProceso(
       tipoProcesoId: tipoProcesoId ?? "",
       titulo: titulo ?? "",
       responsableId,
+    },
+  };
+}
+
+/**
+ * El cuerpo de «guardar el plan como plantilla» (T-11).
+ *
+ * **Las etapas no se leen del cuerpo.** El plan ya está guardado; lo lee el
+ * repositorio. Aceptarlas acá sería dejar que la pantalla eligiera qué se
+ * copia, y permitiría guardar como plantilla algo que el proceso no tiene.
+ *
+ * El destino se cierra en los dos valores que existen y nada más: un tercero
+ * silencioso elegiría uno por defecto, y el que elija va a ser el que
+ * escribe sobre algo.
+ *
+ * Para el tipo nuevo no se lee `activo`: nace vigente, por la misma razón
+ * que un catálogo recién creado en T-6 —tener que darlo de alta en un
+ * segundo paso convertiría el atajo en dos trámites.
+ */
+export function normalizarGuardadoDePlantilla(
+  cuerpo: unknown,
+): Normalizacion<DatosDeGuardadoDePlantilla> {
+  if (!esObjeto(cuerpo)) {
+    return { ok: false, fallas: [falla("destino", "tipo_invalido")] };
+  }
+
+  const destino = cuerpo.destino;
+  if (destino === "actualizar") return { ok: true, datos: { destino } };
+  if (destino !== "nuevo") {
+    return { ok: false, fallas: [falla("destino", "destino_invalido")] };
+  }
+
+  const fallas: FallaDeValidacion[] = [];
+  const areaId = texto(cuerpo, "areaId", fallas);
+  const nombre = texto(cuerpo, "nombre", fallas);
+  const descripcion = texto(cuerpo, "descripcion", fallas);
+
+  if (nombre === null && !fallas.some((f) => f.campo === "nombre")) {
+    fallas.push(falla("nombre", "nombre_requerido"));
+  }
+  if (areaId === null && !fallas.some((f) => f.campo === "areaId")) {
+    fallas.push(falla("areaId", "area_requerida"));
+  }
+
+  if (fallas.length > 0) return { ok: false, fallas };
+
+  return {
+    ok: true,
+    datos: {
+      destino,
+      areaId: areaId ?? "",
+      nombre: nombre ?? "",
+      descripcion,
     },
   };
 }
