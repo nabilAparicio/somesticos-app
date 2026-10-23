@@ -2,7 +2,11 @@
 
 **Creado:** 22 de octubre de 2026
 **Estado:** las 11 tareas de la tajada, cerradas. T-12 (integridad) cerrada en dos unidades y
-**revisada y aprobada**. Queda T-13, lo que esa revisión dejó abierto.
+**revisada y aprobada**. Quedan T-13 (lo que esa revisión dejó abierto), T-14 (cerrar y reabrir
+procesos), T-15 (los dos huecos de pantalla) y T-16 (despliegue). Decisión del 23-oct-2026: la
+tajada **se despliega y se usa con clientes reales antes de empezar la tajada 2** — el riesgo de
+repetir `app-agentes-legales`, un sistema impecable sobre datos de juguete, es mayor que el de
+llegar tarde a las cotizaciones.
 **Diseño de referencia:** `docs/diseno.md` (fuente de verdad)
 
 ---
@@ -306,6 +310,62 @@ se renumera.
       falso desde la unidad 2 del mismo candidato, y peligroso: un comentario que declara
       pendiente algo ya resuelto invita a «arreglarlo» con el `try/catch` que el repositorio
       prohíbe.
+
+---
+
+- [ ] **T-14 · Cerrar y reabrir un proceso.** *Agregada al decidir que la tajada se despliega.*
+      El esquema lleva `estado IN ('abierto','cerrado')` y `cerrado_en` desde T-2, y la API
+      **nunca los expuso**: hoy un proceso nace abierto y no hay forma de cerrarlo. Es el hueco
+      que más rápido se nota en uso real, porque el listado se llena de procesos terminados y la
+      cabecera de pendientes cuenta lo que ya no importa.
+
+      Alcance: `PUT`/`POST` de cierre y de reapertura, con su entrada de bitácora
+      (`proceso_cerrado`, `proceso_reabierto` — el vocabulario de `0002` hay que ampliarlo, y eso
+      es migración); el filtro por estado en el listado; y el botón en la pantalla de detalle.
+
+      *Preguntas que hay que resolver dentro de la tarea, no antes:* ¿se puede cerrar un proceso
+      con pendientes abiertos? Mi posición es **sí, pero avisando cuántos quedan** — el bufete
+      cierra casos con cabos sueltos y el sistema no está para discutirle; lo que no puede es
+      dejar que pase inadvertido. ¿Se puede escribir una nota en un proceso cerrado? **Sí**: la
+      historia no se congela porque el trámite terminó.
+
+      *Criterio: cerrar y reabrir dejan rastro en la bitácora, y el conteo de pendientes de la
+      cabecera deja de contar los de procesos cerrados. Ruta: delegada. Forecast ~350.*
+
+---
+
+- [ ] **T-15 · Los dos huecos de pantalla.** *Agregada al decidir que la tajada se despliega.*
+      Dos cosas que la API ya sabe hacer y la interfaz no deja pedir. Van juntas porque las dos
+      son pantalla sobre contrato existente y ninguna justifica su propia tarea.
+
+      **Responsable en el formulario de proceso.** La API acepta `responsableId` desde T-7 y
+      `GET /api/usuarios` existe desde T-9; falta el selector. Sin él, el campo que decide quién
+      lleva el proceso solo se puede poblar por `curl`.
+
+      **Bitácora de catálogos.** T-10 graba los eventos de `area`, `tipo_cliente` y
+      `tipo_proceso`, y no hay ninguna pantalla que los muestre: hoy se ven los de cliente y los
+      de proceso, nada más. Quien borre un área por error no tiene dónde mirar.
+
+      *Criterio: las dos cosas ejercitadas de punta a punta, sin tocar el contrato. Ruta:
+      delegada. Forecast ~300.*
+
+---
+
+- [ ] **T-16 · Despliegue de la tajada 1.** *Agregada al decidir que la tajada se despliega.*
+      La parte mía es chica; la que destraba es del bufete. Se escribe acá para que la frontera
+      quede explícita y nadie espere al otro.
+
+      **Depende del usuario, y nada de esto lo hace el agente:** crear el repositorio remoto (hoy
+      no hay ni `origin` ni rama `main`, los 22 commits viven en un disco); crear la base D1 real
+      y pasar su `database_id`; configurar la aplicación de Cloudflare Access con su política,
+      su AUD y su dominio de equipo; y decidir las dos direcciones de correo que entran.
+
+      **Parte del agente:** sustituir el marcador de ceros de `wrangler.jsonc`, sembrar las filas
+      de `usuario` de las dos personas, correr las tres migraciones contra la base real, y la
+      primera verificación de humo contra el despliegue.
+
+      *Nada de esto se hace sin autorización explícita del destino, la operación y la credencial,
+      una por una. Ruta: inline, porque son pasos de estado y no de código.*
 
 ## Criterios de aceptación de la tajada
 
@@ -856,8 +916,13 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-**T-13: lo que la revisión de T-12 dejó abierto**, y dentro de T-13 **H-1 primero**: la regla
-padre-hijo está enforzada solo del lado del hijo, así que mover una etapa de proceso arrastra
-notas inmutables a un proceso ajeno de forma irreparable. H-2 (la migración supone una base que
-ya cumple) hay que resolverlo **antes** de aprovisionar el D1 real. El detalle completo está en
-la tarea, no depende de ninguna conversación.
+**Cerrar la tajada y desplegarla**, en este orden: **T-13** (lo que la revisión dejó abierto,
+con H-1 primero y H-2 obligatoriamente antes de aprovisionar el D1 real), **T-14** (cerrar y
+reabrir procesos), **T-15** (los dos huecos de pantalla) y **T-16** (despliegue).
+
+En paralelo, y sin esperar al agente, el bufete tiene que: crear el repositorio remoto, crear la
+base D1 y pasar su `database_id`, y configurar la aplicación de Cloudflare Access con su
+política, su AUD y su dominio de equipo. Nada de eso lo hace el agente y nada de eso depende de
+que el código esté terminado.
+
+El detalle completo de cada tarea está escrito arriba y no depende de ninguna conversación.
