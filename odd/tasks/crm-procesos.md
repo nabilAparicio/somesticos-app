@@ -2,8 +2,8 @@
 
 **Creado:** 22 de octubre de 2026
 **Estado:** las 11 tareas de la tajada, cerradas. T-12 (integridad) cerrada en dos unidades y
-**revisada y aprobada**. Quedan T-13 (lo que esa revisión dejó abierto), T-14 (cerrar y reabrir
-procesos), T-15 (los dos huecos de pantalla) y T-16 (despliegue). Decisión del 23-oct-2026: la
+**revisada y aprobada**. T-13 cerrada. Quedan T-14 (cerrar y reabrir procesos), T-15 (los dos
+huecos de pantalla) y T-16 (despliegue). Decisión del 23-oct-2026: la
 tajada **se despliega y se usa con clientes reales antes de empezar la tajada 2** — el riesgo de
 repetir `app-agentes-legales`, un sistema impecable sobre datos de juguete, es mayor que el de
 llegar tarde a las cotizaciones.
@@ -271,7 +271,7 @@ se renumera.
 
 ---
 
-- [ ] **T-13 · Lo que la revisión de T-12 dejó abierto.** *Agregada al cerrar T-12.* La
+- [x] **T-13 · Lo que la revisión de T-12 dejó abierto.** *Agregada al cerrar T-12.* La
       revisión `review-dc06c18287c8208f` (lente `review-reliability`) salió **aprobada** y
       quemó autoridad, con hallazgos no bloqueantes. Dos ya se corrigieron en el acto; estos
       cuatro quedan, ordenados por consecuencia.
@@ -310,6 +310,43 @@ se renumera.
       falso desde la unidad 2 del mismo candidato, y peligroso: un comentario que declara
       pendiente algo ya resuelto invita a «arreglarlo» con el `try/catch` que el repositorio
       prohíbe.
+
+      **Hecha en `7ba7efc`.** Cuatro cosas que conviene no re-descubrir:
+
+      1. **H-1 se cerró como clase, no como caso.** El plan la describía como «mover una etapa
+         a otro proceso». El enunciado general es que **los catorce disparadores de T-12 viven
+         en la escritura del hijo, así que mutar el padre los derrota a todos** — un
+         `UPDATE area SET tenant_id = <vecino>` dejaba todos sus tipos cruzados y nadie se
+         enteraba, porque `area` no tenía disparador y los de `tipo_proceso` solo corren cuando
+         se escribe `tipo_proceso`. La cura que cierra la clase: **`tenant_id` inmutable en las
+         nueve tablas que lo tienen**, más `proceso_etapa.proceso_id`. Se verificó antes de
+         escribir que **ninguno de los seis `UPDATE` del worker** reasigna esas columnas.
+      2. **Se quitó un disparador, y es correcto.** Con `tenant_id` y `proceso_id` inmutables,
+         la condición de `proceso_etapa_tenencia_coherente_al_actualizar` no puede dar
+         verdadero nunca. Es el mismo criterio por el que `nota` y `bitacora` no llevan
+         disparador de tenencia en `UPDATE`: su guarda de inmutabilidad ya aborta todo y un
+         segundo sería código muerto. Trece disparadores de tenencia, no catorce.
+      3. **La prueba central de H-1 hace la mudanza *coherente*,** repuntando también los
+         padres al vecino, para que los trece disparadores de tenencia callen y lo único que
+         pueda abortar sea la inmutabilidad. Sin eso el mensaje dependería de qué disparador
+         corre primero, que **en SQLite no está definido**. Y es además el ataque real: nadie
+         roba una fila dejándola rota.
+      4. **H-2 usa una tabla temporal con un `CHECK` nombrado**, porque SQLite reporta
+         `CHECK constraint failed: <nombre>` y entonces **el nombre es el mensaje**. Tres
+         tablas y no una, para que el operador sepa cuál de las tres familias falló. D1 manda
+         la migración como un `batch`, que es una transacción, así que abortar no deja nada
+         aplicado. Dos trampas encontradas acá: **D1 corta los `SELECT` compuestos mucho antes
+         que el SQLite de escritorio** (`too many terms in compound SELECT` con ocho términos,
+         resuelto encadenando `OR EXISTS`), y `git checkout -- <archivo>` **destruye el trabajo
+         sin commitear** — el escritor perdió la tarea entera por revertir una mutación así, lo
+         detectó y la rehízo. Desde acá las mutaciones se revierten con `cp` desde un respaldo
+         y verificando la suma de control.
+
+      *Corregido por el orquestador al cerrar:* el comentario de `worker/procesos/plantilla.ts`
+      decía «ya no alcanzable desde la base… no hay forma de llegar por este camino». Lo
+      primero es cierto, lo segundo no: `catalogos` **entra por parámetro**, así que la rama se
+      ejercita con un doble del puerto. T-12 la declaró inverificable y se equivocó; la
+      arquitectura hexagonal era la respuesta todo el tiempo.
 
 ---
 
@@ -415,6 +452,7 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
+| T-13 (los cuatro hallazgos de la revisión) | `7ba7efc` | Rojo observado: 14 fallas en `esquema.spec.ts`, exactamente las esperadas. Las de H-4a y H-4b salieron verdes de entrada, y es correcto: son pérdidas de cobertura, no defectos — ahí la prueba de que no son vacuas es la mutación, no el rojo. Final: los cinco en 0 · **test 730/730** · **e2e 117/117**. Verificación del orquestador: los cinco códigos de salida más **la mutación fuerte que el escritor no podía hacer** — quitar `REFERENCES tenant (id)` de `area` en `0001` mató exactamente 2 pruebas, la de rechazo de I-8 y la nueva del `PRAGMA`, y `0001` volvió con md5 idéntico. H-4b no es vacua. | Pendiente de evaluar |
 | T-12 · unidad 2 (409 por nombre repetido) | `c230c89` | Rojo observado: 10 de 15 fallando — 6 de API con el `UNIQUE constraint failed` crudo y 4 de interfaz sin la función. Final: los cinco en 0 · **test 702/702** · **e2e 117/117**. Verificación del orquestador: los cinco códigos de salida más una mutación propia — quitar la consulta previa del alta mató exactamente 3 pruebas y lo hizo con el `UNIQUE constraint failed` crudo, sin ningún 409 amable: no hay `catch` escondido. | Concedida y acusada junto con la unidad 1 (ver abajo). |
 | T-12 · unidad 1 (M-1, M-2, M-3) | `7db6f48` | Final: los cuatro en 0 · **test 686/686**. Sin e2e: no toca la interfaz. Verificación del orquestador: los cuatro códigos de salida corridos de nuevo por mí, más **dos mutaciones propias** — los 33 `IS NOT` → `<>` mató exactamente las 9 pruebas de padre inexistente, y quitar la coherencia etapa↔proceso de `nota` mató exactamente 1. Las dos revirtieron a archivo idéntico y 686/686. | **Concedida y acusada.** Lineaje `review-dc06c18287c8208f`, riesgo medio, candidato de los tres commits de T-12 (`--committed-only`, 17 archivos, 1947 líneas), lente `review-reliability`, **aprobada**, autoridad quemada. Hallazgos no bloqueantes: 2 corregidos en el acto (prosa caducada), 4 abiertos como **T-13**. |
 | T-10 | `6568f46` | Rojo observado: 3 archivos sin cargar, y después 142 fallas por la limpieza que ya no podía borrar usuarios. Final: los cinco en 0 · **test 652/652** · **e2e 116/116**. Verificación del orquestador: los cinco códigos de salida más la comprobación propia de que escribir por la ruta de lectura NO compila (`TS2349`). | Pendiente de evaluar |
@@ -916,9 +954,10 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-**Cerrar la tajada y desplegarla**, en este orden: **T-13** (lo que la revisión dejó abierto,
-con H-1 primero y H-2 obligatoriamente antes de aprovisionar el D1 real), **T-14** (cerrar y
-reabrir procesos), **T-15** (los dos huecos de pantalla) y **T-16** (despliegue).
+**Cerrar la tajada y desplegarla.** T-13 ya está —y con ella H-2, que era el requisito para
+poder aprovisionar el D1 real sin arriesgar filas cruzadas vivas e inmodificables—. Quedan
+**T-14** (cerrar y reabrir procesos), **T-15** (los dos huecos de pantalla) y **T-16**
+(despliegue).
 
 En paralelo, y sin esperar al agente, el bufete tiene que: crear el repositorio remoto, crear la
 base D1 y pasar su `database_id`, y configurar la aplicación de Cloudflare Access con su
