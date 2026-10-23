@@ -203,6 +203,52 @@ se renumera.
       escritura que hoy acepta. La de M-3 tiene que ser exactamente la fila cruzada que T-11
       inserta hoy sin problema. Ruta: delegada. Forecast ~450.*
 
+      **Unidad 1, hecha en `7db6f48`** (`migrations/0003_tenencia_y_unicidad.sql`). Seis
+      decisiones que se apartan del plan o que cuestan de reconstruir:
+
+      1. **Ninguna tabla se reconstruye, y no fue suerte.** El plan avisaba que agregar una
+         restricción en SQLite suele exigir el procedimiento de `0002`. No hizo falta porque de
+         las tres formas de restringir, la única que obliga a reconstruir es el `CHECK` — y el
+         `CHECK` es justo la que no sirve acá, porque no puede mirar otra fila. `CREATE UNIQUE
+         INDEX` y `CREATE TRIGGER` se cuelgan de la tabla existente.
+      2. **Disparadores y no llaves foráneas compuestas para M-3.** Una FK compuesta
+         `(tenant_id, cliente_id) REFERENCES cliente (tenant_id, id)` obliga a reconstruir
+         `proceso`, que arrastra `proceso_etapa`, `nota` y `pendiente` en `NO ACTION` más la
+         nota inmutable: la trampa que el plan anticipaba. El disparador rechaza igual de
+         fuerte, no reescribe nada y **sigue vigente con `PRAGMA foreign_keys` apagado**, cosa
+         que una FK no.
+      3. **La familia completa de ocho tablas, no las dos guardas del plan.** El defecto que
+         M-3 denuncia no es de `proceso`: es de toda arista que apunta a una fila con
+         `tenant_id` sin llevar el tenant en la llave. Con M-3 parcial, la fila cruzada seguía
+         entrando por `cliente.creado_por`, `proceso.responsable_id` o `bitacora.usuario_id`.
+         Catorce disparadores, uno por tabla y operación, condiciones unidas con `OR` y un solo
+         `RAISE`. `nota` y `bitacora` llevan solo el de `INSERT`: su disparador de `UPDATE` ya
+         aborta todo desde T-2 y T-10, y un segundo sería código muerto.
+      4. **`IS NOT` y nunca `<>` contra una subconsulta.** La misma trampa de NULL que `0001`
+         documenta para los `CHECK` de fecha. Si la fila padre no existe la subconsulta vale
+         NULL, `<>` evalúa a NULL y **el disparador no dispara**. Mutar los 33 `IS NOT` a `<>`
+         mata exactamente las 9 pruebas de padre inexistente — reproducido por el orquestador.
+      5. **Cada condición lleva su guardia de NULL, también en columnas `NOT NULL`.**
+         Descubrimiento del escritor, no previsto: en SQLite un `BEFORE INSERT` se evalúa
+         **antes** que `NOT NULL` y antes que las llaves foráneas. Sin `NEW.tenant_id IS NOT
+         NULL AND (…)` al frente, una fila sin tenant moría con «tenencia cruzada» y tapaba el
+         error verdadero en 11 pruebas de I-8 e I-6.
+      6. **Contrapartida asumida:** un padre inexistente ahora muere con el mensaje del
+         disparador y no con `FOREIGN KEY constraint failed`. No es aflojar: llega primero la
+         guarda que un `PRAGMA` no puede apagar. Se actualizaron 14 aserciones.
+
+      *Consecuencia que queda abierta y es decisión tomada, no olvido:* la rama
+      `if (existente === null) return { estado: "no_encontrado" }` de
+      `worker/procesos/plantilla.ts` **quedó inalcanzable desde la base** — ya no hay forma de
+      construir el estado cruzado que la ejercitaba. **Se deja en pie**: es la defensa que
+      aguantaría si alguien apagara el disparador, y borrarla empeoraría el código. La prueba
+      de T-11 que insertaba esa fila se convirtió en la demostración de que la base la rechaza,
+      con el registro de dónde quedó probada cada guarda que ella cubría.
+
+      **Unidad 2, en curso:** M-1 dejó a propósito una deuda de contrato. Hoy un nombre de
+      catálogo repetido llega a la base y vuelve como **500**, no como el 409 que corresponde.
+      Se paga aparte para no mezclar una migración con un cambio de contrato HTTP.
+
 ## Criterios de aceptación de la tajada
 
 1. Las dos personas entran con su identidad y todo lo que escriben queda firmado.
@@ -251,7 +297,8 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-10 | (este commit) | Rojo observado: 3 archivos sin cargar, y después 142 fallas por la limpieza que ya no podía borrar usuarios. Final: los cinco en 0 · **test 652/652** · **e2e 116/116**. Verificación del orquestador: los cinco códigos de salida más la comprobación propia de que escribir por la ruta de lectura NO compila (`TS2349`). | Pendiente de evaluar |
+| T-12 · unidad 1 (M-1, M-2, M-3) | `7db6f48` | Final: los cuatro en 0 · **test 686/686**. Sin e2e: no toca la interfaz. Verificación del orquestador: los cuatro códigos de salida corridos de nuevo por mí, más **dos mutaciones propias** — los 33 `IS NOT` → `<>` mató exactamente las 9 pruebas de padre inexistente, y quitar la coherencia etapa↔proceso de `nota` mató exactamente 1. Las dos revirtieron a archivo idéntico y 686/686. | Pendiente de evaluar |
+| T-10 | `6568f46` | Rojo observado: 3 archivos sin cargar, y después 142 fallas por la limpieza que ya no podía borrar usuarios. Final: los cinco en 0 · **test 652/652** · **e2e 116/116**. Verificación del orquestador: los cinco códigos de salida más la comprobación propia de que escribir por la ruta de lectura NO compila (`TS2349`). | Pendiente de evaluar |
 | T-9 | `1fc820e` | Rojo observado: 40 fallas de aserción real contra el Worker y el archivo de UI sin cargar. Final: los cinco en 0 · **test 567/567** · **e2e 112/112**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la propiedad 2 (4 muertas). | Pendiente de evaluar |
 | T-8 | `de03ace` | Rojo observado: 38 fallas y el archivo de UI sin cargar. Final: los cinco en 0 · **test 476/476** · **e2e 104/104**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de notas (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
 | T-11 | `84a3ce9` | Rojo observado: 24 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 410/410** · **e2e 98/98**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación del plan vacío (2 muertas). | Pendiente de evaluar |
