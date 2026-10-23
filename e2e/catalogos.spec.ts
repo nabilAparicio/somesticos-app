@@ -250,6 +250,38 @@ function etapasDibujadas(page: Page): Promise<string[]> {
     );
 }
 
+/**
+ * Cuántos renglones ocupa el texto de cada distintivo de estado, y qué dice.
+ *
+ * **Por qué un `Range` y no `elemento.getClientRects()`.** `.etiqueta` es un
+ * `inline-block`, y un `inline-block` devuelve **una** caja siempre, parta o
+ * no parta su texto: medirlo así daría `1` también con la palabra rota, que
+ * es justo el caso que hay que ver. Un `Range` sobre el contenido devuelve
+ * una caja **por renglón**, que es lo que se quiere contar.
+ *
+ * **Por qué no comparar la altura contra `line-height`.** Habría que
+ * descontar el `padding` y los bordes del distintivo, o sea reconstruir acá
+ * su caja a partir de la hoja de estilos; el día que cambie el `padding`,
+ * esta prueba falla por aritmética y no por un defecto. El `Range` cuenta
+ * renglones directamente, sin saber nada de la caja. La altura se devuelve
+ * igual, pero como **dato del mensaje de falla**, no como criterio.
+ */
+function distintivosDeEstado(
+  page: Page,
+): Promise<{ texto: string; renglones: number; alto: number }[]> {
+  return page.locator("table td .etiqueta").evaluateAll((nodos) =>
+    nodos.map((nodo) => {
+      const rango = document.createRange();
+      rango.selectNodeContents(nodo);
+      return {
+        texto: (nodo.textContent ?? "").trim(),
+        renglones: rango.getClientRects().length,
+        alto: Math.round(nodo.getBoundingClientRect().height),
+      };
+    }),
+  );
+}
+
 test.describe("los catálogos del bufete", () => {
   test("la pantalla de catálogos muestra las dos listas con sus datos", async ({
     page,
@@ -583,6 +615,79 @@ test.describe("los catálogos del bufete", () => {
         desborde.scrollWidth,
         porQueSeSale(ancho, desborde),
       ).toBeLessThanOrEqual(desborde.clientWidth);
+    });
+  }
+
+  /*
+   * T-18 · el distintivo de estado no se parte a la mitad.
+   *
+   * **Por qué hace falta otra prueba si ya está la del desborde.** Las
+   * medidas de más arriba verifican que la página no scrollee en
+   * horizontal, y pasaban con «Vigent / e» dibujado en dos renglones:
+   * partir la palabra es *precisamente* cómo el navegador evita el scroll.
+   * La guarda se cumplía afeando la pantalla, y por eso no podía ver esto.
+   *
+   * La causa era `overflow-wrap: anywhere` en `.etiqueta`. A diferencia de
+   * `break-word`, `anywhere` también achica el **mínimo intrínseco** de la
+   * caja: la columna de la tabla puede entonces encogerse por debajo del
+   * ancho de la palabra, y la palabra se parte. No era el `break-word`
+   * global de `body` —se comprobó quitándolo, y el distintivo seguía
+   * partido—; era la regla propia del distintivo.
+   */
+  test("el distintivo de estado no se parte: una palabra, un renglón", async ({
+    page,
+  }) => {
+    await conCatalogoCargado(page);
+    await page.setViewportSize({ width: 1060, height: ALTO });
+    await page.goto("/catalogos/tipos-proceso");
+    await page.evaluate(() => document.fonts.ready);
+    await page.locator("table tbody tr").first().waitFor();
+
+    // El control de hostilidad. Sin un nombre largo en la primera columna,
+    // la tabla no tiene por qué apretar la columna del estado y el
+    // distintivo entra en un renglón por casualidad: la prueba pasaría sin
+    // medir nada. Se cuenta, no se atrapa.
+    const nombreMasLargo = await page
+      .locator('table tbody th[scope="row"]')
+      .evaluateAll((nodos) =>
+        Math.max(...nodos.map((n) => (n.textContent ?? "").trim().length)),
+      );
+    expect(
+      nombreMasLargo,
+      "hace falta un nombre de trámite largo que apriete la columna del estado",
+    ).toBeGreaterThanOrEqual(50);
+
+    const distintivos = await distintivosDeEstado(page);
+    expect(
+      distintivos.length,
+      "la tabla tiene que traer distintivos que medir",
+    ).toBeGreaterThanOrEqual(3);
+
+    const partidos = distintivos.filter((d) => d.renglones > 1);
+    expect(
+      partidos,
+      "un distintivo de una sola palabra dibujado en dos renglones",
+    ).toEqual([]);
+  });
+
+  for (const ancho of ANCHOS) {
+    test(`a ${String(ancho)}px, el distintivo de estado sigue en un renglón`, async ({
+      page,
+    }) => {
+      await conCatalogoCargado(page);
+      await page.setViewportSize({ width: ancho, height: ALTO });
+      await page.goto("/catalogos/tipos-proceso");
+      await page.evaluate(() => document.fonts.ready);
+      await page.locator("table tbody tr").first().waitFor();
+
+      const partidos = (await distintivosDeEstado(page)).filter(
+        (d) => d.renglones > 1,
+      );
+
+      expect(
+        partidos,
+        `a ${String(ancho)}px hay distintivos partidos en varios renglones`,
+      ).toEqual([]);
     });
   }
 });

@@ -147,8 +147,8 @@ canvas {
 
 .etiqueta {
   display: inline-block;
-  /* Sin ancho: la etiqueta mide lo que mide su texto, y el texto largo se
-     parte en vez de estirar la franja que la contiene. */
+  /* Sin ancho: la etiqueta mide lo que mide su texto, y nunca estira la
+     franja que la contiene. */
   max-inline-size: 100%;
   padding: var(--espacio-3xs) var(--espacio-xs);
   border: var(--borde-fino);
@@ -157,7 +157,26 @@ canvas {
   color: var(--color-tinta-apagada);
   font-size: var(--texto-xs);
   line-height: var(--linea-ajustada);
-  overflow-wrap: anywhere;
+  /*
+   * `break-word`, y **no** `anywhere`, que es lo que había desde T-8.
+   *
+   * Las dos parten una palabra antes que dejarla desbordar, pero `anywhere`
+   * hace una cosa más: achica el **mínimo intrínseco** de la caja hasta un
+   * carácter. En una tabla eso le da permiso al navegador para encoger la
+   * columna por debajo del ancho de la palabra, y entonces la parte aunque
+   * hubiera lugar. Era «Vigent / e» en la tabla de catálogos, en todo ancho
+   * hasta ~1280px, cada vez que un nombre de trámite largo apretaba la fila.
+   *
+   * No era el `break-word` de `body`: quitándolo y dejando este `anywhere`,
+   * el distintivo seguía partido. Era esta regla.
+   *
+   * Con `break-word` el mínimo intrínseco vuelve a ser la palabra entera, y
+   * el corte queda para lo que de verdad no entra. La prueba del desborde
+   * de punta a punta **no** cubría esto —partir la palabra es justamente
+   * cómo el navegador evita el scroll, así que pasaba igual—; lo cubre
+   * ahora una prueba que cuenta los renglones del distintivo.
+   */
+  overflow-wrap: break-word;
 }
 
 .etiqueta--tenue {
