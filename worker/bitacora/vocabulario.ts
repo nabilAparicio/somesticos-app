@@ -84,6 +84,14 @@ export const ACCIONES_POR_ENTIDAD = {
      pantalla con una sola consulta. */
   proceso: [
     "creado",
+    /* T-14: el trámite terminó, y volvió a estar en curso. Van pelados —no
+       `proceso_cerrado`— por la misma regla que `creado`: la entidad ya
+       viaja en su columna y solo llevan prefijo los hechos de algo que
+       cuelga del proceso. Y `reabierto` carga solo: al reabrir, la fila
+       pierde su `cerrado_en`, así que esta entrada es lo único que queda
+       de que aquel cierre existió. */
+    "cerrado",
+    "reabierto",
     "plan_editado",
     "etapa_alcanzada",
     "plantilla_guardada",

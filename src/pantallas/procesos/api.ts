@@ -16,6 +16,7 @@ import {
   type Resultado,
 } from "../../api/peticiones";
 import type {
+  CambioDeEstadoDeProceso,
   DatosDeEtapa,
   EntradaDeBitacora,
   DatosDeGuardadoDePlantilla,
@@ -35,10 +36,39 @@ import type {
 
 export type { Resultado };
 
+/**
+ * Los dos 409 de T-14, dichos acá y no en el mapa compartido de
+ * `src/api/peticiones.ts`.
+ *
+ * El mapa de allá junta los conflictos que **cualquier** pantalla puede
+ * recibir. Éstos no: nombran la regla del proceso cerrado, que es de este
+ * dominio y de ninguno más, y la frase tiene que servir igual para las
+ * cuatro operaciones que la chocan —avanzar, guardar el plan, anotar un
+ * pendiente y el segundo cierre—. Una sola frase para las cuatro, porque la
+ * salida de las cuatro es la misma.
+ *
+ * Sin esto el 409 caería en el texto de reserva, que habla de un borrado que
+ * nadie pidió.
+ */
+const CONFLICTOS_DE_ESTADO: Record<string, string> = {
+  proceso_cerrado:
+    "Este proceso está cerrado, así que no avanza de etapa, no se le edita" +
+    " el plan y no se le anotan pendientes nuevos. Si hay trabajo, primero" +
+    " hay que reabrirlo.",
+  proceso_abierto:
+    "Este proceso ya estaba abierto. Hay que volver a cargarlo para ver" +
+    " cómo quedó.",
+};
+
 export function textoDeProblema(
   resultado: Resultado<unknown>,
   sujeto = "ese proceso",
 ): string {
+  if (resultado.estado === "conflicto") {
+    const propio = CONFLICTOS_DE_ESTADO[resultado.motivo];
+    if (propio !== undefined) return propio;
+  }
+
   return textoDeProblemaDe(resultado, sujeto);
 }
 
@@ -135,6 +165,48 @@ export function guardarComoPlantilla(
   return pedir<PlantillaGuardada>(
     `${PROCESOS}/${encodeURIComponent(procesoId)}/plantilla`,
     cuerpo(datos, "POST"),
+  );
+}
+
+/* ==========================================================================
+   Cerrar y reabrir el proceso (T-14)
+   ========================================================================== */
+
+/**
+ * Cierra el proceso.
+ *
+ * **No pregunta si hay cabos sueltos: los cuenta y los informa.** El bufete
+ * cierra casos con cabos sueltos y el sistema no está para discutirle; lo
+ * que no puede es dejar que pase inadvertido, así que la respuesta trae
+ * `pendientesAbiertos` y la pantalla lo dice.
+ *
+ * Igual que avanzar y que guardar el plan, contesta el detalle entero: el
+ * cambio mueve lo que la cabecera muestra.
+ */
+export function cerrarProceso(
+  procesoId: string,
+): Promise<Resultado<CambioDeEstadoDeProceso>> {
+  return pedir<CambioDeEstadoDeProceso>(
+    `${PROCESOS}/${encodeURIComponent(procesoId)}/cerrar`,
+    { method: "POST" },
+  );
+}
+
+/**
+ * Lo devuelve a estar en curso.
+ *
+ * A diferencia de `cerrarPendiente`, **esto sí existe**, y la asimetría es
+ * deliberada: cerrar un pendiente deja una firma de quién lo cerró, y
+ * reabrirlo la borraría. Cerrar un proceso solo escribe una fecha, y esa
+ * fecha queda en la bitácora cuando la fila la pierde. Reabrir no borra
+ * ninguna firma: la bitácora es inmutable y guarda las dos transiciones.
+ */
+export function reabrirProceso(
+  procesoId: string,
+): Promise<Resultado<CambioDeEstadoDeProceso>> {
+  return pedir<CambioDeEstadoDeProceso>(
+    `${PROCESOS}/${encodeURIComponent(procesoId)}/reabrir`,
+    { method: "POST" },
   );
 }
 

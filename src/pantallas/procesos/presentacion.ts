@@ -7,8 +7,12 @@
  * navegador para leer lo que ya era una cadena.
  */
 
-import type { Proceso } from "../../../worker/contract";
-import { ORDEN_ES, plano } from "../../formatos";
+import type {
+  PendienteDeProceso,
+  Proceso,
+} from "../../../worker/contract";
+import { ORDEN_ES, fechaLegible, plano } from "../../formatos";
+import { resumenDePendientes } from "./pendientes";
 
 /**
  * El avance, en etapas y no en porcentaje.
@@ -84,4 +88,144 @@ export function filtrarProcesos(
 
     return pajar.includes(buscado);
   });
+}
+
+/* ==========================================================================
+   T-14 · El estado del proceso
+
+   El esquema lleva `estado` y `cerrado_en` desde T-2; hasta T-14 nada en la
+   pantalla los miraba. Lo que vive acá es todo lo que el estado cambia de
+   cómo se lee un proceso, escrito como función para que se pueda afirmar
+   sin montar un navegador.
+   ========================================================================== */
+
+/**
+ * Qué procesos muestra el listado.
+ *
+ * Son tres y no un interruptor de dos, porque «todos» no es «abiertos más
+ * cerrados» en la cabeza de nadie: es la opción que se elige cuando se está
+ * buscando algo y no se recuerda si ya terminó.
+ */
+export type FiltroDeEstado = "abiertos" | "cerrados" | "todos";
+
+/**
+ * El filtro por estado, **del lado del navegador**.
+ *
+ * Igual que la búsqueda de esta misma pantalla y que el filtro de clientes:
+ * el bufete son dos personas y la cartera entra entera en una respuesta. El
+ * servidor sigue entregando todo, a propósito — si escondiera filas, la
+ * cuenta de abajo diría «4 de 6» sobre un total que nadie puede comprobar.
+ *
+ * El arreglo que llega no se toca: puede ser estado de React.
+ */
+export function filtrarPorEstado(
+  procesos: readonly Proceso[],
+  filtro: FiltroDeEstado,
+): Proceso[] {
+  if (filtro === "todos") return [...procesos];
+
+  const buscado = filtro === "abiertos" ? "abierto" : "cerrado";
+  return procesos.filter((proceso) => proceso.estado === buscado);
+}
+
+/**
+ * Lo que el filtro está dejando afuera, dicho.
+ *
+ * El listado arranca mostrando solo los abiertos, que es lo que el bufete
+ * abre a mirar. Un filtro por defecto que esconde filas **sin decirlo** es
+ * la diferencia entre filtrar y perder: quien no sabe que hay un filtro
+ * puesto concluye que el proceso no existe.
+ *
+ * Nombra lo que falta en las dos direcciones y no solo los cerrados: es una
+ * regla en vez de dos, y nunca hay que recordar cuál de las opciones era la
+ * que callaba.
+ */
+export function ocultosPorEstado(
+  procesos: readonly Proceso[],
+  filtro: FiltroDeEstado,
+): string | null {
+  if (filtro === "todos") return null;
+
+  const escondido = filtro === "abiertos" ? "cerrado" : "abierto";
+  const cuantos = procesos.filter(
+    (proceso) => proceso.estado === escondido,
+  ).length;
+
+  if (cuantos === 0) return null;
+
+  return cuantos === 1
+    ? `Hay 1 proceso ${escondido} que no se está mostrando.`
+    : `Hay ${String(cuantos)} procesos ${escondido}s que no se están mostrando.`;
+}
+
+/**
+ * El estado del proceso, con su fecha cuando la hay.
+ *
+ * **Un proceso cerrado sin fecha no se rellena.** Por la API no puede pasar
+ * —`cerrar` escribe las dos cosas juntas—, pero el dato llega del cable y
+ * fabricarle un día sería firmar un cierre que nadie firmó. Se dice lo que
+ * se sabe: «Cerrado», a secas.
+ */
+export function estadoLegible(proceso: Proceso): string {
+  if (proceso.estado === "abierto") return "Abierto";
+  if (proceso.cerradoEn === null) return "Cerrado";
+
+  return `Cerrado el ${fechaLegible(proceso.cerradoEn)}`;
+}
+
+/**
+ * La regla del proceso cerrado, dicha antes de que alguien la descubra
+ * apretando un botón apagado.
+ *
+ * Nombra **las tres prohibiciones y las dos salidas**. Un aviso que solo
+ * prohíbe es una pared, y el criterio de este proyecto —el mismo que T-6
+ * fijó para el 409 de los catálogos y T-9 para el pendiente que no se
+ * reabre— es que ninguna negativa se quede sin puerta.
+ */
+export function avisoDeProcesoCerrado(proceso: Proceso): string | null {
+  if (proceso.estado === "abierto") return null;
+
+  return (
+    "Este proceso está cerrado: no avanza de etapa, no se le edita el plan" +
+    " y no se le anotan pendientes nuevos. Lo que sí se puede es escribir" +
+    " una nota —la historia no se congela porque el trámite terminó— y" +
+    " cerrar los cabos sueltos que hayan quedado. Si apareció trabajo de" +
+    " verdad, hay que reabrirlo, y queda registrado quién lo hizo."
+  );
+}
+
+/**
+ * La cuenta de la cabecera, leída a la luz del estado del proceso.
+ *
+ * `resumenDePendientes` sabe contar una lista de cabos sueltos; lo que el
+ * estado del proceso cambia es **qué significa ese número**, y eso es un
+ * derivado del proceso. Por eso vive acá y delega allá en vez de copiar la
+ * cuenta: una segunda definición de «cuántos hay» es la que se desincroniza.
+ *
+ * Con el proceso cerrado el número **deja de contarse como trabajo
+ * vigente**: la cabecera es «lo que obliga a mirar hoy», y un trámite
+ * terminado no obliga a nada. Se apaga también la marca de vencido, por la
+ * misma razón por la que `estaVencido` nunca marca un pendiente ya cerrado —
+ * rojo sobre algo que nadie va a perseguir es ruido.
+ *
+ * **Pero no se esconde cuántos quedaron.** No alarmar y no mostrar son dos
+ * cosas distintas: los cabos sueltos de un caso terminado son justamente lo
+ * que alguien va a querer ver cuando el cliente vuelva a llamar.
+ */
+export function resumenDeTrabajoVigente(
+  proceso: Proceso,
+  abiertos: readonly PendienteDeProceso[],
+  hoy: string,
+): string {
+  if (proceso.estado === "abierto") return resumenDePendientes(abiertos, hoy);
+
+  if (abiertos.length === 0) {
+    return "El proceso está cerrado y no quedó ningún cabo suelto.";
+  }
+
+  return abiertos.length === 1
+    ? "El proceso está cerrado. Quedó 1 pendiente sin cerrar."
+    : `El proceso está cerrado. Quedaron ${String(
+        abiertos.length,
+      )} pendientes sin cerrar.`;
 }

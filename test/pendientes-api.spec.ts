@@ -1007,6 +1007,11 @@ describe("la puerta de Access protege todas las rutas de pendientes", () => {
       crear: () => Promise.resolve({ estado: "no_encontrado" }),
       reemplazarEtapas: () => Promise.resolve({ estado: "no_encontrado" }),
       avanzar: () => Promise.resolve({ estado: "no_encontrado" }),
+      // T-14. El doble los lleva por la misma razón que los demás: lo que
+      // esta prueba vigila es que la puerta de Access conteste antes de que
+      // el dominio se entere, y un puerto incompleto no compila.
+      cerrar: () => Promise.resolve({ estado: "no_encontrado" }),
+      reabrir: () => Promise.resolve({ estado: "no_encontrado" }),
     };
 
     const ruta = `/api/procesos/${nuevoId()}${cola}`;
@@ -1080,5 +1085,94 @@ describe("un pendiente no es una nota", () => {
 
     const pendientes = await pendientesDe(procesoId);
     expect(pendientes.map((p) => p.texto)).toEqual([FALTA_EL_DOCUMENTO]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-14 · Los pendientes de un proceso cerrado
+// ---------------------------------------------------------------------------
+
+/**
+ * **La decisión de T-14, y su argumento.**
+ *
+ * El principio es «un proceso cerrado conserva su historia y no acepta
+ * avance». De ahí salen las dos mitades, que no son simétricas:
+ *
+ *  - **Cerrar un pendiente: sí.** Cerrar un cabo suelto no es trabajo en
+ *    curso sobre el trámite, es terminar de atar lo que el cierre dejó
+ *    colgando — y es exactamente el movimiento que la respuesta del cierre
+ *    señala al decir cuántos quedaron. Si se avisa «quedaron tres» y después
+ *    no se deja cerrarlos, el aviso es una denuncia sin salida.
+ *  - **Abrir uno nuevo: no.** Un pendiente es, por definición del diseño,
+ *    «algo que sigue pasando» que no se calla hasta que alguien lo cierre.
+ *    Abrir uno declara trabajo vigente sobre un trámite terminado, que es la
+ *    misma afirmación que avanzar una etapa. Si de verdad apareció trabajo,
+ *    se reabre el proceso: es reversible y deja rastro.
+ *
+ * La válvula de escape existe y queda abierta: «el cliente volvió preguntando
+ * por X» se escribe como **nota**, y eso sí se acepta (ver `notas-api`).
+ */
+describe("un proceso cerrado no admite pendientes nuevos", () => {
+  async function procesoCerrado(): Promise<string> {
+    const procesoId = await crearProceso(tipoResidenciaId);
+    const respuesta = await comoAutora(
+      peticion(`/api/procesos/${procesoId}/cerrar`, { method: "POST" }),
+    );
+    expect(respuesta.status).toBe(200);
+    return procesoId;
+  }
+
+  it("anotar un pendiente se rechaza con 409, y no entra ninguna fila", async () => {
+    const procesoId = await procesoCerrado();
+
+    const respuesta = await anotarPendiente(procesoId, {
+      texto: FALTA_EL_DOCUMENTO,
+    });
+    expect(respuesta.status).toBe(409);
+    expect(((await respuesta.json()) as { error: string }).error).toBe(
+      "proceso_cerrado",
+    );
+
+    // El contrapeso: el rechazo es antes de escribir, no después.
+    expect(await cuantasFilas(procesoId)).toBe(0);
+  });
+
+  it("DECISIÓN DE T-14: un cabo suelto que quedó abierto SÍ se puede cerrar", async () => {
+    const procesoId = await crearProceso(tipoResidenciaId);
+    const pendienteId = await unPendiente(procesoId);
+
+    expect(
+      (
+        await comoAutora(
+          peticion(`/api/procesos/${procesoId}/cerrar`, { method: "POST" }),
+        )
+      ).status,
+    ).toBe(200);
+
+    expect((await cerrar(procesoId, pendienteId)).status).toBe(200);
+
+    const [pendiente] = await pendientesDe(procesoId);
+    expect(pendiente.cerradoEn).not.toBeNull();
+    expect(pendiente.cerradoPor).not.toBeNull();
+  });
+
+  it("reabrir el proceso vuelve a dejar anotar: la guarda es reversible", async () => {
+    const procesoId = await procesoCerrado();
+    expect(
+      (await anotarPendiente(procesoId, { texto: FALTA_EL_DOCUMENTO })).status,
+    ).toBe(409);
+
+    expect(
+      (
+        await comoAutora(
+          peticion(`/api/procesos/${procesoId}/reabrir`, { method: "POST" }),
+        )
+      ).status,
+    ).toBe(200);
+
+    expect(
+      (await anotarPendiente(procesoId, { texto: FALTA_EL_DOCUMENTO })).status,
+    ).toBe(201);
+    expect(await cuantasFilas(procesoId)).toBe(1);
   });
 });

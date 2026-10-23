@@ -9,6 +9,8 @@
  *   PUT    /api/procesos/{id}/etapas       el plan entero, ordenado
  *   POST   /api/procesos/{id}/avanzar      marca alcanzada la próxima pendiente
  *   POST   /api/procesos/{id}/plantilla    guarda el plan como plantilla (T-11)
+ *   POST   /api/procesos/{id}/cerrar       el trámite terminó (T-14)
+ *   POST   /api/procesos/{id}/reabrir      vuelve a estar en curso (T-14)
  *
  * `plantilla` cuelga del **proceso** y no de `/api/tipos-proceso`, porque lo
  * que identifica la operación es de dónde sale el plan: el tipo de destino
@@ -40,6 +42,10 @@
  *    el motivo es lo que la pantalla convierte en una frase.
  *  - **409** para avanzar un plan que ya no tiene nada por delante: la
  *    petición está bien formada y el estado es el que no la admite.
+ *  - **409** para pedirle avance a un proceso cerrado —avanzar de etapa o
+ *    guardar el plan— y para la transición que no transiciona nada: cerrar
+ *    algo cerrado, reabrir algo abierto (T-14). Mismo argumento: la petición
+ *    está bien formada y es el estado el que no la admite.
  *  - **409** también para guardar el plan como un tipo de proceso **nuevo**
  *    cuyo nombre ya está tomado en esa área (T-12). Es el mismo cuerpo y la
  *    misma traducción que `POST /api/tipos-proceso`, importada de allá: esta
@@ -56,10 +62,13 @@ import type { ServicioDeCatalogos } from "../catalogos/repositorio";
 import { nombreYaTomado } from "../catalogos/rutas";
 import type { BaseDeDatos } from "../db/base";
 import type {
+  CambioDeEstadoDeProceso,
   DatosInvalidos,
   DetalleDeProceso,
   FallaDeValidacion,
   PlantillaGuardada,
+  ProcesoAbierto,
+  ProcesoCerrado,
   RespuestaDeProceso,
   RespuestaDeProcesos,
   SinEtapasPendientes,
@@ -139,9 +148,23 @@ function detalle(valor: DetalleDeProceso, init?: ResponseInit): Response {
   return json(valor, init);
 }
 
+/**
+ * El 409 de T-14: la petición está bien formada y el estado no la admite.
+ *
+ * Se exporta porque `worker/pendientes/rutas.ts` contesta exactamente el
+ * mismo cuerpo cuando alguien intenta abrir un cabo suelto en un proceso
+ * cerrado. Dos literales idénticos en dos archivos serían dos respuestas que
+ * un día dejan de ser la misma y obligan a la pantalla a tratarlas distinto.
+ */
+export function procesoCerrado(): Response {
+  const cuerpo: ProcesoCerrado = { error: "proceso_cerrado" };
+  return json(cuerpo, { status: 409 });
+}
+
 function respuestaDeEscritura(resultado: ResultadoDeEscritura): Response {
   if (resultado.estado === "no_encontrado") return noEncontrado();
   if (resultado.estado === "invalido") return invalido(resultado.fallas);
+  if (resultado.estado === "proceso_cerrado") return procesoCerrado();
 
   return detalle(resultado.detalle);
 }
@@ -229,12 +252,58 @@ async function manejarAvance(
   const resultado = await servicio.avanzar(tenantId, procesoId);
 
   if (resultado.estado === "no_encontrado") return noEncontrado();
+  if (resultado.estado === "proceso_cerrado") return procesoCerrado();
   if (resultado.estado === "sin_pendientes") {
     const cuerpo: SinEtapasPendientes = { error: "sin_etapas_pendientes" };
     return json(cuerpo, { status: 409 });
   }
 
   return detalle(resultado.detalle);
+}
+
+/**
+ * T-14: cerrar y reabrir, que son la misma forma con distinta dirección.
+ *
+ * Un `POST` a una subruta y no un `PATCH` al proceso, por lo mismo que
+ * `avanzar` en T-7 y que `cerrar` un pendiente en T-9: es una transición de
+ * estado, no una edición. Darle al proceso verbos de edición sería estrenar
+ * la superficie sobre la que mañana alguien cuelga un `DELETE`.
+ *
+ * El cuerpo de éxito es el detalle entero más `pendientesAbiertos`: cerrar
+ * con cabos sueltos se permite, y lo que no se permite es que pase
+ * inadvertido.
+ */
+async function manejarCambioDeEstado(
+  request: Request,
+  tenantId: string,
+  procesoId: string,
+  servicio: ServicioDeProcesos,
+  hacia: "cerrar" | "reabrir",
+): Promise<Response> {
+  if (request.method !== "POST") return metodoNoPermitido("POST");
+
+  const resultado =
+    hacia === "cerrar"
+      ? await servicio.cerrar(tenantId, procesoId)
+      : await servicio.reabrir(tenantId, procesoId);
+
+  if (resultado.estado === "no_encontrado") return noEncontrado();
+  if (resultado.estado === "ya_estaba") {
+    // El error nombra el estado que estorba y no la operación que falló:
+    // «ya estaba cerrado» y «no se puede avanzar porque está cerrado» son
+    // el mismo hecho, y la pantalla lo explica con la misma frase.
+    if (resultado.actual === "cerrado") return procesoCerrado();
+
+    const cuerpo: ProcesoAbierto = { error: "proceso_abierto" };
+    return json(cuerpo, { status: 409 });
+  }
+
+  const cuerpo: CambioDeEstadoDeProceso = {
+    proceso: resultado.detalle.proceso,
+    etapas: resultado.detalle.etapas,
+    pendientesAbiertos: resultado.pendientesAbiertos,
+  };
+  return json(cuerpo);
 }
 
 /**
@@ -335,6 +404,15 @@ export async function rutasDeProcesos(
     }
     if (segmentos[3] === "avanzar") {
       return manejarAvance(request, tenantId, id, servicio);
+    }
+    if (segmentos[3] === "cerrar" || segmentos[3] === "reabrir") {
+      return manejarCambioDeEstado(
+        request,
+        tenantId,
+        id,
+        servicio,
+        segmentos[3],
+      );
     }
     if (segmentos[3] === "plantilla") {
       return manejarGuardadoDePlantilla(

@@ -37,6 +37,9 @@
  *  - **409** para cerrar algo que ya estaba cerrado: la petición está bien
  *    formada y el estado es el que no la admite, igual que el avance de un
  *    plan sin pendientes en T-7.
+ *  - **409** `proceso_cerrado` para anotar un cabo suelto en un proceso ya
+ *    terminado (T-14). **Solo el alta**: cerrar uno que quedó abierto sigue
+ *    siendo 200, y ahí está la decisión entera de esa tarea.
  *  - **201** en el alta y **200** en el cierre, los dos con la lista entera
  *    en el cuerpo. Sin `location`: un pendiente no tiene dirección propia, y
  *    fabricar una sería prometer un `GET` que no existe.
@@ -50,6 +53,7 @@ import type {
 } from "../contract";
 import type { Identidad } from "../acceso/identidad";
 import type { ServicioDeProcesos } from "../procesos/repositorio";
+import { procesoCerrado } from "../procesos/rutas";
 import { normalizarPendiente } from "./dominio";
 import type {
   ResultadoDePendiente,
@@ -105,6 +109,10 @@ function respuestaDeEscritura(
     const cuerpo: PendienteYaCerrado = { error: "pendiente_ya_cerrado" };
     return json(cuerpo, { status: 409 });
   }
+  // El mismo 409 y el mismo cuerpo que las rutas de proceso, importado de
+  // allá y no copiado: de dónde se chocó contra el proceso cerrado no cambia
+  // qué tiene que leer quien está mirando la pantalla.
+  if (resultado.estado === "proceso_cerrado") return procesoCerrado();
 
   const cuerpo: RespuestaDePendientes = { pendientes: resultado.pendientes };
   return json(cuerpo, { status: estadoDeExito });

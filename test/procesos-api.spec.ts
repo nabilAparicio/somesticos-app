@@ -249,6 +249,15 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   // El almacenamiento está aislado por archivo, no por prueba.
+  //
+  // `pendiente` va primero, y lo trajo T-14: desde que el cierre informa
+  // cuántos cabos sueltos quedaron, esta suite abre pendientes, y
+  // `pendiente.proceso_etapa_id` es una llave foránea en `NO ACTION`. Sin
+  // esta línea el borrado de `proceso_etapa` revienta con
+  // `FOREIGN KEY constraint failed` en la prueba siguiente. Se puede borrar
+  // —a diferencia de `nota` y de `bitacora`, un pendiente no tiene
+  // disparador de inmutabilidad: no es un registro de auditoría.
+  await env.DB.prepare("DELETE FROM pendiente").run();
   await env.DB.prepare("DELETE FROM proceso_etapa").run();
   await env.DB.prepare("DELETE FROM proceso").run();
   await env.DB.prepare("DELETE FROM etapa_plantilla").run();
@@ -1945,5 +1954,300 @@ describe("guardar el plan como un TIPO DE PROCESO NUEVO", () => {
     const cuerpo = (await respuesta.json()) as PlantillaGuardadaEnElCable;
     expect(cuerpo.tipo.nombre).toBe("Residencia express");
     expect(cuerpo.tipo.descripcion).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-14 · Cerrar y reabrir un proceso
+// ---------------------------------------------------------------------------
+
+/**
+ * El cuerpo que contestan `cerrar` y `reabrir`: el detalle entero más el
+ * número que el cierre obliga a decir.
+ *
+ * Declarado acá y no importado del contrato, igual que el resto de la suite:
+ * lo que esto vigila es el JSON que ve el navegador.
+ */
+interface CambioDeEstadoEnElCable {
+  proceso: ProcesoEnElCable;
+  etapas: EtapaEnElCable[];
+  pendientesAbiertos: number;
+}
+
+function cerrar(procesoId: string): Promise<Response> {
+  return comoAutor(
+    peticion(`/api/procesos/${procesoId}/cerrar`, { method: "POST" }),
+  );
+}
+
+function reabrir(procesoId: string): Promise<Response> {
+  return comoAutor(
+    peticion(`/api/procesos/${procesoId}/reabrir`, { method: "POST" }),
+  );
+}
+
+function anotarPendiente(
+  procesoId: string,
+  texto: string,
+): Promise<Response> {
+  return comoAutor(
+    conCuerpo(`/api/procesos/${procesoId}/pendientes`, "POST", { texto }),
+  );
+}
+
+/** Las acciones de la bitácora del proceso, del hecho más viejo al más nuevo. */
+async function accionesDe(procesoId: string): Promise<string[]> {
+  const respuesta = await comoAutor(
+    peticion(`/api/procesos/${procesoId}/bitacora`),
+  );
+  expect(respuesta.status).toBe(200);
+  const cuerpo = (await respuesta.json()) as {
+    entradas: { accion: string; detalle: string | null }[];
+  };
+  return cuerpo.entradas.map((entrada) => entrada.accion);
+}
+
+/** El motivo del 409, que es lo que la pantalla convierte en una frase. */
+async function conflictoDe(respuesta: Response): Promise<string> {
+  expect(respuesta.status).toBe(409);
+  return ((await respuesta.json()) as { error: string }).error;
+}
+
+describe("cerrar un proceso", () => {
+  it("lo deja cerrado y con su fecha de cierre, releído por la API", async () => {
+    const proceso = await procesoDeResidencia();
+    expect(proceso.estado).toBe("abierto");
+    expect(proceso.cerradoEn).toBeNull();
+
+    const respuesta = await cerrar(proceso.id);
+    expect(respuesta.status).toBe(200);
+
+    // El eco no prueba nada: lo que prueba es la relectura.
+    const despues = await releer(proceso.id);
+    expect(despues.proceso.estado).toBe("cerrado");
+    expect(despues.proceso.cerradoEn).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
+  });
+
+  it("DECISIÓN DE T-14: se cierra con cabos sueltos, pero diciendo cuántos", async () => {
+    // El bufete cierra casos con cabos sueltos y el sistema no está para
+    // discutirle; lo que no puede es dejar que pase inadvertido. Por eso no
+    // es un 409: es un cierre que sale bien y que informa.
+    const proceso = await procesoDeResidencia();
+    expect((await anotarPendiente(proceso.id, "Falta el apostillado")).status).toBe(201);
+    expect((await anotarPendiente(proceso.id, "Falta el pago del timbre")).status).toBe(201);
+
+    const respuesta = await cerrar(proceso.id);
+    expect(respuesta.status).toBe(200);
+
+    const cuerpo = (await respuesta.json()) as CambioDeEstadoEnElCable;
+    expect(cuerpo.pendientesAbiertos).toBe(2);
+    expect(cuerpo.proceso.estado).toBe("cerrado");
+  });
+
+  it("cuenta solo los que siguen abiertos, no los ya cerrados", async () => {
+    const proceso = await procesoDeResidencia();
+    const primero = await anotarPendiente(proceso.id, "Falta el apostillado");
+    expect(primero.status).toBe(201);
+    const lista = (await primero.json()) as {
+      pendientes: { id: string }[];
+    };
+    expect((await anotarPendiente(proceso.id, "Falta el timbre")).status).toBe(201);
+
+    expect(
+      (
+        await comoAutor(
+          peticion(
+            `/api/procesos/${proceso.id}/pendientes/${lista.pendientes[0].id}/cerrar`,
+            { method: "POST" },
+          ),
+        )
+      ).status,
+    ).toBe(200);
+
+    const cuerpo = (await (await cerrar(proceso.id)).json()) as CambioDeEstadoEnElCable;
+    expect(cuerpo.pendientesAbiertos).toBe(1);
+  });
+
+  it("un proceso sin cabos sueltos se cierra informando cero", async () => {
+    const proceso = await procesoDeResidencia();
+    const cuerpo = (await (await cerrar(proceso.id)).json()) as CambioDeEstadoEnElCable;
+    expect(cuerpo.pendientesAbiertos).toBe(0);
+  });
+
+  it("un proceso de otro bufete no se cierra: 404", async () => {
+    expect((await cerrar(procesoAjenoId)).status).toBe(404);
+  });
+
+  it("cerrar dos veces es 409 y NO reescribe la fecha del primer cierre", async () => {
+    const proceso = await procesoDeResidencia();
+    expect((await cerrar(proceso.id)).status).toBe(200);
+    const primera = (await releer(proceso.id)).proceso.cerradoEn;
+
+    expect(await conflictoDe(await cerrar(proceso.id))).toBe("proceso_cerrado");
+
+    // El contrapeso: el segundo cierre no puede pisar el momento del primero.
+    expect((await releer(proceso.id)).proceso.cerradoEn).toBe(primera);
+  });
+
+  it("deja su hecho en la bitácora", async () => {
+    const proceso = await procesoDeResidencia();
+    expect((await cerrar(proceso.id)).status).toBe(200);
+
+    expect(await accionesDe(proceso.id)).toEqual(["creado", "cerrado"]);
+  });
+
+  it("el método tiene que ser POST", async () => {
+    const proceso = await procesoDeResidencia();
+    const respuesta = await comoAutor(
+      peticion(`/api/procesos/${proceso.id}/cerrar`),
+    );
+    expect(respuesta.status).toBe(405);
+    expect(respuesta.headers.get("allow")).toBe("POST");
+  });
+});
+
+describe("un proceso cerrado no acepta avance", () => {
+  /**
+   * El corazón de T-14, y las tres pruebas que tienen que morir si alguien
+   * afloja la guarda. Una prueba que cierra un proceso y lo encuentra cerrado
+   * pasa igual con la guarda borrada; lo que prueba algo es el rechazo.
+   */
+  async function procesoCerrado(): Promise<ProcesoEnElCable> {
+    const proceso = await procesoDeResidencia();
+    expect((await cerrar(proceso.id)).status).toBe(200);
+    return proceso;
+  }
+
+  it("avanzar de etapa se rechaza con 409, y la etapa sigue sin cumplirse", async () => {
+    const proceso = await procesoCerrado();
+
+    expect(await conflictoDe(await avanzar(proceso.id))).toBe("proceso_cerrado");
+
+    const despues = await releer(proceso.id);
+    expect(despues.proceso.etapasCumplidas).toBe(0);
+    expect(despues.etapas.every((etapa) => etapa.alcanzadaEn === null)).toBe(true);
+  });
+
+  it("editar el plan se rechaza con 409, y el plan queda como estaba", async () => {
+    const proceso = await procesoDeResidencia();
+    const antes = await releer(proceso.id);
+    expect((await cerrar(proceso.id)).status).toBe(200);
+
+    const respuesta = await guardarPlan(proceso.id, [
+      ...comoEnvio(antes.etapas),
+      { id: null, nombre: "Un paso que no debería entrar" },
+    ]);
+    expect(await conflictoDe(respuesta)).toBe("proceso_cerrado");
+
+    expect(await nombresDelPlan(proceso.id)).toEqual([...PLAN_DE_RESIDENCIA]);
+  });
+
+  it("el rechazo no deja ninguna entrada de bitácora", async () => {
+    // Un rechazo no es un hecho: si `plan_editado` apareciera acá, la
+    // bitácora diría que alguien editó un plan que no cambió.
+    const proceso = await procesoCerrado();
+    const antes = await accionesDe(proceso.id);
+
+    await avanzar(proceso.id);
+    await guardarPlan(proceso.id, [{ id: null, nombre: "Nada" }]);
+
+    expect(await accionesDe(proceso.id)).toEqual(antes);
+  });
+
+  it("DECISIÓN DE T-14: guardar el plan como plantilla sí se puede", async () => {
+    // La guarda prohíbe el avance, no la lectura. Copiar el plan a una
+    // plantilla no toca el proceso: escribe en catálogos. Un proceso
+    // terminado es justamente del que conviene sacar el molde bueno.
+    const proceso = await procesoCerrado();
+
+    const respuesta = await comoAutor(
+      conCuerpo(`/api/procesos/${proceso.id}/plantilla`, "POST", {
+        destino: "actualizar",
+      }),
+    );
+    expect(respuesta.status).toBe(200);
+  });
+});
+
+describe("reabrir un proceso", () => {
+  it("lo devuelve a abierto y borra la fecha del cierre anterior", async () => {
+    const proceso = await procesoDeResidencia();
+    expect((await cerrar(proceso.id)).status).toBe(200);
+    expect((await releer(proceso.id)).proceso.cerradoEn).not.toBeNull();
+
+    expect((await reabrir(proceso.id)).status).toBe(200);
+
+    // `cerrado_en` vuelve a nulo y no conserva la fecha vieja: para eso está
+    // la bitácora, que es inmutable y sí la guarda. Un proceso abierto con
+    // fecha de cierre es un dato que miente.
+    const despues = await releer(proceso.id);
+    expect(despues.proceso.estado).toBe("abierto");
+    expect(despues.proceso.cerradoEn).toBeNull();
+  });
+
+  it("la guarda del avance es reversible: reabierto, vuelve a avanzar", async () => {
+    const proceso = await procesoDeResidencia();
+    expect((await cerrar(proceso.id)).status).toBe(200);
+    expect(await conflictoDe(await avanzar(proceso.id))).toBe("proceso_cerrado");
+
+    expect((await reabrir(proceso.id)).status).toBe(200);
+
+    expect((await avanzar(proceso.id)).status).toBe(200);
+    expect((await releer(proceso.id)).proceso.etapasCumplidas).toBe(1);
+  });
+
+  it("reabrir uno que nunca se cerró es 409", async () => {
+    const proceso = await procesoDeResidencia();
+    expect(await conflictoDe(await reabrir(proceso.id))).toBe("proceso_abierto");
+  });
+
+  it("un proceso de otro bufete no se reabre: 404", async () => {
+    expect((await reabrir(procesoAjenoId)).status).toBe(404);
+  });
+
+  it("el cierre sigue en la bitácora después de reabrir", async () => {
+    // La fecha del cierre desaparece de la fila y **no** de la historia. Es
+    // la razón entera de que `cerrado_en` pueda volver a nulo sin perder nada.
+    const proceso = await procesoDeResidencia();
+    expect((await cerrar(proceso.id)).status).toBe(200);
+    expect((await reabrir(proceso.id)).status).toBe(200);
+
+    expect(await accionesDe(proceso.id)).toEqual([
+      "creado",
+      "cerrado",
+      "reabierto",
+    ]);
+  });
+
+  it("el método tiene que ser POST", async () => {
+    const proceso = await procesoDeResidencia();
+    const respuesta = await comoAutor(
+      peticion(`/api/procesos/${proceso.id}/reabrir`, { method: "PUT" }),
+    );
+    expect(respuesta.status).toBe(405);
+    expect(respuesta.headers.get("allow")).toBe("POST");
+  });
+});
+
+describe("el listado no esconde los cerrados", () => {
+  it("un proceso cerrado sigue viniendo, con su estado y su fecha", async () => {
+    // El servidor entrega todo y la pantalla filtra, igual que con la
+    // búsqueda: esconder filas en el servidor haría que «4 de 6» fuera una
+    // cuenta que nadie puede comprobar.
+    const abierto = await procesoDeResidencia("Residencia que sigue");
+    const cerrado = await procesoDeResidencia("Residencia terminada");
+    expect((await cerrar(cerrado.id)).status).toBe(200);
+
+    const respuesta = await comoAutor(peticion("/api/procesos"));
+    const { procesos } = (await respuesta.json()) as {
+      procesos: ProcesoEnElCable[];
+    };
+
+    const porId = new Map(procesos.map((p) => [p.id, p]));
+    expect(porId.get(abierto.id)?.estado).toBe("abierto");
+    expect(porId.get(cerrado.id)?.estado).toBe("cerrado");
+    expect(porId.get(cerrado.id)?.cerradoEn).not.toBeNull();
   });
 });

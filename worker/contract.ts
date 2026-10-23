@@ -506,6 +506,90 @@ export interface SinEtapasPendientes {
 }
 
 /* ==========================================================================
+   Cerrar y reabrir un proceso (T-14)
+
+   El esquema lleva `estado IN ('abierto','cerrado')` y `cerrado_en` desde
+   T-2, y hasta T-14 la API no los expuso: un proceso nacía abierto y no
+   había cómo terminarlo.
+
+   **El principio: un proceso cerrado conserva su historia y no acepta
+   avance.** De ahí sale todo lo demás, y las consecuencias no son
+   simétricas:
+
+    - **Avanzar de etapa y editar el plan se rechazan.** Las dos son trabajo
+      en curso; si hay trabajo, se reabre primero. Reabrir es reversible y
+      deja rastro, que es lo que lo vuelve una guarda y no una pared.
+    - **Abrir un pendiente nuevo también se rechaza.** Un pendiente es «algo
+      que sigue pasando» que no se calla hasta que alguien lo cierre:
+      abrirlo declara trabajo vigente sobre un trámite terminado.
+    - **Cerrar un pendiente que quedó abierto sí se puede.** No es avance:
+      es terminar de atar lo que el cierre dejó colgando. Si se avisa
+      «quedaron tres» y después no se deja cerrarlos, el aviso es una
+      denuncia sin salida.
+    - **Escribir una nota sí se puede.** La historia no se congela porque el
+      trámite terminó: justo ahí aparece el «el cliente volvió preguntando
+      por X», y es la válvula que deja que lo anterior esté prohibido sin
+      dejar a nadie sin dónde escribirlo.
+    - **Guardar el plan como plantilla sí se puede.** Lee el proceso y
+      escribe en catálogos; no lo toca.
+
+   `cerrado_en` se llena al cerrar y **vuelve a `NULL` al reabrir**. No
+   conserva la fecha del cierre anterior: para eso está la bitácora, que es
+   inmutable y sí la guarda. Un proceso abierto con fecha de cierre es un
+   dato que miente.
+   ========================================================================== */
+
+/**
+ * Lo que contestan `cerrar` y `reabrir`: el detalle entero y el número que
+ * el cambio de estado obliga a decir.
+ *
+ * Es el detalle completo y no media respuesta, por lo mismo que el `PUT` del
+ * plan y el avance de T-7: el cambio mueve lo que la cabecera muestra, y
+ * devolver un pedazo obliga a la pantalla a pedir el resto o a recalcularlo.
+ *
+ * `pendientesAbiertos` es la mitad de la decisión de T-14 puesta en el
+ * cable. **Cerrar con cabos sueltos se permite**: el bufete cierra casos con
+ * cabos sueltos y el sistema no está para discutirle. Lo que no puede es
+ * dejar que pase inadvertido, así que no es un 409 — es un cierre que sale
+ * bien y que informa. Viaja también en la reapertura porque ahí el número
+ * cambia de significado y vuelve a ser trabajo por hacer.
+ */
+export interface CambioDeEstadoDeProceso {
+  proceso: Proceso;
+  etapas: EtapaDeProceso[];
+  /** Cuántos pendientes del proceso siguen sin cerrarse. */
+  pendientesAbiertos: number;
+}
+
+/**
+ * El 409 de pedirle avance a un proceso cerrado.
+ *
+ * Lo contestan avanzar de etapa, el `PUT` del plan, abrir un pendiente y el
+ * segundo cierre. Es 409 y no 422 por lo mismo que `sin_etapas_pendientes`:
+ * la petición está bien formada y es el estado el que no la admite.
+ *
+ * Es **uno solo** para las cuatro y no cuatro motivos distintos porque la
+ * respuesta a todas es la misma —reabrir el proceso— y la frase que la
+ * pantalla dibuja es la misma. Cuatro motivos serían cuatro formas de decir
+ * «está cerrado» y la cuarta terminaría dicha distinto.
+ */
+export interface ProcesoCerrado {
+  error: "proceso_cerrado";
+}
+
+/**
+ * El 409 de reabrir algo que nunca se cerró.
+ *
+ * La contraparte exacta del anterior: el error nombra el estado que estorba,
+ * no la operación. Y es un rechazo y no un no-op silencioso por lo mismo que
+ * el segundo cierre de un pendiente en T-9: una reapertura que no reabrió
+ * nada dejaría en la bitácora un hecho que no pasó.
+ */
+export interface ProcesoAbierto {
+  error: "proceso_abierto";
+}
+
+/* ==========================================================================
    Guardar el plan de un proceso como plantilla (T-11)
 
    El camino que el diseño señala como el más usado para crear una plantilla:
@@ -859,6 +943,23 @@ export type AccionDeBitacora =
   | "plan_editado"
   /** Se marcó alcanzada la próxima etapa. `detalle` dice cuál. */
   | "etapa_alcanzada"
+  /**
+   * El trámite terminó (T-14). `detalle` lleva el título del proceso.
+   *
+   * Va pelado y no como `proceso_cerrado` por la misma regla que `creado`:
+   * la entidad ya viaja en su columna, y solo llevan prefijo los hechos de
+   * algo que *cuelga* del proceso —`plan_editado`, `pendiente_cerrado`—.
+   * Si el nacimiento de un proceso es `creado`, su cierre es `cerrado`.
+   */
+  | "cerrado"
+  /**
+   * Volvió a estar en curso. La contraparte, por simetría.
+   *
+   * Es un hecho propio y no un `editado`: reabrir borra `cerrado_en` de la
+   * fila, y esta entrada es lo único que conserva que aquel cierre existió
+   * y cuándo. Esconderlo dentro de «editó» perdería el dato entero.
+   */
+  | "reabierto"
   /** El plan de un proceso se copió a una plantilla (T-11). */
   | "plantilla_guardada"
   /** Alguien anotó un hecho. `detalle` dice en qué etapa quedó anclado. */

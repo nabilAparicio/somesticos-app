@@ -24,9 +24,13 @@ import { enlaceDe } from "../../ruteo";
 import { cargarProcesos, textoDeProblema } from "./api";
 import {
   avanceDe,
+  estadoLegible,
+  filtrarPorEstado,
   filtrarProcesos,
+  ocultosPorEstado,
   ordenarProcesos,
   proximoPaso,
+  type FiltroDeEstado,
 } from "./presentacion";
 
 type Estado =
@@ -37,6 +41,13 @@ type Estado =
 export function ListaDeProcesos() {
   const [estado, setEstado] = useState<Estado>({ fase: "cargando" });
   const [consulta, setConsulta] = useState("");
+  /**
+   * T-14. Arranca en «abiertos» porque el bufete abre esta pantalla a ver
+   * qué hay que hacer, y un listado que se llena de trámites terminados deja
+   * de contestar esa pregunta. Lo que el filtro deja afuera se **dice**
+   * abajo: por defecto esconder sin avisar es perder, no filtrar.
+   */
+  const [filtro, setFiltro] = useState<FiltroDeEstado>("abiertos");
 
   useEffect(() => {
     const control = new AbortController();
@@ -58,8 +69,16 @@ export function ListaDeProcesos() {
 
   const visibles = useMemo(() => {
     if (estado.fase !== "listo") return [];
-    return ordenarProcesos(filtrarProcesos(estado.procesos, consulta));
-  }, [estado, consulta]);
+    return ordenarProcesos(
+      filtrarProcesos(filtrarPorEstado(estado.procesos, filtro), consulta),
+    );
+  }, [estado, consulta, filtro]);
+
+  /* Lo que el filtro de estado deja afuera, para decirlo en vez de callarlo. */
+  const ocultos =
+    estado.fase === "listo"
+      ? ocultosPorEstado(estado.procesos, filtro)
+      : null;
 
   return (
     <Pila espacio="holgado">
@@ -91,30 +110,58 @@ export function ListaDeProcesos() {
 
       {estado.fase === "listo" && estado.procesos.length > 0 && (
         <Pila>
-          <div className="campo campo--busqueda">
-            <label className="campo__rotulo" htmlFor="busqueda-de-procesos">
-              Buscar
-            </label>
-            <input
-              id="busqueda-de-procesos"
-              className="campo__control"
-              type="search"
-              value={consulta}
-              placeholder="Título, cliente, tipo o la etapa que viene"
-              onChange={(evento) => {
-                setConsulta(evento.target.value);
-              }}
-            />
-          </div>
+          <Fila>
+            <div className="campo campo--busqueda campo--crecer">
+              <label className="campo__rotulo" htmlFor="busqueda-de-procesos">
+                Buscar
+              </label>
+              <input
+                id="busqueda-de-procesos"
+                className="campo__control"
+                type="search"
+                value={consulta}
+                placeholder="Título, cliente, tipo o la etapa que viene"
+                onChange={(evento) => {
+                  setConsulta(evento.target.value);
+                }}
+              />
+            </div>
+
+            <div className="campo">
+              <label className="campo__rotulo" htmlFor="filtro-de-estado">
+                Estado
+              </label>
+              <select
+                id="filtro-de-estado"
+                className="campo__control"
+                value={filtro}
+                onChange={(evento) => {
+                  setFiltro(evento.target.value as FiltroDeEstado);
+                }}
+              >
+                <option value="abiertos">Abiertos</option>
+                <option value="cerrados">Cerrados</option>
+                <option value="todos">Todos</option>
+              </select>
+            </div>
+          </Fila>
 
           <p className="texto-apagado" aria-live="polite">
             {visibles.length === estado.procesos.length
               ? `${String(estado.procesos.length)} proceso(s).`
               : `${String(visibles.length)} de ${String(estado.procesos.length)} proceso(s).`}
+            {ocultos !== null && <> {ocultos}</>}
           </p>
 
           {visibles.length === 0 ? (
-            <Aviso>Ningún proceso coincide con «{consulta}».</Aviso>
+            <Aviso>
+              {consulta.trim() === ""
+                ? // Sin texto escrito, lo que vació la tabla fue el filtro de
+                  // estado, y decir «ningún proceso coincide con «»» mandaría
+                  // a buscar un error de tipeo que no existe.
+                  "Ningún proceso está en ese estado."
+                : `Ningún proceso coincide con «${consulta}».`}
+            </Aviso>
           ) : (
             <ContenedorDeTabla rotulo="Procesos del bufete">
               <thead>
@@ -135,6 +182,19 @@ export function ListaDeProcesos() {
                       >
                         {proceso.titulo}
                       </Enlace>
+                      {/* El estado se marca **solo cuando es cerrado**, y no
+                          como columna propia: con el filtro en «Abiertos»,
+                          que es lo normal, una columna diría «Abierto» en
+                          todas las filas y gastaría ancho en no decir nada.
+                          Lo que hay que ver es la excepción. */}
+                      {proceso.estado === "cerrado" && (
+                        <>
+                          {" "}
+                          <span className="etiqueta etiqueta--tenue">
+                            {estadoLegible(proceso)}
+                          </span>
+                        </>
+                      )}
                     </th>
                     <td>{proceso.clienteNombre}</td>
                     <td>{proceso.tipoProcesoNombre}</td>

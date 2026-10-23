@@ -37,6 +37,15 @@
  * Lo que se escribe y lo que se lee están separados, igual que con las
  * notas: arriba va lo que no se puede perder de vista; el formulario de
  * anotar y los pendientes ya cerrados van abajo, donde se los busca.
+ *
+ * T-14 le colgó **cerrar y reabrir**, y con eso la pantalla pasó a tener
+ * dos modos. Con el proceso cerrado se apagan avanzar, guardar el plan y
+ * anotar un pendiente, y **cada apagado dice por qué**: un botón gris sin
+ * explicación se lee como una falla de la aplicación, no como una regla.
+ * Siguen encendidos escribir una nota y cerrar un cabo suelto que haya
+ * quedado, que son las dos salidas que vuelven la regla una guarda y no una
+ * pared. Nada de esto es la guarda de verdad —ésa vive en el servidor y se
+ * prueba por rechazo—: acá solo se evita que alguien la descubra apretando.
  */
 import { useEffect, useState } from "react";
 
@@ -69,8 +78,10 @@ import {
   cargarPendientes,
   cargarProceso,
   cerrarPendiente,
+  cerrarProceso,
   guardarComoPlantilla,
   guardarPlan,
+  reabrirProceso,
   textoDeProblema,
 } from "./api";
 import {
@@ -83,7 +94,6 @@ import {
   firmaDeResponsable,
   hoyEnPanama,
   responsablesSeleccionables,
-  resumenDePendientes,
   separarPendientes,
   validarPendiente,
   type BorradorDePendiente,
@@ -122,7 +132,13 @@ import {
   validarPlan,
   type PasoDelPlan,
 } from "./plan";
-import { avanceDe, proximoPaso } from "./presentacion";
+import {
+  avanceDe,
+  avisoDeProcesoCerrado,
+  estadoLegible,
+  proximoPaso,
+  resumenDeTrabajoVigente,
+} from "./presentacion";
 
 type Props = {
   readonly id: string;
@@ -132,6 +148,29 @@ type Estado =
   | { fase: "cargando" }
   | { fase: "listo"; detalle: Detalle }
   | { fase: "problema"; mensaje: string };
+
+/**
+ * Lo que se dice justo después de cerrar (T-14).
+ *
+ * El número va en la frase y no en una advertencia roja aparte: el cierre
+ * con cabos sueltos **salió bien**, y es una decisión legítima del bufete.
+ * Lo único que el sistema aporta es que no pase inadvertido.
+ */
+function textoDelCierre(pendientesAbiertos: number): string {
+  if (pendientesAbiertos === 0) {
+    return "El proceso quedó cerrado, y no había ningún pendiente abierto.";
+  }
+
+  const cuantos =
+    pendientesAbiertos === 1
+      ? "1 pendiente sin cerrar"
+      : `${String(pendientesAbiertos)} pendientes sin cerrar`;
+
+  return (
+    `El proceso quedó cerrado con ${cuantos}. Siguen listados acá arriba y` +
+    " se pueden cerrar; lo que ya no se puede es anotar uno nuevo."
+  );
+}
 
 function Dato({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
@@ -277,6 +316,18 @@ export function DetalleDeProceso({ id }: Props) {
   const [avisoDelPendiente, setAvisoDelPendiente] = useState<string | null>(
     null,
   );
+  /* --- T-14: cerrar y reabrir ------------------------------------------ */
+  /**
+   * Lo que el último cambio de estado dejó dicho.
+   *
+   * Vive aparte de `avisoDelPlan` porque no es un error: el cierre que
+   * informa «quedaron dos pendientes sin cerrar» salió bien, y pintarlo del
+   * mismo rojo que un fallo enseñaría a ignorar los dos.
+   */
+  const [avisoDelEstado, setAvisoDelEstado] = useState<
+    { tono: "neutro" | "error"; texto: string } | null
+  >(null);
+
   /**
    * El día de hoy se calcula **una vez al montar** y no en cada dibujo.
    *
@@ -602,6 +653,49 @@ export function DetalleDeProceso({ id }: Props) {
     registrado();
   }
 
+  /**
+   * Cierra o reabre el proceso (T-14).
+   *
+   * Una función para las dos porque son la misma forma con distinta
+   * dirección, y el único lugar donde se separan es el texto del resultado.
+   * Dos copias serían dos sitios donde mañana una se olvida de asentar lo
+   * que el servidor contestó.
+   *
+   * **El cierre con cabos sueltos no se discute, se informa.** El servidor
+   * contesta 200 con cuántos quedaron, y eso llega acá como un aviso
+   * neutro: la decisión del bufete se respeta y el número se dice.
+   */
+  async function cambiarEstado(hacia: "cerrar" | "reabrir") {
+    if (trabajando) return;
+
+    setAvisoDelEstado(null);
+    setAvisoDelPlan(null);
+    setTrabajando(true);
+    const resultado =
+      hacia === "cerrar" ? await cerrarProceso(id) : await reabrirProceso(id);
+    setTrabajando(false);
+
+    if (resultado.estado !== "ok") {
+      setAvisoDelEstado({
+        tono: "error",
+        texto: textoDeProblema(resultado, "ese proceso"),
+      });
+      return;
+    }
+
+    const { proceso: cambiado, etapas, pendientesAbiertos } = resultado.valor;
+    asentar({ proceso: cambiado, etapas });
+
+    setAvisoDelEstado({
+      tono: "neutro",
+      texto:
+        hacia === "cerrar"
+          ? textoDelCierre(pendientesAbiertos)
+          : "El proceso volvió a estar en curso. El cierre anterior sigue" +
+            " en la bitácora, con quién lo cerró y cuándo.",
+    });
+  }
+
   if (estado.fase === "cargando") return <p>Consultando…</p>;
 
   if (estado.fase === "problema") {
@@ -622,6 +716,11 @@ export function DetalleDeProceso({ id }: Props) {
     estado.detalle.etapas,
   );
   const { abiertos, cerrados } = separarPendientes(pendientes);
+  /* T-14: el proceso cerrado no acepta avance. La pantalla lo apaga y lo
+     dice; la guarda que vale es la del servidor, y ésta solo evita que
+     alguien descubra la regla apretando. */
+  const terminado = proceso.estado === "cerrado";
+  const avisoDelCierre = avisoDeProcesoCerrado(proceso);
   /* El borrador tiene cambios sin guardar respecto de lo que está en la base. */
   const sinGuardar =
     JSON.stringify(aPeticionDePlan(plan)) !==
@@ -656,7 +755,7 @@ export function DetalleDeProceso({ id }: Props) {
           <Fila>
             <h2 id="pendientes-abiertos">Pendientes</h2>
             <span className="etiqueta" role="status">
-              {resumenDePendientes(abiertos, hoy)}
+              {resumenDeTrabajoVigente(proceso, abiertos, hoy)}
             </span>
           </Fila>
 
@@ -694,7 +793,11 @@ export function DetalleDeProceso({ id }: Props) {
         <dl className="definiciones">
           <Dato rotulo="Avance" valor={`${avanceDe(proceso)} etapas`} />
           <Dato rotulo="Lo que viene" valor={proximoPaso(proceso)} />
-          <Dato rotulo="Abierto" valor={fechaLegible(proceso.abiertoEn)} />
+          {/* «Abierto el» y no «Abierto»: desde que al lado hay un «Estado»
+              que puede decir «Abierto», el rótulo a secas se leía como si
+              fuera el estado y no la fecha de apertura. */}
+          <Dato rotulo="Abierto el" valor={fechaLegible(proceso.abiertoEn)} />
+          <Dato rotulo="Estado" valor={estadoLegible(proceso)} />
         </dl>
       </Rejilla>
 
@@ -703,6 +806,52 @@ export function DetalleDeProceso({ id }: Props) {
           Ver el cliente
         </Enlace>
       </p>
+
+      {/* ---------------------------------------------------------------
+          T-14 · Cerrar y reabrir.
+
+          Va acá, debajo de los datos del proceso y **arriba** del plan: lo
+          que decide si el plan se puede tocar tiene que leerse antes que
+          el plan. Abajo, junto a «Guardar plan», alguien descubriría la
+          regla recién al encontrar el botón apagado.
+
+          El aviso de la regla se dibuja solo con el proceso cerrado: con
+          el proceso abierto no hay nada que advertir, y un cartel
+          permanente se deja de leer.
+          --------------------------------------------------------------- */}
+      <section aria-labelledby="estado-del-proceso">
+        <Pila espacio="ceñido">
+          <h2 id="estado-del-proceso">Estado del proceso</h2>
+
+          {avisoDelCierre !== null && <Aviso>{avisoDelCierre}</Aviso>}
+
+          {avisoDelEstado !== null && (
+            <Aviso tono={avisoDelEstado.tono}>{avisoDelEstado.texto}</Aviso>
+          )}
+
+          <Fila>
+            <button
+              type="button"
+              className="boton"
+              disabled={trabajando}
+              onClick={() => {
+                void cambiarEstado(terminado ? "reabrir" : "cerrar");
+              }}
+            >
+              {terminado ? "Reabrir el proceso" : "Cerrar el proceso"}
+            </button>
+          </Fila>
+
+          <p className="campo__ayuda">
+            {terminado
+              ? "Reabrir no borra nada: el cierre anterior queda en la" +
+                " bitácora con quién lo hizo y cuándo."
+              : "Cerrar se puede deshacer reabriendo, y las dos cosas quedan" +
+                " firmadas. Si quedan pendientes abiertos no lo impide: la" +
+                " respuesta dice cuántos son."}
+          </p>
+        </Pila>
+      </section>
 
       {avisoDelPlan !== null && <Aviso tono="error">{avisoDelPlan}</Aviso>}
 
@@ -774,7 +923,9 @@ export function DetalleDeProceso({ id }: Props) {
             <button
               type="button"
               className="boton boton--primario"
-              disabled={trabajando || etapasPendientes.length === 0}
+              disabled={
+                trabajando || terminado || etapasPendientes.length === 0
+              }
               onClick={() => {
                 void avanzar();
               }}
@@ -800,6 +951,7 @@ export function DetalleDeProceso({ id }: Props) {
           <h2 id="plan-de-trabajo">Plan de trabajo</h2>
 
           <Aviso>{AVISO_PLAN_PROPIO}</Aviso>
+          {terminado && <Aviso>{avisoDelCierre}</Aviso>}
           <Prosa como="p" className="texto-apagado">
             {AYUDA_DE_CARA_AL_CLIENTE}
           </Prosa>
@@ -930,7 +1082,7 @@ export function DetalleDeProceso({ id }: Props) {
             <button
               type="button"
               className="boton boton--primario"
-              disabled={trabajando}
+              disabled={trabajando || terminado}
               onClick={() => {
                 void guardar();
               }}
@@ -1115,6 +1267,20 @@ export function DetalleDeProceso({ id }: Props) {
             inicia». Mientras esté abierto se ve arriba, contado.
           </Prosa>
 
+          {/* El botón apagado sin explicación hace pensar en un error de la
+              aplicación. Acá se dice la regla y la salida: la nota de más
+              abajo sigue abierta, y es donde va «el cliente volvió
+              preguntando por X». */}
+          {terminado && (
+            <Aviso>
+              Este proceso está cerrado, así que no se le anotan pendientes
+              nuevos: un pendiente es algo que sigue pasando, y acá ya no
+              está pasando nada. Lo que sí se puede es escribir una nota más
+              abajo, y cerrar los que hayan quedado abiertos. Si apareció
+              trabajo de verdad, hay que reabrir el proceso.
+            </Aviso>
+          )}
+
           {fallasDelPendiente.length > 0 && (
             <Aviso tono="error">
               <ul className="lista-de-fallas">
@@ -1219,7 +1385,7 @@ export function DetalleDeProceso({ id }: Props) {
                 <button
                   type="submit"
                   className="boton boton--primario"
-                  disabled={trabajando}
+                  disabled={trabajando || terminado}
                 >
                   {trabajando ? "Guardando…" : "Anotar pendiente"}
                 </button>

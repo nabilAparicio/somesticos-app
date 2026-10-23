@@ -20,7 +20,12 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { EtapaDeProceso, Proceso } from "../worker/contract";
+import type {
+  EtapaDeProceso,
+  PendienteDeProceso,
+  Proceso,
+} from "../worker/contract";
+import { fechaLegible } from "../src/formatos";
 import {
   BORRADOR_DE_PROCESO_VACIO,
   aPeticionDeProceso,
@@ -54,9 +59,14 @@ import {
 } from "../src/pantallas/procesos/plantilla";
 import {
   avanceDe,
+  avisoDeProcesoCerrado,
+  estadoLegible,
+  filtrarPorEstado,
   filtrarProcesos,
+  ocultosPorEstado,
   ordenarProcesos,
   proximoPaso,
+  resumenDeTrabajoVigente,
 } from "../src/pantallas/procesos/presentacion";
 import { enlaceDe, resolverRuta } from "../src/ruteo";
 
@@ -667,5 +677,182 @@ describe("los avisos de guardar como plantilla dicen lo que el diseño pide", ()
   it("avisa que un tipo nuevo no reasigna el proceso de origen", () => {
     expect(AVISO_TIPO_NUEVO_NO_REASIGNA).toMatch(/sigue siendo/i);
     expect(AVISO_TIPO_NUEVO_NO_REASIGNA).toMatch(/tipo/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-14 · El estado del proceso en la pantalla
+// ---------------------------------------------------------------------------
+
+const CERRADO_EN = "2026-10-22T18:00:00.000Z";
+
+function cerrado(ajustes: Partial<Proceso> = {}): Proceso {
+  return proceso({ estado: "cerrado", cerradoEn: CERRADO_EN, ...ajustes });
+}
+
+function pendienteAbierto(
+  ajustes: Partial<PendienteDeProceso> = {},
+): PendienteDeProceso {
+  return {
+    id: "pendiente-1",
+    procesoEtapaId: "e1",
+    procesoEtapaNombre: "Recepción",
+    texto: "Falta el certificado apostillado",
+    autorId: "u1",
+    autorNombre: "Itzel",
+    responsableId: null,
+    responsableNombre: null,
+    creadoEn: MOMENTO,
+    venceEn: null,
+    cerradoEn: null,
+    cerradoPor: null,
+    cerradoPorNombre: null,
+    ...ajustes,
+  };
+}
+
+describe("el filtro por estado del listado", () => {
+  const filas = [
+    proceso({ id: "p1", titulo: "Sigue" }),
+    cerrado({ id: "p2", titulo: "Terminado" }),
+    cerrado({ id: "p3", titulo: "También terminado" }),
+  ];
+
+  it("muestra solo los abiertos, que es lo que el bufete abre a ver", () => {
+    expect(filtrarPorEstado(filas, "abiertos").map((p) => p.id)).toEqual([
+      "p1",
+    ]);
+  });
+
+  it("muestra solo los cerrados cuando se los pide", () => {
+    expect(filtrarPorEstado(filas, "cerrados").map((p) => p.id)).toEqual([
+      "p2",
+      "p3",
+    ]);
+  });
+
+  it("«todos» no filtra nada", () => {
+    expect(filtrarPorEstado(filas, "todos")).toHaveLength(3);
+  });
+
+  it("no toca el arreglo que recibe: puede ser estado de React", () => {
+    const copia = [...filas];
+    filtrarPorEstado(filas, "abiertos");
+    expect(filas).toEqual(copia);
+  });
+
+  it("DICE lo que está escondiendo, en vez de esconderlo callado", () => {
+    // Un filtro por defecto que oculta filas sin decirlo es una cuenta que
+    // nadie puede comprobar: «4 de 6» no explica por qué faltan dos.
+    expect(ocultosPorEstado(filas, "abiertos")).toBe(
+      "Hay 2 procesos cerrados que no se están mostrando.",
+    );
+    expect(ocultosPorEstado([filas[0], filas[1]], "abiertos")).toBe(
+      "Hay 1 proceso cerrado que no se está mostrando.",
+    );
+  });
+
+  it("lo dice en las dos direcciones, no solo en la cómoda", () => {
+    // Una regla y no dos: el aviso nombra lo que el filtro deja afuera, sea
+    // lo que sea. La versión que solo avisa de los cerrados obliga a
+    // recordar cuál de las dos opciones era la que callaba.
+    expect(ocultosPorEstado(filas, "cerrados")).toBe(
+      "Hay 1 proceso abierto que no se está mostrando.",
+    );
+  });
+
+  it("no dice nada cuando no esconde nada", () => {
+    expect(ocultosPorEstado(filas, "todos")).toBeNull();
+    expect(ocultosPorEstado([proceso({ id: "p1" })], "abiertos")).toBeNull();
+    expect(ocultosPorEstado([cerrado({ id: "p2" })], "cerrados")).toBeNull();
+  });
+});
+
+describe("el estado del proceso, dicho", () => {
+  it("un proceso abierto lo dice sin fecha, porque no hay ninguna", () => {
+    expect(estadoLegible(proceso())).toBe("Abierto");
+  });
+
+  it("un proceso cerrado dice cuándo se cerró", () => {
+    expect(estadoLegible(cerrado())).toBe(
+      `Cerrado el ${fechaLegible(CERRADO_EN)}`,
+    );
+  });
+
+  it("un proceso cerrado SIN fecha no se inventa una", () => {
+    // No puede pasar por la API, pero el dato llega del cable y rellenarlo
+    // sería escribir una fecha que nadie firmó.
+    expect(estadoLegible(cerrado({ cerradoEn: null }))).toBe("Cerrado");
+  });
+});
+
+describe("el aviso de que el proceso está cerrado", () => {
+  it("no aparece mientras el proceso sigue abierto", () => {
+    expect(avisoDeProcesoCerrado(proceso())).toBeNull();
+  });
+
+  it("nombra lo que no se puede y la salida, no solo la prohibición", () => {
+    const aviso = avisoDeProcesoCerrado(cerrado());
+    expect(aviso).not.toBeNull();
+
+    const texto = aviso ?? "";
+    // Las tres prohibiciones, para que nadie descubra una apretando.
+    expect(texto).toContain("avanza");
+    expect(texto).toContain("plan");
+    expect(texto).toContain("pendientes");
+    // Y las dos salidas, que es lo que lo vuelve un aviso y no una pared.
+    expect(texto).toContain("nota");
+    expect(texto).toContain("reabr");
+  });
+});
+
+describe("el trabajo vigente que cuenta la cabecera", () => {
+  it("con el proceso abierto cuenta igual que siempre", () => {
+    expect(
+      resumenDeTrabajoVigente(proceso(), [pendienteAbierto()], "2026-10-23"),
+    ).toBe("1 pendiente abierto.");
+  });
+
+  it("con el proceso abierto marca los vencidos", () => {
+    expect(
+      resumenDeTrabajoVigente(
+        proceso(),
+        [pendienteAbierto({ venceEn: "2026-10-01" })],
+        "2026-10-23",
+      ),
+    ).toBe("1 pendiente abierto, 1 vencido.");
+  });
+
+  it("DECISIÓN DE T-14: con el proceso cerrado no los cuenta como trabajo", () => {
+    // La cuenta de la cabecera es «lo que obliga a mirar hoy». Un trámite
+    // terminado no obliga a nada, así que el número deja de ser una tarea.
+    const texto = resumenDeTrabajoVigente(
+      cerrado(),
+      [pendienteAbierto(), pendienteAbierto({ id: "pendiente-2" })],
+      "2026-10-23",
+    );
+
+    expect(texto).not.toBe("2 pendientes abiertos.");
+    expect(texto).toContain("cerrado");
+    // Pero sin ocultar cuántos quedaron: no alarmar no es esconder.
+    expect(texto).toContain("2");
+  });
+
+  it("con el proceso cerrado se apaga la alarma de lo vencido", () => {
+    // Rojo sobre algo que nadie va a perseguir es ruido, igual que la marca
+    // de vencido en un pendiente ya cerrado.
+    const texto = resumenDeTrabajoVigente(
+      cerrado(),
+      [pendienteAbierto({ venceEn: "2026-10-01" })],
+      "2026-10-23",
+    );
+
+    expect(texto).not.toContain("vencido");
+  });
+
+  it("un proceso cerrado sin cabos sueltos lo dice", () => {
+    expect(resumenDeTrabajoVigente(cerrado(), [], "2026-10-23")).toContain(
+      "cerrado",
+    );
   });
 });

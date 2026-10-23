@@ -10,7 +10,11 @@
  * sola que no filtre por `tenant_id`, ni siquiera las que buscan por llave
  * primaria. Un UUID ajeno sigue siendo un UUID.
  *
- * ## Las tres reglas que este archivo existe para sostener
+ * ## Las reglas que este archivo existe para sostener
+ *
+ * (Decía «las tres» desde T-7 y ya eran cuatro en T-9. Se las deja
+ * numeradas y sin el conteo en el título: un número en la prosa que hay que
+ * acordarse de subir con cada tarea es un número que va a mentir.)
  *
  * ### 1. La plantilla siembra, el proceso manda
  *
@@ -69,6 +73,19 @@
  * propio motivo de falla: aflojar una tiene que matar sus pruebas y no las
  * de la otra.
  *
+ * ### 5. Un proceso cerrado no acepta avance (T-14)
+ *
+ * `avanzar` y `reemplazarEtapas` miran `proceso.estado` antes de escribir y
+ * se niegan si está cerrado. **Es un chequeo explícito y no un `catch`**, y
+ * acá no había siquiera qué atrapar: el esquema no impide marcar una etapa
+ * de un proceso cerrado. Esa es justamente la razón de escribirlo — una
+ * regla que la base no sostiene es una regla que solo existe mientras estas
+ * dos líneas existan, así que tiene que morir ruidosamente al quitarlas.
+ *
+ * A diferencia de la regla 2, ésta **es reversible**: `reabrir` la levanta,
+ * y las dos transiciones dejan su entrada de bitácora. Por eso puede ser
+ * tajante sin ser una pared.
+ *
  * ### El avance es de una sola dirección
  *
  * No existe «desandar». `avanzar` solo escribe `alcanzada_en` donde era nulo,
@@ -96,28 +113,69 @@ import { sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 import { ahoraIso } from "../db/momentos";
 
-export type ResultadoDeEscritura =
+/**
+ * El resultado del alta.
+ *
+ * **No incluye `proceso_cerrado`**, y la ausencia es el punto: un proceso
+ * nace abierto, así que la guarda de T-14 no puede alcanzarlo. Si estuviera
+ * en la unión, el ruteo tendría que escribir una rama que nunca corre, y
+ * una rama que nunca corre es una rama que nadie puede probar.
+ */
+export type ResultadoDeAlta =
   | { estado: "guardado"; detalle: DetalleDeProceso }
   | { estado: "invalido"; fallas: FallaDeValidacion[] }
   | { estado: "no_encontrado" };
+
+export type ResultadoDeEscritura =
+  | ResultadoDeAlta
+  /** T-14: el proceso está cerrado y editar el plan es avance. */
+  | { estado: "proceso_cerrado" };
 
 export type ResultadoDeAvance =
   | { estado: "avanzado"; detalle: DetalleDeProceso }
   /** El plan ya no tiene nada por delante. No es un error de datos. */
   | { estado: "sin_pendientes" }
+  | { estado: "no_encontrado" }
+  /** T-14: el proceso está cerrado. Si hay trabajo, se reabre primero. */
+  | { estado: "proceso_cerrado" };
+
+/**
+ * El resultado de cerrar o de reabrir (T-14).
+ *
+ * `ya_estaba` es uno solo para las dos operaciones y lleva el estado que
+ * encontró: cerrar algo cerrado y reabrir algo abierto son el mismo choque
+ * —la transición no tiene nada que transicionar— y partirlo en dos
+ * resultados obligaría al ruteo a repetir la misma rama con otro nombre.
+ */
+export type ResultadoDeCambioDeEstado =
+  | {
+      estado: "cambiado";
+      detalle: DetalleDeProceso;
+      pendientesAbiertos: number;
+    }
+  | { estado: "ya_estaba"; actual: EstadoDeProceso }
   | { estado: "no_encontrado" };
 
 export interface ServicioDeProcesos {
   /** `clienteId` nulo es el listado global. */
   listar(tenantId: string, clienteId: string | null): Promise<Proceso[]>;
   obtener(tenantId: string, id: string): Promise<DetalleDeProceso | null>;
-  crear(tenantId: string, datos: DatosDeProceso): Promise<ResultadoDeEscritura>;
+  crear(tenantId: string, datos: DatosDeProceso): Promise<ResultadoDeAlta>;
   reemplazarEtapas(
     tenantId: string,
     procesoId: string,
     etapas: DatosDeEtapa[],
   ): Promise<ResultadoDeEscritura>;
   avanzar(tenantId: string, procesoId: string): Promise<ResultadoDeAvance>;
+  /** T-14. Devuelve cuántos cabos sueltos quedaron, sin impedir el cierre. */
+  cerrar(
+    tenantId: string,
+    procesoId: string,
+  ): Promise<ResultadoDeCambioDeEstado>;
+  reabrir(
+    tenantId: string,
+    procesoId: string,
+  ): Promise<ResultadoDeCambioDeEstado>;
 }
 
 interface FilaDeProceso {
@@ -497,6 +555,34 @@ export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
     });
   }
 
+  /**
+   * Cuántos cabos sueltos del proceso siguen sin cerrarse (T-14).
+   *
+   * `cerrado_en IS NULL` y no `<> ''`: la columna es nula mientras el
+   * pendiente está abierto, y en SQL una comparación contra nulo no es
+   * falsa sino desconocida — la fila se perdería en silencio y el cierre
+   * informaría cero cabos sueltos teniendo tres.
+   *
+   * Vive en el repositorio de procesos y no en el de pendientes aunque lea
+   * su tabla: lo que se cuenta no es una lista de pendientes sino una
+   * propiedad del proceso que se está cerrando, y el conteo viaja en la
+   * respuesta del cierre.
+   */
+  async function contarPendientesAbiertos(
+    tenantId: string,
+    procesoId: string,
+  ): Promise<number> {
+    const fila = await db
+      .prepare(
+        "SELECT count(*) AS cuantos FROM pendiente" +
+          " WHERE tenant_id = ? AND proceso_id = ? AND cerrado_en IS NULL",
+      )
+      .bind(tenantId, procesoId)
+      .first<{ cuantos: number }>();
+
+    return fila?.cuantos ?? 0;
+  }
+
   return {
     async listar(tenantId, clienteId) {
       // Un `clienteId` que no es de este tenant no devuelve nada, porque el
@@ -584,9 +670,13 @@ export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
     },
 
     async reemplazarEtapas(tenantId, procesoId, etapas) {
-      if ((await leerProceso(tenantId, procesoId)) === null) {
-        return { estado: "no_encontrado" };
-      }
+      const proceso = await leerProceso(tenantId, procesoId);
+      if (proceso === null) return { estado: "no_encontrado" };
+
+      // T-14, y antes que cualquier validación del envío: un 422 sobre el
+      // plan de un proceso cerrado contestaría qué hay de malo en un plan
+      // que de todas formas no se va a guardar.
+      if (proceso.estado === "cerrado") return { estado: "proceso_cerrado" };
 
       const actuales = await leerEtapas(tenantId, procesoId);
       const existentes = new Set(actuales.map((etapa) => etapa.id));
@@ -694,9 +784,15 @@ export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
     },
 
     async avanzar(tenantId, procesoId) {
-      if ((await leerProceso(tenantId, procesoId)) === null) {
-        return { estado: "no_encontrado" };
-      }
+      const proceso = await leerProceso(tenantId, procesoId);
+      if (proceso === null) return { estado: "no_encontrado" };
+
+      // La guarda de T-14. **Se consulta el estado, no se atrapa nada**: el
+      // esquema no tiene ningún `CHECK` que impida marcar una etapa de un
+      // proceso cerrado, así que no hay error de base que disfrazar — y si
+      // lo hubiera, atraparlo dejaría la guarda sin verificar para siempre.
+      // Al quitar esta línea mueren sus pruebas, que es lo que se busca.
+      if (proceso.estado === "cerrado") return { estado: "proceso_cerrado" };
 
       // La próxima pendiente en el orden del plan. Avanzar no salta pasos:
       // saltarlos dejaría cumplidas y pendientes intercaladas, y la pantalla
@@ -739,6 +835,95 @@ export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
       return {
         estado: "avanzado",
         detalle: await releer(tenantId, procesoId, "el proceso recién avanzado"),
+      };
+    },
+
+    async cerrar(tenantId, procesoId) {
+      const proceso = await leerProceso(tenantId, procesoId);
+      if (proceso === null) return { estado: "no_encontrado" };
+
+      // Cerrar dos veces no es un no-op: el segundo cierre no puede pisar
+      // el momento del primero, y su entrada de bitácora diría que alguien
+      // cerró algo que ya estaba cerrado.
+      if (proceso.estado === "cerrado") {
+        return { estado: "ya_estaba", actual: "cerrado" };
+      }
+
+      // Se cuentan **antes** de cerrar y no se usan para impedirlo. Es la
+      // decisión de T-14 en una línea: el bufete cierra casos con cabos
+      // sueltos y el sistema no está para discutirle; lo que no puede es
+      // dejar que pase inadvertido.
+      const pendientesAbiertos = await contarPendientesAbiertos(
+        tenantId,
+        procesoId,
+      );
+
+      // `AND estado = 'abierto'` también en el `UPDATE`, igual que el avance
+      // de etapa y el cierre de un pendiente: dos cierres simultáneos no
+      // pueden reescribir el momento del primero.
+      await base.mutar(
+        {
+          entidad: "proceso",
+          entidadId: procesoId,
+          accion: "cerrado",
+          detalle: proceso.titulo,
+        },
+        sentencia(
+          "UPDATE proceso SET estado = 'cerrado', cerrado_en = ?" +
+            " WHERE tenant_id = ? AND id = ? AND estado = 'abierto'",
+          ahoraIso(),
+          tenantId,
+          procesoId,
+        ),
+      );
+
+      return {
+        estado: "cambiado",
+        detalle: await releer(tenantId, procesoId, "el proceso recién cerrado"),
+        pendientesAbiertos,
+      };
+    },
+
+    async reabrir(tenantId, procesoId) {
+      const proceso = await leerProceso(tenantId, procesoId);
+      if (proceso === null) return { estado: "no_encontrado" };
+
+      if (proceso.estado === "abierto") {
+        return { estado: "ya_estaba", actual: "abierto" };
+      }
+
+      // **`cerrado_en` vuelve a nulo y no conserva la fecha vieja.** Un
+      // proceso abierto con fecha de cierre es un dato que miente, y la
+      // fecha no se pierde: la entrada `cerrado` de la bitácora la guarda, y
+      // esa tabla es inmutable por disparador desde T-10.
+      await base.mutar(
+        {
+          entidad: "proceso",
+          entidadId: procesoId,
+          accion: "reabierto",
+          detalle: proceso.titulo,
+        },
+        sentencia(
+          "UPDATE proceso SET estado = 'abierto', cerrado_en = NULL" +
+            " WHERE tenant_id = ? AND id = ? AND estado = 'cerrado'",
+          tenantId,
+          procesoId,
+        ),
+      );
+
+      return {
+        estado: "cambiado",
+        detalle: await releer(
+          tenantId,
+          procesoId,
+          "el proceso recién reabierto",
+        ),
+        // Los mismos cabos sueltos que el cierre informó, y ahora vuelven a
+        // ser trabajo por hacer: el número no cambia, cambia qué significa.
+        pendientesAbiertos: await contarPendientesAbiertos(
+          tenantId,
+          procesoId,
+        ),
       };
     },
   };

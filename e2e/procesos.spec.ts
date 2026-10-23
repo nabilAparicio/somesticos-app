@@ -82,6 +82,33 @@ const OTRO = {
   etapaVigente: null,
 };
 
+/**
+ * T-14 · Un tercer proceso, ya terminado.
+ *
+ * Existe para que el filtro por estado tenga algo que esconder: un filtro
+ * cuyo criterio no deja afuera ninguna fila pasa igual estando roto.
+ */
+const CERRADO_EN = "2026-10-05T16:00:00.000Z";
+
+const TERMINADO = {
+  ...PROCESO,
+  id: "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e61",
+  clienteNombre: "Germán Arosemena",
+  titulo: "Naturalización de Germán Arosemena",
+  estado: "cerrado",
+  cerradoEn: CERRADO_EN,
+  etapasCumplidas: 4,
+  etapasTotales: 4,
+  etapaVigente: null,
+};
+
+/** El mismo proceso de siempre, después de que alguien lo cierre. */
+const PROCESO_TRAS_CERRAR = {
+  ...PROCESO,
+  estado: "cerrado",
+  cerradoEn: CERRADO_EN,
+};
+
 const DETALLE = { proceso: PROCESO, etapas: ETAPAS };
 
 /* --- T-8 · la línea de tiempo ------------------------------------------ */
@@ -357,6 +384,29 @@ async function conProcesosCargados(page: Page): Promise<void> {
         return;
       }
 
+      // T-14: cerrar y reabrir. Las dos contestan el detalle entero más
+      // cuántos cabos sueltos quedan, que es lo que la pantalla asienta —
+      // no redibuja el estado por su cuenta.
+      if (url.pathname === `/api/procesos/${PROCESO_ID}/cerrar`) {
+        await ruta.fulfill({
+          status: 200,
+          json: {
+            proceso: PROCESO_TRAS_CERRAR,
+            etapas: ETAPAS,
+            pendientesAbiertos: 1,
+          },
+        });
+        return;
+      }
+
+      if (url.pathname === `/api/procesos/${PROCESO_ID}/reabrir`) {
+        await ruta.fulfill({
+          status: 200,
+          json: { proceso: PROCESO, etapas: ETAPAS, pendientesAbiertos: 1 },
+        });
+        return;
+      }
+
       // T-10: la bitácora. Solo se lee; la pantalla nunca la escribe.
       if (url.pathname === `/api/procesos/${PROCESO_ID}/bitacora`) {
         await ruta.fulfill({ status: 200, json: BITACORA });
@@ -389,7 +439,7 @@ async function conProcesosCargados(page: Page): Promise<void> {
 
       const cuerpo: Record<string, unknown> | null =
         url.pathname === "/api/procesos"
-          ? { procesos: [PROCESO, OTRO] }
+          ? { procesos: [PROCESO, OTRO, TERMINADO] }
           : url.pathname === `/api/procesos/${PROCESO_ID}`
             ? DETALLE
             : url.pathname === "/api/areas"
@@ -1010,6 +1060,103 @@ test.describe("los procesos del bufete", () => {
       .click();
 
     await expect.poll(() => pedidos.length).toBeGreaterThan(0);
+  });
+
+  /* -------------------------------------------------------------------
+     T-14 · Cerrar y reabrir un proceso
+     ------------------------------------------------------------------- */
+
+  test("el listado esconde los terminados por defecto, y lo dice", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto("/procesos");
+    await page.locator("table tbody tr").first().waitFor();
+
+    // Por defecto se ven los dos abiertos y no el terminado: eso es lo que
+    // el bufete abre a mirar.
+    await expect(page.locator("table tbody tr")).toHaveCount(2);
+    await expect(
+      page.getByRole("rowheader", { name: /Germán Arosemena/ }),
+    ).toHaveCount(0);
+
+    // Y se dice, que es la diferencia entre filtrar y esconder.
+    await expect(
+      page.getByText("Hay 1 proceso cerrado que no se está mostrando."),
+    ).toBeVisible();
+  });
+
+  test("el filtro de estado deja ver los terminados cuando se los pide", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto("/procesos");
+    await page.locator("table tbody tr").first().waitFor();
+
+    await page.getByLabel("Estado").selectOption("cerrados");
+
+    await expect(page.locator("table tbody tr")).toHaveCount(1);
+    // El título va en un `th scope="row"`, así que su rol es `rowheader` y
+    // no `cell`; y el nombre accesible arrastra la etiqueta «Cerrado el …»
+    // que el listado le pega al lado, de ahí la expresión regular.
+    await expect(
+      page.getByRole("rowheader", { name: /Germán Arosemena/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("rowheader", { name: /Cerrado el/ }),
+    ).toBeVisible();
+
+    await page.getByLabel("Estado").selectOption("todos");
+    await expect(page.locator("table tbody tr")).toHaveCount(3);
+  });
+
+  test("el detalle dice el estado y cierra el proceso", async ({ page }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+    await page.locator(".plantilla__etapa .campo__control").first().waitFor();
+
+    await expect(
+      page.getByRole("definition").filter({ hasText: /^Abierto$/ }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Cerrar el proceso" }).click();
+
+    // La pantalla asienta lo que el servidor contestó, incluido el número
+    // de cabos sueltos que el cierre no discutió pero sí informó.
+    await expect(
+      page.getByRole("button", { name: "Reabrir el proceso" }),
+    ).toBeVisible();
+    await expect(page.getByText(/quedó cerrado con 1 pendiente/)).toBeVisible();
+  });
+
+  test("con el proceso cerrado, avanzar y guardar el plan quedan apagados y dicho por qué", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+    await page.locator(".plantilla__etapa .campo__control").first().waitFor();
+
+    await page.getByRole("button", { name: "Cerrar el proceso" }).click();
+    await page
+      .getByRole("button", { name: "Reabrir el proceso" })
+      .waitFor();
+
+    // Apagados, y no apagados en silencio: el aviso nombra las tres cosas
+    // que no se pueden y las dos salidas que sí.
+    await expect(
+      page.getByRole("button", { name: new RegExp(`Avanzar a .${PENDIENTE_1}`) }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Guardar plan" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Anotar pendiente" }),
+    ).toBeDisabled();
+
+    // Anotar una nota sigue habilitado: la historia no se congela.
+    await expect(
+      page.getByRole("button", { name: "Anotar", exact: true }),
+    ).toBeEnabled();
   });
 
   for (const ancho of ANCHOS) {

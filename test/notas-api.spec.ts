@@ -1091,3 +1091,36 @@ describe("la puerta de Access", () => {
     expect(lectura.headers.get("cache-control")).toBe("no-store");
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-14 · La historia no se congela porque el trámite terminó
+// ---------------------------------------------------------------------------
+
+describe("un proceso cerrado sigue aceptando notas", () => {
+  it("DECISIÓN DE T-14: se anota en un proceso cerrado, y la nota queda", async () => {
+    // La guarda del proceso cerrado prohíbe el **avance**, no la memoria.
+    // Justo después del cierre es cuando aparece el «el cliente volvió
+    // preguntando por X», y es la válvula que deja que abrir un pendiente
+    // nuevo sí esté prohibido sin dejar a nadie sin dónde escribirlo.
+    const procesoId = await crearProceso(tipoResidenciaId);
+    expect(
+      (
+        await comoAutor(
+          peticion(`/api/procesos/${procesoId}/cerrar`, { method: "POST" }),
+        )
+      ).status,
+    ).toBe(200);
+
+    const respuesta = await anotar(procesoId, {
+      texto: "El cliente volvió preguntando por la constancia de residencia.",
+    });
+    expect(respuesta.status).toBe(201);
+
+    const textos = (await lineaDe(procesoId)).tramos.flatMap((tramo) =>
+      tramo.notas.map((nota) => nota.texto),
+    );
+    expect(textos).toContain(
+      "El cliente volvió preguntando por la constancia de residencia.",
+    );
+  });
+});

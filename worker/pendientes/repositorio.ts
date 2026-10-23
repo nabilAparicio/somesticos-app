@@ -68,7 +68,12 @@ export type ResultadoDePendiente =
   /** El pendiente no es de este proceso, o no es de este bufete. */
   | { estado: "no_encontrado" }
   /** Ya estaba cerrado. No es un error de datos: es el estado. */
-  | { estado: "ya_cerrado" };
+  | { estado: "ya_cerrado" }
+  /**
+   * T-14: el proceso está cerrado y un pendiente nuevo sería trabajo
+   * vigente sobre un trámite terminado. Solo lo devuelve `crear`.
+   */
+  | { estado: "proceso_cerrado" };
 
 export interface ServicioDePendientes {
   /** Abiertos y cerrados, en el orden que define `ORDEN`. */
@@ -219,6 +224,31 @@ export function pendientesSobreD1(base: BaseDeDatos): ServicioDePendientes {
     listar,
 
     async crear(tenantId, procesoId, autorId, datos) {
+      // La guarda de T-14, antes que nada: en un proceso cerrado no nace un
+      // cabo suelto nuevo. Un pendiente es «algo que sigue pasando» que no
+      // se calla hasta que alguien lo cierre, así que abrirlo declara
+      // trabajo vigente sobre un trámite terminado — la misma afirmación
+      // que avanzar una etapa. Si de verdad apareció trabajo, se reabre el
+      // proceso: es reversible y deja rastro.
+      //
+      // Lo que sigue permitido, y es lo que vuelve esto una guarda y no una
+      // pared: **cerrar** un cabo suelto que quedó abierto (más abajo, sin
+      // ninguna condición de estado) y **escribir una nota** (T-8, que no
+      // pasa por acá). Si se avisa «quedaron tres» al cerrar y después no se
+      // deja cerrarlos, el aviso es una denuncia sin salida.
+      //
+      // Se **consulta** el estado, no se atrapa nada: el esquema no tiene
+      // ningún `CHECK` que relacione `pendiente` con `proceso.estado`, así
+      // que esta regla existe solo mientras exista esta consulta.
+      const proceso = await db
+        .prepare("SELECT estado FROM proceso WHERE tenant_id = ? AND id = ?")
+        .bind(tenantId, procesoId)
+        .first<{ estado: string }>();
+
+      if (proceso?.estado === "cerrado") {
+        return { estado: "proceso_cerrado" };
+      }
+
       // El plan, con el filtro de tenencia puesto: de acá sale la etapa de
       // nacimiento y no del cuerpo de la petición.
       const { results } = await db
@@ -300,6 +330,11 @@ export function pendientesSobreD1(base: BaseDeDatos): ServicioDePendientes {
     },
 
     async cerrar(tenantId, procesoId, pendienteId, quienCierra) {
+      // **No se mira `proceso.estado` acá, y es la otra mitad de T-14.**
+      // Cerrar un cabo suelto no es avance: es terminar de atar lo que el
+      // cierre del proceso dejó colgando, y es exactamente el movimiento
+      // que la respuesta de ese cierre señala al decir cuántos quedaron.
+      //
       // Los tres filtros juntos: tenant, proceso y pendiente. Un pendiente
       // que existe pero es de otro proceso no se encuentra, y el 404 no
       // distingue «no existe» de «no es tuyo», que es lo que se busca.

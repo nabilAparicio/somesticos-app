@@ -62,6 +62,22 @@
 -- bitácora. Inventarlo sería escribir hechos que nadie presenció en la única
 -- tabla del sistema que existe para no mentir; la pantalla lo dice en vez de
 -- disimularlo.
+--
+-- ## Por qué T-14 editó este archivo, y por qué no es licencia general
+--
+-- `cerrado` y `reabierto` se agregaron al `CHECK` de `accion` **editando esta
+-- migración**, que ya estaba escrita. La regla normal es que una migración no
+-- se toca porque ya corrió; acá no había corrido en ninguna parte que
+-- importe: no hay remoto, no hay D1 real —`wrangler.jsonc` todavía lleva el
+-- marcador de ceros en `database_id`— y las bases de prueba se recrean en
+-- cada corrida. Agregar un valor a un `CHECK` en SQLite obliga a reconstruir
+-- la tabla, así que la alternativa era una cuarta migración que volviera a
+-- reconstruir `bitacora` antes del primer despliegue: ceremonia sin
+-- consecuencia.
+--
+-- **Esto caduca con el primer despliegue.** El día que el D1 real exista, las
+-- migraciones pasan a ser solo-agregar para siempre y este párrafo deja de
+-- autorizar nada.
 
 -- ---------------------------------------------------------------------------
 -- Reconstrucción con los dos vocabularios cerrados
@@ -81,7 +97,7 @@ CREATE TABLE bitacora_nueva (
   tenant_id   TEXT NOT NULL REFERENCES tenant (id),
   entidad     TEXT NOT NULL CHECK (entidad IN ('area', 'cliente', 'proceso', 'tipo_cliente', 'tipo_proceso')),
   entidad_id  TEXT NOT NULL,
-  accion      TEXT NOT NULL CHECK (accion IN ('borrado', 'creado', 'dado_de_baja', 'editado', 'etapa_alcanzada', 'nota_agregada', 'pendiente_abierto', 'pendiente_cerrado', 'plan_editado', 'plantilla_editada', 'plantilla_guardada', 'reactivado')),
+  accion      TEXT NOT NULL CHECK (accion IN ('borrado', 'cerrado', 'creado', 'dado_de_baja', 'editado', 'etapa_alcanzada', 'nota_agregada', 'pendiente_abierto', 'pendiente_cerrado', 'plan_editado', 'plantilla_editada', 'plantilla_guardada', 'reabierto', 'reactivado')),
   usuario_id  TEXT NOT NULL REFERENCES usuario (id),
   ocurrido_en TEXT NOT NULL CHECK (ocurrido_en IS strftime('%Y-%m-%dT%H:%M:%fZ', ocurrido_en)),
   detalle     TEXT

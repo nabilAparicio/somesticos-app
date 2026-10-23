@@ -38,6 +38,8 @@ export const VERBOS_DE_BITACORA: Record<AccionDeBitacora, string> = {
   plantilla_editada: "guardó la plantilla",
   plan_editado: "editó el plan",
   etapa_alcanzada: "avanzó a",
+  cerrado: "cerró",
+  reabierto: "reabrió",
   plantilla_guardada: "guardó el plan como la plantilla de",
   nota_agregada: "anotó en",
   pendiente_abierto: "abrió el pendiente",
