@@ -2,9 +2,11 @@
 
 **Creado:** 22 de octubre de 2026
 **Estado:** las 11 tareas de la tajada, cerradas. T-12 (integridad) cerrada en dos unidades y
-**revisada y aprobada**. T-13, T-14 y T-15 cerradas: **el código de la tajada está completo**,
-32 commits, 800 pruebas unitarias y 129 de punta a punta, los cinco comandos en 0. Queda
-**T-16, el despliegue**, y su parte crítica no la hace el agente. Decisión del 23-oct-2026: la
+**revisada y aprobada**. T-13, T-14, T-15 y T-17 cerradas. **34 commits, empujados a `origin`
+el 23-oct-2026**, 831 pruebas unitarias y 135 de punta a punta, los cinco comandos en 0.
+Quedan **T-18** (las fechas ambiguas y dos ajustes de pantalla, encontrados al levantar el
+sistema con datos de relleno y mirarlo) y **T-16, el despliegue**, cuya parte crítica no la
+hace el agente: falta la base D1 real y la aplicación de Cloudflare Access. Decisión del 23-oct-2026: la
 tajada **se despliega y se usa con clientes reales antes de empezar la tajada 2** — el riesgo de
 repetir `app-agentes-legales`, un sistema impecable sobre datos de juguete, es mayor que el de
 llegar tarde a las cotizaciones.
@@ -512,10 +514,15 @@ se renumera.
       La parte mía es chica; la que destraba es del bufete. Se escribe acá para que la frontera
       quede explícita y nadie espere al otro.
 
-      **Depende del usuario, y nada de esto lo hace el agente:** crear el repositorio remoto (hoy
-      no hay ni `origin` ni rama `main`, los 22 commits viven en un disco); crear la base D1 real
-      y pasar su `database_id`; configurar la aplicación de Cloudflare Access con su política,
-      su AUD y su dominio de equipo; y decidir las dos direcciones de correo que entran.
+      **Depende del usuario, y nada de esto lo hace el agente:**
+
+      - [x] **Repositorio remoto.** Hecho el 23-oct-2026. `origin` es
+            `git@github.com:nabilAparicio/somesticos-app.git` y la rama está empujada sin
+            divergencia. El nombre del repositorio **no coincide** con el del proyecto; se
+            preguntó y el usuario confirmó que es el que quería.
+      - [ ] Crear la base D1 real y pasar su `database_id`.
+      - [ ] Configurar la aplicación de Cloudflare Access con su política, su AUD y su dominio
+            de equipo, y decidir las dos direcciones de correo que entran.
 
       **Parte del agente:** sustituir el marcador de ceros de `wrangler.jsonc`, sembrar las filas
       de `usuario` de las dos personas, correr las tres migraciones contra la base real, y la
@@ -523,6 +530,75 @@ se renumera.
 
       *Nada de esto se hace sin autorización explícita del destino, la operación y la credencial,
       una por una. Ruta: inline, porque son pasos de estado y no de código.*
+
+---
+
+- [x] **T-17 · La bitácora se pagina y se invierte.** *Agregada al levantar el sistema en local
+      y preguntarse cuánto crece.* Hecha en `a6a2d79`. 831 unitarias, 135 e2e.
+
+      La consulta no tenía `LIMIT` ni paginación: traía todo, siempre. **El almacenamiento
+      nunca fue el problema** —se midió: la fila pesa 214 bytes y dos personas generan ~8 MB al
+      año contra un límite de 5 GB, o sea seiscientos años— **el problema era la pantalla**: un
+      proceso de tres años dibujaba sus cuatrocientos hechos en cada visita.
+
+      **Y se invirtió el orden, que es una corrección del usuario sobre la especificación del
+      orquestador.** Yo había escrito «la bitácora se lee hacia adelante, como una historia», y
+      eso contradecía lo que yo mismo había argumentado tres párrafos antes: **la bitácora no
+      es la narrativa de un proceso — esa son las notas**, y ésas sí se leen hacia adelante. La
+      bitácora contesta una pregunta de auditoría («¿qué pasó últimamente?», «¿quién tocó
+      esto?») y eso se contesta empezando por lo último.
+
+      Dos cosas que vale conservar:
+
+      1. **El desempate también se invierte.** Con `ocurrido_en DESC` y `rowid` ascendente,
+         `EXPLAIN QUERY PLAN` muestra `USE TEMP B-TREE FOR LAST TERM OF ORDER BY`: mezclar
+         direcciones hace que SQLite arme un árbol temporal y **tire justo el ahorro que el
+         `LIMIT` compra**. Hay una prueba que lo fija.
+      2. **Los tres `.tsx` que montan el componente no se tocaron**, y fue el eje del diseño:
+         los cuatro llamadores escriben el campo por asignación directa, así que cambiar su
+         *tipo* dejó su código fuente idéntico. El control de «ver más» lo pide el componente y
+         no una prop, para que la quinta pantalla que lo monte no nazca sin él.
+
+      *Deuda encontrada por el orquestador al mutar, y es **preexistente de T-10**, no de
+      T-17:* volver vacuo el filtro de tenant de la consulta de bitácora —`WHERE (tenant_id = ?
+      OR 1=1)`— **no mata ninguna prueba**, ni en la de entradas ni en la del conteo. La causa
+      es que el 404 de la ruta corta antes de llegar al repositorio, así que las pruebas de
+      fuga nunca ejercitan el filtro propio de la consulta. No es explotable hoy —haría falta
+      el mismo UUID en dos bufetes— pero contradice I-8, que dice que *ninguna* consulta deja
+      de filtrar por tenant **y que eso se prueba por rechazo**.
+
+---
+
+- [ ] **T-18 · Las fechas son ambiguas, y dos ajustes de pantalla.** *Agregada al levantar el
+      sistema en local con datos de relleno y mirarlo.* Tres cosas que 831 pruebas no vieron y
+      que aparecieron en treinta segundos de mirar la pantalla.
+
+      **A · El defecto que puede hacer daño.** `Intl.DateTimeFormat("es-PA", { dateStyle:
+      "medium" })` produce **`07/02/2026`** para el 2 de julio: CLDR define Panamá con orden
+      **mes/día**. En plazos procesales, presentaciones y audiencias eso no es cosmética.
+
+      El arreglo es quirúrgico y está verificado: **se queda `es-PA`** —correcto para Panamá en
+      todo lo demás, el «a. m.» con espacios incluido— y se cambia **solo el patrón**, a partes
+      explícitas `{ day, month: "short", year }`, que da `2 jul 2026`. Cambiar el locale entero
+      para arreglar un patrón habría cambiado en silencio todo lo otro.
+
+      *Por qué ninguna prueba lo agarró, que es la parte que hay que no repetir:* una afirma
+      `toContain("30")` —pasa igual con `11/30` que con `30/11`, prueba que el día no se corrió
+      y nunca el orden— y la otra **calcula el valor esperado con la misma función que tiene el
+      defecto**, así que concuerda consigo misma pase lo que pase. La prueba que faltaba afirma
+      contra una **cadena literal**.
+
+      **B · La portada dice cosas que ya no son ciertas**, texto de la época de T-5 que anuncia
+      como «lo que sigue» tres cosas hechas desde T-6, T-7 y T-11.
+
+      **C · La etiqueta «Vigente» se parte a la mitad** —«Vigent / e»— a anchos intermedios, por
+      la regla global `overflow-wrap: break-word` de T-8. Y acá está lo fino: **la prueba de
+      desborde pasa igual**, porque verifica que no haya scroll horizontal y partir la palabra
+      es *precisamente* como el navegador lo evita. **La guarda se cumple afeando la pantalla.**
+      Arreglarla sin una prueba que falle hoy no demuestra nada.
+
+      *Criterio: por cada una, una prueba que falle con el código de hoy. Ruta: delegada, en
+      tres unidades de trabajo. Forecast ~350.*
 
 ## Criterios de aceptación de la tajada
 
@@ -572,6 +648,7 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
+| T-17 (paginar e invertir la bitácora) | `a6a2d79` | Rojo observado: 15 fallas, y por los motivos correctos — sin `LIMIT`, sin total, orden ascendente, sin guarda del techo, y el espía gritando que la guarda corría después de la consulta. Final: los cinco en 0 · **test 831/831** · **e2e 135/135**. El escritor paró en dos aserciones de `procesos-api` fuera de su superficie que dependían del orden viejo; las invirtió el orquestador. Verificación del orquestador: los cinco códigos de salida más **una mutación propia** — volver vacuo el filtro de tenant del conteo (`OR 1=1`) **no mató nada**, y tampoco en la consulta de entradas: deuda preexistente de T-10, anotada arriba. | Pendiente de evaluar |
 | T-15 (esquema de cierre, selector, bitácora de catálogos) | `d7793e9` + `6c77257` + `cf5a225` + `9e117a6` | Rojo observado por unidad: 7 fallas en `esquema.spec.ts` (A), 2 e2e por el selector ausente (B), 7 de API más 3 unitarias y 5 e2e (C). Final: los cinco en 0 · **test 800/800** · **e2e 129/129**. Verificación del orquestador: los cinco códigos de salida más **dos mutaciones propias** — quitar el disparador de `UPDATE` del cierre mató 3 directas y 4 colaterales de M-0, y comprobé que las 4 pasan aisladas (es el efecto de segundo orden: sin la guarda, las pruebas **logran escribir** la fila incoherente y M-0 se niega a migrar sobre base sucia); y romper la regla de «una fila abierta por vez» mató exactamente 1. Las dos revertidas con `sha256sum -c` en `OK`. | Pendiente de evaluar |
 | T-14 (cerrar y reabrir procesos) | `cad8228` | Rojo observado: 39 fallas nuevas sobre 730 que seguían pasando, escritas antes de una sola línea de implementación. Final: los cinco en 0 · **test 772/772** · **e2e 121/121**. Verificación del orquestador: los cinco códigos de salida más **una mutación propia distinta de las cuatro del escritor** — quité la guarda del `PUT` del plan (él había mutado la de `avanzar`) y murieron exactamente 2, las suyas. Revertido con `sha256sum -c` en `OK`. | Pendiente de evaluar |
 | T-13 (los cuatro hallazgos de la revisión) | `7ba7efc` | Rojo observado: 14 fallas en `esquema.spec.ts`, exactamente las esperadas. Las de H-4a y H-4b salieron verdes de entrada, y es correcto: son pérdidas de cobertura, no defectos — ahí la prueba de que no son vacuas es la mutación, no el rojo. Final: los cinco en 0 · **test 730/730** · **e2e 117/117**. Verificación del orquestador: los cinco códigos de salida más **la mutación fuerte que el escritor no podía hacer** — quitar `REFERENCES tenant (id)` de `area` en `0001` mató exactamente 2 pruebas, la de rechazo de I-8 y la nueva del `PRAGMA`, y `0001` volvió con md5 idéntico. H-4b no es vacua. | Pendiente de evaluar |
