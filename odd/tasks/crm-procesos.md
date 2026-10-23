@@ -1,7 +1,7 @@
 # crm-procesos — Tajada 1: CRM usable
 
 **Creado:** 22 de octubre de 2026
-**Estado:** TAJADA COMPLETA — las 11 tareas cerradas
+**Estado:** las 11 tareas de la tajada, cerradas. Queda T-12, deuda de integridad agregada al cierre.
 **Diseño de referencia:** `docs/diseno.md` (fuente de verdad)
 
 ---
@@ -170,6 +170,38 @@ se renumera.
       *Ruta: delegada. Forecast ~200.*
 
 ---
+
+- [ ] **T-12 · Las tres migraciones de integridad.** *Agregada al cerrar la tajada.* Deuda de
+      integridad que T-6, T-11 y T-9 fueron señalando y ninguna hizo, correctamente, porque el
+      esquema estaba fuera de su superficie. Van juntas: las tres son llaves compuestas o
+      disparadores y partirlas multiplica las reconstrucciones de tabla.
+
+      **M-1 · Unicidad de nombre por tenant.** Hoy nada impide dos áreas "Familia". Falta
+      `UNIQUE (tenant_id, nombre)` en `area` y en `tipo_cliente`, y
+      `UNIQUE (tenant_id, area_id, nombre)` en `tipo_proceso`. T-6 no la puso del lado de la
+      aplicación a propósito: una regla sin respaldo en la base es justo lo que §5 critica.
+
+      **M-2 · `etapa_plantilla` del mismo tenant que su `tipo_proceso`.** Hoy lo sostiene el
+      código, porque toda escritura pasa por `reemplazarEtapas`, que verifica el tipo antes. Un
+      `CHECK` no lo expresa: pide disparador. El mismo candidato que T-2 había señalado para
+      `nota.proceso_etapa_id`, que también sigue abierto, y que T-9 confirmó que `pendiente`
+      repite.
+
+      **M-3 · Tenencia cruzada en `proceso`.** La más seria, y está comprobada:
+      `proceso.tipo_proceso_id` y `proceso.cliente_id` son llaves foráneas **que no incluyen el
+      tenant**, así que una fila cruzada entre bufetes es expresable en la base. No es teoría —
+      la prueba de rechazo de T-11 **tuvo que insertar esa fila a mano** para poder ejercitarse.
+      `pendiente` repite la carencia en `autor_id`, `responsable_id` y `cerrado_por`.
+
+      *Cuidado al hacerla: SQLite no admite `ALTER TABLE … ADD CONSTRAINT`, así que agregar una
+      restricción exige **reconstruir la tabla y recrear a mano sus índices y disparadores**
+      (aprendido en la migración 0002). Y con la bitácora inmutable y las llaves en `NO ACTION`,
+      reconstruir una tabla con filas vivas tiene sus propias trampas: ver la nota sobre limpieza
+      entre pruebas.*
+
+      *Criterio: por cada migración, una prueba que demuestre que la base **rechaza** la
+      escritura que hoy acepta. La de M-3 tiene que ser exactamente la fila cruzada que T-11
+      inserta hoy sin problema. Ruta: delegada. Forecast ~450.*
 
 ## Criterios de aceptación de la tajada
 
@@ -718,4 +750,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-Cerrar la rebanada: revisión de lo pendiente, y T-12 con las tres migraciones agendadas.
+**T-12: las tres migraciones de integridad.** El detalle completo está en la tarea, no depende de ninguna conversación.
