@@ -2,8 +2,9 @@
 
 **Creado:** 22 de octubre de 2026
 **Estado:** las 11 tareas de la tajada, cerradas. T-12 (integridad) cerrada en dos unidades y
-**revisada y aprobada**. T-13 cerrada. Quedan T-14 (cerrar y reabrir procesos), T-15 (los dos
-huecos de pantalla) y T-16 (despliegue). Decisión del 23-oct-2026: la
+**revisada y aprobada**. T-13, T-14 y T-15 cerradas: **el código de la tajada está completo**,
+32 commits, 800 pruebas unitarias y 129 de punta a punta, los cinco comandos en 0. Queda
+**T-16, el despliegue**, y su parte crítica no la hace el agente. Decisión del 23-oct-2026: la
 tajada **se despliega y se usa con clientes reales antes de empezar la tajada 2** — el riesgo de
 repetir `app-agentes-legales`, un sistema impecable sobre datos de juguete, es mayor que el de
 llegar tarde a las cotizaciones.
@@ -435,7 +436,7 @@ se renumera.
 
 ---
 
-- [ ] **T-15 · Los dos huecos de pantalla.** *Agregada al decidir que la tajada se despliega.*
+- [x] **T-15 · Los dos huecos de pantalla.** *Agregada al decidir que la tajada se despliega.*
       Dos cosas que la API ya sabe hacer y la interfaz no deja pedir. Van juntas porque las dos
       son pantalla sobre contrato existente y ninguna justifica su propia tarea.
 
@@ -458,6 +459,52 @@ se renumera.
       *Criterio: las dos de pantalla ejercitadas de punta a punta sin tocar el contrato, y la
       de esquema probada por rechazo. Ruta: delegada, en tres unidades de trabajo. Forecast
       ~450.*
+
+      **Hecha en cuatro commits:** `d7793e9` (A, el disparador de cierre), `6c77257` (B, el
+      selector), `cf5a225` (C-worker, la ruta) y `9e117a6` (C-pantalla). 800 unitarias, 129
+      e2e.
+
+      1. **El disparador de cierre es la primera excepción deliberada al patrón de los catorce
+         de tenencia: no lleva guardia de NULL.** `proceso.estado` es `NOT NULL` y tiene
+         `DEFAULT`, así que omitirlo no produce nulo; el único nulo posible es uno escrito a
+         mano, que *es* la fila que la guarda viene a rechazar. Y esa decisión **es la que hace
+         que la mutación `IS NOT` → `<>` mate algo**: con los dos lados booleanos y no nulos
+         las dos formas son equivalentes, y la diferencia solo aparece con `estado` nulo. Poner
+         la guardia por costumbre habría dejado la guarda sin verificar.
+      2. **El encargo original de esta tarea estaba mal escrito y el escritor lo paró.** Decía
+         que la bitácora de catálogos era «pantalla sobre contrato existente». **Faltaba
+         también la ruta:** `worker/bitacora/rutas.ts` mapeaba solo `procesos` y `clientes`, y
+         el encabezado del propio archivo lo decía desde T-10. Tercera premisa del orquestador
+         corregida por un escritor en esta tajada; las tres veces leyendo el código.
+      3. **El mapa de colección va de entidad a colección, no al revés.** Con
+         `satisfies Record<EntidadRegistrada, string>`, agregar una entidad sin decir por qué
+         dirección se lee **deja de compilar**; escrito al revés, el hueco habría aparecido en
+         producción como un 404 que nadie entiende. El mapa inverso se deriva, no se copia. Lo
+         mismo con `existeLaFila`, un `switch` exhaustivo: una entidad nueva no compila hasta
+         que alguien escriba cómo se comprueba que existe.
+      4. **Una consecuencia que no se arregla, documentada y probada:** una fila **dada de
+         baja** conserva su dirección y su historia entera; una **borrada de verdad** pierde la
+         dirección aunque sus hechos sigan en la tabla. No se arregla contestando 200 con lista
+         vacía, porque eso confirmaría que el identificador existe en alguna parte, que es
+         justo la fuga que el 404 niega. El camino normal es la baja: la política de T-6 no
+         deja borrar una fila con dependientes.
+      5. **Las dos tandas responsivas de §9 ahora abren la historia antes de medir**, con un
+         `detalle` hostil de 70 caracteres sin espacios ni guiones. Sin eso habrían vuelto a
+         medir la tabla de T-6 y habrían dado por buena una pantalla que nunca se vio — la
+         misma vacuidad que T-4 descubrió en su propia rejilla.
+      6. **`pnpm lint` paró un `setState` síncrono dentro de un efecto** (`react-hooks/
+         set-state-in-effect`) y tenía razón: moverlo al `onClick` es además lo
+         conceptualmente correcto, porque **es el gesto el que invalida lo que había, no la
+         petición**.
+
+      *Dos huecos conocidos que se dejan abiertos a propósito, para que el uso real decida si
+      molestan:* **el responsable de un proceso no se puede reasignar** —no hay `PUT` de
+      proceso, solo el del plan de etapas—, y la pantalla **lo confiesa** en la ayuda del campo
+      en vez de ocultarlo; el campo ya era así desde T-7 y T-15 solo lo hizo visible. Y la
+      bitácora desplegada dentro de la lista de catálogos mete **un `h2` dentro de un `h2`**:
+      no rompe el funcionamiento —la sección va rotulada con `aria-labelledby`— pero aplana la
+      jerarquía de encabezados en ese punto. El arreglo limpio es un prop `nivel` en
+      `Bitacora.tsx`, que montarla no exigió.
 
 ---
 
@@ -525,6 +572,7 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
+| T-15 (esquema de cierre, selector, bitácora de catálogos) | `d7793e9` + `6c77257` + `cf5a225` + `9e117a6` | Rojo observado por unidad: 7 fallas en `esquema.spec.ts` (A), 2 e2e por el selector ausente (B), 7 de API más 3 unitarias y 5 e2e (C). Final: los cinco en 0 · **test 800/800** · **e2e 129/129**. Verificación del orquestador: los cinco códigos de salida más **dos mutaciones propias** — quitar el disparador de `UPDATE` del cierre mató 3 directas y 4 colaterales de M-0, y comprobé que las 4 pasan aisladas (es el efecto de segundo orden: sin la guarda, las pruebas **logran escribir** la fila incoherente y M-0 se niega a migrar sobre base sucia); y romper la regla de «una fila abierta por vez» mató exactamente 1. Las dos revertidas con `sha256sum -c` en `OK`. | Pendiente de evaluar |
 | T-14 (cerrar y reabrir procesos) | `cad8228` | Rojo observado: 39 fallas nuevas sobre 730 que seguían pasando, escritas antes de una sola línea de implementación. Final: los cinco en 0 · **test 772/772** · **e2e 121/121**. Verificación del orquestador: los cinco códigos de salida más **una mutación propia distinta de las cuatro del escritor** — quité la guarda del `PUT` del plan (él había mutado la de `avanzar`) y murieron exactamente 2, las suyas. Revertido con `sha256sum -c` en `OK`. | Pendiente de evaluar |
 | T-13 (los cuatro hallazgos de la revisión) | `7ba7efc` | Rojo observado: 14 fallas en `esquema.spec.ts`, exactamente las esperadas. Las de H-4a y H-4b salieron verdes de entrada, y es correcto: son pérdidas de cobertura, no defectos — ahí la prueba de que no son vacuas es la mutación, no el rojo. Final: los cinco en 0 · **test 730/730** · **e2e 117/117**. Verificación del orquestador: los cinco códigos de salida más **la mutación fuerte que el escritor no podía hacer** — quitar `REFERENCES tenant (id)` de `area` en `0001` mató exactamente 2 pruebas, la de rechazo de I-8 y la nueva del `PRAGMA`, y `0001` volvió con md5 idéntico. H-4b no es vacua. | Pendiente de evaluar |
 | T-12 · unidad 2 (409 por nombre repetido) | `c230c89` | Rojo observado: 10 de 15 fallando — 6 de API con el `UNIQUE constraint failed` crudo y 4 de interfaz sin la función. Final: los cinco en 0 · **test 702/702** · **e2e 117/117**. Verificación del orquestador: los cinco códigos de salida más una mutación propia — quitar la consulta previa del alta mató exactamente 3 pruebas y lo hizo con el `UNIQUE constraint failed` crudo, sin ningún 409 amable: no hay `catch` escondido. | Concedida y acusada junto con la unidad 1 (ver abajo). |
@@ -1028,10 +1076,13 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-**Cerrar la tajada y desplegarla.** T-13 ya está —y con ella H-2, que era el requisito para
-poder aprovisionar el D1 real sin arriesgar filas cruzadas vivas e inmodificables—. Quedan
-**T-14** (cerrar y reabrir procesos), **T-15** (los dos huecos de pantalla) y **T-16**
-(despliegue).
+**T-16, el despliegue, y no hay nada de código antes.** T-13, T-14 y T-15 están cerradas, y con
+H-2 de T-13 ya resuelto el D1 real se puede aprovisionar sin arriesgar filas cruzadas vivas e
+inmodificables.
+
+Lo que falta **no lo hace el agente** y está escrito en T-16: el repositorio remoto, la base D1
+y su `database_id`, y la aplicación de Cloudflare Access con su política, su AUD y su dominio de
+equipo. Hoy el proyecto son 32 commits en un solo disco.
 
 En paralelo, y sin esperar al agente, el bufete tiene que: crear el repositorio remoto, crear la
 base D1 y pasar su `database_id`, y configurar la aplicación de Cloudflare Access con su
