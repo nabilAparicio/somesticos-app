@@ -245,3 +245,60 @@
 .plantilla__etapa {
   min-width: 0;
 }
+
+/* ======================================================================
+   El plan de trabajo de un proceso (T-7)
+   ====================================================================== */
+
+/*
+ * Lo cumplido y lo que falta se dibujan separados, no con una marca de color
+ * dentro de una lista sola. El diseño pide que la vista separe las dos cosas
+ * (`docs/diseno.md` §6): «lo que viene» es la mitad del valor de la pantalla,
+ * y una diferencia solo de color no la lee quien no distingue colores.
+ *
+ * Son `<ol>` de verdad porque el orden es el dato, igual que la plantilla.
+ */
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-2xs);
+  min-width: 0;
+  margin: 0;
+  padding-inline-start: var(--espacio-m);
+}
+
+.plan__paso {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--espacio-xs);
+  min-width: 0;
+  padding: var(--espacio-2xs) var(--espacio-xs);
+  border-inline-start: 3px solid var(--color-borde);
+  border-radius: var(--radio-s);
+  background: var(--color-superficie);
+}
+
+.plan__nombre {
+  /* Un nombre de etapa largo se parte en vez de empujar la franja. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Lo cumplido va apagado y con el borde del acento: ya pasó, así que no
+ * compite por la atención con lo que falta, pero se distingue sin depender
+ * del color — lleva su fecha al lado, que es información y no decoración.
+ */
+.plan__paso--cumplido {
+  border-inline-start-color: var(--color-acento);
+  background: var(--color-superficie-tenue);
+  color: var(--color-tinta-apagada);
+}
+
+/* En el editor, la fila de una etapa cumplida se marca igual. */
+.plantilla__etapa--cumplida {
+  border-inline-start: 3px solid var(--color-acento);
+  border-radius: var(--radio-s);
+  padding-inline-start: var(--espacio-xs);
+}

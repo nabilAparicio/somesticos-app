@@ -25,6 +25,16 @@ export type Ruta =
   | { nombre: "tipos-proceso" }
   | { nombre: "tipo-proceso-nuevo" }
   | { nombre: "tipo-proceso"; id: string }
+  | { nombre: "procesos" }
+  /**
+   * El alta. `clienteId` no nulo es el alta abierta desde el detalle de ese
+   * cliente, que llega con el cliente ya elegido: `/clientes/{id}/procesos/
+   * nuevo`. Es un segmento de la ruta y no un parámetro de consulta para que
+   * la resolución siga siendo una función total sobre el `pathname`, sin un
+   * segundo canal del que acordarse.
+   */
+  | { nombre: "proceso-nuevo"; clienteId: string | null }
+  | { nombre: "proceso"; id: string }
   | { nombre: "desconocida"; ruta: string };
 
 /** El segmento literal del alta. No puede ser el identificador de nadie. */
@@ -34,6 +44,9 @@ const EDITAR = "editar";
 /** La raíz de las pantallas de catálogo (T-6) y su única subsección. */
 const CATALOGOS = "catalogos";
 const TIPOS_PROCESO = "tipos-proceso";
+
+/** La raíz de las pantallas de proceso (T-7). */
+const PROCESOS = "procesos";
 
 /**
  * Los segmentos de la ruta, sin la barra final.
@@ -78,6 +91,24 @@ function resolverCatalogos(segmentos: string[], pathname: string): Ruta {
   return id === null ? desconocida : { nombre: "tipo-proceso", id };
 }
 
+/**
+ * Las tres pantallas de proceso. Aparte, por la misma razón que las de
+ * catálogo: un tercer árbol dentro de `resolverRuta` es donde un `return` cae
+ * en la rama equivocada sin que se note.
+ */
+function resolverProcesos(segmentos: string[], pathname: string): Ruta {
+  const desconocida: Ruta = { nombre: "desconocida", ruta: pathname };
+
+  if (segmentos.length === 1) return { nombre: "procesos" };
+  if (segmentos.length !== 2) return desconocida;
+  if (segmentos[1] === NUEVO) {
+    return { nombre: "proceso-nuevo", clienteId: null };
+  }
+
+  const id = identificador(segmentos[1]);
+  return id === null ? desconocida : { nombre: "proceso", id };
+}
+
 export function resolverRuta(pathname: string): Ruta {
   const segmentos = segmentosDe(pathname);
   const desconocida: Ruta = { nombre: "desconocida", ruta: pathname };
@@ -88,6 +119,7 @@ export function resolverRuta(pathname: string): Ruta {
   }
 
   if (segmentos[0] === CATALOGOS) return resolverCatalogos(segmentos, pathname);
+  if (segmentos[0] === PROCESOS) return resolverProcesos(segmentos, pathname);
 
   if (segmentos[0] !== "clientes") return desconocida;
 
@@ -103,6 +135,18 @@ export function resolverRuta(pathname: string): Ruta {
   if (segmentos.length === 3 && segmentos[2] === EDITAR) {
     const id = identificador(segmentos[1]);
     return id === null ? desconocida : { nombre: "cliente-edicion", id };
+  }
+
+  // El alta de un proceso con el cliente ya elegido.
+  if (
+    segmentos.length === 4 &&
+    segmentos[2] === PROCESOS &&
+    segmentos[3] === NUEVO
+  ) {
+    const id = identificador(segmentos[1]);
+    return id === null
+      ? desconocida
+      : { nombre: "proceso-nuevo", clienteId: id };
   }
 
   return desconocida;
@@ -136,6 +180,14 @@ export function enlaceDe(ruta: Ruta): string {
       return `/${CATALOGOS}/${TIPOS_PROCESO}/${NUEVO}`;
     case "tipo-proceso":
       return `/${CATALOGOS}/${TIPOS_PROCESO}/${encodeURIComponent(ruta.id)}`;
+    case "procesos":
+      return `/${PROCESOS}`;
+    case "proceso-nuevo":
+      return ruta.clienteId === null
+        ? `/${PROCESOS}/${NUEVO}`
+        : `/clientes/${encodeURIComponent(ruta.clienteId)}/${PROCESOS}/${NUEVO}`;
+    case "proceso":
+      return `/${PROCESOS}/${encodeURIComponent(ruta.id)}`;
     case "desconocida":
       return ruta.ruta;
   }

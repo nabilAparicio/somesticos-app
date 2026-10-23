@@ -177,9 +177,14 @@ function enumerar(partes: readonly string[]): string {
  * sin invalidar lo que ya la referencia.
  */
 export function mensajeDeBloqueo(
-  bloqueo: BorradoBloqueado,
+  bloqueo: BorradoBloqueado | null,
   nombre: string,
 ): string {
+  // `null` es el 409 que no es de borrado. No debería llegar acá —el único
+  // 409 de los catálogos es el de dependientes— pero decirlo en el tipo es
+  // más barato que una aserción que mañana sea mentira.
+  if (bloqueo === null) return `No se puede borrar «${nombre}».`;
+
   const partes = bloqueo.dependencias.map(({ entidad, cuantos }) => {
     const [singular, plural] = DEPENDIENTES[entidad];
     return `${String(cuantos)} ${cuantos === 1 ? singular : plural}`;

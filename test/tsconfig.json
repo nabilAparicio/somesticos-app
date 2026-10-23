@@ -42,6 +42,10 @@
     "../src/mensajes.ts",
     "../src/pantallas/catalogos/formulario.ts",
     "../src/pantallas/catalogos/plantilla.ts",
-    "../src/pantallas/catalogos/presentacion.ts"
+    "../src/pantallas/catalogos/presentacion.ts",
+    "../src/formatos.ts",
+    "../src/pantallas/procesos/formulario.ts",
+    "../src/pantallas/procesos/plan.ts",
+    "../src/pantallas/procesos/presentacion.ts"
   ]
 }

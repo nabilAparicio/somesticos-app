@@ -26,6 +26,11 @@ import type {
   IdentidadActual,
 } from "./contract";
 import { TENANT_UNICO_ID } from "./db/ids";
+import {
+  procesosSobreD1,
+  type ServicioDeProcesos,
+} from "./procesos/repositorio";
+import { rutasDeProcesos } from "./procesos/rutas";
 
 export interface DependenciasDelManejador extends DependenciasDeAcceso {
   /**
@@ -37,6 +42,9 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
 
   /** Los catálogos del bufete (T-6). Se sustituye por la misma razón. */
   catalogos?: ServicioDeCatalogos;
+
+  /** Los procesos y su plan de trabajo (T-7). Idem. */
+  procesos?: ServicioDeProcesos;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -132,6 +140,14 @@ export async function manejar(
     dependencias.catalogos ?? catalogosSobreD1(env.DB),
   );
   if (catalogos !== null) return catalogos;
+
+  const procesos = await rutasDeProcesos(
+    request,
+    url,
+    TENANT_UNICO_ID,
+    dependencias.procesos ?? procesosSobreD1(env.DB),
+  );
+  if (procesos !== null) return procesos;
 
   return noEncontrado();
 }

@@ -26,8 +26,20 @@ import type {
 export type Resultado<T> =
   | { estado: "ok"; valor: T }
   | { estado: "invalido"; fallas: FallaDeValidacion[] }
-  /** 409: el borrado chocó con dependientes. Solo lo usan los catálogos. */
-  | { estado: "conflicto"; bloqueo: BorradoBloqueado }
+  /**
+   * 409: la petición está bien formada y el estado es el que no la admite.
+   *
+   * Hay dos, y por eso viaja `motivo`: el borrado de un catálogo que chocó
+   * con dependientes (`tiene_dependientes`, T-6) y el avance de un proceso
+   * que ya no tiene etapas por delante (`sin_etapas_pendientes`, T-7).
+   * `bloqueo` solo trae algo en el primer caso; inventarle un valor al
+   * segundo sería ofrecerle a la pantalla un detalle que no existe.
+   */
+  | {
+      estado: "conflicto";
+      motivo: string;
+      bloqueo: BorradoBloqueado | null;
+    }
   | { estado: "no_encontrado" }
   | { estado: "sin_acceso"; motivo: string }
   | { estado: "falla"; mensaje: string };
@@ -56,14 +68,18 @@ async function problemaDe(respuesta: Response): Promise<Problema | null> {
   if (respuesta.status === 404) return { estado: "no_encontrado" };
 
   if (respuesta.status === 409) {
-    const cuerpo = (await cuerpoJson(respuesta)) as BorradoBloqueado | null;
+    const cuerpo = (await cuerpoJson(respuesta)) as
+      | { error?: string }
+      | null;
+    const motivo = cuerpo?.error ?? "conflicto";
+
     return {
       estado: "conflicto",
-      bloqueo: cuerpo ?? {
-        error: "tiene_dependientes",
-        entidad: "area",
-        dependencias: [],
-      },
+      motivo,
+      bloqueo:
+        motivo === "tiene_dependientes"
+          ? (cuerpo as BorradoBloqueado)
+          : null,
     };
   }
 
@@ -153,7 +169,9 @@ export function textoDeProblema(
     case "invalido":
       return "Los datos enviados no se aceptaron.";
     case "conflicto":
-      return "No se pudo borrar: hay datos que dependen de esto.";
+      return resultado.motivo === "sin_etapas_pendientes"
+        ? "Este proceso ya no tiene etapas por delante."
+        : "No se pudo borrar: hay datos que dependen de esto.";
     case "falla":
       return `No se pudo consultar: ${resultado.mensaje}`;
   }

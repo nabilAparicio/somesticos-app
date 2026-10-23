@@ -8,16 +8,10 @@
  */
 
 import type { TipoProceso } from "../../../worker/contract";
+import { ORDEN_ES, VACIO } from "../../formatos";
 
-/**
- * Comparador con las reglas del español: `Álvarez` antes que `ávila`, y `ñ`
- * después de `n`. Con `Array.prototype.sort()` crudo las mayúsculas y los
- * acentos se van todos al final.
- */
-const ORDEN_ES = new Intl.Collator("es", { numeric: true });
-
-/** Lo que se muestra donde no hay dato. El mismo guion que usa T-5. */
-export const VACIO = "—";
+/* Reexportado y no redefinido: el guion vive en `src/formatos.ts` (T-7). */
+export { VACIO };
 
 /**
  * El rótulo del grupo cuando el área no se pudo nombrar.

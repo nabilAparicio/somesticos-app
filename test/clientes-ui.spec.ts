@@ -112,7 +112,11 @@ describe("resolverRuta", () => {
     expect(resolverRuta("/clientes/x/y/z")).toMatchObject({
       nombre: "desconocida",
     });
-    expect(resolverRuta("/procesos")).toMatchObject({ nombre: "desconocida" });
+    // `/procesos` era desconocida hasta T-7, que la estrenó. Lo que sigue
+    // valiendo es que una sección inventada no resuelva a nada.
+    expect(resolverRuta("/expedientes")).toMatchObject({
+      nombre: "desconocida",
+    });
     // Un id vacío no es un id.
     expect(resolverRuta("/clientes//editar")).toMatchObject({
       nombre: "desconocida",

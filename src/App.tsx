@@ -21,6 +21,9 @@ import { TiposDeProceso } from "./pantallas/catalogos/TiposDeProceso";
 import { DetalleDeCliente } from "./pantallas/clientes/DetalleDeCliente";
 import { FormularioDeCliente } from "./pantallas/clientes/FormularioDeCliente";
 import { ListaDeClientes } from "./pantallas/clientes/ListaDeClientes";
+import { DetalleDeProceso } from "./pantallas/procesos/DetalleDeProceso";
+import { FormularioDeProceso } from "./pantallas/procesos/FormularioDeProceso";
+import { ListaDeProcesos } from "./pantallas/procesos/ListaDeProcesos";
 import { resolverRuta, type Ruta } from "./ruteo";
 
 function rutaActual(): string {
@@ -54,6 +57,17 @@ function pantallaDe(ruta: Ruta) {
       return <FormularioDeTipoDeProceso key="nuevo" />;
     case "tipo-proceso":
       return <FormularioDeTipoDeProceso key={ruta.id} tipoId={ruta.id} />;
+    case "procesos":
+      return <ListaDeProcesos />;
+    case "proceso-nuevo":
+      return (
+        <FormularioDeProceso
+          key={`nuevo-${ruta.clienteId ?? "sin-cliente"}`}
+          clienteId={ruta.clienteId ?? undefined}
+        />
+      );
+    case "proceso":
+      return <DetalleDeProceso key={ruta.id} id={ruta.id} />;
     case "desconocida":
       return (
         <section>

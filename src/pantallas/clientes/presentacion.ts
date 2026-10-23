@@ -8,25 +8,14 @@
  */
 
 import type { Cliente } from "../../../worker/contract";
+import { ORDEN_ES, VACIO, fechaLegible, plano } from "../../formatos";
 
-/** Lo que se muestra donde no hay dato. Un solo guion, en un solo lugar. */
-export const VACIO = "—";
-
-/**
- * Comparador con las reglas del español: `Álvarez` antes que `ávila`, y `ñ`
- * después de `n`. Con `Array.prototype.sort()` crudo las mayúsculas y los
- * acentos se van todos al final, y un listado de apellidos panameños queda
- * ordenado de una forma que nadie reconoce.
+/*
+ * `VACIO` y `fechaLegible` se reexportan en vez de redefinirse: T-7 los mudó
+ * a `src/formatos.ts` cuando apareció la tercera pantalla que los necesitaba.
+ * Quien ya los importaba de acá los sigue importando de acá.
  */
-const ORDEN_ES = new Intl.Collator("es", { numeric: true });
-
-/** Minúsculas y sin acentos, para buscar como la gente escribe. */
-function plano(texto: string): string {
-  return texto
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase();
-}
+export { VACIO, fechaLegible };
 
 export function contactoDe(cliente: Cliente): string {
   const partes = [cliente.telefono, cliente.email].filter(
@@ -82,15 +71,4 @@ export function filtrarClientes(
 
     return pajar.includes(buscado);
   });
-}
-
-/** El momento ISO que guarda la base, en la forma que lee una persona. */
-export function fechaLegible(iso: string): string {
-  const momento = new Date(iso);
-  if (Number.isNaN(momento.getTime())) return VACIO;
-
-  return new Intl.DateTimeFormat("es-PA", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(momento);
 }

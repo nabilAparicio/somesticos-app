@@ -35,7 +35,7 @@ const SECCIONES: readonly ItemDeNavegacion[] = [
   { rotulo: "Inicio", href: "/" },
   { rotulo: "Clientes", href: "/clientes" },
   { rotulo: "Catálogos", href: "/catalogos" },
-  { rotulo: "Procesos" },
+  { rotulo: "Procesos", href: "/procesos" },
   { rotulo: "Pendientes" },
   { rotulo: "Bitácora" },
 ] as const;

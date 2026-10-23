@@ -25,6 +25,20 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   etapa_desconocida:
     "Una de las etapas ya no existe o está repetida. Hay que volver a" +
     " cargar la plantilla.",
+  cliente_requerido: "Hay que elegir el cliente del proceso.",
+  cliente_desconocido: "Ese cliente ya no existe.",
+  tipo_proceso_requerido: "Hay que elegir el tipo de proceso.",
+  tipo_proceso_desconocido: "Ese tipo de proceso ya no existe.",
+  responsable_desconocido: "Esa persona ya no está en el bufete.",
+  titulo_requerido:
+    "El título es obligatorio: es lo que distingue este proceso de otro" +
+    " del mismo tipo.",
+  etapa_alcanzada_no_se_quita:
+    "Una etapa ya cumplida no se puede quitar: es el registro de lo que" +
+    " pasó, y lo que se anotó en ella quedaría sin dónde colgar.",
+  etapa_alcanzada_no_se_mueve:
+    "Una etapa ya cumplida no se puede mover, y no se puede meter un paso" +
+    " nuevo por delante de ella. Lo que falta se agrega después.",
 };
 
 export function mensajeDeFalla(motivo: MotivoDeFalla): string {

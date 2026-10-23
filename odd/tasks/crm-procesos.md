@@ -1,7 +1,7 @@
 # crm-procesos — Tajada 1: CRM usable
 
 **Creado:** 22 de octubre de 2026
-**Estado:** en curso — T-1 y T-2 cerradas
+**Estado:** en curso — T-1 a T-7 cerradas
 **Diseño de referencia:** `docs/diseno.md` (fuente de verdad)
 
 ---
@@ -140,7 +140,7 @@ se renumera.
       que editar la plantilla no altera los procesos ya abiertos.
       *Ruta: delegada. Forecast ~450.*
 
-- [ ] **T-7 · Procesos y su plan de trabajo.** Crear directo (`origen = directo`), listar por
+- [x] **T-7 · Procesos y su plan de trabajo.** Crear directo (`origen = directo`), listar por
       cliente y global, detalle, avanzar de etapa. Las etapas se **copian** de la plantilla al
       crear el proceso. Sobre el proceso ya creado: agregar, quitar y reordenar etapas. Quitar
       solo aplica a etapas pendientes; una etapa alcanzada no se borra. La vista separa lo
@@ -218,7 +218,8 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-6 | (este commit) | Rojo observado: 44 fallas de API, el archivo de UI sin cargar y 25 e2e en rojo. Final: los cinco en 0 · **test 287/287** · **e2e 68/68**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de borrado (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
+| T-7 | (este commit) | Rojo observado: 42 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 372/372** · **e2e 94/94**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de lo alcanzado (4 muertas). | Pendiente de evaluar |
+| T-6 | `326901b` | Rojo observado: 44 fallas de API, el archivo de UI sin cargar y 25 e2e en rojo. Final: los cinco en 0 · **test 287/287** · **e2e 68/68**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de borrado (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
 | T-5 | `c9f51fc` | Rojo observado: 27 de 35 fallas en la API y el archivo de UI sin cargar. Final: los cinco comandos en 0 · **test 189/189** · **e2e 43/43**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de tenencia (5 muertas). | Pendiente de evaluar |
 | T-4 | `3893ccb` | Rojo observado: 10 fallas de e2e sin hoja de estilos. Final: typecheck 0 · test 0 (122/122) · lint 0 · build 0 · **e2e 0 (22/22)**. Verificación del orquestador: los cinco códigos de salida, más la reproducción propia de la mutación B. | **Escalada sin veredicto.** Lineaje `review-9705305831e89372`, riesgo alto, cuatro lentes. Ver abajo. |
 | T-3 | `4a9118f` | Rojo observado: 26 fallas por `manejar is not a function`. Final: typecheck 0 · test **122/122**, exit 0 · lint 0. Verificación del orquestador: los tres códigos de salida, inspección propia del bundle, y pruebas de mutación sobre la compuerta de artefacto y sobre la cobertura de `origenRemoto`. | **Aprobada y acusada** tras TRES rondas de corrección. Lineajes `review-4dbfcc0616c91689` → `review-6a5f14d2c564cb45` → `review-155e9995d4c99a7e`, autoridad quemada. 4 hallazgos CRÍTICOS, los 4 reales, los 4 corregidos. |
@@ -371,6 +372,40 @@ lectura está; falta el CRUD. No es un defecto de T-5: excede su alcance y habr�
 rebanada por encima de su presupuesto. **Entra en T-6**, junto a las áreas y los tipos de proceso,
 que son exactamente el mismo problema de catálogo.
 
+### T-7 decidió: el avance de etapa es de una sola dirección
+
+No se puede desandar una etapa alcanzada. La razón no es rigidez: **si `alcanzada_en` pudiera
+volver a nulo, quitar una etapa cumplida sería legal en dos pasos** —desandar y después quitar— y
+la guarda tendría una puerta trasera. La regla dejaría de ser una regla. Además `alcanzada_en` es
+el registro de un hecho, igual que una nota.
+
+Está cerrado **por construcción y no por omisión**: el `UPDATE` del plan no menciona
+`alcanzada_en`. Hay una prueba que manda `alcanzadaEn: null` explícito en el JSON y verifica
+releyendo que la marca sobrevive. Contrapartida asumida: un clic accidental es irreversible, así
+que el botón nombra la etapa concreta y la pantalla dice que no se puede deshacer.
+
+Frontera declarada: **renombrar una etapa cumplida sí se permite.** Los nombres son texto de cara
+al cliente y corregir una errata no borra el hecho ni deja notas huérfanas.
+
+### La guarda resultó ser más amplia de lo que pedía el plan
+
+El plan decía "no se quita una etapa alcanzada". T-7 encontró que eso no alcanza: **lo alcanzado
+tampoco se mueve de lugar.** Sin esa parte, un paso pendiente podía insertarse delante de algo ya
+cumplido, y la vista "cumplido / lo que falta" dejaba de poder dibujarse como dos listas.
+
+Y tiene contrapeso explícito —reordenar, agregar y quitar **entre pendientes** sí funciona— para
+que una guarda que congelara el plan entero no pasara desapercibida como si fuera correcta.
+
+### Tres mutaciones, y una lección de proceso
+
+Guarda de lo alcanzado: mueren 4, y mueren mostrando el plan ya mutilado, o sea que el borrado
+**se consumaba**. Filtro de tenencia: mueren 14, ninguna de catálogos ni de clientes. Copia de la
+guarda en el navegador: mueren 3, **solo** las de UI.
+
+La de proceso: `lint` dio 1 en la primera pasada completa por un carácter invisible en un
+comentario de e2e. La pasada anterior había corrido antes de que ese archivo existiera. Es
+exactamente el caso que la regla del código de salida existe para atrapar.
+
 ### La política de borrado, que T-2 había delegado
 
 T-2 dejó las llaves foráneas en `NO ACTION` y escribió que la política de borrado la definían T-6
@@ -491,4 +526,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-7: procesos y su plan de trabajo.
+T-11: guardar como plantilla, desde un proceso cuyo plan ya se ajustó a mano.

@@ -104,7 +104,35 @@ export type MotivoDeFalla =
   /** El `areaId` no es una fila de `area` de ESTE tenant. */
   | "area_desconocida"
   /** Un id de etapa que no pertenece a la plantilla que se está guardando. */
-  | "etapa_desconocida";
+  | "etapa_desconocida"
+  /* --- Procesos (T-7) --- */
+  /** Todo proceso está ligado a un cliente. Es I-2 (`docs/diseno.md` §5). */
+  | "cliente_requerido"
+  /** El `clienteId` no es una fila de `cliente` de ESTE tenant. */
+  | "cliente_desconocido"
+  /** Un proceso sin tipo no se puede sembrar desde ninguna plantilla. */
+  | "tipo_proceso_requerido"
+  /** El `tipoProcesoId` no es una fila de `tipo_proceso` de ESTE tenant. */
+  | "tipo_proceso_desconocido"
+  /** El `responsableId` no es un `usuario` de ESTE tenant. */
+  | "responsable_desconocido"
+  /** Sin título, el listado no distingue dos procesos del mismo tipo. */
+  | "titulo_requerido"
+  /**
+   * El plan enviado no incluye una etapa que ya está alcanzada.
+   *
+   * Las notas se anclan a la etapa donde ocurrieron y son inmutables por
+   * disparador (I-6): borrar una etapa cumplida dejaría notas huérfanas o
+   * reescribiría la historia.
+   */
+  | "etapa_alcanzada_no_se_quita"
+  /**
+   * El plan enviado mueve una etapa alcanzada, o mete un paso por delante de
+   * una. Lo cumplido va primero y en el orden en que se cumplió: un plan que
+   * promete un paso *antes* de algo que ya pasó no se puede dibujar separado
+   * en cumplido y pendiente, que es lo que la pantalla tiene que mostrar.
+   */
+  | "etapa_alcanzada_no_se_mueve";
 
 export interface FallaDeValidacion {
   campo: string;
@@ -242,4 +270,110 @@ export interface RespuestaDeTipoCliente {
 
 export interface RespuestaDeEtapas {
   etapas: EtapaPlantilla[];
+}
+
+/* ==========================================================================
+   Procesos y su plan de trabajo (T-7)
+
+   Un **proceso** es todo trabajo que hace un abogado (`docs/diseno.md` §3).
+   Nunca «caso».
+
+   Dos cosas del modelo que esta sección hace visibles en el cable:
+
+    - **La plantilla siembra, el proceso manda.** Las etapas se copian de
+      `etapa_plantilla` al crear el proceso; desde ahí el proceso es dueño de
+      su plan y editar la plantilla no lo toca (§6, «Etapas»).
+    - **`proceso_etapa` es la lista ordenada completa**, no un puntero a la
+      etapa vigente. Las de `alcanzadaEn` nulo son exactamente lo que falta, y
+      «lo que viene» es la mitad del valor de la pantalla.
+   ========================================================================== */
+
+/**
+ * De dónde nació el proceso.
+ *
+ * `cotizacion` existe en el `CHECK` de la tabla pero **no está implementado**
+ * en esta tajada: apuntaría a `cotizacion_linea`, que es de la tajada 2. Todo
+ * lo que se crea hoy nace `directo`.
+ */
+export type OrigenDeProceso = "cotizacion" | "directo";
+
+/** Cerrado en el par que el esquema admite. Cerrar un proceso es de T-7+. */
+export type EstadoDeProceso = "abierto" | "cerrado";
+
+/**
+ * Un paso del plan de trabajo de un proceso.
+ *
+ * `alcanzadaEn` es el hecho: nulo mientras falte, y el momento exacto una vez
+ * cumplida. No se vuelve a nulo nunca — el avance es de una sola dirección.
+ *
+ * El nombre es **texto de cara al cliente** (§6, «Una consecuencia futura que
+ * obliga hoy»), igual que el de la plantilla de la que salió.
+ */
+export interface EtapaDeProceso {
+  id: string;
+  nombre: string;
+  orden: number;
+  alcanzadaEn: string | null;
+}
+
+/**
+ * Un proceso tal como lo lee la pantalla.
+ *
+ * Los nombres de cliente, tipo, área y responsable se resuelven **en
+ * lectura**: lo que se guarda es la llave (§6, «Autoría»).
+ *
+ * Los tres derivados del final existen para que el **listado** no tenga que
+ * pedir el plan de cada fila para decir en qué va cada proceso. Se calculan
+ * de `proceso_etapa`, nunca se almacenan.
+ */
+export interface Proceso {
+  id: string;
+  clienteId: string;
+  clienteNombre: string | null;
+  tipoProcesoId: string;
+  tipoProcesoNombre: string | null;
+  areaNombre: string | null;
+  origen: OrigenDeProceso;
+  titulo: string;
+  estado: EstadoDeProceso;
+  responsableId: string | null;
+  responsableNombre: string | null;
+  abiertoEn: string;
+  cerradoEn: string | null;
+  etapasCumplidas: number;
+  etapasTotales: number;
+  /** El nombre de la próxima pendiente. Nulo si no falta ninguna. */
+  etapaVigente: string | null;
+}
+
+/** El proceso con su plan entero: lo que pide la pantalla de detalle. */
+export interface DetalleDeProceso {
+  proceso: Proceso;
+  etapas: EtapaDeProceso[];
+}
+
+/**
+ * Lo que el formulario manda al abrir un proceso. Ya normalizado.
+ *
+ * No lleva `origen`: en esta tajada solo hay uno y lo pone el servidor. Que
+ * el cliente lo eligiera sería ofrecer un camino que no existe.
+ */
+export interface DatosDeProceso {
+  clienteId: string;
+  tipoProcesoId: string;
+  titulo: string;
+  responsableId: string | null;
+}
+
+export interface RespuestaDeProcesos {
+  procesos: Proceso[];
+}
+
+export interface RespuestaDeProceso {
+  proceso: Proceso;
+}
+
+/** El 409 de avanzar cuando el plan ya no tiene nada por delante. */
+export interface SinEtapasPendientes {
+  error: "sin_etapas_pendientes";
 }
