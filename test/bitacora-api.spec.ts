@@ -98,6 +98,8 @@ let tipoResidenciaId: string;
 let procesoAjenoId: string;
 let areaAjenaId: string;
 let tipoAjenoId: string;
+/** T-15: el tercer catálogo del vecino, para su propia prueba de fuga. */
+let tipoClienteAjenoId: string;
 
 // Los nombres de catálogo del bufete llevan pegado su identificador porque
 // `0003_tenencia_y_unicidad.sql` los hace únicos por tenant y este archivo no
@@ -313,6 +315,7 @@ beforeEach(async () => {
   procesoAjenoId = nuevoId();
   areaAjenaId = nuevoId();
   tipoAjenoId = nuevoId();
+  tipoClienteAjenoId = nuevoId();
   nombreAreaMigracion = `Migración y naturalización ${areaId}`;
   nombreTipoResidencia =
     `Residencia permanente por matrimonio con nacional ${tipoResidenciaId}`;
@@ -379,6 +382,10 @@ beforeEach(async () => {
       "INSERT INTO tipo_proceso (id, tenant_id, area_id, nombre, activo)" +
         " VALUES (?, ?, ?, ?, 1)",
     ).bind(tipoAjenoId, OTRO_TENANT_ID, areaAjenaId, "Tipo del vecino"),
+    env.DB.prepare(
+      "INSERT INTO tipo_cliente (id, tenant_id, nombre, activo)" +
+        " VALUES (?, ?, ?, 1)",
+    ).bind(tipoClienteAjenoId, OTRO_TENANT_ID, "Tipo de cliente del vecino"),
     env.DB.prepare(
       "INSERT INTO proceso (id, tenant_id, cliente_id, tipo_proceso_id," +
         " origen, titulo, estado, abierto_en)" +
@@ -851,6 +858,211 @@ describe("los catálogos registran sus cuatro movimientos", () => {
     const entradas = await entradasEnLaBase("tipo_proceso", id);
     expect(acciones(entradas)).toEqual(["creado", "plantilla_editada"]);
     expect(entradas[1].usuarioNombre).toBe(NOMBRE_SOCIO);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-15 · los catálogos estrenan su dirección de lectura
+// ---------------------------------------------------------------------------
+//
+// Hasta acá los hechos de `area`, `tipo_cliente` y `tipo_proceso` se
+// comprobaban leyendo la tabla (`entradasEnLaBase`), porque la ruta solo
+// conocía el proceso y el cliente. Ahora las tres tienen dirección, y lo que
+// importa es que la estrenen con las mismas guardas que las dos viejas: el
+// 404 del vecino, el 404 de lo que no existe, el 405 de toda escritura y el
+// 403 de antes de la puerta. Una entidad nueva con la lectura abierta y la
+// guarda a medias es una fuga, no una pantalla.
+
+const CATALOGOS = [
+  { coleccion: "areas", entidad: "area" },
+  { coleccion: "tipos-cliente", entidad: "tipo_cliente" },
+  { coleccion: "tipos-proceso", entidad: "tipo_proceso" },
+] as const;
+
+type ColeccionDeCatalogo = (typeof CATALOGOS)[number]["coleccion"];
+
+/** La fila del vecino de esa colección: el objeto de la prueba de fuga. */
+function ajenaDe(coleccion: ColeccionDeCatalogo): string {
+  switch (coleccion) {
+    case "areas":
+      return areaAjenaId;
+    case "tipos-cliente":
+      return tipoClienteAjenoId;
+    case "tipos-proceso":
+      return tipoAjenoId;
+  }
+}
+
+/** Un alta nuestra en esa colección, por la API, con su entrada de alta. */
+function crearEnCatalogo(
+  coleccion: ColeccionDeCatalogo,
+  nombre: string,
+): Promise<string> {
+  switch (coleccion) {
+    case "areas":
+      return crearArea(nombre);
+    case "tipos-cliente":
+      return crearTipoCliente(nombre);
+    case "tipos-proceso":
+      return crearTipoProceso(nombre);
+  }
+}
+
+/** La edición que deja la segunda entrada. */
+function editarEnCatalogo(
+  coleccion: ColeccionDeCatalogo,
+  id: string,
+  nombre: string,
+): Promise<Response> {
+  const cuerpo =
+    coleccion === "tipos-proceso"
+      ? { areaId, nombre, descripcion: null, activo: true }
+      : { nombre, activo: true };
+
+  return comoAutor(conCuerpo(`/api/${coleccion}/${id}`, "PUT", cuerpo));
+}
+
+describe("la bitácora de los catálogos se lee por su entidad", () => {
+  // El contrapeso de todo el bloque: sin esto, las cuatro pruebas de
+  // rechazo de abajo pasarían igual con la ruta devolviendo 404 siempre.
+  it.each(CATALOGOS)(
+    "$coleccion contesta por la API lo mismo que quedó en la tabla",
+    async ({ coleccion, entidad }) => {
+      const nombre = `Catálogo ${nuevoId()}`;
+      const id = await crearEnCatalogo(coleccion, nombre);
+      const otroNombre = `${nombre} corregido`;
+      expect((await editarEnCatalogo(coleccion, id, otroNombre)).status).toBe(
+        200,
+      );
+
+      const respuesta = await comoAutor(
+        peticion(`/api/${coleccion}/${id}/bitacora`),
+      );
+      expect(respuesta.status).toBe(200);
+
+      const entradas = ((await respuesta.json()) as BitacoraEnElCable)
+        .entradas;
+
+      expect(acciones(entradas)).toEqual(["creado", "editado"]);
+      expect(entradas.map((entrada) => entrada.entidad)).toEqual([
+        entidad,
+        entidad,
+      ]);
+      expect(entradas[1].detalle).toBe(otroNombre);
+      expect(entradas[1].usuarioNombre).toBe(NOMBRE_AUTOR);
+
+      // Y es exactamente lo que hay en la tabla: la ruta no filtra ni
+      // reordena nada por su cuenta.
+      expect(entradas).toEqual(await entradasEnLaBase(entidad, id));
+    },
+  );
+
+  // La prueba que de verdad protege la historia. Una lista vacía con 200
+  // sería una fuga: confirmaría que ese identificador existe en alguna
+  // parte, que es justo lo que el 404 de T-5 en adelante niega.
+  it.each(CATALOGOS)(
+    "contesta 404 para la fila de $coleccion del vecino, y no una lista vacía",
+    async ({ coleccion }) => {
+      const respuesta = await comoAutor(
+        peticion(`/api/${coleccion}/${ajenaDe(coleccion)}/bitacora`),
+      );
+
+      expect(respuesta.status).toBe(404);
+    },
+  );
+
+  it.each(CATALOGOS)(
+    "contesta 404 para una fila de $coleccion que no existe",
+    async ({ coleccion }) => {
+      const respuesta = await comoAutor(
+        peticion(`/api/${coleccion}/${nuevoId()}/bitacora`),
+      );
+
+      expect(respuesta.status).toBe(404);
+    },
+  );
+
+  // El vecino tampoco se entera por el verbo: un 405 antes del 404 diría
+  // «esa dirección existe» sin preguntarle a nadie de quién es la fila.
+  it.each(CATALOGOS)(
+    "contesta 405 con allow GET a toda escritura sobre la de $coleccion",
+    async ({ coleccion }) => {
+      const id = await crearEnCatalogo(coleccion, `Catálogo ${nuevoId()}`);
+
+      for (const metodo of ["POST", "PUT", "PATCH", "DELETE"]) {
+        const respuesta = await comoAutor(
+          peticion(`/api/${coleccion}/${id}/bitacora`, { method: metodo }),
+        );
+
+        expect(respuesta.status, metodo).toBe(405);
+        expect(respuesta.headers.get("allow"), metodo).toBe("GET");
+      }
+    },
+  );
+
+  it.each(CATALOGOS)(
+    "contesta 403 sin identidad de Access sobre la de $coleccion",
+    async ({ coleccion }) => {
+      const registro = {
+        llamado: false,
+        listar: (): Promise<never[]> => {
+          registro.llamado = true;
+          return Promise.resolve([]);
+        },
+      };
+      const vigilante = registro as unknown as ServicioDeBitacora;
+
+      const respuesta = await sinIdentidad(
+        peticion(`/api/${coleccion}/${nuevoId()}/bitacora`),
+        vigilante,
+      );
+
+      expect(respuesta.status).toBe(403);
+      expect(registro.llamado, "no llegó al dominio").toBe(false);
+    },
+  );
+
+  // Lo que la dirección **no** alcanza, dicho acá para que sea una decisión
+  // y no una sorpresa: la dirección cuelga de la entidad, así que una fila
+  // borrada de verdad deja sus entradas en la tabla —incluida la de
+  // `borrado`— y ya no tiene por dónde pedirse. Es el mismo trato que la
+  // bitácora del proceso y la del cliente, y la política de T-6 lo hace
+  // raro en la práctica: lo normal es dar de baja, que sí conserva la fila.
+  it("una fila dada de baja conserva su dirección; una borrada la pierde", async () => {
+    const deBaja = await crearArea(`Dada de baja ${nuevoId()}`);
+    expect(
+      (
+        await comoAutor(
+          conCuerpo(`/api/areas/${deBaja}`, "PUT", {
+            nombre: `Dada de baja ${deBaja}`,
+            activo: false,
+          }),
+        )
+      ).status,
+    ).toBe(200);
+
+    const viva = await comoAutor(peticion(`/api/areas/${deBaja}/bitacora`));
+    expect(viva.status).toBe(200);
+    expect(
+      acciones(((await viva.json()) as BitacoraEnElCable).entradas),
+    ).toEqual(["creado", "dado_de_baja"]);
+
+    const borrada = await crearArea(`Borrada ${nuevoId()}`);
+    expect(
+      (await comoAutor(peticion(`/api/areas/${borrada}`, { method: "DELETE" })))
+        .status,
+    ).toBe(204);
+
+    expect(
+      (await comoAutor(peticion(`/api/areas/${borrada}/bitacora`))).status,
+    ).toBe(404);
+
+    // Pero los hechos siguen ahí: lo que se perdió es la dirección, no la
+    // historia. Esa es la mitad de para qué existe un registro de auditoría.
+    expect(acciones(await entradasEnLaBase("area", borrada))).toEqual([
+      "creado",
+      "borrado",
+    ]);
   });
 });
 

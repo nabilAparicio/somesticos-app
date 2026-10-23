@@ -195,16 +195,20 @@ export async function manejar(
   // segunda copia de la consulta.
   const servicioDeProcesos = dependencias.procesos ?? procesosSobreD1(base);
 
-  // La bitácora va **antes** que las notas, los pendientes y los procesos:
-  // `/api/{procesos|clientes}/{id}/bitacora` es subruta de las dos
-  // colecciones, y las dos devuelven `null` para ella, así que el orden no
-  // cambia qué contesta cada una — pero deja el reparto escrito.
+  // La bitácora es subruta de **las cinco** colecciones que la exponen, y
+  // las cinco devuelven `null` para ella: `manejarPlano` corta en
+  // `segmentos.length !== 3`, `manejarTiposProceso` solo reconoce `etapas`
+  // como cuarto segmento, y clientes y procesos ya lo hacían desde T-10.
+  // Por eso el orden no cambia qué contesta cada una — pero deja el reparto
+  // escrito, y el día que un catálogo estrene otra subruta esto es lo
+  // primero que hay que releer.
   const bitacora = await rutasDeBitacora(
     request,
     url,
     TENANT_UNICO_ID,
     servicioDeProcesos,
     servicioDeClientes,
+    servicioDeCatalogos,
     dependencias.bitacora ?? bitacoraSobreD1(base),
   );
   if (bitacora !== null) return bitacora;
