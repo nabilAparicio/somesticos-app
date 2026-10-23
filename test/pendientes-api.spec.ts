@@ -331,7 +331,11 @@ beforeEach(async () => {
     ),
     env.DB.prepare(
       "INSERT INTO area (id, tenant_id, nombre, activo) VALUES (?, ?, ?, 1)",
-    ).bind(areaId, TENANT_UNICO_ID, "Migración y naturalización"),
+    // Los nombres de catálogo llevan pegado su identificador: desde
+    // `0003_tenencia_y_unicidad.sql` son únicos por tenant y este archivo no
+    // limpia entre pruebas, así que un nombre fijo chocaría con el que
+    // sembró la prueba anterior. Es andamio, no la regla bajo prueba.
+    ).bind(areaId, TENANT_UNICO_ID, `Migración y naturalización ${areaId}`),
     env.DB.prepare(
       "INSERT INTO tipo_proceso (id, tenant_id, area_id, nombre, activo)" +
         " VALUES (?, ?, ?, ?, 1)",
@@ -339,7 +343,7 @@ beforeEach(async () => {
       tipoResidenciaId,
       TENANT_UNICO_ID,
       areaId,
-      "Residencia permanente por matrimonio con nacional",
+      `Residencia permanente por matrimonio con nacional ${tipoResidenciaId}`,
     ),
     env.DB.prepare(
       "INSERT INTO tipo_proceso (id, tenant_id, area_id, nombre, activo)" +
@@ -348,7 +352,7 @@ beforeEach(async () => {
       tipoSinPlantillaId,
       TENANT_UNICO_ID,
       areaId,
-      "Consulta puntual sin trámite",
+      `Consulta puntual sin trámite ${tipoSinPlantillaId}`,
     ),
 
     // Lo del vecino: el objeto de todas las pruebas de fuga.

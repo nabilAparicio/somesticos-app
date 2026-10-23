@@ -904,11 +904,16 @@ describe("el alta y la edición de áreas", () => {
   });
 
   it("renombra un área y lo relee", async () => {
-    const area = await crearArea("Migracion");
+    // El nombre de destino no puede ser «Migración»: esa área ya existe
+    // desde el `beforeEach` y desde `0003_tenencia_y_unicidad.sql` el nombre
+    // es único por tenant. Lo que esta prueba demuestra es que el renombre
+    // se guarda y se relee, no qué pasa con un nombre repetido — eso es una
+    // guarda distinta, y hoy todavía contesta 500 en vez de 409.
+    const area = await crearArea("Extranjeria");
 
     const respuesta = await comoAutor(
       conCuerpo(`/api/areas/${area.id}`, "PUT", {
-        nombre: "Migración",
+        nombre: "Extranjería",
         activo: true,
       }),
     );
@@ -917,7 +922,7 @@ describe("el alta y la edición de áreas", () => {
     const releida = (await (
       await comoAutor(peticion(`/api/areas/${area.id}`))
     ).json()) as { area: AreaEnElCable };
-    expect(releida.area.nombre).toBe("Migración");
+    expect(releida.area.nombre).toBe("Extranjería");
   });
 
   it("lista las cuatro ramas del derecho ordenadas por nombre", async () => {

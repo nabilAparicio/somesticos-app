@@ -96,6 +96,16 @@ let clienteAjenoId: string;
 let areaId: string;
 let tipoResidenciaId: string;
 let procesoAjenoId: string;
+let areaAjenaId: string;
+let tipoAjenoId: string;
+
+// Los nombres de catálogo del bufete llevan pegado su identificador porque
+// `0003_tenencia_y_unicidad.sql` los hace únicos por tenant y este archivo no
+// limpia entre pruebas: sin el sufijo, el `beforeEach` de la segunda prueba
+// chocaría con el área que sembró la primera. El del tipo de proceso se
+// guarda aparte porque una prueba lo lee como detalle de bitácora.
+let nombreAreaMigracion: string;
+let nombreTipoResidencia: string;
 
 function entorno(): Env {
   // Hermético: un `.dev.vars` local con `ACCESO_DEV_EMAIL` no puede decidir
@@ -301,6 +311,11 @@ beforeEach(async () => {
   areaId = nuevoId();
   tipoResidenciaId = nuevoId();
   procesoAjenoId = nuevoId();
+  areaAjenaId = nuevoId();
+  tipoAjenoId = nuevoId();
+  nombreAreaMigracion = `Migración y naturalización ${areaId}`;
+  nombreTipoResidencia =
+    `Residencia permanente por matrimonio con nacional ${tipoResidenciaId}`;
 
   await env.DB.batch([
     env.DB.prepare("INSERT INTO tenant (id, nombre) VALUES (?, ?)").bind(
@@ -325,7 +340,7 @@ beforeEach(async () => {
     ),
     env.DB.prepare(
       "INSERT INTO area (id, tenant_id, nombre, activo) VALUES (?, ?, ?, 1)",
-    ).bind(areaId, TENANT_UNICO_ID, "Migración y naturalización"),
+    ).bind(areaId, TENANT_UNICO_ID, nombreAreaMigracion),
     env.DB.prepare(
       "INSERT INTO tipo_proceso (id, tenant_id, area_id, nombre, activo)" +
         " VALUES (?, ?, ?, ?, 1)",
@@ -333,7 +348,7 @@ beforeEach(async () => {
       tipoResidenciaId,
       TENANT_UNICO_ID,
       areaId,
-      "Residencia permanente por matrimonio con nacional",
+      nombreTipoResidencia,
     ),
     ...PLAN_DE_RESIDENCIA.map((nombre, orden) =>
       env.DB.prepare(
@@ -354,6 +369,16 @@ beforeEach(async () => {
       usuarioAjenoId,
       new Date().toISOString(),
     ),
+    // Su área y su tipo propios. Hasta T-12 este proceso colgaba del
+    // `tipo_proceso` NUESTRO, que es exactamente la fila cruzada que M-3
+    // ahora hace inexpresable: el andamio estaba mal, no la guarda.
+    env.DB.prepare(
+      "INSERT INTO area (id, tenant_id, nombre, activo) VALUES (?, ?, ?, 1)",
+    ).bind(areaAjenaId, OTRO_TENANT_ID, "Área del vecino"),
+    env.DB.prepare(
+      "INSERT INTO tipo_proceso (id, tenant_id, area_id, nombre, activo)" +
+        " VALUES (?, ?, ?, ?, 1)",
+    ).bind(tipoAjenoId, OTRO_TENANT_ID, areaAjenaId, "Tipo del vecino"),
     env.DB.prepare(
       "INSERT INTO proceso (id, tenant_id, cliente_id, tipo_proceso_id," +
         " origen, titulo, estado, abierto_en)" +
@@ -362,7 +387,7 @@ beforeEach(async () => {
       procesoAjenoId,
       OTRO_TENANT_ID,
       clienteAjenoId,
-      tipoResidenciaId,
+      tipoAjenoId,
       "Proceso del vecino",
       new Date().toISOString(),
     ),
@@ -528,6 +553,12 @@ describe("el vocabulario de la bitácora lo cierra la base", () => {
   it("sigue exigiendo un autor que exista", async () => {
     // I-6 (`docs/diseno.md` §5): toda entrada de bitácora tiene autor, y el
     // autor es una llave foránea real, no un nombre en texto.
+    //
+    // Desde `0003_tenencia_y_unicidad.sql` el rechazo llega un paso antes y
+    // con otro mensaje: su `BEFORE INSERT` corre antes que la llave foránea
+    // y compara con `IS NOT`, así que el autor inexistente —subconsulta
+    // vacía, o sea NULL— le cuenta como tenencia incoherente. La llave
+    // foránea sigue puesta detrás; lo que cambió es quién llega primero.
     await expect(
       env.DB.prepare(
         "INSERT INTO bitacora (id, tenant_id, entidad, entidad_id, accion," +
@@ -542,7 +573,7 @@ describe("el vocabulario de la bitácora lo cierra la base", () => {
           new Date().toISOString(),
         )
         .run(),
-    ).rejects.toThrow(/FOREIGN KEY constraint failed/i);
+    ).rejects.toThrow(/tenencia cruzada: bitacora/);
   });
 });
 
@@ -911,9 +942,7 @@ describe("el proceso registra su vida entera", () => {
     const entradas = await bitacoraDeProceso(procesoId);
     expect(acciones(entradas)).toEqual(["creado", "plantilla_guardada"]);
     expect(entradas[1].usuarioNombre).toBe(NOMBRE_SOCIO);
-    expect(entradas[1].detalle).toBe(
-      "Residencia permanente por matrimonio con nacional",
-    );
+    expect(entradas[1].detalle).toBe(nombreTipoResidencia);
 
     // Y la plantilla del tipo de destino también lo registra: son dos
     // hechos distintos sobre dos entidades distintas, no una entrada
@@ -1095,7 +1124,12 @@ describe("el vocabulario de la base y el del código dicen lo mismo", () => {
     expect([...enLaBase].sort()).toEqual([...ENTIDADES_REGISTRADAS].sort());
   });
 
-  it("los dos disparadores de inmutabilidad existen en la base", async () => {
+  it("los disparadores de la bitácora siguen todos en la base", async () => {
+    // Los dos de inmutabilidad son de T-10; el de tenencia lo agregó T-12.
+    // La lista va exacta y no por `toContain` a propósito: un disparador de
+    // `UPDATE` de más sobre esta tabla sería código muerto —el de
+    // inmutabilidad aborta toda actualización sin condición y corre
+    // primero—, y esta prueba es la que lo haría notar.
     const { results } = await env.DB.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'trigger'" +
         " AND tbl_name = 'bitacora' ORDER BY name",
@@ -1104,6 +1138,7 @@ describe("el vocabulario de la base y el del código dicen lo mismo", () => {
     expect(results.map((fila) => fila.name)).toEqual([
       "bitacora_no_se_actualiza",
       "bitacora_no_se_borra",
+      "bitacora_tenencia_coherente_al_insertar",
     ]);
   });
 

@@ -1303,36 +1303,63 @@ describe("guardar el plan de un proceso como plantilla rechaza lo que no puede g
     expect(await cuantasEtapasDePlantilla(tipoAjenoId)).toBe(0);
   });
 
-  it("rechaza actualizar la plantilla de un TIPO DE PROCESO de otro tenant", async () => {
-    // Una fila cruzada a mano: la llave foránea de `proceso.tipo_proceso_id`
-    // no lleva el tenant, así que esto es expresable en la base y tiene que
-    // ser inexpresable por la API. Sin el filtro de tenencia en el destino,
-    // guardar acá escribiría en la plantilla del bufete vecino.
+  // Convertida en T-12, y vale la pena decir de qué.
+  //
+  // Hasta `migrations/0003_tenencia_y_unicidad.sql`, esta prueba **insertaba
+  // a mano** un `proceso` con nuestro `tenant_id` y el `tipo_proceso_id` del
+  // vecino, porque la llave foránea no lleva el tenant y la base lo
+  // permitía. Con esa fila armada, ejercitaba el filtro de tenencia sobre el
+  // tipo de DESTINO en «guardar como plantilla»
+  // (`worker/procesos/plantilla.ts`, la rama `destino: "actualizar"`).
+  //
+  // Esa fila ya no se puede construir: M-3 la hace inexpresable. Así que la
+  // prueba ahora demuestra eso —el rechazo crudo del disparador— en vez de
+  // demostrar una respuesta de la API sobre un estado imposible.
+  //
+  // Dónde quedó probado lo que probaba:
+  //
+  //   * Que la base rechaza la fila cruzada: acá abajo, y en
+  //     `test/esquema.spec.ts`, describe «M-2 y M-3 · ninguna fila
+  //     referencia a otro bufete».
+  //   * Que la API no deja tocar el tipo de proceso de otro bufete: el
+  //     filtro vive en `catalogos.obtenerTipoProceso`, y lo prueban por
+  //     rechazo «rechaza LEER y EDITAR un tipo de proceso de otro tenant» y
+  //     «rechaza colgar una plantilla de un tipo de proceso de otro tenant»,
+  //     las dos en `test/catalogos-api.spec.ts`.
+  //
+  // Lo que **no** queda probado, y hay que decirlo en voz alta: la rama
+  // `if (existente === null) return { estado: "no_encontrado" }` de
+  // `plantilla.ts` pasó a ser inalcanzable desde la base. Sigue siendo
+  // defensa correcta —es la que aguantaría si alguien apagara el
+  // disparador—, pero ya no hay forma de ejercitarla por este camino. No se
+  // toca en esta unidad de trabajo: `worker/` está fuera de su superficie.
+  it("la fila cruzada que esta prueba necesitaba ya no se puede escribir", async () => {
     const procesoCruzadoId = nuevoId();
-    await env.DB.batch([
+
+    await expect(
       env.DB.prepare(
         "INSERT INTO proceso (id, tenant_id, cliente_id, tipo_proceso_id," +
           " origen, titulo, estado, abierto_en)" +
           " VALUES (?, ?, ?, ?, 'directo', ?, 'abierto', ?)",
-      ).bind(
-        procesoCruzadoId,
-        TENANT_UNICO_ID,
-        clienteId,
-        tipoAjenoId,
-        "Proceso con el tipo del vecino",
-        new Date().toISOString(),
-      ),
-      env.DB.prepare(
-        "INSERT INTO proceso_etapa (id, tenant_id, proceso_id, nombre, orden)" +
-          " VALUES (?, ?, ?, ?, 0)",
-      ).bind(nuevoId(), TENANT_UNICO_ID, procesoCruzadoId, "Un paso nuestro"),
-    ]);
+      )
+        .bind(
+          procesoCruzadoId,
+          TENANT_UNICO_ID,
+          clienteId,
+          tipoAjenoId,
+          "Proceso con el tipo del vecino",
+          new Date().toISOString(),
+        )
+        .run(),
+    ).rejects.toThrow(/tenencia cruzada: proceso/);
 
-    const respuesta = await guardarComoPlantilla(procesoCruzadoId, {
-      destino: "actualizar",
-    });
-
-    expect(respuesta.status).toBe(404);
+    // Y no entró a medias: la plantilla del vecino sigue vacía y el proceso
+    // no existe. Sin esta relectura, un disparador que abortara después de
+    // escribir pasaría la aserción de arriba.
+    const fila = await env.DB.prepare("SELECT id FROM proceso WHERE id = ?")
+      .bind(procesoCruzadoId)
+      .first<{ id: string }>();
+    expect(fila).toBeNull();
     expect(await cuantasEtapasDePlantilla(tipoAjenoId)).toBe(0);
   });
 
