@@ -1326,6 +1326,144 @@ describe("H-1 · una etapa no se muda de proceso", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// M-5 · el cierre de un proceso no se dice a medias (T-15)
+// ---------------------------------------------------------------------------
+
+/** El `RAISE(ABORT, …)` de los dos disparadores de coherencia de cierre. */
+const CIERRE_INCOHERENTE = /cierre incoherente/;
+
+/** Un proceso nuestro, cerrado como corresponde: con su estado y su fecha. */
+async function procesoCerradoCoherente(): Promise<Fila> {
+  const fila: Fila = {
+    ...filaValida("proceso", ctx),
+    estado: "cerrado",
+    cerrado_en: ahoraIso(),
+  };
+  await insertar("proceso", fila);
+  return fila;
+}
+
+describe("M-5 · el estado de un proceso y su fecha de cierre dicen lo mismo", () => {
+  // `pendiente` tiene esta regla desde T-2 —`CHECK ((cerrado_en IS NULL) =
+  // (cerrado_por IS NULL))`— y `proceso` no la tenía: hasta T-14 la
+  // coherencia la sostenían las dos transiciones del worker, que escriben
+  // las dos columnas juntas. Una regla que vive solo en el código es
+  // exactamente la que `docs/diseno.md` §5 señala como la que el primer
+  // script de importación se salta.
+
+  it("rechaza un proceso que nace cerrado sin fecha de cierre", async () => {
+    await expect(
+      insertar("proceso", { ...filaValida("proceso", ctx), estado: "cerrado" }),
+    ).rejects.toThrow(CIERRE_INCOHERENTE);
+  });
+
+  it("rechaza un proceso que nace abierto con una fecha de cierre colgada", async () => {
+    await expect(
+      insertar("proceso", {
+        ...filaValida("proceso", ctx),
+        estado: "abierto",
+        cerrado_en: ahoraIso(),
+      }),
+    ).rejects.toThrow(CIERRE_INCOHERENTE);
+  });
+
+  it("rechaza cerrar un proceso sin escribir cuándo se cerró", async () => {
+    const fila = filaValida("proceso", ctx);
+    await insertar("proceso", fila);
+
+    await expect(
+      env.DB.prepare("UPDATE proceso SET estado = 'cerrado' WHERE id = ?")
+        .bind(fila.id)
+        .run(),
+    ).rejects.toThrow(CIERRE_INCOHERENTE);
+
+    // El contrapeso: el proceso sigue abierto y sin fecha, no a medio cerrar.
+    const guardado = await env.DB.prepare(
+      "SELECT estado, cerrado_en FROM proceso WHERE id = ?",
+    )
+      .bind(fila.id)
+      .first<{ estado: string; cerrado_en: string | null }>();
+
+    expect(guardado).toEqual({ estado: "abierto", cerrado_en: null });
+  });
+
+  it("rechaza reabrir un proceso dejándole la fecha de cierre puesta", async () => {
+    const fila = await procesoCerradoCoherente();
+
+    await expect(
+      env.DB.prepare("UPDATE proceso SET estado = 'abierto' WHERE id = ?")
+        .bind(fila.id)
+        .run(),
+    ).rejects.toThrow(CIERRE_INCOHERENTE);
+  });
+
+  it("rechaza borrar la fecha dejando el proceso cerrado", async () => {
+    const fila = await procesoCerradoCoherente();
+
+    await expect(
+      env.DB.prepare("UPDATE proceso SET cerrado_en = NULL WHERE id = ?")
+        .bind(fila.id)
+        .run(),
+    ).rejects.toThrow(CIERRE_INCOHERENTE);
+  });
+
+  // Ésta es la prueba que distingue `IS NOT` de `<>`, y la única que puede
+  // hacerlo: los dos lados de la comparación son booleanos, así que con un
+  // `estado` legítimo las dos formas se comportan igual. Con `estado` nulo,
+  // `NEW.estado = 'cerrado'` vale NULL; `<>` daría NULL, el `WHEN` sería
+  // falso y el disparador no dispararía. Con `IS NOT` dispara.
+  //
+  // Y acá el disparador llegando antes que `NOT NULL` no tapa ningún error
+  // real: `estado` tiene `DEFAULT 'abierto'`, así que la columna **ausente**
+  // nunca produce NULL. Sólo lo produce un NULL escrito a mano, que no es
+  // una omisión sino una fila deliberadamente incoherente — justo lo que
+  // esta guarda viene a rechazar. Por eso, a diferencia de los disparadores
+  // de tenencia, este no lleva guardia de NULL delante.
+  it("un estado nulo tampoco se escurre por la comparación", async () => {
+    await expect(
+      insertar("proceso", { ...filaValida("proceso", ctx), estado: null }),
+    ).rejects.toThrow(CIERRE_INCOHERENTE);
+  });
+
+  // El contrapeso de todo el bloque: las dos transiciones que el worker
+  // escribe desde T-14 siguen pasando. Sin esto, un disparador que abortara
+  // todo haría pasar las cinco pruebas de rechazo de arriba.
+  it("deja pasar las dos transiciones coherentes que el worker escribe", async () => {
+    const fila = filaValida("proceso", ctx);
+    await insertar("proceso", fila);
+    const momento = ahoraIso();
+
+    await env.DB.prepare(
+      "UPDATE proceso SET estado = 'cerrado', cerrado_en = ? WHERE id = ?",
+    )
+      .bind(momento, fila.id)
+      .run();
+
+    const cerrado = await env.DB.prepare(
+      "SELECT estado, cerrado_en FROM proceso WHERE id = ?",
+    )
+      .bind(fila.id)
+      .first<{ estado: string; cerrado_en: string | null }>();
+
+    expect(cerrado).toEqual({ estado: "cerrado", cerrado_en: momento });
+
+    await env.DB.prepare(
+      "UPDATE proceso SET estado = 'abierto', cerrado_en = NULL WHERE id = ?",
+    )
+      .bind(fila.id)
+      .run();
+
+    const reabierto = await env.DB.prepare(
+      "SELECT estado, cerrado_en FROM proceso WHERE id = ?",
+    )
+      .bind(fila.id)
+      .first<{ estado: string; cerrado_en: string | null }>();
+
+    expect(reabierto).toEqual({ estado: "abierto", cerrado_en: null });
+  });
+});
+
 describe("H-4b · la llave foránea de tenant_id está declarada, no solo vigilada", () => {
   // Por qué no alcanza con «rechaza la misma fila con un tenant_id que no
   // existe»: desde `0003` el disparador de tenencia llega antes que la
@@ -1508,6 +1646,36 @@ describe("H-2 · la verificación previa detiene la migración sobre una base su
     } finally {
       await env.DB.prepare("DELETE FROM pendiente WHERE id = ?")
         .bind(descolgado.id)
+        .run();
+      await aplicar0003();
+    }
+
+    expect(await objetosDe0003Vivos()).toBe(objetosQueCrea0003().length);
+  });
+
+  // La cuarta familia, agregada con M-5 (T-15). Un proceso que ya estuviera
+  // marcado como cerrado sin su fecha sobreviviría a la migración y quedaría
+  // mintiendo: dice «cerrado» y no sabe decir cuándo. Peor, cualquier
+  // `UPDATE` suyo que no arregle la incoherencia de paso moriría contra el
+  // disparador nuevo, y nadie entendería por qué.
+  it("se detiene si ya hay un proceso cerrado sin fecha de cierre", async () => {
+    await deshacer0003();
+    const aMedias: Fila = {
+      ...filaValida("proceso", ctx),
+      estado: "cerrado",
+    };
+
+    try {
+      await insertar("proceso", aMedias);
+
+      await expect(aplicar0003()).rejects.toThrow(
+        /la_base_ya_tiene_procesos_con_el_cierre_incoherente/,
+      );
+
+      expect(await objetosDe0003Vivos()).toBe(0);
+    } finally {
+      await env.DB.prepare("DELETE FROM proceso WHERE id = ?")
+        .bind(aMedias.id)
         .run();
       await aplicar0003();
     }

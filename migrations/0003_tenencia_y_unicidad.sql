@@ -183,6 +183,31 @@ SELECT 0 WHERE
 
 DROP TABLE verificacion_previa_etapa;
 
+-- La coherencia de cierre de M-5, que es la cuarta familia y la única que no
+-- habla de referencias entre filas: compara dos columnas de la misma fila.
+-- Va igual acá y por el mismo motivo que las otras tres — el disparador de
+-- M-5 no mira nada de lo ya escrito—, y con una consecuencia propia: un
+-- proceso marcado «cerrado» sin fecha no sólo miente, además arrastra al
+-- disparador nuevo cualquier `UPDATE` suyo que no arregle la incoherencia de
+-- paso, y el operador vería abortar una escritura que no tiene nada que ver.
+--
+-- `IS NOT` acá no haría falta —ninguno de los dos lados puede ser NULL en
+-- una consulta que sólo lee filas ya aceptadas por el `NOT NULL`— pero se
+-- escribe igual que en el disparador para que las dos mitades de la regla se
+-- lean como la misma frase.
+CREATE TABLE verificacion_previa_cierre (
+  ok INTEGER NOT NULL
+     CONSTRAINT la_base_ya_tiene_procesos_con_el_cierre_incoherente CHECK (ok = 1)
+);
+
+INSERT INTO verificacion_previa_cierre (ok)
+SELECT 0 WHERE
+     EXISTS (
+       SELECT 1 FROM proceso p
+        WHERE (p.estado = 'cerrado') IS NOT (p.cerrado_en IS NOT NULL));
+
+DROP TABLE verificacion_previa_cierre;
+
 -- ---------------------------------------------------------------------------
 -- M-1 · Un nombre de catálogo no se repite dentro del mismo tenant
 -- ---------------------------------------------------------------------------
@@ -681,4 +706,92 @@ BEFORE UPDATE ON proceso_etapa
 WHEN NEW.proceso_id IS NOT OLD.proceso_id
 BEGIN
   SELECT RAISE(ABORT, 'columna inmutable: proceso_etapa.proceso_id no se reasigna; una etapa no se muda de proceso');
+END;
+
+-- ---------------------------------------------------------------------------
+-- M-5 · El estado de un proceso y su fecha de cierre dicen lo mismo (T-15)
+-- ---------------------------------------------------------------------------
+--
+-- `pendiente` tiene esta regla desde `0001`:
+--
+--   CHECK ((cerrado_en IS NULL) = (cerrado_por IS NULL))
+--
+-- `proceso` no tenía la equivalente. Nada impedía `estado = 'cerrado'` con
+-- `cerrado_en` nulo —un trámite que dice haber terminado y no sabe decir
+-- cuándo— ni `estado = 'abierto'` con una fecha de cierre colgada, que es un
+-- proceso vivo con una fecha de muerte. Hasta T-14 la coherencia la
+-- sostenían las dos transiciones de `worker/procesos/repositorio.ts`, que
+-- escriben las dos columnas juntas: una regla que vive **solo en el código**,
+-- que es exactamente lo que `docs/diseno.md` §5 señala como lo primero que se
+-- salta el script de importación que nadie revisó.
+--
+-- ## Por qué disparador y no `CHECK`
+--
+-- Un `CHECK` sería la forma natural —compara dos columnas de la misma fila,
+-- que es justo lo que un `CHECK` sabe hacer y lo que los disparadores de
+-- arriba no podían— pero en SQLite agregarlo obliga a **reconstruir
+-- `proceso`**: tabla nueva, copia, borrado, renombre. Y `proceso` es la peor
+-- tabla del esquema para eso: arrastra `proceso_etapa`, `nota` y `pendiente`
+-- en `NO ACTION`, y `nota` es inmutable por disparador, así que la copia
+-- habría que hacerla desarmando y rearmando guardas. Es la trampa que T-12
+-- esquivó a propósito cuando eligió índices y disparadores por encima de
+-- `CHECK`.
+--
+-- Un `BEFORE INSERT` más un `BEFORE UPDATE` dan **la misma fuerza de
+-- rechazo** sin reescribir nada, y encima una ventaja que el `CHECK` no
+-- tiene: siguen vigentes con `PRAGMA foreign_keys` apagado y sobreviven
+-- intactos a cualquier reconstrucción futura de otra tabla.
+--
+-- Lo que se pierde al no usar `CHECK` es honesto decirlo: un `CHECK` también
+-- valida las filas que ya están, al crearse. El disparador no. Por eso M-0
+-- lleva su verificación previa, igual que las otras tres familias.
+--
+-- ## `IS NOT` y nunca `<>`, y acá la trampa es distinta
+--
+-- Los dos lados son booleanos, así que con un `estado` legítimo las dos
+-- formas se comportan igual. La diferencia aparece con `estado` nulo:
+-- `NEW.estado = 'cerrado'` vale NULL, `<>` daría NULL, el `WHEN` sería falso
+-- y **el disparador no dispararía**. Con `IS NOT`, NULL contra un booleano es
+-- verdadero y la fila se rechaza.
+--
+-- ## Por qué este disparador no lleva guardia de NULL delante
+--
+-- Los de tenencia la llevan por dos motivos y acá no aplica ninguno:
+--
+--   1. **Corrección.** Ahí la guardia protegía columnas *nullable*, donde el
+--      NULL es legítimo. `proceso.estado` es `NOT NULL`: no hay fila válida
+--      con estado nulo que la guardia tuviera que dejar pasar.
+--   2. **No tapar el error verdadero.** Ahí el `BEFORE INSERT` llegaba antes
+--      que `NOT NULL` y una columna **ausente** moría con el mensaje
+--      equivocado. Acá la columna ausente no produce NULL: `estado` tiene
+--      `DEFAULT 'abierto'`, así que omitirla da un proceso abierto y el
+--      disparador no dice nada. El único NULL posible es uno escrito a mano,
+--      que no es una omisión sino la fila incoherente que esta guarda existe
+--      para rechazar.
+--
+-- ## Esto caduca con el primer despliegue
+--
+-- Esta sección se agrega **editando** `0003` en vez de abrir un `0004`, por
+-- lo mismo que T-14 editó `0002`: la migración todavía no corrió en ninguna
+-- parte que importe —no hay remoto, `wrangler.jsonc` sigue con el marcador de
+-- ceros en `database_id`, y las bases de prueba se recrean en cada corrida—,
+-- y la regla pertenece al mismo archivo que las demás guardas de integridad.
+-- Una cuarta migración antes del primer despliegue sería ceremonia sin
+-- consecuencia.
+--
+-- **El día que el D1 real exista, las migraciones pasan a ser solo-agregar
+-- para siempre y este párrafo deja de autorizar nada.**
+
+CREATE TRIGGER proceso_cierre_coherente_al_insertar
+BEFORE INSERT ON proceso
+WHEN (NEW.estado = 'cerrado') IS NOT (NEW.cerrado_en IS NOT NULL)
+BEGIN
+  SELECT RAISE(ABORT, 'cierre incoherente: proceso.estado y proceso.cerrado_en tienen que decir lo mismo');
+END;
+
+CREATE TRIGGER proceso_cierre_coherente_al_actualizar
+BEFORE UPDATE ON proceso
+WHEN (NEW.estado = 'cerrado') IS NOT (NEW.cerrado_en IS NOT NULL)
+BEGIN
+  SELECT RAISE(ABORT, 'cierre incoherente: proceso.estado y proceso.cerrado_en tienen que decir lo mismo');
 END;
