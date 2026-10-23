@@ -350,7 +350,7 @@ se renumera.
 
 ---
 
-- [ ] **T-14 · Cerrar y reabrir un proceso.** *Agregada al decidir que la tajada se despliega.*
+- [x] **T-14 · Cerrar y reabrir un proceso.** *Agregada al decidir que la tajada se despliega.*
       El esquema lleva `estado IN ('abierto','cerrado')` y `cerrado_en` desde T-2, y la API
       **nunca los expuso**: hoy un proceso nace abierto y no hay forma de cerrarlo. Es el hueco
       que más rápido se nota en uso real, porque el listado se llena de procesos terminados y la
@@ -398,6 +398,41 @@ se renumera.
       cerrado se rechaza, y los pendientes de un proceso cerrado dejan de contar como trabajo
       vigente sin desaparecer. Ruta: delegada. Forecast ~350.*
 
+      **Hecha en `cad8228`.** 772 unitarias, 121 e2e. Lo que conviene conservar:
+
+      1. **Dos códigos de error y no cuatro.** `proceso_cerrado` lo contestan avanzar, el `PUT`
+         del plan, abrir un pendiente **y el segundo cierre**; `proceso_abierto` solo reabrir
+         uno ya abierto. **El error nombra el estado que estorba, no la operación que falló.**
+         Cuatro motivos serían cuatro formas de decir «está cerrado» y la cuarta terminaría
+         redactada distinto.
+      2. **La tercera decisión, que no estaba en el encargo:** guardar el plan como plantilla
+         **sigue permitido** en un proceso cerrado. Lee el proceso y escribe en catálogos; no
+         lo toca. Y de un trámite terminado es justamente de donde conviene sacar el molde
+         bueno.
+      3. **`ResultadoDeAlta` se separó de `ResultadoDeEscritura`.** Un proceso nace abierto, así
+         que `crear` no puede devolver `proceso_cerrado`; dejarlo en la unión obligaba al ruteo
+         a escribir **una rama que nunca corre, y una rama que nunca corre es una rama que
+         ninguna prueba puede matar**.
+      4. **El aviso de lo oculto en el listado va en las dos direcciones**, incluso cuando es
+         obvio. Una regla en vez de dos: nadie tiene que recordar cuál de las opciones era la
+         que callaba.
+      5. **Una prueba de punta a punta pasaba vacuamente.** El título de un proceso vive en un
+         `th scope="row"`, así que su rol es `rowheader` y no `cell`: la aserción negativa
+         escrita con `getByRole("cell")` **habría pasado igual con la fila dibujada**. Tercera
+         prueba vacua del proyecto, y las tres las encontró quien las escribió revisando su
+         propio trabajo.
+      6. **Una suite que empieza a crear filas hijas obliga a revisar el orden de borrado del
+         `beforeEach`.** `procesos-api` nunca había creado pendientes; al hacerlo, la llave
+         foránea en `NO ACTION` reventó **en la prueba siguiente**, no en la que creó la fila.
+
+      *Un punto discutible, decidido y declarado:* los dos 409 nuevos los traduce
+      `src/pantallas/procesos/api.ts` y no el mapa compartido `CONFLICTOS` de
+      `src/api/peticiones.ts`, con el argumento de que la frase nombra una regla de este
+      dominio y de ningún otro. **Queda señalada la trampa de fondo:** el texto de reserva de
+      ese mapa compartido habla de un borrado, así que cualquier 409 futuro que se olvide de
+      registrarse ahí va a mostrar un mensaje sobre una operación que nadie pidió. Ya se vio
+      una vez, en una mutación de T-12.
+
 ---
 
 - [ ] **T-15 · Los dos huecos de pantalla.** *Agregada al decidir que la tajada se despliega.*
@@ -412,8 +447,17 @@ se renumera.
       `tipo_proceso`, y no hay ninguna pantalla que los muestre: hoy se ven los de cliente y los
       de proceso, nada más. Quien borre un área por error no tiene dónde mirar.
 
-      *Criterio: las dos cosas ejercitadas de punta a punta, sin tocar el contrato. Ruta:
-      delegada. Forecast ~300.*
+      **Y una tercera, de esquema, que encontró el escritor de T-14.** `pendiente` tiene desde
+      T-2 un `CHECK ((cerrado_en IS NULL) = (cerrado_por IS NULL))`. **`proceso` no tiene el
+      equivalente:** nada impide `estado = 'cerrado'` con `cerrado_en` nulo, ni al revés. Hoy
+      la coherencia la sostienen las dos transiciones de T-14 — o sea, una regla que vive solo
+      en el código, que es exactamente lo que §5 critica. Va como **disparador y no como
+      `CHECK`**, porque un `CHECK` obligaría a reconstruir `proceso`, que arrastra tres hijas
+      en `NO ACTION` más la nota inmutable: la trampa que T-12 esquivó a propósito.
+
+      *Criterio: las dos de pantalla ejercitadas de punta a punta sin tocar el contrato, y la
+      de esquema probada por rechazo. Ruta: delegada, en tres unidades de trabajo. Forecast
+      ~450.*
 
 ---
 
@@ -481,6 +525,7 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
+| T-14 (cerrar y reabrir procesos) | `cad8228` | Rojo observado: 39 fallas nuevas sobre 730 que seguían pasando, escritas antes de una sola línea de implementación. Final: los cinco en 0 · **test 772/772** · **e2e 121/121**. Verificación del orquestador: los cinco códigos de salida más **una mutación propia distinta de las cuatro del escritor** — quité la guarda del `PUT` del plan (él había mutado la de `avanzar`) y murieron exactamente 2, las suyas. Revertido con `sha256sum -c` en `OK`. | Pendiente de evaluar |
 | T-13 (los cuatro hallazgos de la revisión) | `7ba7efc` | Rojo observado: 14 fallas en `esquema.spec.ts`, exactamente las esperadas. Las de H-4a y H-4b salieron verdes de entrada, y es correcto: son pérdidas de cobertura, no defectos — ahí la prueba de que no son vacuas es la mutación, no el rojo. Final: los cinco en 0 · **test 730/730** · **e2e 117/117**. Verificación del orquestador: los cinco códigos de salida más **la mutación fuerte que el escritor no podía hacer** — quitar `REFERENCES tenant (id)` de `area` en `0001` mató exactamente 2 pruebas, la de rechazo de I-8 y la nueva del `PRAGMA`, y `0001` volvió con md5 idéntico. H-4b no es vacua. | Pendiente de evaluar |
 | T-12 · unidad 2 (409 por nombre repetido) | `c230c89` | Rojo observado: 10 de 15 fallando — 6 de API con el `UNIQUE constraint failed` crudo y 4 de interfaz sin la función. Final: los cinco en 0 · **test 702/702** · **e2e 117/117**. Verificación del orquestador: los cinco códigos de salida más una mutación propia — quitar la consulta previa del alta mató exactamente 3 pruebas y lo hizo con el `UNIQUE constraint failed` crudo, sin ningún 409 amable: no hay `catch` escondido. | Concedida y acusada junto con la unidad 1 (ver abajo). |
 | T-12 · unidad 1 (M-1, M-2, M-3) | `7db6f48` | Final: los cuatro en 0 · **test 686/686**. Sin e2e: no toca la interfaz. Verificación del orquestador: los cuatro códigos de salida corridos de nuevo por mí, más **dos mutaciones propias** — los 33 `IS NOT` → `<>` mató exactamente las 9 pruebas de padre inexistente, y quitar la coherencia etapa↔proceso de `nota` mató exactamente 1. Las dos revirtieron a archivo idéntico y 686/686. | **Concedida y acusada.** Lineaje `review-dc06c18287c8208f`, riesgo medio, candidato de los tres commits de T-12 (`--committed-only`, 17 archivos, 1947 líneas), lente `review-reliability`, **aprobada**, autoridad quemada. Hallazgos no bloqueantes: 2 corregidos en el acto (prosa caducada), 4 abiertos como **T-13**. |
