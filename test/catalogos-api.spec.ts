@@ -1126,7 +1126,9 @@ describe("el alta y la edición de áreas", () => {
     // desde el `beforeEach` y desde `0003_tenencia_y_unicidad.sql` el nombre
     // es único por tenant. Lo que esta prueba demuestra es que el renombre
     // se guarda y se relee, no qué pasa con un nombre repetido — eso es una
-    // guarda distinta, y hoy todavía contesta 500 en vez de 409.
+    // guarda distinta, y tiene sus propias pruebas de rechazo en este mismo
+    // archivo: el nombre repetido contesta 409 desde la segunda unidad de
+    // T-12.
     const area = await crearArea("Extranjeria");
 
     const respuesta = await comoAutor(

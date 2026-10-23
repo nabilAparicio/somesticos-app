@@ -66,10 +66,17 @@
 --      modos — con la agravante de que ya habría historia colgando de cada
 --      mitad, y entonces unirlas sería imposible.
 --
--- Lo que esta migración **no** hace, a propósito: la API. Hoy un nombre
--- repetido llega a la base y vuelve como 500, no como 409. Es deuda conocida
--- y es de la unidad de trabajo siguiente. Adelantarla acá mezclaría una
--- migración con un cambio de contrato HTTP y haría las dos irrevisables.
+-- Lo que esta migración **no** hace, a propósito: la API. Adelantarla acá
+-- mezclaría una migración con un cambio de contrato HTTP y haría las dos
+-- irrevisables. Se hizo en la unidad de trabajo siguiente de T-12, y **ya
+-- está hecha**: un nombre repetido contesta 409 por los dos caminos de
+-- escritura, con la consulta previa que `worker/catalogos/repositorio.ts`
+-- argumenta. Este índice es el respaldo que no debería dispararse nunca.
+--
+-- Importa que esto quede dicho y no como deuda abierta: un comentario que
+-- declara pendiente algo ya resuelto invita a «arreglarlo» envolviendo el
+-- error del índice en un `try/catch`, que es justo lo que el repositorio
+-- prohíbe y lo que volvería la guarda inverificable.
 
 CREATE UNIQUE INDEX area_nombre_unico ON area (tenant_id, nombre);
 

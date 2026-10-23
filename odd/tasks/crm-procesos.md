@@ -1,7 +1,8 @@
 # crm-procesos — Tajada 1: CRM usable
 
 **Creado:** 22 de octubre de 2026
-**Estado:** las 11 tareas de la tajada, cerradas. Queda T-12, deuda de integridad agregada al cierre.
+**Estado:** las 11 tareas de la tajada, cerradas. T-12 (integridad) cerrada en dos unidades y
+**revisada y aprobada**. Queda T-13, lo que esa revisión dejó abierto.
 **Diseño de referencia:** `docs/diseno.md` (fuente de verdad)
 
 ---
@@ -245,9 +246,66 @@ se renumera.
       de T-11 que insertaba esa fila se convirtió en la demostración de que la base la rechaza,
       con el registro de dónde quedó probada cada guarda que ella cubría.
 
-      **Unidad 2, en curso:** M-1 dejó a propósito una deuda de contrato. Hoy un nombre de
-      catálogo repetido llega a la base y vuelve como **500**, no como el 409 que corresponde.
-      Se paga aparte para no mezclar una migración con un cambio de contrato HTTP.
+      **Unidad 2, hecha en `c230c89`.** M-1 había dejado a propósito la deuda de contrato: un
+      nombre de catálogo repetido volvía como **500**. Ahora contesta **409** por los dos
+      caminos de escritura, con la misma forma que T-6 usó para el borrado con dependientes
+      —se consulta antes de escribir y **no se atrapa** el error del índice—. Tres decisiones
+      que vale la pena conservar:
+
+      1. **Dos motivos y no uno:** `nombre_duplicado` y `nombre_duplicado_de_baja`. Con la fila
+         vigente hay que elegir otro nombre; con la fila de baja hay que **reactivar la que
+         está**, y decir «elegí otro nombre» ahí sería mandar a crear justo la segunda fila que
+         el índice no parcial existe para impedir. Las pantallas de administración muestran las
+         filas de baja marcadas, así que el mensaje señala una fila que se ve.
+      2. **`id IS NOT ?` y nunca `id <> ?`** al excluir la propia fila: con `<>`, el parámetro
+         nulo del alta compararía contra NULL, la condición valdría NULL y la guarda quedaría
+         apagada **en el camino más transitado**. Tercera aparición de la misma trampa.
+      3. **Ampliar la unión de resultado destapó un llamador sin guarda que nadie había
+         visto:** `guardarPlanComoPlantilla` (T-11) escribe catálogos **sin pasar por las
+         rutas**, así que guardar un plan como tipo nuevo con un nombre ya existente salía 500.
+         El compilador lo encontró; ninguna prueba lo había hecho.
+
+---
+
+- [ ] **T-13 · Lo que la revisión de T-12 dejó abierto.** *Agregada al cerrar T-12.* La
+      revisión `review-dc06c18287c8208f` (lente `review-reliability`) salió **aprobada** y
+      quemó autoridad, con hallazgos no bloqueantes. Dos ya se corrigieron en el acto; estos
+      cuatro quedan, ordenados por consecuencia.
+
+      **H-1 · La regla padre-hijo está enforzada solo del lado del hijo. La más seria.**
+      Los disparadores de `nota` y `pendiente` exigen que su `proceso_etapa_id` sea una etapa
+      del mismo proceso. Pero `proceso_etapa_tenencia_coherente_al_actualizar` **solo compara
+      `tenant_id`**: un `UPDATE proceso_etapa SET proceso_id = <otro proceso del mismo
+      bufete>` pasa limpio y arrastra todas las notas y pendientes colgados a un proceso
+      distinto. Como la nota es inmutable, **el daño es irreparable**. Es exactamente el estado
+      que M-2 dice existir para impedir, tapado por una puerta y abierto por la otra. Lo más
+      simple es volver `proceso_etapa.proceso_id` inmutable: hoy nada lo reescribe.
+
+      **H-2 · La migración supone una base que ya cumple.** `CREATE UNIQUE INDEX` aborta sobre
+      datos con duplicados, y los catorce disparadores **no revisan nada de lo ya escrito**:
+      una fila cruzada preexistente —la que el encabezado dice que «entraba»— queda viva pero
+      inmodificable. Hoy es teórico porque la base real no existe todavía (`database_id` sigue
+      en el marcador de ceros), y por eso mismo hay que resolverlo **antes** de aprovisionarla.
+
+      **H-3 · La guarda del duplicado no es atómica.** Consulta previa más escritura: dos
+      peticiones concurrentes pueden atravesarla y el índice es el que corta, con el error
+      crudo que el diseño decide no atrapar. La decisión está bien argumentada; el residuo no
+      está descrito ni probado. Con dos personas es improbable, no imposible. La salida
+      honesta puede ser documentarlo como residuo aceptado, pero hay que **decidirlo**.
+
+      **H-4 · Dos pérdidas de cobertura causadas por T-12.** La rama `no_encontrado` de
+      `worker/procesos/plantilla.ts` quedó sin ninguna prueba — y acá el revisor me corrigió:
+      **sí es alcanzable**, porque el servicio de catálogos entra por parámetro y se puede
+      sustituir por un doble. Yo había concluido que no. Y la aserción de I-8 en
+      `test/esquema.spec.ts` dejó de poder distinguir la ausencia de la llave foránea de
+      `tenant_id` en ocho tablas, porque el disparador llega primero en todos los casos que esa
+      prueba puede construir.
+
+      *Ya corregidos en el acto, no son parte de T-13:* la prosa de `0003` y el comentario de
+      `test/catalogos-api.spec.ts:1129` afirmaban que un nombre repetido «vuelve como 500» —
+      falso desde la unidad 2 del mismo candidato, y peligroso: un comentario que declara
+      pendiente algo ya resuelto invita a «arreglarlo» con el `try/catch` que el repositorio
+      prohíbe.
 
 ## Criterios de aceptación de la tajada
 
@@ -297,7 +355,8 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-12 · unidad 1 (M-1, M-2, M-3) | `7db6f48` | Final: los cuatro en 0 · **test 686/686**. Sin e2e: no toca la interfaz. Verificación del orquestador: los cuatro códigos de salida corridos de nuevo por mí, más **dos mutaciones propias** — los 33 `IS NOT` → `<>` mató exactamente las 9 pruebas de padre inexistente, y quitar la coherencia etapa↔proceso de `nota` mató exactamente 1. Las dos revirtieron a archivo idéntico y 686/686. | Pendiente de evaluar |
+| T-12 · unidad 2 (409 por nombre repetido) | `c230c89` | Rojo observado: 10 de 15 fallando — 6 de API con el `UNIQUE constraint failed` crudo y 4 de interfaz sin la función. Final: los cinco en 0 · **test 702/702** · **e2e 117/117**. Verificación del orquestador: los cinco códigos de salida más una mutación propia — quitar la consulta previa del alta mató exactamente 3 pruebas y lo hizo con el `UNIQUE constraint failed` crudo, sin ningún 409 amable: no hay `catch` escondido. | Concedida y acusada junto con la unidad 1 (ver abajo). |
+| T-12 · unidad 1 (M-1, M-2, M-3) | `7db6f48` | Final: los cuatro en 0 · **test 686/686**. Sin e2e: no toca la interfaz. Verificación del orquestador: los cuatro códigos de salida corridos de nuevo por mí, más **dos mutaciones propias** — los 33 `IS NOT` → `<>` mató exactamente las 9 pruebas de padre inexistente, y quitar la coherencia etapa↔proceso de `nota` mató exactamente 1. Las dos revirtieron a archivo idéntico y 686/686. | **Concedida y acusada.** Lineaje `review-dc06c18287c8208f`, riesgo medio, candidato de los tres commits de T-12 (`--committed-only`, 17 archivos, 1947 líneas), lente `review-reliability`, **aprobada**, autoridad quemada. Hallazgos no bloqueantes: 2 corregidos en el acto (prosa caducada), 4 abiertos como **T-13**. |
 | T-10 | `6568f46` | Rojo observado: 3 archivos sin cargar, y después 142 fallas por la limpieza que ya no podía borrar usuarios. Final: los cinco en 0 · **test 652/652** · **e2e 116/116**. Verificación del orquestador: los cinco códigos de salida más la comprobación propia de que escribir por la ruta de lectura NO compila (`TS2349`). | Pendiente de evaluar |
 | T-9 | `1fc820e` | Rojo observado: 40 fallas de aserción real contra el Worker y el archivo de UI sin cargar. Final: los cinco en 0 · **test 567/567** · **e2e 112/112**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la propiedad 2 (4 muertas). | Pendiente de evaluar |
 | T-8 | `de03ace` | Rojo observado: 38 fallas y el archivo de UI sin cargar. Final: los cinco en 0 · **test 476/476** · **e2e 104/104**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de notas (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
@@ -797,4 +856,8 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-**T-12: las tres migraciones de integridad.** El detalle completo está en la tarea, no depende de ninguna conversación.
+**T-13: lo que la revisión de T-12 dejó abierto**, y dentro de T-13 **H-1 primero**: la regla
+padre-hijo está enforzada solo del lado del hijo, así que mover una etapa de proceso arrastra
+notas inmutables a un proceso ajeno de forma irreparable. H-2 (la migración supone una base que
+ya cumple) hay que resolverlo **antes** de aprovisionar el D1 real. El detalle completo está en
+la tarea, no depende de ninguna conversación.
