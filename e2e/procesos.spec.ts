@@ -202,7 +202,20 @@ const RICARDO = {
   email: "ricardo@bufete.test",
   activo: true,
 };
-const EQUIPO = [ITZEL, RICARDO];
+/**
+ * T-15 · alguien que ya no está en el bufete.
+ *
+ * Existe para que «válido no es lo mismo que seleccionable» se pueda
+ * comprobar: un filtro que no deja afuera a nadie pasa igual estando roto.
+ */
+const MARIANA = {
+  id: "u3",
+  nombre: "Mariana",
+  email: "mariana@bufete.test",
+  activo: false,
+};
+
+const EQUIPO = [ITZEL, RICARDO, MARIANA];
 
 /**
  * Un pendiente con un token largo **sin guiones ni espacios**.
@@ -337,6 +350,41 @@ const BITACORA = {
 
 const AREA_ID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
 
+/**
+ * T-15 · lo que el alta de un proceso necesita para dibujarse.
+ *
+ * Sin estos dos listados el formulario se va por su rama de error y lo que
+ * se mediría sería un párrafo suelto, que es la vacuidad que T-4 descubrió.
+ */
+const CLIENTES = [
+  {
+    id: CLIENTE_ID,
+    tipoClienteId: null,
+    tipoClienteNombre: null,
+    nombre: PROCESO.clienteNombre,
+    documentoTipo: null,
+    documentoNumero: null,
+    representanteLegal: null,
+    email: null,
+    telefono: null,
+    notas: null,
+    creadoPor: ITZEL.id,
+    creadoPorNombre: ITZEL.nombre,
+    creadoEn: "2026-08-01T15:00:00.000Z",
+  },
+];
+
+const TIPOS_PROCESO = [
+  {
+    id: TIPO_ID,
+    areaId: AREA_ID,
+    areaNombre: "Migración y naturalización",
+    nombre: PROCESO.tipoProcesoNombre,
+    descripcion: null,
+    activo: true,
+  },
+];
+
 /** Las áreas que alimentan el destino «tipo de proceso nuevo» de T-11. */
 const AREAS = [
   { id: AREA_ID, nombre: "Migración y naturalización", activo: true },
@@ -446,7 +494,11 @@ async function conProcesosCargados(page: Page): Promise<void> {
               ? { areas: AREAS }
               : url.pathname === "/api/usuarios"
                 ? { usuarios: EQUIPO }
-                : null;
+                : url.pathname === "/api/clientes"
+                  ? { clientes: CLIENTES }
+                  : url.pathname === "/api/tipos-proceso"
+                    ? { tipos: TIPOS_PROCESO }
+                    : null;
 
       if (cuerpo === null) {
         await ruta.fulfill({ status: 404, json: { error: "not_found" } });
@@ -859,6 +911,81 @@ test.describe("los procesos del bufete", () => {
     await expect(
       page.locator("#campo-responsable-pendiente option"),
     ).toHaveText(["Sin responsable asignado", "Itzel", "Ricardo"]);
+  });
+
+  /* --- T-15 · el responsable del proceso, en el alta ------------------- */
+
+  test("el alta ofrece el equipo como responsable y no a quien está dado de baja", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto("/procesos/nuevo");
+
+    // Mariana está en `/api/usuarios` y no está acá: «válido» y
+    // «seleccionable» son cosas distintas desde T-5. La opción vacía se
+    // **nombra**: un proceso sin responsable es legítimo, y el que no tiene
+    // dueño es el que se pierde, así que se elige a sabiendas.
+    await expect(page.locator("#campo-responsableId option")).toHaveText([
+      "Sin responsable asignado",
+      "Itzel",
+      "Ricardo",
+    ]);
+  });
+
+  test("el responsable elegido viaja en el alta", async ({ page }) => {
+    await conProcesosCargados(page);
+
+    let enviado: unknown = null;
+    await page.route(
+      (url) => url.pathname === "/api/procesos",
+      async (ruta) => {
+        if (ruta.request().method() !== "POST") {
+          await ruta.fallback();
+          return;
+        }
+        enviado = ruta.request().postDataJSON();
+        await ruta.fulfill({ status: 201, json: { proceso: PROCESO } });
+      },
+    );
+
+    await page.goto("/procesos/nuevo");
+    await page.selectOption("#campo-clienteId", CLIENTE_ID);
+    await page.selectOption("#campo-tipoProcesoId", TIPO_ID);
+    await page.selectOption("#campo-responsableId", RICARDO.id);
+    await page.getByRole("button", { name: "Abrir proceso" }).click();
+
+    await expect.poll(() => enviado).not.toBeNull();
+    expect(enviado).toMatchObject({ responsableId: RICARDO.id });
+  });
+
+  test("sin elegir responsable, el proceso se abre igual y viaja en nulo", async ({
+    page,
+  }) => {
+    // El campo es opcional, y el esquema dice lo mismo: `responsable_id` es
+    // nullable. Un trámite se abre antes de decidir quién lo lleva, y
+    // obligar a elegir fabricaría una asignación falsa.
+    await conProcesosCargados(page);
+
+    let enviado: unknown = null;
+    await page.route(
+      (url) => url.pathname === "/api/procesos",
+      async (ruta) => {
+        if (ruta.request().method() !== "POST") {
+          await ruta.fallback();
+          return;
+        }
+        enviado = ruta.request().postDataJSON();
+        await ruta.fulfill({ status: 201, json: { proceso: PROCESO } });
+      },
+    );
+
+    await page.goto("/procesos/nuevo");
+    await page.selectOption("#campo-clienteId", CLIENTE_ID);
+    await page.selectOption("#campo-tipoProcesoId", TIPO_ID);
+    await page.getByRole("button", { name: "Abrir proceso" }).click();
+
+    await expect.poll(() => enviado).not.toBeNull();
+    expect(enviado).toMatchObject({ responsableId: null });
   });
 
   test("un pendiente vacío no se manda: lo dice el navegador antes de ir", async ({

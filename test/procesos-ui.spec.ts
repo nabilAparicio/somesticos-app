@@ -356,6 +356,18 @@ describe("el formulario de alta", () => {
     });
   });
 
+  /*
+   * T-15 · el selector de responsable. El mapeo ya existía desde T-7; lo que
+   * faltaba era la pantalla que lo poblara. Esta prueba cierra el hueco de
+   * cobertura del otro lado del `<select>`: lo que manda cuando sí se
+   * eligió a alguien.
+   */
+  it("manda el responsable elegido, sin los espacios del valor", () => {
+    expect(
+      aPeticionDeProceso(borrador({ responsableId: "  u2  " })).responsableId,
+    ).toBe("u2");
+  });
+
   it("recorta el título", () => {
     expect(
       aPeticionDeProceso(borrador({ titulo: "  Residencia de Marta  " })).titulo,

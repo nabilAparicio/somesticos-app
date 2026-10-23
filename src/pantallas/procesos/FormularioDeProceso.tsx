@@ -23,7 +23,9 @@ import type {
   Cliente,
   FallaDeValidacion,
   TipoProceso,
+  Usuario,
 } from "../../../worker/contract";
+import { cargarUsuarios } from "../../api/usuarios";
 import { Aviso } from "../../layout/Aviso";
 import { Enlace } from "../../layout/Enlace";
 import { Fila } from "../../layout/Fila";
@@ -36,6 +38,12 @@ import { enlaceDe } from "../../ruteo";
 import { cargarClientes } from "../clientes/api";
 import { cargarTiposProceso } from "../catalogos/api";
 import { crearProceso, textoDeProblema } from "./api";
+// `responsablesSeleccionables` se importa de los pendientes en vez de
+// copiarse acá: es la misma regla sobre la misma tabla —el equipo del
+// bufete— y dos copias serían dos criterios de «quién se puede elegir» que
+// se desincronizan en el primer cambio. Que haya nacido en T-9 dice dónde se
+// necesitó primero, no de quién es.
+import { responsablesSeleccionables } from "./pendientes";
 import {
   BORRADOR_DE_PROCESO_VACIO,
   aPeticionDeProceso,
@@ -63,6 +71,7 @@ export function FormularioDeProceso({ clienteId }: Props) {
   });
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [tipos, setTipos] = useState<TipoProceso[]>([]);
+  const [equipo, setEquipo] = useState<Usuario[]>([]);
   const [carga, setCarga] = useState<Carga>({ fase: "cargando" });
   const [fallas, setFallas] = useState<FallaDeValidacion[]>([]);
   const [problema, setProblema] = useState<string | null>(null);
@@ -74,9 +83,10 @@ export function FormularioDeProceso({ clienteId }: Props) {
     const control = new AbortController();
 
     async function cargar() {
-      const [lista, catalogo] = await Promise.all([
+      const [lista, catalogo, personas] = await Promise.all([
         cargarClientes(control.signal),
         cargarTiposProceso(control.signal),
+        cargarUsuarios(control.signal),
       ]);
       if (control.signal.aborted) return;
 
@@ -100,6 +110,12 @@ export function FormularioDeProceso({ clienteId }: Props) {
 
       setClientes(lista.valor);
       setTipos(catalogo.valor);
+      // El equipo **no** bloquea, al revés que los dos de arriba: el
+      // responsable es opcional —`proceso.responsable_id` es nullable— así
+      // que un proceso se abre perfectamente sin él. Negarle el alta al
+      // bufete porque no se pudo listar quiénes son sería cambiar un campo
+      // opcional por una puerta cerrada.
+      if (personas.estado === "ok") setEquipo(personas.valor);
       setCarga({ fase: "listo" });
     }
 
@@ -170,6 +186,10 @@ export function FormularioDeProceso({ clienteId }: Props) {
 
   const clientesOfrecidos = clientesSeleccionables(clientes);
   const tiposOfrecidos = tipoSeleccionables(tipos, borrador.tipoProcesoId);
+  const responsablesOfrecidos = responsablesSeleccionables(
+    equipo,
+    borrador.responsableId,
+  );
 
   return (
     <Pila espacio="holgado">
@@ -258,6 +278,41 @@ export function FormularioDeProceso({ clienteId }: Props) {
                   Catálogos, con su plantilla de etapas.
                 </p>
               )}
+            </div>
+
+            <div className="campo">
+              <label className="campo__rotulo" htmlFor="campo-responsableId">
+                Responsable
+              </label>
+              <select
+                id="campo-responsableId"
+                className="campo__control"
+                value={borrador.responsableId}
+                onChange={(evento) => {
+                  setBorrador((anterior) => ({
+                    ...anterior,
+                    responsableId: evento.target.value,
+                  }));
+                }}
+              >
+                {/* La opción vacía se NOMBRA, igual que en el pendiente de
+                    T-9: abrir un proceso sin decidir quién lo lleva es
+                    legítimo, y justamente por eso tiene que elegirse a
+                    sabiendas y no quedar en un hueco en blanco. */}
+                <option value="">Sin responsable asignado</option>
+                {responsablesOfrecidos.map((persona) => (
+                  <option key={persona.id} value={persona.id}>
+                    {persona.nombre}
+                  </option>
+                ))}
+              </select>
+              <p className="campo__ayuda">
+                {responsablesOfrecidos.length === 0
+                  ? "No hay nadie a quien asignárselo ahora mismo. El proceso" +
+                    " se abre igual, sin responsable."
+                  : "Opcional: es quien lleva el trámite. Hoy se elige al" +
+                    " abrirlo y la pantalla todavía no sabe reasignarlo."}
+              </p>
             </div>
           </Rejilla>
 
