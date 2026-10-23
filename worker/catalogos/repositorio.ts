@@ -52,6 +52,39 @@
  * cuando se trata de un tipo de proceso. Cada una de las tres cosas tiene su
  * prueba de rechazo o de convivencia.
  *
+ * ### El residuo que esto deja, descrito en vez de supuesto (T-13, H-3)
+ *
+ * Consultar y después escribir no es atómico, y acá no hay transacción que
+ * abarque las dos mitades. La ventana es real y se nombra entera:
+ *
+ *  - **Qué pasa.** Dos peticiones piden el mismo nombre nuevo a la vez. Las
+ *    dos consultan, las dos ven el nombre libre, las dos escriben. La
+ *    primera entra; la segunda choca contra `area_nombre_unico`,
+ *    `tipo_cliente_nombre_unico` o `tipo_proceso_nombre_unico`.
+ *  - **Qué ve quien la pisa.** Un **500**, no el 409 que vería por el
+ *    camino normal. El error del índice sube crudo, porque atraparlo es
+ *    exactamente lo que las tres viñetas de arriba prohíben. El nombre no
+ *    se duplica —la base lo impide, que es para lo que está el índice—,
+ *    así que lo que se pierde es la calidad de la respuesta, no la
+ *    integridad del catálogo.
+ *  - **Por qué se acepta.** El bufete son dos personas y el choque exige
+ *    que las dos tipeen el mismo nombre nuevo en la misma fracción de
+ *    segundo. El precio de cerrarlo —serializar las escrituras de catálogo,
+ *    o atrapar el error y traducirlo— es, en el primer caso,
+ *    desproporcionado, y en el segundo, la pérdida de la única prueba que
+ *    sostiene la guarda: con el `catch` puesto, borrar la consulta previa
+ *    no rompería nada y nadie se enteraría nunca.
+ *  - **Cuál sería la salida si dejara de aceptarse.** No el `catch`. Sería
+ *    `INSERT … ON CONFLICT (tenant_id, nombre) DO NOTHING` seguido de la
+ *    relectura: una sola escritura atómica que distingue «entró» de «ya
+ *    estaba» sin leer el mensaje de error de la base, y que por lo tanto
+ *    deja la guarda igual de visible. Eso sí cambia la forma de las dos
+ *    rutas de escritura y de sus pruebas, y es su propia tarea.
+ *
+ * Lo que **no** es este residuo: una justificación para el `try/catch`. La
+ * ventana existe tanto con la consulta previa como sin ella; lo único que
+ * la consulta previa decide es si el caso normal contesta 409 o 500.
+ *
  * ## El registro de bitácora (T-10)
  *
  * Viaja con la escritura, no al lado. Este archivo no recibe un

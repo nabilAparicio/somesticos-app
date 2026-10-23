@@ -1,3 +1,4 @@
+import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -977,11 +978,13 @@ describe("M-2 y M-3 · ninguna fila referencia a otro bufete", () => {
 });
 
 describe("M-2 y M-3 · la incoherencia tampoco se alcanza actualizando", () => {
-  // Los seis disparadores de `UPDATE`. Sin ellos la fila nace coherente y se
-  // cruza después, que es el mismo agujero con un paso de más. `nota` y
-  // `bitacora` no están acá a propósito: son inmutables desde T-2 y T-10, y
-  // su `BEFORE UPDATE` aborta toda actualización sin condición, así que un
-  // segundo disparador de `UPDATE` sería código muerto.
+  // Los cinco disparadores de `UPDATE` de la familia de tenencia. Sin ellos
+  // la fila nace coherente y se cruza después, que es el mismo agujero con
+  // un paso de más. `nota` y `bitacora` no están acá a propósito: son
+  // inmutables desde T-2 y T-10, y su `BEFORE UPDATE` aborta toda
+  // actualización sin condición, así que un segundo disparador de `UPDATE`
+  // sería código muerto. `proceso_etapa` dejó de estar por lo mismo, y lo
+  // explica la prueba de abajo.
   let vecino: Contexto & { tenantId: string };
 
   beforeEach(async () => {
@@ -1023,12 +1026,23 @@ describe("M-2 y M-3 · la incoherencia tampoco se alcanza actualizando", () => {
     ).rejects.toThrow(TENENCIA_CRUZADA);
   });
 
+  // La que cambió de guarda en T-13, y vale la pena decir por qué.
+  //
+  // Hasta T-12 la ataja `proceso_etapa_tenencia_coherente_al_actualizar`.
+  // T-13 volvió inmutables las dos únicas columnas que ese disparador
+  // miraba, así que su condición no puede dar verdadero nunca y la
+  // migración lo quita en vez de dejarlo de adorno. Lo que ataja la
+  // escritura ahora es más fuerte y más exacto: la etapa no se muda de
+  // proceso, sea el del vecino o uno nuestro —y era el caso «uno nuestro»
+  // el que pasaba limpio, porque ahí no hay ninguna tenencia cruzada que
+  // denunciar. La prueba del caso propio está en «H-1 · una etapa no se
+  // muda de proceso».
   it("rechaza mover una etapa al proceso del vecino", async () => {
     await expect(
       env.DB.prepare("UPDATE proceso_etapa SET proceso_id = ? WHERE id = ?")
         .bind(vecino.procesoId, ctx.etapaId)
         .run(),
-    ).rejects.toThrow(TENENCIA_CRUZADA);
+    ).rejects.toThrow(/columna inmutable: proceso_etapa\.proceso_id/);
   });
 
   it("rechaza cerrar un pendiente con un usuario del vecino", async () => {
@@ -1119,5 +1133,385 @@ describe("el padre inexistente también dispara, que es para lo que está IS NOT
         proceso_etapa_id: nuevoId(),
       }),
     ).rejects.toThrow(TENENCIA_CRUZADA);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-13 · lo que la revisión de T-12 dejó abierto
+// ---------------------------------------------------------------------------
+
+/** El `RAISE(ABORT, …)` de los diez disparadores de inmutabilidad de `0003`. */
+const COLUMNA_INMUTABLE = /columna inmutable/;
+
+/**
+ * Las nueve tablas cuyo `tenant_id` es inmutable por disparador propio.
+ *
+ * `nota` y `bitacora` no están, y no por olvido: `nota_no_se_actualiza`
+ * (`0001`) y `bitacora_no_se_actualiza` (`0002`) son `BEFORE UPDATE` sin
+ * condición y abortan **toda** actualización, así que un disparador de
+ * inmutabilidad ahí sería código muerto por construcción. Las dos pruebas
+ * del final de este describe lo verifican en vez de suponerlo.
+ */
+const TABLAS_CON_TENANT_INMUTABLE = [
+  "usuario",
+  "tipo_cliente",
+  "cliente",
+  "area",
+  "tipo_proceso",
+  "etapa_plantilla",
+  "proceso",
+  "proceso_etapa",
+  "pendiente",
+] as const;
+
+type TablaConTenantInmutable = (typeof TABLAS_CON_TENANT_INMUTABLE)[number];
+
+/**
+ * Qué más hay que reescribir para que la mudanza al bufete vecino sea
+ * **coherente**, es decir, para que ningún disparador de tenencia tenga nada
+ * que objetar.
+ *
+ * Esto es el corazón de H-1 y la razón de que la prueba no se conforme con
+ * `SET tenant_id = …` a secas: una mudanza incoherente la rechazarían los
+ * dos disparadores a la vez y el mensaje dependería de cuál corre primero,
+ * que en SQLite no está definido. Al repuntar también los padres, la fila
+ * queda impecable dentro del bufete vecino, **los catorce disparadores de
+ * tenencia callan**, y lo único que puede abortar es la inmutabilidad. Es
+ * además el ataque real: nadie roba una fila dejándola rota.
+ */
+const MUDANZA_COHERENTE: Record<
+  TablaConTenantInmutable,
+  (vecino: Contexto & { tenantId: string }) => Record<string, string>
+> = {
+  usuario: () => ({}),
+  tipo_cliente: () => ({}),
+  area: () => ({}),
+  cliente: (vecino) => ({
+    tipo_cliente_id: vecino.tipoClienteId,
+    creado_por: vecino.usuarioId,
+  }),
+  tipo_proceso: (vecino) => ({ area_id: vecino.areaId }),
+  etapa_plantilla: (vecino) => ({ tipo_proceso_id: vecino.tipoProcesoId }),
+  proceso: (vecino) => ({
+    cliente_id: vecino.clienteId,
+    tipo_proceso_id: vecino.tipoProcesoId,
+  }),
+  proceso_etapa: (vecino) => ({ proceso_id: vecino.procesoId }),
+  pendiente: (vecino) => ({
+    proceso_id: vecino.procesoId,
+    proceso_etapa_id: vecino.etapaId,
+    autor_id: vecino.usuarioId,
+  }),
+};
+
+describe("H-1 · una fila no cambia de bufete", () => {
+  // La clase entera que la revisión de T-12 destapó: los disparadores de
+  // tenencia viven en la escritura del HIJO, así que mutar el padre —o
+  // mudar la fila completa— los derrota a todos sin que ninguno se entere.
+  let vecino: Contexto & { tenantId: string };
+
+  beforeEach(async () => {
+    vecino = await sembrarVecino();
+  });
+
+  it.each(TABLAS_CON_TENANT_INMUTABLE)(
+    "%s rechaza mudarse al bufete vecino, aun con todos sus padres repuntados",
+    async (tabla) => {
+      const fila = filaValida(tabla, ctx);
+      await insertar(tabla, fila);
+
+      const columnas: Record<string, string> = {
+        tenant_id: vecino.tenantId,
+        ...MUDANZA_COHERENTE[tabla](vecino),
+      };
+      const asignaciones = Object.keys(columnas)
+        .map((columna) => `${columna} = ?`)
+        .join(", ");
+
+      await expect(
+        env.DB.prepare(`UPDATE ${tabla} SET ${asignaciones} WHERE id = ?`)
+          .bind(...Object.values(columnas), fila.id)
+          .run(),
+      ).rejects.toThrow(COLUMNA_INMUTABLE);
+
+      // Y no se movió a medias: la fila sigue siendo nuestra.
+      const guardada = await env.DB.prepare(
+        `SELECT tenant_id FROM ${tabla} WHERE id = ?`,
+      )
+        .bind(fila.id)
+        .first<{ tenant_id: string }>();
+
+      expect(guardada?.tenant_id).toBe(TENANT_UNICO_ID);
+    },
+  );
+
+  // El caso que ningún disparador de `tipo_proceso` puede ver, porque la
+  // escritura no es sobre `tipo_proceso`: se mueve el área y sus tipos
+  // quedan todos colgados de otro bufete, en silencio.
+  it("mover un área al vecino cruzaría todos sus tipos, y ninguno se entera", async () => {
+    const tipo = filaValida("tipo_proceso", ctx);
+    await insertar("tipo_proceso", tipo);
+
+    await expect(
+      env.DB.prepare("UPDATE area SET tenant_id = ? WHERE id = ?")
+        .bind(vecino.tenantId, ctx.areaId)
+        .run(),
+    ).rejects.toThrow(COLUMNA_INMUTABLE);
+
+    // El contrapeso que hace a la prueba sobre la consecuencia y no sobre
+    // el mensaje: el tipo sigue compartiendo bufete con su área.
+    const arista = await env.DB.prepare(
+      "SELECT a.tenant_id AS tenant_del_area, t.tenant_id AS tenant_del_tipo" +
+        " FROM tipo_proceso t JOIN area a ON a.id = t.area_id WHERE t.id = ?",
+    )
+      .bind(tipo.id)
+      .first<{ tenant_del_area: string; tenant_del_tipo: string }>();
+
+    expect(arista?.tenant_del_area).toBe(arista?.tenant_del_tipo);
+  });
+
+  // Las dos tablas sin disparador de inmutabilidad: se verifica que la
+  // escritura muere igual, con el mensaje de quien sí la cubre.
+  it("una nota tampoco se muda, y la ataja su propia inmutabilidad", async () => {
+    const nota = filaValida("nota", ctx);
+    await insertar("nota", nota);
+
+    await expect(
+      env.DB.prepare("UPDATE nota SET tenant_id = ? WHERE id = ?")
+        .bind(vecino.tenantId, nota.id)
+        .run(),
+    ).rejects.toThrow(/nota inmutable/);
+  });
+
+  it("una entrada de bitácora tampoco, y la ataja la suya", async () => {
+    const entrada = filaValida("bitacora", ctx);
+    await insertar("bitacora", entrada);
+
+    await expect(
+      env.DB.prepare("UPDATE bitacora SET tenant_id = ? WHERE id = ?")
+        .bind(vecino.tenantId, entrada.id)
+        .run(),
+    ).rejects.toThrow(/bitacora inmutable/);
+  });
+});
+
+describe("H-1 · una etapa no se muda de proceso", () => {
+  // El ejemplo exacto de la revisión: `proceso_etapa_tenencia_coherente_al_
+  // actualizar` solo comparaba `tenant_id`, así que mover la etapa a otro
+  // proceso DEL MISMO BUFETE pasaba limpio y arrastraba con ella las notas,
+  // que son inmutables y por lo tanto irrecuperables.
+  it("rechaza mover una etapa a otro proceso del mismo bufete", async () => {
+    const otro = await segundoProcesoNuestro();
+    const nota = filaValida("nota", ctx);
+    await insertar("nota", nota);
+
+    await expect(
+      env.DB.prepare("UPDATE proceso_etapa SET proceso_id = ? WHERE id = ?")
+        .bind(otro.procesoId, ctx.etapaId)
+        .run(),
+    ).rejects.toThrow(/columna inmutable: proceso_etapa\.proceso_id/);
+
+    // El daño que la mudanza habría hecho, medido donde se habría visto: la
+    // nota sigue hablando del proceso del que habla su etapa.
+    const linea = await env.DB.prepare(
+      "SELECT n.proceso_id AS de_la_nota, e.proceso_id AS de_la_etapa" +
+        " FROM nota n JOIN proceso_etapa e ON e.id = n.proceso_etapa_id" +
+        " WHERE n.id = ?",
+    )
+      .bind(nota.id)
+      .first<{ de_la_nota: string; de_la_etapa: string }>();
+
+    expect(linea?.de_la_nota).toBe(linea?.de_la_etapa);
+    expect(linea?.de_la_etapa).toBe(ctx.procesoId);
+  });
+});
+
+describe("H-4b · la llave foránea de tenant_id está declarada, no solo vigilada", () => {
+  // Por qué no alcanza con «rechaza la misma fila con un tenant_id que no
+  // existe»: desde `0003` el disparador de tenencia llega antes que la
+  // llave foránea en las ocho tablas que lo llevan, así que esa prueba dejó
+  // de poder distinguir la ausencia de la llave. `PRAGMA foreign_key_list`
+  // lee la declaración del esquema y no depende de qué guarda aborta
+  // primero, que es exactamente lo que se quería probar.
+  //
+  // Se recorren las once tablas con `tenant_id` y no solo las ocho: la
+  // declaración es la misma regla para todas, y las tres restantes salen
+  // gratis.
+  it.each(TABLAS_CON_TENANT)(
+    "%s declara tenant_id como llave foránea hacia tenant (id)",
+    async (tabla) => {
+      const { results } = await env.DB.prepare(
+        `PRAGMA foreign_key_list(${tabla})`,
+      ).all<{ table: string; from: string; to: string }>();
+
+      expect(
+        results.map(({ table, from, to }) => ({ table, from, to })),
+      ).toContainEqual({ table: "tenant", from: "tenant_id", to: "id" });
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// H-2 · la migración no supone una base que ya cumple
+// ---------------------------------------------------------------------------
+//
+// `CREATE UNIQUE INDEX` sí aborta sobre datos duplicados, pero los
+// disparadores **no revisan nada de lo ya escrito**: una fila cruzada
+// preexistente quedaría viva e inmodificable, y nadie se enteraría. Por eso
+// `0003` abre con una verificación previa que la hace fallar entera.
+//
+// Estas pruebas la ejercitan de la única forma que la prueba de verdad:
+// desarmando `0003` sobre la base de este archivo, ensuciándola con la fila
+// que la regla prohíbe, y pidiéndole al corredor real de migraciones que la
+// vuelva a aplicar. El `batch` de `applyD1Migrations` es una transacción de
+// D1, así que un fallo deja la base exactamente como estaba —eso también se
+// afirma— y el `finally` la reconstruye para las pruebas que sigan.
+
+const MIGRACION_0003 = "0003_tenencia_y_unicidad.sql";
+
+interface ObjetoDelEsquema {
+  clase: "INDEX" | "TRIGGER";
+  nombre: string;
+}
+
+/**
+ * Los índices y disparadores que `0003` crea, leídos **de la migración
+ * misma** y no de una lista copiada a mano. Un objeto nuevo en la migración
+ * entra solo; una lista paralela se habría desincronizado al primer cambio.
+ */
+function objetosQueCrea0003(): ObjetoDelEsquema[] {
+  const migracion = env.TEST_MIGRATIONS.find(
+    (candidata) => candidata.name === MIGRACION_0003,
+  );
+  if (migracion === undefined) {
+    throw new Error(`${MIGRACION_0003} no está en TEST_MIGRATIONS`);
+  }
+
+  return migracion.queries.flatMap((consulta): ObjetoDelEsquema[] => {
+    // Los comentarios se descartan antes de buscar: el encabezado de `0003`
+    // menciona `CREATE UNIQUE INDEX` y `CREATE TRIGGER` en prosa.
+    const sql = consulta.replace(/^\s*--.*$/gm, "");
+    const indice = /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(\w+)/i.exec(sql);
+    if (indice !== null) return [{ clase: "INDEX" as const, nombre: indice[1] }];
+    const disparador = /CREATE\s+TRIGGER\s+(\w+)/i.exec(sql);
+    if (disparador !== null) {
+      return [{ clase: "TRIGGER" as const, nombre: disparador[1] }];
+    }
+    return [];
+  });
+}
+
+/** Cuántos de esos objetos existen hoy en el esquema. */
+async function objetosDe0003Vivos(): Promise<number> {
+  const nombres = objetosQueCrea0003().map((objeto) => objeto.nombre);
+  const fila = await env.DB.prepare(
+    `SELECT count(*) AS n FROM sqlite_master WHERE name IN (${nombres
+      .map(() => "?")
+      .join(", ")})`,
+  )
+    .bind(...nombres)
+    .first<{ n: number }>();
+
+  return fila?.n ?? 0;
+}
+
+/** Deja la base como estaba antes de `0003`, contabilidad incluida. */
+async function deshacer0003(): Promise<void> {
+  await env.DB.batch([
+    ...objetosQueCrea0003().map((objeto) =>
+      env.DB.prepare(`DROP ${objeto.clase} ${objeto.nombre}`),
+    ),
+    env.DB.prepare("DELETE FROM d1_migrations WHERE name = ?").bind(
+      MIGRACION_0003,
+    ),
+  ]);
+}
+
+/** El corredor real de migraciones. Con `0003` pendiente, aplica `0003`. */
+function aplicar0003(): Promise<void> {
+  return applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+}
+
+describe("H-2 · la verificación previa detiene la migración sobre una base sucia", () => {
+  it("se detiene si ya hay nombres de catálogo repetidos", async () => {
+    await deshacer0003();
+    const nombre = `Familia ${nuevoId()}`;
+    const primera: Fila = { ...filaValida("area", ctx), nombre };
+    const segunda: Fila = { ...filaValida("area", ctx), nombre };
+
+    try {
+      await insertar("area", primera);
+      await insertar("area", segunda);
+
+      await expect(aplicar0003()).rejects.toThrow(
+        /la_base_ya_tiene_nombres_de_catalogo_repetidos/,
+      );
+
+      // Y se detuvo antes de crear nada: ni medio esquema puesto.
+      expect(await objetosDe0003Vivos()).toBe(0);
+    } finally {
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM area WHERE id = ?").bind(primera.id),
+        env.DB.prepare("DELETE FROM area WHERE id = ?").bind(segunda.id),
+      ]);
+      await aplicar0003();
+    }
+
+    // Sobre la base ya limpia la misma migración entra sin chistar, que es
+    // la otra mitad de la afirmación: la verificación no estorba.
+    expect(await objetosDe0003Vivos()).toBe(objetosQueCrea0003().length);
+  });
+
+  it("se detiene si ya hay una fila que referencia a otro bufete", async () => {
+    const vecino = await sembrarVecino();
+    await deshacer0003();
+    const cruzado: Fila = {
+      ...filaValida("tipo_proceso", ctx),
+      area_id: vecino.areaId,
+    };
+
+    try {
+      await insertar("tipo_proceso", cruzado);
+
+      await expect(aplicar0003()).rejects.toThrow(
+        /la_base_ya_tiene_filas_que_referencian_a_otro_bufete/,
+      );
+
+      expect(await objetosDe0003Vivos()).toBe(0);
+    } finally {
+      await env.DB.prepare("DELETE FROM tipo_proceso WHERE id = ?")
+        .bind(cruzado.id)
+        .run();
+      await aplicar0003();
+    }
+
+    expect(await objetosDe0003Vivos()).toBe(objetosQueCrea0003().length);
+  });
+
+  it("se detiene si ya hay un pendiente colgado de la etapa de otro proceso", async () => {
+    const otro = await segundoProcesoNuestro();
+    await deshacer0003();
+    const descolgado: Fila = {
+      ...filaValida("pendiente", ctx),
+      proceso_id: ctx.procesoId,
+      proceso_etapa_id: otro.etapaId,
+    };
+
+    try {
+      await insertar("pendiente", descolgado);
+
+      await expect(aplicar0003()).rejects.toThrow(
+        /la_base_ya_tiene_hijos_colgados_de_la_etapa_de_otro_proceso/,
+      );
+
+      expect(await objetosDe0003Vivos()).toBe(0);
+    } finally {
+      await env.DB.prepare("DELETE FROM pendiente WHERE id = ?")
+        .bind(descolgado.id)
+        .run();
+      await aplicar0003();
+    }
+
+    expect(await objetosDe0003Vivos()).toBe(objetosQueCrea0003().length);
   });
 });

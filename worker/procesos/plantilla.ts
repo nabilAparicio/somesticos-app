@@ -158,14 +158,20 @@ export async function guardarPlanComoPlantilla(
       tenantId,
       detalle.proceso.tipoProcesoId,
     );
-    // Defensa en profundidad, y **ya no alcanzable desde la base**.
+    // Defensa en profundidad, **no alcanzable desde la base, sí desde el
+    // puerto**. La distinción importa y T-12 la escribió mal.
     //
-    // Hasta `migrations/0003_tenencia_y_unicidad.sql` esta rama se podía
-    // ejercitar de verdad: la llave foránea de `proceso.tipo_proceso_id` no
-    // lleva el tenant, así que una fila cruzada insertada a mano apuntaba al
-    // tipo del bufete vecino y llegaba hasta acá. Desde M-3 esa fila es
-    // inexpresable —el disparador `proceso_tenencia_coherente_al_insertar`
-    // la aborta—, así que no hay forma de llegar por este camino.
+    // Hasta `migrations/0003_tenencia_y_unicidad.sql` esta rama se ejercitaba
+    // con datos: la llave foránea de `proceso.tipo_proceso_id` no lleva el
+    // tenant, así que una fila cruzada insertada a mano apuntaba al tipo del
+    // bufete vecino y llegaba hasta acá. Desde M-3 esa fila es inexpresable
+    // —el disparador `proceso_tenencia_coherente_al_insertar` la aborta—.
+    //
+    // Pero `catalogos` entra **por parámetro**, así que la rama se ejercita
+    // sustituyendo el puerto por un doble que contesta `null`, y eso es
+    // exactamente lo que hace `test/procesos-api.spec.ts`. T-12 declaró la
+    // rama inverificable; la revisión mostró que no, y la arquitectura
+    // hexagonal era la respuesta todo el tiempo.
     //
     // Se conserva igual, y no por costumbre: la guarda que se puede apagar
     // es la de la base, y si alguien desactivara ese disparador o

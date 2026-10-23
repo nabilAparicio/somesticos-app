@@ -36,6 +36,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { TENANT_UNICO_ID, nuevoId } from "../worker/db/ids";
 import { manejar } from "../worker/index";
+import type { ServicioDeCatalogos } from "../worker/catalogos/repositorio";
 import type { ServicioDeProcesos } from "../worker/procesos/repositorio";
 
 const DOMINIO_DE_ACCESS = "https://bufete-de-prueba.cloudflareaccess.com";
@@ -1327,14 +1328,14 @@ describe("guardar el plan de un proceso como plantilla rechaza lo que no puede g
   //     «rechaza colgar una plantilla de un tipo de proceso de otro tenant»,
   //     las dos en `test/catalogos-api.spec.ts`.
   //
-  // Lo que **no** queda probado, y hay que decirlo en voz alta: la rama
+  // Lo que T-12 declaró no probado, y T-13 corrigió: la rama
   // `if (existente === null) return { estado: "no_encontrado" }` de
-  // `plantilla.ts` pasó a ser inalcanzable desde la base. Sigue siendo
-  // defensa correcta —es la que aguantaría si alguien apagara el
-  // disparador—, pero ya no hay forma de ejercitarla por este camino. La
-  // rama se conserva y su comentario quedó corregido en la segunda unidad
-  // de T-12: decía que el caso era «alcanzable de verdad», y eso dejó de
-  // ser cierto el día que M-3 entró.
+  // `plantilla.ts` **no** es inalcanzable. Es inalcanzable *desde la base*,
+  // que es otra cosa: el servicio de catálogos entra por parámetro, así que
+  // se sustituye por un doble y la rama se ejercita sin tocar ninguna fila.
+  // La conclusión de T-12 confundió «la base ya no lo permite» con «no hay
+  // forma de llegar», y la arquitectura hexagonal existe justamente para
+  // que la segunda no se siga de la primera. La prueba está dos abajo.
   it("la fila cruzada que esta prueba necesitaba ya no se puede escribir", async () => {
     const procesoCruzadoId = nuevoId();
 
@@ -1363,6 +1364,66 @@ describe("guardar el plan de un proceso como plantilla rechaza lo que no puede g
       .first<{ id: string }>();
     expect(fila).toBeNull();
     expect(await cuantasEtapasDePlantilla(tipoAjenoId)).toBe(0);
+  });
+
+  // H-4a de T-13. El puerto `ServicioDeCatalogos` entra por parámetro, así
+  // que un doble que contesta «ese tipo no está» alcanza para ejercitar la
+  // rama sin fabricar ninguna fila imposible. Los demás métodos del doble
+  // rechazan: si el camino siguiera de largo y, por ejemplo, intentara
+  // crear el tipo, la prueba lo diría en vez de pasar por otro motivo.
+  it("contesta 404 si el tipo de destino no está, con el servicio sustituido", async () => {
+    const proceso = await procesoDeResidencia();
+    const antes = await plantillaCompletaDe(tipoResidenciaId);
+    const pedidos: string[] = [];
+
+    const metodos = [
+      "listarAreas",
+      "obtenerArea",
+      "crearArea",
+      "actualizarArea",
+      "borrarArea",
+      "listarTiposProceso",
+      "crearTipoProceso",
+      "actualizarTipoProceso",
+      "borrarTipoProceso",
+      "listarEtapas",
+      "reemplazarEtapas",
+      "listarTiposCliente",
+      "obtenerTipoCliente",
+      "crearTipoCliente",
+      "actualizarTipoCliente",
+      "borrarTipoCliente",
+    ] as const;
+
+    const catalogos = {
+      ...Object.fromEntries(
+        metodos.map((metodo) => [
+          metodo,
+          () => Promise.reject(new Error(`no se debió llamar a ${metodo}`)),
+        ]),
+      ),
+      obtenerTipoProceso: (tenantId: string, id: string) => {
+        pedidos.push(`${tenantId}/${id}`);
+        return Promise.resolve(null);
+      },
+    } as unknown as ServicioDeCatalogos;
+
+    const respuesta = await manejar(
+      conCuerpo(`/api/procesos/${proceso.id}/plantilla`, "POST", {
+        destino: "actualizar",
+      }),
+      entorno(),
+      { correoDeDesarrollo: () => EMAIL_AUTOR, catalogos },
+    );
+
+    expect(respuesta.status).toBe(404);
+    // Y preguntó por el tipo del proceso, en nuestro tenant: sin esto, un
+    // 404 por cualquier otro motivo pasaría la aserción de arriba.
+    expect(pedidos).toEqual([`${TENANT_UNICO_ID}/${tipoResidenciaId}`]);
+    // Y no escribió: la plantilla del tipo quedó como estaba. Se compara
+    // contra la lectura previa y no contra `PLAN_DE_RESIDENCIA` porque el
+    // archivo no rebobina la base entre pruebas y el plan ya viene editado.
+    expect(await plantillaCompletaDe(tipoResidenciaId)).toEqual(antes);
   });
 
   it("rechaza crear un tipo nuevo SIN NOMBRE", async () => {
