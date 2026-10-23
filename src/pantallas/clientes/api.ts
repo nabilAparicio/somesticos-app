@@ -16,6 +16,8 @@ import {
 import type {
   Cliente,
   DatosDeCliente,
+  EntradaDeBitacora,
+  RespuestaDeBitacora,
   RespuestaDeCliente,
   RespuestaDeClientes,
   RespuestaDeTiposCliente,
@@ -91,5 +93,29 @@ export async function actualizarCliente(
 
   return resultado.estado === "ok"
     ? { estado: "ok", valor: resultado.valor.cliente }
+    : resultado;
+}
+
+/**
+ * La bitácora del cliente (T-10): quién tocó esta ficha y cuándo.
+ *
+ * Lectura aparte de la del cliente, igual que el listado de procesos: un
+ * fallo acá no puede dejar la ficha en blanco.
+ *
+ * **Solo trae los hechos del cliente.** Los de sus procesos viven en la
+ * bitácora de cada proceso: un hecho se registra una sola vez, bajo la
+ * entidad de la que es.
+ */
+export async function cargarBitacoraDeCliente(
+  id: string,
+  signal: AbortSignal,
+): Promise<Resultado<EntradaDeBitacora[]>> {
+  const resultado = await pedir<RespuestaDeBitacora>(
+    `/api/clientes/${encodeURIComponent(id)}/bitacora`,
+    { signal },
+  );
+
+  return resultado.estado === "ok"
+    ? { estado: "ok", valor: resultado.valor.entradas }
     : resultado;
 }

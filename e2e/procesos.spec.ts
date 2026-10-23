@@ -251,6 +251,63 @@ const PENDIENTES_TRAS_CERRAR = {
   ],
 };
 
+/**
+ * La bitácora del proceso (T-10).
+ *
+ * El banco tiene que ser **hostil**, que es la lección de T-4: una regla
+ * defensiva solo está probada si el contenido la fuerza a actuar. El
+ * `detalle` del primer hecho es el título entero del proceso —largo y
+ * entrecomillado—, y el del último es un pendiente recortado a su tope, que
+ * es lo más ancho que esta lista puede llegar a dibujar. Sin eso, la
+ * comprobación de que no hay scroll horizontal a 320px no mediría nada.
+ */
+const BITACORA = {
+  entradas: [
+    {
+      id: "h1",
+      entidad: "proceso",
+      entidadId: PROCESO_ID,
+      accion: "creado",
+      usuarioId: ITZEL.id,
+      usuarioNombre: ITZEL.nombre,
+      ocurridoEn: "2026-08-15T15:00:00.000Z",
+      detalle: PROCESO.titulo,
+    },
+    {
+      id: "h2",
+      entidad: "proceso",
+      entidadId: PROCESO_ID,
+      accion: "etapa_alcanzada",
+      usuarioId: ITZEL.id,
+      usuarioNombre: ITZEL.nombre,
+      ocurridoEn: "2026-09-01T15:00:00.000Z",
+      detalle: CUMPLIDA_1,
+    },
+    {
+      id: "h3",
+      entidad: "proceso",
+      entidadId: PROCESO_ID,
+      accion: "nota_agregada",
+      usuarioId: RICARDO.id,
+      usuarioNombre: RICARDO.nombre,
+      ocurridoEn: "2026-09-18T15:30:00.000Z",
+      detalle: CUMPLIDA_2,
+    },
+    {
+      id: "h4",
+      entidad: "proceso",
+      entidadId: PROCESO_ID,
+      accion: "pendiente_abierto",
+      usuarioId: RICARDO.id,
+      usuarioNombre: RICARDO.nombre,
+      ocurridoEn: "2026-10-02T13:00:00.000Z",
+      detalle:
+        "Falta el certificado de matrimonio apostillado por el Ministerio" +
+        " de Relaciones…",
+    },
+  ],
+};
+
 const AREA_ID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
 
 /** Las áreas que alimentan el destino «tipo de proceso nuevo» de T-11. */
@@ -297,6 +354,12 @@ async function conProcesosCargados(page: Page): Promise<void> {
           status: 200,
           json: cierra ? PENDIENTES_TRAS_CERRAR : PENDIENTES,
         });
+        return;
+      }
+
+      // T-10: la bitácora. Solo se lee; la pantalla nunca la escribe.
+      if (url.pathname === `/api/procesos/${PROCESO_ID}/bitacora`) {
+        await ruta.fulfill({ status: 200, json: BITACORA });
         return;
       }
 
@@ -880,6 +943,73 @@ test.describe("los procesos del bufete", () => {
 
     await expect(page.getByText(/Sin texto no hay nada que guardar/i)).toBeVisible();
     await expect(page.locator(".nota")).toHaveCount(3);
+  });
+
+  /* ---------------------------------------------------------------------
+     T-10 · La bitácora
+     --------------------------------------------------------------------- */
+
+  test("la bitácora cuenta la historia del proceso en frases, en orden", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    const hechos = page.locator(".bitacora__frase");
+    await expect(hechos).toHaveCount(BITACORA.entradas.length);
+
+    // La frase exacta que pidió el usuario: quién, qué y sobre qué.
+    await expect(hechos.nth(1)).toHaveText(`Itzel avanzó a «${CUMPLIDA_1}».`);
+
+    // Y el orden es el del servidor: del hecho más viejo al más nuevo.
+    await expect(hechos.first()).toContainText("dio de alta");
+    await expect(hechos.last()).toContainText("abrió el pendiente");
+  });
+
+  test("la bitácora dice que no hubo relleno retroactivo", async ({ page }) => {
+    // Una lista que arranca el martes pasado se lee como la historia
+    // completa si nadie dice que no lo es.
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await expect(
+      page.getByText(/lo que pasó antes no está acá/i),
+    ).toBeVisible();
+  });
+
+  test("no hay forma de escribir ni de borrar un hecho desde la pantalla", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    // La bitácora la escribe el sistema al hacer otra cosa. Que no haya un
+    // solo control adentro del bloque es la mitad visible de esa regla; la
+    // otra mitad son los dos disparadores de la migración.
+    await expect(page.locator(".bitacora").getByRole("button")).toHaveCount(0);
+    await expect(
+      page.locator(".bitacora").getByRole("textbox"),
+    ).toHaveCount(0);
+  });
+
+  test("avanzar de etapa vuelve a pedir la bitácora", async ({ page }) => {
+    // Lo que la pantalla acaba de hacer es exactamente lo que la bitácora
+    // tiene que mostrar: si no se recargara, el hecho recién ocurrido sería
+    // el único que no se ve.
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    const pedidos: string[] = [];
+    page.on("request", (peticion) => {
+      const ruta = new URL(peticion.url()).pathname;
+      if (ruta.endsWith("/bitacora")) pedidos.push(ruta);
+    });
+
+    await page
+      .getByRole("button", { name: new RegExp(`Avanzar a .${PENDIENTE_1}`) })
+      .click();
+
+    await expect.poll(() => pedidos.length).toBeGreaterThan(0);
   });
 
   for (const ancho of ANCHOS) {

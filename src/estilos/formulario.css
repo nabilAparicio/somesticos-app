@@ -467,3 +467,55 @@
   margin: var(--espacio-2xs) 0 0;
   font-size: var(--texto-s);
 }
+
+/* ======================================================================
+   La bitácora (T-10)
+   ====================================================================== */
+
+/*
+ * Se lee como una historia, de arriba hacia abajo, así que es una lista
+ * ordenada y no una tabla: no hay columnas que comparar, hay hechos que
+ * leer en secuencia.
+ *
+ * Sin anchos fijos y sin rejilla de dos columnas a la fuerza (§9): la
+ * frase y su momento se apilan a 320px y conviven en una línea cuando hay
+ * sitio, que es lo que hace el `flex-wrap` de abajo.
+ */
+.bitacora {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-2xs);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.bitacora__hecho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--espacio-2xs) var(--espacio-s);
+  min-width: 0;
+  padding-block: var(--espacio-2xs);
+  border-block-end: 1px solid var(--color-borde);
+}
+
+/*
+ * El `min-width: 0` es lo que deja que la frase se parta en vez de empujar
+ * la fila: un título de proceso largo entrecomillado es exactamente el
+ * contenido que fuerza esta regla a actuar, y el banco de
+ * `e2e/procesos.spec.ts` lo tiene.
+ */
+.bitacora__frase {
+  flex: 1 1 18ch;
+  min-width: 0;
+  margin: 0;
+}
+
+.bitacora__momento {
+  flex: 0 1 auto;
+  margin: 0;
+  font-size: var(--texto-s);
+  font-variant-numeric: tabular-nums;
+}

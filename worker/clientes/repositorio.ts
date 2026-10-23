@@ -12,12 +12,18 @@
  * primaria. Un UUID ajeno sigue siendo un UUID: sin el filtro, conocerlo
  * alcanzaría para leerlo y editarlo.
  *
- * Lo que este archivo NO hace, a propósito: escribir en `bitacora`. Ese
- * registro es T-10, y se va a cablear en un solo lugar de la capa de
- * comandos. Esparcirlo ahora obligaría a T-10 a deshacerlo.
+ * ## El registro de bitácora (T-10)
+ *
+ * No está esparcido por acá: viaja con la escritura. Este archivo no recibe
+ * un `D1Database` sino una `BaseDeDatos`, que solo sabe leer y `mutar`, y
+ * `mutar` **exige el evento como primer parámetro**. Agregar una mutación
+ * nueva sin su entrada de bitácora no es un olvido posible: no compila.
+ * Ver `worker/db/base.ts`.
  */
 
 import type { Cliente, DatosDeCliente, FallaDeValidacion } from "../contract";
+import type { BaseDeDatos } from "../db/base";
+import { sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 import { ahoraIso } from "../db/momentos";
 
@@ -94,7 +100,9 @@ function aCliente(fila: FilaDeCliente): Cliente {
   };
 }
 
-export function servicioSobreD1(db: D1Database): ServicioDeClientes {
+export function servicioSobreD1(base: BaseDeDatos): ServicioDeClientes {
+  const db = base.lectura;
+
   async function obtener(
     tenantId: string,
     id: string,
@@ -156,14 +164,18 @@ export function servicioSobreD1(db: D1Database): ServicioDeClientes {
 
       const id = nuevoId();
 
-      await db
-        .prepare(
+      await base.mutar(
+        {
+          entidad: "cliente",
+          entidadId: id,
+          accion: "creado",
+          detalle: datos.nombre,
+        },
+        sentencia(
           "INSERT INTO cliente (id, tenant_id, tipo_cliente_id, nombre," +
             " documento_tipo, documento_numero, representante_legal, email," +
             " telefono, notas, creado_por, creado_en)" +
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(
           id,
           tenantId,
           datos.tipoClienteId,
@@ -176,8 +188,8 @@ export function servicioSobreD1(db: D1Database): ServicioDeClientes {
           datos.notas,
           autorId,
           ahoraIso(),
-        )
-        .run();
+        ),
+      );
 
       const cliente = await obtener(tenantId, id);
       if (cliente === null) {
@@ -202,14 +214,18 @@ export function servicioSobreD1(db: D1Database): ServicioDeClientes {
 
       // `creado_por` y `creado_en` no están en el `SET`: la autoría del alta
       // es un hecho, y editar un teléfono no reescribe quién dio de alta.
-      await db
-        .prepare(
+      await base.mutar(
+        {
+          entidad: "cliente",
+          entidadId: id,
+          accion: "editado",
+          detalle: datos.nombre,
+        },
+        sentencia(
           "UPDATE cliente SET tipo_cliente_id = ?, nombre = ?," +
             " documento_tipo = ?, documento_numero = ?," +
             " representante_legal = ?, email = ?, telefono = ?, notas = ?" +
             " WHERE tenant_id = ? AND id = ?",
-        )
-        .bind(
           datos.tipoClienteId,
           datos.nombre,
           datos.documentoTipo,
@@ -220,8 +236,8 @@ export function servicioSobreD1(db: D1Database): ServicioDeClientes {
           datos.notas,
           tenantId,
           id,
-        )
-        .run();
+        ),
+      );
 
       const cliente = await obtener(tenantId, id);
       if (cliente === null) return { estado: "no_encontrado" };

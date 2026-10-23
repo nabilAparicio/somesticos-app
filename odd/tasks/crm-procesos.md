@@ -1,7 +1,7 @@
 # crm-procesos — Tajada 1: CRM usable
 
 **Creado:** 22 de octubre de 2026
-**Estado:** en curso — T-1 a T-7 cerradas
+**Estado:** TAJADA COMPLETA — las 11 tareas cerradas
 **Diseño de referencia:** `docs/diseno.md` (fuente de verdad)
 
 ---
@@ -166,7 +166,7 @@ se renumera.
       *Criterio: un pendiente abierto en la etapa 1 sigue visible y abierto en la etapa 4 sin que
       nadie lo copie. Ruta: delegada. Forecast ~300.*
 
-- [ ] **T-10 · Bitácora.** Registro de acciones con autor, entidad y momento.
+- [x] **T-10 · Bitácora.** Registro de acciones con autor, entidad y momento.
       *Ruta: delegada. Forecast ~200.*
 
 ---
@@ -219,7 +219,8 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-9 | (este commit) | Rojo observado: 40 fallas de aserción real contra el Worker y el archivo de UI sin cargar. Final: los cinco en 0 · **test 567/567** · **e2e 112/112**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la propiedad 2 (4 muertas). | Pendiente de evaluar |
+| T-10 | (este commit) | Rojo observado: 3 archivos sin cargar, y después 142 fallas por la limpieza que ya no podía borrar usuarios. Final: los cinco en 0 · **test 652/652** · **e2e 116/116**. Verificación del orquestador: los cinco códigos de salida más la comprobación propia de que escribir por la ruta de lectura NO compila (`TS2349`). | Pendiente de evaluar |
+| T-9 | `1fc820e` | Rojo observado: 40 fallas de aserción real contra el Worker y el archivo de UI sin cargar. Final: los cinco en 0 · **test 567/567** · **e2e 112/112**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la propiedad 2 (4 muertas). | Pendiente de evaluar |
 | T-8 | `de03ace` | Rojo observado: 38 fallas y el archivo de UI sin cargar. Final: los cinco en 0 · **test 476/476** · **e2e 104/104**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de notas (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
 | T-11 | `84a3ce9` | Rojo observado: 24 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 410/410** · **e2e 98/98**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación del plan vacío (2 muertas). | Pendiente de evaluar |
 | T-7 | `bff83c5` | Rojo observado: 42 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 372/372** · **e2e 94/94**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de lo alcanzado (4 muertas). | Pendiente de evaluar |
@@ -375,6 +376,62 @@ una instalación limpia el desplegable de tipo de cliente sale vacío para siemp
 lectura está; falta el CRUD. No es un defecto de T-5: excede su alcance y habría empujado la
 rebanada por encima de su presupuesto. **Entra en T-6**, junto a las áreas y los tipos de proceso,
 que son exactamente el mismo problema de catálogo.
+
+### T-10 resolvió "un solo lugar" retirando la capacidad, no pidiendo disciplina
+
+El encargo era que olvidarse de registrar fuera difícil. Lo hizo **imposible**, y el compilador lo
+sostiene.
+
+Ningún adaptador recibe un `D1Database`. Reciben `BaseDeDatos`, que expone dos cosas:
+
+- `lectura` — un `prepare` cuyo tipo de sentencia **no tiene `run`, ni `batch`, ni `raw`**
+- `mutar(evento, ...sentencias)` — **el evento es el primer parámetro**
+
+Una mutación nueva dentro de un repositorio **no tiene por dónde escribir sin nombrar el hecho**.
+No es que esté mal visto: no compila. El par `(entidad, accion)` además es un tipo distribuido,
+así que `cliente` + `etapa_alcanzada` tampoco compila. Verificado por el orquestador: intentar
+escribir por la ruta de lectura da `TS2349: This expression is not callable`.
+
+Y como un `D1Database` sigue siendo asignable a la interfaz de solo lectura, el angostamiento
+costó **una línea por archivo** y cero envoltura en tiempo de ejecución.
+
+Lo que no sostiene, dicho por el escritor: alguien puede ensanchar la firma de un adaptador y
+recablear `index.ts`. Eso no queda en silencio — hay cinco `@ts-expect-error` que se vuelven
+"unused directive" y rompen el typecheck. **El compilador impide olvidarse; no impide revertir a
+propósito.**
+
+### El vocabulario de `accion` quedó en los dos lados, y el argumento es bueno
+
+`CHECK` en la migración **y** unión en TypeScript. No es duplicación por comodidad: el criterio
+del proyecto manda a código (detrás de cada verbo hay un sitio que lo emite y una frase que lo
+dibuja, así que agregar uno es un despliegue y no una fila), pero §5 manda a la base (una regla
+que solo vive en el código es la que el primer script de importación se salta). Y acá no hay
+vuelta atrás: las filas de bitácora no se editan, así que un `CREAR` que entre queda para
+siempre.
+
+Para que las dos listas no se separen, hay una prueba que lee `sqlite_master` y exige que
+coincidan **en los dos sentidos**.
+
+### Qué NO registra la bitácora, dicho de frente
+
+- **No hay relleno retroactivo.** Lo anterior a T-10 no está, y la pantalla lo dice en vez de
+  mostrar una lista vacía que se leería como "acá no pasó nada".
+- Los hechos de catálogo se registran pero **todavía no tienen pantalla**; las pruebas los
+  verifican leyendo la tabla, para que el día que se les ponga pantalla la historia ya esté.
+- **Un hecho, una entidad.** Un proceso que nace para un cliente es hecho del proceso; no se
+  duplica bajo el cliente.
+- Las lecturas no se registran.
+
+### La limpieza entre pruebas, ensanchada otra vez
+
+Lo que T-8 anunció creció como estaba previsto: con una entrada de bitácora viva **no se borran
+su autor ni su tenant**, y ninguna entrada se borra nunca. Las tres suites que limpiaban con
+`DELETE FROM usuario` ahora crean las personas una vez en `beforeAll` y en `beforeEach` borran
+solo las del tenant vecino. Ese fue el segundo rojo de T-10: **142 fallas**.
+
+Lo que sí se sigue pudiendo borrar es la fila que la entrada describe — `entidad_id` es `TEXT` y
+no una llave foránea, a propósito, porque es polimórfico. **Un área borrada deja su entrada en
+pie**, y esa es la mitad de para qué existe un registro de auditoría.
 
 ### T-9: las tres propiedades del pendiente, probadas por mutación
 
@@ -661,4 +718,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-10: bitácora. La última de la tajada.
+Cerrar la rebanada: revisión de lo pendiente, y T-12 con las tres migraciones agendadas.

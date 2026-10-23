@@ -52,6 +52,8 @@ import type {
   FallaDeValidacion,
   PendienteDeProceso,
 } from "../contract";
+import type { BaseDeDatos } from "../db/base";
+import { recorte, sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 import { ahoraIso } from "../db/momentos";
 // La misma función y no una copia: dos definiciones de «etapa vigente» es
@@ -174,7 +176,9 @@ const SELECCION =
   "   AND r.tenant_id = p.tenant_id" +
   " LEFT JOIN usuario c ON c.id = p.cerrado_por AND c.tenant_id = p.tenant_id";
 
-export function pendientesSobreD1(db: D1Database): ServicioDePendientes {
+export function pendientesSobreD1(base: BaseDeDatos): ServicioDePendientes {
+  const db = base.lectura;
+
   /**
    * Los pendientes del proceso.
    *
@@ -261,13 +265,22 @@ export function pendientesSobreD1(db: D1Database): ServicioDePendientes {
         };
       }
 
-      await db
-        .prepare(
+      // El hecho se registra contra el **proceso**, igual que el de una
+      // nota: un pendiente no tiene pantalla propia. Y el `detalle` es su
+      // texto recortado, porque un pendiente no tiene nombre y «abrió un
+      // pendiente» sin decir cuál no contesta nada. Recortado y no entero:
+      // es una pista, no una segunda copia del dato.
+      await base.mutar(
+        {
+          entidad: "proceso",
+          entidadId: procesoId,
+          accion: "pendiente_abierto",
+          detalle: recorte(datos.texto),
+        },
+        sentencia(
           "INSERT INTO pendiente (id, tenant_id, proceso_id," +
             " proceso_etapa_id, texto, autor_id, responsable_id, creado_en," +
             " vence_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(
           nuevoId(),
           tenantId,
           procesoId,
@@ -277,8 +290,8 @@ export function pendientesSobreD1(db: D1Database): ServicioDePendientes {
           datos.responsableId,
           ahoraIso(),
           datos.venceEn === null ? null : aInstante(datos.venceEn),
-        )
-        .run();
+        ),
+      );
 
       // Se relee entera: lo que el servidor dejó guardado manda sobre lo que
       // la pantalla creía, igual que el `PUT` del plan en T-7 y el alta de
@@ -292,11 +305,11 @@ export function pendientesSobreD1(db: D1Database): ServicioDePendientes {
       // distingue «no existe» de «no es tuyo», que es lo que se busca.
       const fila = await db
         .prepare(
-          "SELECT cerrado_en FROM pendiente" +
+          "SELECT cerrado_en, texto FROM pendiente" +
             " WHERE tenant_id = ? AND proceso_id = ? AND id = ?",
         )
         .bind(tenantId, procesoId, pendienteId)
-        .first<{ cerrado_en: string | null }>();
+        .first<{ cerrado_en: string | null; texto: string }>();
 
       if (fila === null) return { estado: "no_encontrado" };
       if (fila.cerrado_en !== null) return { estado: "ya_cerrado" };
@@ -308,14 +321,24 @@ export function pendientesSobreD1(db: D1Database): ServicioDePendientes {
       // Los dos campos se escriben juntos porque el `CHECK` del esquema los
       // exige juntos. Esa restricción es la razón de ser de la tabla:
       // cerrar sin dejar quién cerró es el agujero que tapa.
-      await db
-        .prepare(
+      await base.mutar(
+        {
+          entidad: "proceso",
+          entidadId: procesoId,
+          accion: "pendiente_cerrado",
+          detalle: recorte(fila.texto),
+        },
+        sentencia(
           "UPDATE pendiente SET cerrado_en = ?, cerrado_por = ?" +
             " WHERE tenant_id = ? AND proceso_id = ? AND id = ?" +
             " AND cerrado_en IS NULL",
-        )
-        .bind(ahoraIso(), quienCierra, tenantId, procesoId, pendienteId)
-        .run();
+          ahoraIso(),
+          quienCierra,
+          tenantId,
+          procesoId,
+          pendienteId,
+        ),
+      );
 
       return { estado: "guardado", pendientes: await listar(tenantId, procesoId) };
     },

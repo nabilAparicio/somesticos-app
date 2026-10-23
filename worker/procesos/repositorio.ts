@@ -91,6 +91,8 @@ import type {
   OrigenDeProceso,
   Proceso,
 } from "../contract";
+import type { BaseDeDatos } from "../db/base";
+import { sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 import { ahoraIso } from "../db/momentos";
 
@@ -273,7 +275,9 @@ function guardarLoAlcanzado(
   return fallas;
 }
 
-export function procesosSobreD1(db: D1Database): ServicioDeProcesos {
+export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
+  const db = base.lectura;
+
   async function leerEtapas(
     tenantId: string,
     procesoId: string,
@@ -537,34 +541,41 @@ export function procesosSobreD1(db: D1Database): ServicioDeProcesos {
       const id = nuevoId();
 
       // Todo en un `batch`: un proceso guardado sin su plan es peor que
-      // ninguno, porque se ve bien y está vacío.
-      await db.batch([
-        db
-          .prepare(
-            "INSERT INTO proceso (id, tenant_id, cliente_id," +
-              " tipo_proceso_id, origen, titulo, estado, responsable_id," +
-              " abierto_en) VALUES (?, ?, ?, ?, 'directo', ?, 'abierto', ?, ?)",
-          )
-          .bind(
-            id,
-            tenantId,
-            datos.clienteId,
-            datos.tipoProcesoId,
-            datos.titulo,
-            datos.responsableId,
-            ahoraIso(),
-          ),
+      // ninguno, porque se ve bien y está vacío. La entrada de bitácora
+      // viaja en el mismo `batch`, por lo mismo.
+      await base.mutar(
+        {
+          entidad: "proceso",
+          entidadId: id,
+          accion: "creado",
+          detalle: datos.titulo,
+        },
+        sentencia(
+          "INSERT INTO proceso (id, tenant_id, cliente_id," +
+            " tipo_proceso_id, origen, titulo, estado, responsable_id," +
+            " abierto_en) VALUES (?, ?, ?, ?, 'directo', ?, 'abierto', ?, ?)",
+          id,
+          tenantId,
+          datos.clienteId,
+          datos.tipoProcesoId,
+          datos.titulo,
+          datos.responsableId,
+          ahoraIso(),
+        ),
         // `alcanzada_en` queda nulo: un proceso recién abierto no tiene nada
         // cumplido, ni siquiera su primer paso.
         ...plantilla.map((etapa, orden) =>
-          db
-            .prepare(
-              "INSERT INTO proceso_etapa (id, tenant_id, proceso_id," +
-                " nombre, orden) VALUES (?, ?, ?, ?, ?)",
-            )
-            .bind(nuevoId(), tenantId, id, etapa.nombre, orden),
+          sentencia(
+            "INSERT INTO proceso_etapa (id, tenant_id, proceso_id," +
+              " nombre, orden) VALUES (?, ?, ?, ?, ?)",
+            nuevoId(),
+            tenantId,
+            id,
+            etapa.nombre,
+            orden,
+          ),
         ),
-      ]);
+      );
 
       return {
         estado: "guardado",
@@ -637,31 +648,44 @@ export function procesosSobreD1(db: D1Database): ServicioDeProcesos {
       // avance de una sola dirección: no hay forma de desandar por esta vía.
       const sentencias = [
         ...quitadas.map((etapa) =>
-            db
-              .prepare(
-                "DELETE FROM proceso_etapa WHERE tenant_id = ?" +
-                  " AND proceso_id = ? AND id = ?",
-              )
-              .bind(tenantId, procesoId, etapa.id),
+          sentencia(
+            "DELETE FROM proceso_etapa WHERE tenant_id = ?" +
+              " AND proceso_id = ? AND id = ?",
+            tenantId,
+            procesoId,
+            etapa.id,
           ),
+        ),
         ...etapas.map((etapa, orden) =>
           etapa.id === null
-            ? db
-                .prepare(
-                  "INSERT INTO proceso_etapa (id, tenant_id, proceso_id," +
-                    " nombre, orden) VALUES (?, ?, ?, ?, ?)",
-                )
-                .bind(nuevoId(), tenantId, procesoId, etapa.nombre, orden)
-            : db
-                .prepare(
-                  "UPDATE proceso_etapa SET nombre = ?, orden = ?" +
-                    " WHERE tenant_id = ? AND proceso_id = ? AND id = ?",
-                )
-                .bind(etapa.nombre, orden, tenantId, procesoId, etapa.id),
+            ? sentencia(
+                "INSERT INTO proceso_etapa (id, tenant_id, proceso_id," +
+                  " nombre, orden) VALUES (?, ?, ?, ?, ?)",
+                nuevoId(),
+                tenantId,
+                procesoId,
+                etapa.nombre,
+                orden,
+              )
+            : sentencia(
+                "UPDATE proceso_etapa SET nombre = ?, orden = ?" +
+                  " WHERE tenant_id = ? AND proceso_id = ? AND id = ?",
+                etapa.nombre,
+                orden,
+                tenantId,
+                procesoId,
+                etapa.id,
+              ),
         ),
       ];
 
-      if (sentencias.length > 0) await db.batch(sentencias);
+      // Se registra el guardado del plan, no cada paso que se movió: es un
+      // evento, no un diff. `detalle` va vacío porque un plan no tiene
+      // nombre — el nombre es el del proceso, que ya es la entidad.
+      await base.mutar(
+        { entidad: "proceso", entidadId: procesoId, accion: "plan_editado" },
+        ...sentencias,
+      );
 
       return {
         estado: "guardado",
@@ -679,25 +703,38 @@ export function procesosSobreD1(db: D1Database): ServicioDeProcesos {
       // dejaría de poder mostrar «lo que falta» como una lista.
       const siguiente = await db
         .prepare(
-          "SELECT id FROM proceso_etapa" +
+          "SELECT id, nombre FROM proceso_etapa" +
             " WHERE tenant_id = ? AND proceso_id = ? AND alcanzada_en IS NULL" +
             " ORDER BY orden, nombre COLLATE NOCASE LIMIT 1",
         )
         .bind(tenantId, procesoId)
-        .first<{ id: string }>();
+        .first<{ id: string; nombre: string }>();
 
       if (siguiente === null) return { estado: "sin_pendientes" };
 
       // `AND alcanzada_en IS NULL` también en el `UPDATE`: dos avances
       // simultáneos no pueden reescribir el momento de una etapa ya marcada.
-      await db
-        .prepare(
+      //
+      // El `detalle` es el nombre de la etapa, y es el que hace que la
+      // bitácora diga la frase que pidió el usuario: «el 3 de marzo Itzel
+      // movió este proceso a Demanda presentada».
+      await base.mutar(
+        {
+          entidad: "proceso",
+          entidadId: procesoId,
+          accion: "etapa_alcanzada",
+          detalle: siguiente.nombre,
+        },
+        sentencia(
           "UPDATE proceso_etapa SET alcanzada_en = ?" +
             " WHERE tenant_id = ? AND proceso_id = ? AND id = ?" +
             " AND alcanzada_en IS NULL",
-        )
-        .bind(ahoraIso(), tenantId, procesoId, siguiente.id)
-        .run();
+          ahoraIso(),
+          tenantId,
+          procesoId,
+          siguiente.id,
+        ),
+      );
 
       return {
         estado: "avanzado",

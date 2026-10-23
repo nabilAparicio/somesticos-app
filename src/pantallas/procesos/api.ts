@@ -17,6 +17,7 @@ import {
 } from "../../api/peticiones";
 import type {
   DatosDeEtapa,
+  EntradaDeBitacora,
   DatosDeGuardadoDePlantilla,
   DatosDeNota,
   DatosDePendiente,
@@ -28,6 +29,7 @@ import type {
   Proceso,
   RespuestaDePendientes,
   RespuestaDeProceso,
+  RespuestaDeBitacora,
   RespuestaDeProcesos,
 } from "../../../worker/contract";
 
@@ -255,5 +257,30 @@ async function listaDePendientes(
 
   return resultado.estado === "ok"
     ? { estado: "ok", valor: resultado.valor.pendientes }
+    : resultado;
+}
+
+/**
+ * La bitácora del proceso (T-10).
+ *
+ * Es una lectura aparte del detalle, a propósito: son dos preguntas
+ * distintas —«¿en qué va?» y «¿quién hizo qué?»— y un fallo de la segunda
+ * no puede dejar la pantalla del proceso en blanco. Misma decisión que T-7
+ * tomó para el listado de procesos dentro de la ficha del cliente.
+ *
+ * No hay escritura. No existe: una entrada de bitácora la pone el sistema
+ * al hacer otra cosa, nunca una pantalla.
+ */
+export async function cargarBitacoraDeProceso(
+  id: string,
+  signal: AbortSignal,
+): Promise<Resultado<EntradaDeBitacora[]>> {
+  const resultado = await pedir<RespuestaDeBitacora>(
+    `${PROCESOS}/${encodeURIComponent(id)}/bitacora`,
+    { signal },
+  );
+
+  return resultado.estado === "ok"
+    ? { estado: "ok", valor: resultado.valor.entradas }
     : resultado;
 }

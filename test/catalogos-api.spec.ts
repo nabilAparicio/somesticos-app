@@ -29,7 +29,7 @@
  * *válido* y *seleccionable* que estableció T-5.
  */
 import { env } from "cloudflare:workers";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { ServicioDeCatalogos } from "../worker/catalogos/repositorio";
 import { TENANT_UNICO_ID, nuevoId } from "../worker/db/ids";
@@ -182,6 +182,22 @@ async function guardarEtapas(
   );
 }
 
+/**
+ * La persona del bufete se crea **una sola vez**: desde T-10, con una
+ * entrada de bitácora viva su fila no se puede borrar, y el índice
+ * `UNIQUE (tenant_id, email)` de T-2 impediría volver a insertarla.
+ */
+beforeAll(async () => {
+  autorId = nuevoId();
+
+  await env.DB.prepare(
+    "INSERT INTO usuario (id, tenant_id, nombre, email, activo)" +
+      " VALUES (?, ?, ?, ?, 1)",
+  )
+    .bind(autorId, TENANT_UNICO_ID, "Itzel", EMAIL_AUTOR)
+    .run();
+});
+
 beforeEach(async () => {
   // El almacenamiento está aislado por archivo, no por prueba.
   await env.DB.prepare("DELETE FROM proceso_etapa").run();
@@ -191,12 +207,21 @@ beforeEach(async () => {
   await env.DB.prepare("DELETE FROM area").run();
   await env.DB.prepare("DELETE FROM cliente").run();
   await env.DB.prepare("DELETE FROM tipo_cliente").run();
-  await env.DB.prepare("DELETE FROM usuario").run();
+  // **Las personas del bufete NO se borran.** Desde T-10 toda escritura deja
+  // una entrada de `bitacora`, `bitacora.usuario_id` es una llave foránea en
+  // `NO ACTION` (I-6) y una entrada no se borra nunca por sus disparadores,
+  // así que con una entrada viva su autor tampoco se borra. Es la misma
+  // consecuencia que T-8 descubrió con `nota`, ahora sobre todo lo demás.
+  //
+  // Se borran solo las del tenant vecino, que no escriben nada por la API.
+  // Las dos del bufete se crean una vez en el `beforeAll`.
+  await env.DB.prepare("DELETE FROM usuario WHERE tenant_id <> ?")
+    .bind(TENANT_UNICO_ID)
+    .run();
   await env.DB.prepare("DELETE FROM tenant WHERE id <> ?")
     .bind(TENANT_UNICO_ID)
     .run();
 
-  autorId = nuevoId();
   areaMigracionId = nuevoId();
   areaAjenaId = nuevoId();
   tipoAjenoId = nuevoId();
@@ -208,10 +233,6 @@ beforeEach(async () => {
       OTRO_TENANT_ID,
       "Otro bufete",
     ),
-    env.DB.prepare(
-      "INSERT INTO usuario (id, tenant_id, nombre, email, activo)" +
-        " VALUES (?, ?, ?, ?, 1)",
-    ).bind(autorId, TENANT_UNICO_ID, "Itzel", EMAIL_AUTOR),
     env.DB.prepare(
       "INSERT INTO usuario (id, tenant_id, nombre, email, activo)" +
         " VALUES (?, ?, ?, ?, 1)",

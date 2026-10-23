@@ -27,8 +27,17 @@
  *    lo elegible sin invalidar lo ya guardado — la misma distinción entre
  *    *válido* y *seleccionable* que estableció T-5.
  *
- * Lo que este archivo NO hace, a propósito: escribir en `bitacora`. Ese
- * registro es T-10, y se va a cablear en un solo lugar.
+ * ## El registro de bitácora (T-10)
+ *
+ * Viaja con la escritura, no al lado. Este archivo no recibe un
+ * `D1Database` sino una `BaseDeDatos`, que solo sabe leer y `mutar`, y
+ * `mutar` **exige el evento como primer parámetro**: una mutación nueva sin
+ * su entrada no compila (ver `worker/db/base.ts`).
+ *
+ * El nombre de la tabla es también el de la entidad registrada —`area`,
+ * `tipo_cliente`, `tipo_proceso`—, así que el catálogo plano compartido
+ * registra con el mismo valor que ya usa para el SQL, sin un segundo mapa
+ * que mantener sincronizado.
  */
 
 import type {
@@ -42,6 +51,9 @@ import type {
   TipoCliente,
   TipoProceso,
 } from "../contract";
+import { accionDeEdicion } from "../bitacora/vocabulario";
+import type { BaseDeDatos } from "../db/base";
+import { sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 
 export type ResultadoDeEscritura<T> =
@@ -157,7 +169,9 @@ function aTipoProceso(fila: FilaDeTipoProceso): TipoProceso {
   };
 }
 
-export function catalogosSobreD1(db: D1Database): ServicioDeCatalogos {
+export function catalogosSobreD1(base: BaseDeDatos): ServicioDeCatalogos {
+  const db = base.lectura;
+
   // -------------------------------------------------------------------------
   // Los dos catálogos planos: `area` y `tipo_cliente`
   // -------------------------------------------------------------------------
@@ -202,13 +216,22 @@ export function catalogosSobreD1(db: D1Database): ServicioDeCatalogos {
     ): Promise<ResultadoDeEscritura<Area>> {
       const id = nuevoId();
 
-      await db
-        .prepare(
+      await base.mutar(
+        {
+          entidad: tabla,
+          entidadId: id,
+          accion: "creado",
+          detalle: datos.nombre,
+        },
+        sentencia(
           `INSERT INTO ${tabla} (id, tenant_id, nombre, activo)` +
             " VALUES (?, ?, ?, ?)",
-        )
-        .bind(id, tenantId, datos.nombre, datos.activo ? 1 : 0)
-        .run();
+          id,
+          tenantId,
+          datos.nombre,
+          datos.activo ? 1 : 0,
+        ),
+      );
 
       const fila = await obtener(tenantId, id);
       if (fila === null) {
@@ -227,17 +250,27 @@ export function catalogosSobreD1(db: D1Database): ServicioDeCatalogos {
     ): Promise<ResultadoDeEscritura<Area>> {
       // La existencia se comprueba **dentro del tenant**. Una fila de otro
       // tenant es, desde acá, una fila que no existe.
-      if ((await obtener(tenantId, id)) === null) {
-        return { estado: "no_encontrado" };
-      }
+      const previa = await obtener(tenantId, id);
+      if (previa === null) return { estado: "no_encontrado" };
 
-      await db
-        .prepare(
+      await base.mutar(
+        {
+          entidad: tabla,
+          entidadId: id,
+          // Dar de baja llega por este mismo `PUT`, y es un hecho distinto
+          // de editar el nombre: ver `accionDeEdicion`.
+          accion: accionDeEdicion(previa.activo, datos.activo),
+          detalle: datos.nombre,
+        },
+        sentencia(
           `UPDATE ${tabla} SET nombre = ?, activo = ?` +
             " WHERE tenant_id = ? AND id = ?",
-        )
-        .bind(datos.nombre, datos.activo ? 1 : 0, tenantId, id)
-        .run();
+          datos.nombre,
+          datos.activo ? 1 : 0,
+          tenantId,
+          id,
+        ),
+      );
 
       const fila = await obtener(tenantId, id);
       if (fila === null) return { estado: "no_encontrado" };
@@ -250,17 +283,28 @@ export function catalogosSobreD1(db: D1Database): ServicioDeCatalogos {
       id: string,
       dependenciasDe: (tenantId: string, id: string) => Promise<Dependencia[]>,
     ): Promise<ResultadoDeBorrado> {
-      if ((await obtener(tenantId, id)) === null) {
-        return { estado: "no_encontrado" };
-      }
+      const fila = await obtener(tenantId, id);
+      if (fila === null) return { estado: "no_encontrado" };
 
       const dependencias = await dependenciasDe(tenantId, id);
       if (dependencias.length > 0) return { estado: "bloqueado", dependencias };
 
-      await db
-        .prepare(`DELETE FROM ${tabla} WHERE tenant_id = ? AND id = ?`)
-        .bind(tenantId, id)
-        .run();
+      // El nombre se guarda en el `detalle` **antes** de borrar la fila: es
+      // lo único que va a quedar de ella, y «borró algo» sin decir qué es
+      // una entrada que no contesta nada.
+      await base.mutar(
+        {
+          entidad: tabla,
+          entidadId: id,
+          accion: "borrado",
+          detalle: fila.nombre,
+        },
+        sentencia(
+          `DELETE FROM ${tabla} WHERE tenant_id = ? AND id = ?`,
+          tenantId,
+          id,
+        ),
+      );
 
       return { estado: "borrado" };
     }
@@ -413,20 +457,24 @@ export function catalogosSobreD1(db: D1Database): ServicioDeCatalogos {
 
       const id = nuevoId();
 
-      await db
-        .prepare(
+      await base.mutar(
+        {
+          entidad: "tipo_proceso",
+          entidadId: id,
+          accion: "creado",
+          detalle: datos.nombre,
+        },
+        sentencia(
           "INSERT INTO tipo_proceso (id, tenant_id, area_id, nombre," +
             " descripcion, activo) VALUES (?, ?, ?, ?, ?, ?)",
-        )
-        .bind(
           id,
           tenantId,
           datos.areaId,
           datos.nombre,
           datos.descripcion,
           datos.activo ? 1 : 0,
-        )
-        .run();
+        ),
+      );
 
       const fila = await obtenerTipoProceso(tenantId, id);
       if (fila === null) {
@@ -437,27 +485,30 @@ export function catalogosSobreD1(db: D1Database): ServicioDeCatalogos {
     },
 
     async actualizarTipoProceso(tenantId, id, datos) {
-      if ((await obtenerTipoProceso(tenantId, id)) === null) {
-        return { estado: "no_encontrado" };
-      }
+      const previo = await obtenerTipoProceso(tenantId, id);
+      if (previo === null) return { estado: "no_encontrado" };
 
       const fallas = await validarArea(tenantId, datos.areaId);
       if (fallas.length > 0) return { estado: "invalido", fallas };
 
-      await db
-        .prepare(
+      await base.mutar(
+        {
+          entidad: "tipo_proceso",
+          entidadId: id,
+          accion: accionDeEdicion(previo.activo, datos.activo),
+          detalle: datos.nombre,
+        },
+        sentencia(
           "UPDATE tipo_proceso SET area_id = ?, nombre = ?," +
             " descripcion = ?, activo = ? WHERE tenant_id = ? AND id = ?",
-        )
-        .bind(
           datos.areaId,
           datos.nombre,
           datos.descripcion,
           datos.activo ? 1 : 0,
           tenantId,
           id,
-        )
-        .run();
+        ),
+      );
 
       const fila = await obtenerTipoProceso(tenantId, id);
       if (fila === null) return { estado: "no_encontrado" };
@@ -466,9 +517,8 @@ export function catalogosSobreD1(db: D1Database): ServicioDeCatalogos {
     },
 
     async borrarTipoProceso(tenantId, id) {
-      if ((await obtenerTipoProceso(tenantId, id)) === null) {
-        return { estado: "no_encontrado" };
-      }
+      const tipo = await obtenerTipoProceso(tenantId, id);
+      if (tipo === null) return { estado: "no_encontrado" };
 
       const bloqueantes = await dependencias([
         [
@@ -481,10 +531,19 @@ export function catalogosSobreD1(db: D1Database): ServicioDeCatalogos {
         return { estado: "bloqueado", dependencias: bloqueantes };
       }
 
-      await db
-        .prepare("DELETE FROM tipo_proceso WHERE tenant_id = ? AND id = ?")
-        .bind(tenantId, id)
-        .run();
+      await base.mutar(
+        {
+          entidad: "tipo_proceso",
+          entidadId: id,
+          accion: "borrado",
+          detalle: tipo.nombre,
+        },
+        sentencia(
+          "DELETE FROM tipo_proceso WHERE tenant_id = ? AND id = ?",
+          tenantId,
+          id,
+        ),
+      );
 
       return { estado: "borrado" };
     },
@@ -535,36 +594,48 @@ export function catalogosSobreD1(db: D1Database): ServicioDeCatalogos {
         ...[...existentes]
           .filter((id) => !conservados.has(id))
           .map((id) =>
-            db
-              .prepare(
-                "DELETE FROM etapa_plantilla WHERE tenant_id = ? AND id = ?",
-              )
-              .bind(tenantId, id),
+            sentencia(
+              "DELETE FROM etapa_plantilla WHERE tenant_id = ? AND id = ?",
+              tenantId,
+              id,
+            ),
           ),
         ...etapas.map((etapa, orden) =>
           etapa.id === null
-            ? db
-                .prepare(
-                  "INSERT INTO etapa_plantilla (id, tenant_id," +
-                    " tipo_proceso_id, nombre, orden) VALUES (?, ?, ?, ?, ?)",
-                )
-                .bind(nuevoId(), tenantId, tipoProcesoId, etapa.nombre, orden)
-            : db
-                .prepare(
-                  "UPDATE etapa_plantilla SET nombre = ?, orden = ?" +
-                    " WHERE tenant_id = ? AND tipo_proceso_id = ? AND id = ?",
-                )
-                .bind(
-                  etapa.nombre,
-                  orden,
-                  tenantId,
-                  tipoProcesoId,
-                  etapa.id,
-                ),
+            ? sentencia(
+                "INSERT INTO etapa_plantilla (id, tenant_id," +
+                  " tipo_proceso_id, nombre, orden) VALUES (?, ?, ?, ?, ?)",
+                nuevoId(),
+                tenantId,
+                tipoProcesoId,
+                etapa.nombre,
+                orden,
+              )
+            : sentencia(
+                "UPDATE etapa_plantilla SET nombre = ?, orden = ?" +
+                  " WHERE tenant_id = ? AND tipo_proceso_id = ? AND id = ?",
+                etapa.nombre,
+                orden,
+                tenantId,
+                tipoProcesoId,
+                etapa.id,
+              ),
         ),
       ];
 
-      if (sentencias.length > 0) await db.batch(sentencias);
+      // Se registra siempre, también cuando no hubo ninguna sentencia:
+      // «guardé la plantilla y quedó igual» es un hecho que pasó, y el
+      // evento es del guardado, no de cada fila. `detalle` va vacío porque
+      // una plantilla no tiene nombre propio — el nombre es el del tipo, que
+      // ya es la entidad de la entrada.
+      await base.mutar(
+        {
+          entidad: "tipo_proceso",
+          entidadId: tipoProcesoId,
+          accion: "plantilla_editada",
+        },
+        ...sentencias,
+      );
 
       return {
         estado: "guardado",

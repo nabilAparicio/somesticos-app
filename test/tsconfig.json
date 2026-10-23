@@ -40,6 +40,7 @@
     "../src/pantallas/clientes/formulario.ts",
     "../src/pantallas/clientes/presentacion.ts",
     "../src/mensajes.ts",
+    "../src/bitacora.ts",
     "../src/pantallas/catalogos/formulario.ts",
     "../src/pantallas/catalogos/plantilla.ts",
     "../src/pantallas/catalogos/presentacion.ts",

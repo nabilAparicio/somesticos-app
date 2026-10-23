@@ -11,6 +11,11 @@
 import { autenticar, type DependenciasDeAcceso } from "./acceso/puerta";
 import type { Rechazo } from "./acceso/rechazo";
 import {
+  bitacoraSobreD1,
+  type ServicioDeBitacora,
+} from "./bitacora/repositorio";
+import { rutasDeBitacora } from "./bitacora/rutas";
+import {
   catalogosSobreD1,
   type ServicioDeCatalogos,
 } from "./catalogos/repositorio";
@@ -25,6 +30,7 @@ import type {
   HealthReport,
   IdentidadActual,
 } from "./contract";
+import { baseSobreD1 } from "./db/base";
 import { TENANT_UNICO_ID } from "./db/ids";
 import { notasSobreD1, type ServicioDeNotas } from "./notas/repositorio";
 import { rutasDeNotas } from "./notas/rutas";
@@ -66,6 +72,9 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
 
   /** Las personas del bufete (T-9). Idem. */
   usuarios?: ServicioDeUsuarios;
+
+  /** La bitácora (T-10). Solo se lee; escribirla es de `BaseDeDatos`. */
+  bitacora?: ServicioDeBitacora;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -143,21 +152,35 @@ export async function manejar(
     });
   }
 
-  // El servicio se construye recién acá, después de la puerta: antes no hay a
-  // nombre de quién consultar nada.
+  // **El único punto del sistema donde se envuelve `env.DB`.**
+  //
+  // De acá para adentro nadie tiene un `D1Database`: los adaptadores reciben
+  // `BaseDeDatos`, que sabe leer y sabe `mutar(evento, …)`, y nada más. Esa
+  // es la forma en que T-10 hace que olvidarse de registrar no sea un
+  // descuido posible sino un error de compilación (ver `worker/db/base.ts`).
+  //
+  // Se construye recién acá, **después de la puerta**, por dos razones que
+  // son la misma: antes no hay a nombre de quién consultar nada, y antes no
+  // hay a nombre de quién firmar nada. El autor y el tenant quedan atados a
+  // la base de esta petición, así que ningún adaptador puede firmar por otro
+  // (I-6) ni escribir en otro bufete (I-8).
+  const base = baseSobreD1(env.DB, TENANT_UNICO_ID, acceso.valor.usuarioId);
+
+  const servicioDeClientes = dependencias.clientes ?? servicioSobreD1(base);
+
   const clientes = await rutasDeClientes(
     request,
     url,
     acceso.valor,
     TENANT_UNICO_ID,
-    dependencias.clientes ?? servicioSobreD1(env.DB),
+    servicioDeClientes,
   );
   if (clientes !== null) return clientes;
 
   // Un solo servicio de catálogos para las dos rutas: desde T-11, guardar el
   // plan de un proceso como plantilla escribe por el mismo puerto que la
   // pantalla de catálogos, y no por una segunda copia.
-  const servicioDeCatalogos = dependencias.catalogos ?? catalogosSobreD1(env.DB);
+  const servicioDeCatalogos = dependencias.catalogos ?? catalogosSobreD1(base);
 
   const catalogos = await rutasDeCatalogos(
     request,
@@ -170,7 +193,21 @@ export async function manejar(
   // Un solo servicio de procesos para las dos rutas: las notas cuelgan del
   // proceso y comprueban su existencia por el mismo puerto, no por una
   // segunda copia de la consulta.
-  const servicioDeProcesos = dependencias.procesos ?? procesosSobreD1(env.DB);
+  const servicioDeProcesos = dependencias.procesos ?? procesosSobreD1(base);
+
+  // La bitácora va **antes** que las notas, los pendientes y los procesos:
+  // `/api/{procesos|clientes}/{id}/bitacora` es subruta de las dos
+  // colecciones, y las dos devuelven `null` para ella, así que el orden no
+  // cambia qué contesta cada una — pero deja el reparto escrito.
+  const bitacora = await rutasDeBitacora(
+    request,
+    url,
+    TENANT_UNICO_ID,
+    servicioDeProcesos,
+    servicioDeClientes,
+    dependencias.bitacora ?? bitacoraSobreD1(base),
+  );
+  if (bitacora !== null) return bitacora;
 
   // Las notas van **antes** que los procesos porque son una subruta suya:
   // `rutasDeProcesos` devuelve `null` para `/notas`, así que el orden no
@@ -181,7 +218,7 @@ export async function manejar(
     acceso.valor,
     TENANT_UNICO_ID,
     servicioDeProcesos,
-    dependencias.notas ?? notasSobreD1(env.DB),
+    dependencias.notas ?? notasSobreD1(base),
   );
   if (notas !== null) return notas;
 
@@ -193,7 +230,7 @@ export async function manejar(
     acceso.valor,
     TENANT_UNICO_ID,
     servicioDeProcesos,
-    dependencias.pendientes ?? pendientesSobreD1(env.DB),
+    dependencias.pendientes ?? pendientesSobreD1(base),
   );
   if (pendientes !== null) return pendientes;
 
@@ -203,7 +240,7 @@ export async function manejar(
     request,
     url,
     TENANT_UNICO_ID,
-    dependencias.usuarios ?? usuariosSobreD1(env.DB),
+    dependencias.usuarios ?? usuariosSobreD1(base),
   );
   if (usuarios !== null) return usuarios;
 
@@ -213,6 +250,7 @@ export async function manejar(
     TENANT_UNICO_ID,
     servicioDeProcesos,
     servicioDeCatalogos,
+    base,
   );
   if (procesos !== null) return procesos;
 

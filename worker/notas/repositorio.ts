@@ -41,9 +41,12 @@
  *    identificador público de una nota. La base lo sostiene aparte con los
  *    dos disparadores de T-2; esto no es una segunda copia de esa regla sino
  *    la ausencia del camino.
- *  - **No escribe en `bitacora`.** Ese registro es T-10, y se va a cablear
- *    en un solo lugar. Una nota es intención; la bitácora es hecho del
- *    sistema.
+ *  - **No prepara su propia escritura.** Desde T-10 este archivo no recibe
+ *    un `D1Database` sino una `BaseDeDatos`, que solo sabe leer y `mutar`;
+ *    `mutar` exige el evento de bitácora como primer parámetro. Una nota
+ *    es intención y la escribe una persona; la entrada de bitácora que la
+ *    acompaña es el hecho del sistema, y las dos viajan en la misma
+ *    transacción.
  */
 
 import type {
@@ -53,6 +56,8 @@ import type {
   LineaDeTiempo,
   NotaDeProceso,
 } from "../contract";
+import type { BaseDeDatos } from "../db/base";
+import { sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 import { ahoraIso } from "../db/momentos";
 
@@ -127,7 +132,9 @@ export function etapaVigente(
   );
 }
 
-export function notasSobreD1(db: D1Database): ServicioDeNotas {
+export function notasSobreD1(base: BaseDeDatos): ServicioDeNotas {
+  const db = base.lectura;
+
   /** El plan del proceso, en su orden. Con el filtro de tenencia puesto. */
   async function leerPlan(
     tenantId: string,
@@ -244,12 +251,21 @@ export function notasSobreD1(db: D1Database): ServicioDeNotas {
         };
       }
 
-      await db
-        .prepare(
+      // El hecho se registra contra el **proceso** y no contra la nota: una
+      // nota no tiene pantalla propia, se lee dentro de la línea de tiempo
+      // de su proceso, y «¿qué pasó con este proceso?» tiene que contestarse
+      // con una sola consulta. El `detalle` es la etapa donde quedó
+      // anclada, que es el dato que la nota agrega al plan.
+      await base.mutar(
+        {
+          entidad: "proceso",
+          entidadId: procesoId,
+          accion: "nota_agregada",
+          detalle: anclaje.nombre,
+        },
+        sentencia(
           "INSERT INTO nota (id, tenant_id, proceso_id, proceso_etapa_id," +
             " texto, autor_id, creada_en) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(
           nuevoId(),
           tenantId,
           procesoId,
@@ -257,8 +273,8 @@ export function notasSobreD1(db: D1Database): ServicioDeNotas {
           datos.texto,
           autorId,
           ahoraIso(),
-        )
-        .run();
+        ),
+      );
 
       // Se relee entera: lo que el servidor dejó guardado manda sobre lo que
       // la pantalla creía, igual que el `PUT` del plan en T-7.

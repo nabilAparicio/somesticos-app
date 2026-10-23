@@ -59,10 +59,12 @@ import { mensajeDeFalla } from "../../mensajes";
 import { enlaceDe } from "../../ruteo";
 import { cargarUsuarios } from "../../api/usuarios";
 import { cargarAreas } from "../catalogos/api";
+import { Bitacora, type EstadoDeBitacora } from "../Bitacora";
 import {
   anotar,
   anotarPendiente,
   avanzarEtapa,
+  cargarBitacoraDeProceso,
   cargarLineaDeTiempo,
   cargarPendientes,
   cargarProceso,
@@ -285,6 +287,25 @@ export function DetalleDeProceso({ id }: Props) {
    */
   const [hoy] = useState(() => hoyEnPanama(new Date()));
 
+  /* -------------------------------------------------------------------
+     T-10 · La bitácora.
+
+     Va en su propia petición, como la línea de tiempo y los pendientes, y
+     por lo mismo: un fallo acá no puede dejar la pantalla del proceso en
+     blanco. Y se vuelve a pedir cada vez que algo se escribe, porque lo
+     que la pantalla acaba de hacer es exactamente lo que la bitácora tiene
+     que mostrar. El sello es el disparador: lo mueve `registrado()`, que
+     se llama en el único lugar donde cada escritura termina bien.
+     ------------------------------------------------------------------- */
+  const [bitacora, setBitacora] = useState<EstadoDeBitacora>({
+    fase: "cargando",
+  });
+  const [sello, setSello] = useState(0);
+
+  function registrado() {
+    setSello((anterior) => anterior + 1);
+  }
+
   useEffect(() => {
     const control = new AbortController();
 
@@ -376,10 +397,32 @@ export function DetalleDeProceso({ id }: Props) {
     };
   }, [guardado.destino]);
 
+  useEffect(() => {
+    const control = new AbortController();
+
+    void cargarBitacoraDeProceso(id, control.signal).then((resultado) => {
+      if (control.signal.aborted) return;
+
+      setBitacora(
+        resultado.estado === "ok"
+          ? { fase: "listo", entradas: resultado.valor }
+          : {
+              fase: "problema",
+              mensaje: textoDeProblema(resultado, "ese proceso"),
+            },
+      );
+    });
+
+    return () => {
+      control.abort();
+    };
+  }, [id, sello]);
+
   /** Lo que el servidor dejó guardado manda sobre lo que la pantalla creía. */
   function asentar(detalle: Detalle) {
     setEstado({ fase: "listo", detalle });
     setPlan(planDe(detalle.etapas));
+    registrado();
   }
 
   async function guardar() {
@@ -466,6 +509,7 @@ export function DetalleDeProceso({ id }: Props) {
         ` con ${String(pasosGuardados)} pasos. Este proceso y los demás ya` +
         " abiertos siguen con el plan que tenían.",
     });
+    registrado();
   }
 
   /**
@@ -498,6 +542,7 @@ export function DetalleDeProceso({ id }: Props) {
 
     setTramos(resultado.valor.tramos);
     setNota(BORRADOR_DE_NOTA_VACIO);
+    registrado();
   }
 
   /**
@@ -529,6 +574,7 @@ export function DetalleDeProceso({ id }: Props) {
 
     setPendientes(resultado.valor);
     setPendiente(BORRADOR_DE_PENDIENTE_VACIO);
+    registrado();
   }
 
   /**
@@ -553,6 +599,7 @@ export function DetalleDeProceso({ id }: Props) {
     }
 
     setPendientes(resultado.valor);
+    registrado();
   }
 
   if (estado.fase === "cargando") return <p>Consultando…</p>;
@@ -1254,6 +1301,19 @@ export function DetalleDeProceso({ id }: Props) {
           )}
         </Pila>
       </section>
+
+      {/* ---------------------------------------------------------------
+          T-10 · La bitácora.
+
+          Debajo de la línea de tiempo y encima del formulario de anotar:
+          las dos se leen, y lo que se escribe va al final. Son dos
+          registros distintos y la pantalla los separa a propósito — la
+          línea de tiempo son hechos que alguien quiso dejar dichos, la
+          bitácora son hechos del sistema. Juntarlos haría que «Itzel
+          avanzó a Entrevista» y «el cliente quiere pago diferido» se
+          leyeran como lo mismo.
+          --------------------------------------------------------------- */}
+      <Bitacora estado={bitacora} id="bitacora-del-proceso" />
 
       {/* ---------------------------------------------------------------
           El formulario de la nota. Separado de la línea y debajo de ella,

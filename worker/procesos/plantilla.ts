@@ -60,10 +60,20 @@
  * Reasignar un proceso a otro tipo puede llegar a existir, pero como una
  * acción propia y visible, no como el efecto secundario de otra.
  *
- * ## Lo que este archivo NO hace, a propósito
+ * ## El registro de bitácora (T-10)
  *
- * Escribir en `bitacora`: ese registro es T-10 y se va a cablear en un solo
- * lugar.
+ * Esta operación deja **tres** entradas, y no es duplicación: son tres
+ * hechos sobre dos entidades distintas. Si el destino es un tipo nuevo, el
+ * tipo *se creó* (`tipo_proceso` / `creado`); en los dos destinos la
+ * plantilla *se guardó* (`tipo_proceso` / `plantilla_editada`); y en los dos
+ * el proceso *guardó su plan como plantilla* (`proceso` /
+ * `plantilla_guardada`). Las dos primeras las pone `ServicioDeCatalogos` por
+ * su cuenta, porque son suyas. La tercera la pone esta función, y es la que
+ * hace que la bitácora del proceso conteste qué pasó con él.
+ *
+ * Es el único `mutar` sin sentencias del sistema, y es a propósito: acá no
+ * hay SQL porque la escritura es de otro módulo, pero el hecho sigue siendo
+ * de éste.
  */
 
 import type {
@@ -74,6 +84,7 @@ import type {
   TipoProceso,
 } from "../contract";
 import type { ServicioDeCatalogos } from "../catalogos/repositorio";
+import type { BaseDeDatos } from "../db/base";
 import type { ServicioDeProcesos } from "./repositorio";
 
 export type ResultadoDeGuardadoDePlantilla =
@@ -105,6 +116,7 @@ export async function guardarPlanComoPlantilla(
   datos: DatosDeGuardadoDePlantilla,
   procesos: ServicioDeProcesos,
   catalogos: ServicioDeCatalogos,
+  base: BaseDeDatos,
 ): Promise<ResultadoDeGuardadoDePlantilla> {
   // El filtro de tenencia: un proceso de otro bufete es, desde acá, un
   // proceso que no existe. `obtener` ya filtra por `tenant_id`, y esta rama
@@ -167,6 +179,15 @@ export async function guardarPlanComoPlantilla(
         ` ${escritura.estado}`,
     );
   }
+
+  // Último, cuando ya no puede fallar nada: un hecho que se registra antes
+  // de que ocurra es exactamente lo que una bitácora no puede permitirse.
+  await base.mutar({
+    entidad: "proceso",
+    entidadId: procesoId,
+    accion: "plantilla_guardada",
+    detalle: tipo.nombre,
+  });
 
   return { estado: "guardado", creado, tipo, etapas: escritura.etapas };
 }

@@ -9,6 +9,11 @@
  * a «en qué va este cliente», que es con lo que el bufete abre la aplicación.
  * Se pide por separado del cliente a propósito —son dos lecturas
  * independientes— para que un fallo del listado no deje la ficha en blanco.
+ *
+ * Desde T-10 cuelga también la bitácora, pedida igual y por lo mismo. Trae
+ * **solo los hechos de la ficha** —quién la dio de alta, quién la editó—; lo
+ * que pasó en cada proceso vive en la bitácora de ese proceso, porque un
+ * hecho se registra una sola vez, bajo la entidad de la que es.
  */
 import { useEffect, useState } from "react";
 
@@ -26,7 +31,12 @@ import {
   textoDeProblema as textoDeProblemaDeProceso,
 } from "../procesos/api";
 import { avanceDe, ordenarProcesos, proximoPaso } from "../procesos/presentacion";
-import { cargarCliente, textoDeProblema } from "./api";
+import { Bitacora, type EstadoDeBitacora } from "../Bitacora";
+import {
+  cargarBitacoraDeCliente,
+  cargarCliente,
+  textoDeProblema,
+} from "./api";
 import { VACIO, documentoDe, fechaLegible, tipoDe } from "./presentacion";
 
 type Props = {
@@ -57,6 +67,9 @@ export function DetalleDeCliente({ id }: Props) {
   const [procesos, setProcesos] = useState<EstadoDeProcesos>({
     fase: "cargando",
   });
+  const [bitacora, setBitacora] = useState<EstadoDeBitacora>({
+    fase: "cargando",
+  });
 
   useEffect(() => {
     const control = new AbortController();
@@ -81,6 +94,16 @@ export function DetalleDeCliente({ id }: Props) {
               fase: "problema",
               mensaje: textoDeProblemaDeProceso(resultado, "ese proceso"),
             },
+      );
+    });
+
+    void cargarBitacoraDeCliente(id, control.signal).then((resultado) => {
+      if (control.signal.aborted) return;
+
+      setBitacora(
+        resultado.estado === "ok"
+          ? { fase: "listo", entradas: resultado.valor }
+          : { fase: "problema", mensaje: textoDeProblema(resultado) },
       );
     });
 
@@ -203,6 +226,8 @@ export function DetalleDeCliente({ id }: Props) {
           )}
         </Pila>
       </section>
+
+      <Bitacora estado={bitacora} id="bitacora-del-cliente" />
 
       <section aria-labelledby="notas-del-cliente">
         <Pila>

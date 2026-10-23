@@ -22,6 +22,7 @@
  */
 
 import type { Usuario } from "../contract";
+import type { BaseDeDatos } from "../db/base";
 
 export interface ServicioDeUsuarios {
   listar(tenantId: string): Promise<Usuario[]>;
@@ -34,7 +35,9 @@ interface FilaDeUsuario {
   activo: number;
 }
 
-export function usuariosSobreD1(db: D1Database): ServicioDeUsuarios {
+export function usuariosSobreD1(base: BaseDeDatos): ServicioDeUsuarios {
+  const db = base.lectura;
+
   return {
     async listar(tenantId) {
       // `COLLATE NOCASE` en el nombre y el correo de desempate: dos personas

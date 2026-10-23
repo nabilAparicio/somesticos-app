@@ -47,6 +47,7 @@
  */
 
 import type { ServicioDeCatalogos } from "../catalogos/repositorio";
+import type { BaseDeDatos } from "../db/base";
 import type {
   DatosInvalidos,
   DetalleDeProceso,
@@ -243,6 +244,7 @@ async function manejarGuardadoDePlantilla(
   procesoId: string,
   procesos: ServicioDeProcesos,
   catalogos: ServicioDeCatalogos,
+  base: BaseDeDatos,
 ): Promise<Response> {
   if (request.method !== "POST") return metodoNoPermitido("POST");
 
@@ -264,6 +266,7 @@ async function manejarGuardadoDePlantilla(
     normalizado.datos,
     procesos,
     catalogos,
+    base,
   );
   if (resultado.estado === "no_encontrado") return noEncontrado();
   if (resultado.estado === "invalido") return invalido(resultado.fallas);
@@ -298,6 +301,7 @@ export async function rutasDeProcesos(
   tenantId: string,
   servicio: ServicioDeProcesos,
   catalogos: ServicioDeCatalogos,
+  base: BaseDeDatos,
 ): Promise<Response | null> {
   const segmentos = segmentosDe(url.pathname);
   if (segmentos[0] !== "api") return null;
@@ -326,6 +330,7 @@ export async function rutasDeProcesos(
         id,
         servicio,
         catalogos,
+        base,
       );
     }
     return null;

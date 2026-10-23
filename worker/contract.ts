@@ -731,3 +731,126 @@ export interface DatosDePendiente {
 export interface PendienteYaCerrado {
   error: "pendiente_ya_cerrado";
 }
+
+/* ==========================================================================
+   Bitácora (T-10)
+
+   Quién hizo qué, sobre qué, y cuándo. Es el otro registro del sistema, y
+   no se confunde con una nota: **una nota es intención y la escribe una
+   persona; una entrada de bitácora es un hecho del sistema y la escribe el
+   sistema** (`docs/diseno.md` §3 y §6).
+
+   La granularidad la decidió el usuario: **eventos, no cambios campo por
+   campo**. Una entrada dice «el 3 de marzo Itzel movió este proceso a
+   Demanda presentada». No hay valor anterior ni valor posterior, y eso no
+   es una versión recortada de otra cosa: es lo que contesta el 95 % de los
+   «¿quién hizo esto?» sin pagar hoy por el resto.
+
+   Tres cosas que esta sección hace visibles en el cable:
+
+    - **El vocabulario es cerrado por los dos lados.** Las uniones de abajo
+      cierran lo que el código puede emitir; el `CHECK` de
+      `migrations/0002_bitacora_inmutable.sql` cierra lo que la base acepta,
+      que es lo único que sobrevive a un script de importación (§5). Las dos
+      mitades tienen una prueba que falla si se separan.
+    - **Un hecho, una entidad.** Un proceso que nace para un cliente es un
+      hecho del proceso. Duplicarlo bajo el cliente haría que el mismo 3 de
+      marzo apareciera dos veces.
+    - **No hay relleno retroactivo.** Lo que pasó antes de T-10 no está en
+      la bitácora, y la pantalla lo dice en vez de disimularlo con una lista
+      vacía que se lee como «acá no pasó nada».
+   ========================================================================== */
+
+/** Sobre qué se registra un hecho. Es el `entidad` de la tabla. */
+export type EntidadRegistrada =
+  | "cliente"
+  | "area"
+  | "tipo_cliente"
+  | "tipo_proceso"
+  /**
+   * El proceso concentra también los hechos de sus notas y sus pendientes.
+   * No tienen entidad propia porque no tienen pantalla propia: una nota se
+   * lee dentro de la línea de tiempo de su proceso, y un pendiente dentro
+   * de su lista. Darles entidad sería partir en tres la respuesta a «¿qué
+   * pasó con este proceso?».
+   */
+  | "proceso";
+
+/**
+ * Qué pasó. El vocabulario cerrado de `accion`.
+ *
+ * Son verbos y no pares entidad+verbo (`cliente_creado`, `area_creada`, …)
+ * porque la entidad ya viaja en su columna: juntarlos multiplicaría el
+ * vocabulario por cinco y dejaría el `CHECK` y el `Record` de frases con
+ * cuarenta entradas que dicen cinco cosas.
+ *
+ * Qué acción admite cada entidad lo cierra `ACCIONES_POR_ENTIDAD` en
+ * `worker/bitacora/vocabulario.ts`: `cliente` con `etapa_alcanzada` no
+ * compila.
+ */
+export type AccionDeBitacora =
+  /** Nació la fila. `detalle` lleva su nombre o su título. */
+  | "creado"
+  /** Cambió la ficha. Qué cambió no se guarda: es un evento, no un diff. */
+  | "editado"
+  /**
+   * `activo` pasó a 0. Es acción propia y no `editado` porque dejar de
+   * ofrecer un área es un hecho del bufete, y esconderlo adentro de «editó»
+   * lo vuelve invisible justo cuando alguien pregunta por qué desapareció
+   * de un desplegable.
+   */
+  | "dado_de_baja"
+  /** `activo` volvió a 1. La contraparte, por simetría. */
+  | "reactivado"
+  /** La fila se fue. La entrada se queda: para eso existe. */
+  | "borrado"
+  /** Se guardaron las etapas de la plantilla de un tipo de proceso. */
+  | "plantilla_editada"
+  /** Se guardó el plan de trabajo de un proceso. */
+  | "plan_editado"
+  /** Se marcó alcanzada la próxima etapa. `detalle` dice cuál. */
+  | "etapa_alcanzada"
+  /** El plan de un proceso se copió a una plantilla (T-11). */
+  | "plantilla_guardada"
+  /** Alguien anotó un hecho. `detalle` dice en qué etapa quedó anclado. */
+  | "nota_agregada"
+  /** Apareció un cabo suelto. */
+  | "pendiente_abierto"
+  /** Se cerró. Quién y cuándo ya viven en la fila; esto lo pone en la historia. */
+  | "pendiente_cerrado";
+
+/**
+ * Una entrada tal como la lee la pantalla.
+ *
+ * `usuarioNombre` se resuelve **en lectura**, igual que en todo lo demás: lo
+ * que se guarda es la llave (§6, «Autoría»). Puede venir nulo si la fila de
+ * `usuario` cruzara la frontera del tenant, y la pantalla lo dice en vez de
+ * dejar un hueco.
+ *
+ * No hay `id` de la cosa tocada más allá de `entidadId`, y no hay enlace: la
+ * entrada se lee **dentro** de la pantalla de su entidad, así que ya se sabe
+ * de qué se está hablando.
+ */
+export interface EntradaDeBitacora {
+  id: string;
+  entidad: EntidadRegistrada;
+  entidadId: string;
+  accion: AccionDeBitacora;
+  usuarioId: string;
+  usuarioNombre: string | null;
+  ocurridoEn: string;
+  /** Corto y opcional: el nombre de lo que el hecho señala. Nunca un diff. */
+  detalle: string | null;
+}
+
+/**
+ * La bitácora de una entidad, **del hecho más viejo al más nuevo**.
+ *
+ * Se lee como una historia, de arriba hacia abajo, que es la forma del
+ * ejemplo que pidió el usuario —«el 3 de marzo…»— y la misma que la línea de
+ * tiempo de T-8. Y es el orden que el índice
+ * `(entidad, entidad_id, ocurrido_en)` ya sirve sin ordenar nada.
+ */
+export interface RespuestaDeBitacora {
+  entradas: EntradaDeBitacora[];
+}
