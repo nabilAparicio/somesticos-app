@@ -19,8 +19,14 @@
  * son dos escrituras distintas, y un botón que hace las dos tiene un estado
  * en el que hizo una.
  *
- * Lo que todavía no está, y se nota: las notas (T-8) y los pendientes (T-9).
- * Esta pantalla es el lugar donde van a colgar.
+ * T-8 le colgó la **línea de tiempo**: las notas del proceso, agrupadas por
+ * la etapa donde ocurrieron y en el orden del plan. Va al final y no arriba,
+ * y eso también sale del diseño: «los pendientes abiertos viven arriba del
+ * proceso, contados y a la vista; las notas viven en la línea de tiempo»
+ * (`docs/diseno.md` §6). A las cuarenta notas, nada sería visible si todo
+ * compitiera por el mismo lugar.
+ *
+ * Lo que todavía no está, y se nota: los pendientes (T-9).
  */
 import { useEffect, useState } from "react";
 
@@ -28,6 +34,7 @@ import type {
   Area,
   DetalleDeProceso as Detalle,
   FallaDeValidacion,
+  TramoDeLineaDeTiempo,
 } from "../../../worker/contract";
 import { VACIO, fechaLegible } from "../../formatos";
 import { Aviso } from "../../layout/Aviso";
@@ -40,13 +47,25 @@ import { mensajeDeFalla } from "../../mensajes";
 import { enlaceDe } from "../../ruteo";
 import { cargarAreas } from "../catalogos/api";
 import {
+  anotar,
   avanzarEtapa,
+  cargarLineaDeTiempo,
   cargarProceso,
   guardarComoPlantilla,
   guardarPlan,
   textoDeProblema,
 } from "./api";
 import { tipoSeleccionables } from "./formulario";
+import {
+  AVISO_NOTA_INMUTABLE,
+  BORRADOR_DE_NOTA_VACIO,
+  aPeticionDeNota,
+  etapaVigenteDe,
+  opcionesDeEtapa,
+  resumenDeLaLinea,
+  validarNota,
+  type BorradorDeNota,
+} from "./notas";
 import {
   AVISO_GUARDAR_NO_SINCRONIZA,
   AVISO_TIPO_NUEVO_NO_REASIGNA,
@@ -110,6 +129,14 @@ export function DetalleDeProceso({ id }: Props) {
     { tono: "neutro" | "error"; texto: string } | null
   >(null);
 
+  /* --- T-8: las notas y su línea de tiempo ----------------------------- */
+  const [tramos, setTramos] = useState<TramoDeLineaDeTiempo[]>([]);
+  const [nota, setNota] = useState<BorradorDeNota>(BORRADOR_DE_NOTA_VACIO);
+  const [fallasDeLaNota, setFallasDeLaNota] = useState<FallaDeValidacion[]>(
+    [],
+  );
+  const [avisoDeLaNota, setAvisoDeLaNota] = useState<string | null>(null);
+
   useEffect(() => {
     const control = new AbortController();
 
@@ -126,6 +153,24 @@ export function DetalleDeProceso({ id }: Props) {
 
       setEstado({ fase: "listo", detalle: resultado.valor });
       setPlan(planDe(resultado.valor.etapas));
+    });
+
+    return () => {
+      control.abort();
+    };
+  }, [id]);
+
+  /**
+   * La línea de tiempo va en su propia petición y no dentro del detalle: el
+   * detalle lo pide todo el mundo —el listado navega ahí— y la línea crece
+   * sin techo mientras el proceso corre.
+   */
+  useEffect(() => {
+    const control = new AbortController();
+
+    void cargarLineaDeTiempo(id, control.signal).then((resultado) => {
+      if (control.signal.aborted) return;
+      if (resultado.estado === "ok") setTramos(resultado.valor.tramos);
     });
 
     return () => {
@@ -243,6 +288,38 @@ export function DetalleDeProceso({ id }: Props) {
         ` con ${String(pasosGuardados)} pasos. Este proceso y los demás ya` +
         " abiertos siguen con el plan que tenían.",
     });
+  }
+
+  /**
+   * Anota un hecho.
+   *
+   * El borrador se vacía **solo si el servidor la guardó**: una nota no se
+   * puede volver a escribir desde el historial del navegador, así que perder
+   * el texto por un 403 sería perderlo de verdad.
+   */
+  async function escribirNota(etapas: readonly Detalle["etapas"][number][]) {
+    if (trabajando) return;
+
+    const previas = validarNota(nota, etapas);
+    setFallasDeLaNota(previas);
+    setAvisoDeLaNota(null);
+    if (previas.length > 0) return;
+
+    setTrabajando(true);
+    const resultado = await anotar(id, aPeticionDeNota(nota));
+    setTrabajando(false);
+
+    if (resultado.estado === "invalido") {
+      setFallasDeLaNota(resultado.fallas);
+      return;
+    }
+    if (resultado.estado !== "ok") {
+      setAvisoDeLaNota(textoDeProblema(resultado));
+      return;
+    }
+
+    setTramos(resultado.valor.tramos);
+    setNota(BORRADOR_DE_NOTA_VACIO);
   }
 
   if (estado.fase === "cargando") return <p>Consultando…</p>;
@@ -690,6 +767,168 @@ export function DetalleDeProceso({ id }: Props) {
               Guardar como plantilla
             </button>
           </Fila>
+        </Pila>
+      </section>
+
+      {/* ---------------------------------------------------------------
+          T-8 · La línea de tiempo.
+
+          Va al final: «los pendientes abiertos viven arriba del proceso,
+          contados y a la vista; las notas viven en la línea de tiempo»
+          (`docs/diseno.md` §6). Las notas se leen cuando se las busca; lo
+          que no se puede perder de vista es otra cosa.
+          --------------------------------------------------------------- */}
+      <section aria-labelledby="linea-de-tiempo">
+        <Pila>
+          <h2 id="linea-de-tiempo">Línea de tiempo</h2>
+
+          <Prosa como="p" className="texto-apagado">
+            {resumenDeLaLinea(tramos)}
+          </Prosa>
+
+          {tramos.length === 0 ? (
+            <p className="texto-apagado">
+              Las notas que se escriban van a aparecer acá, agrupadas por la
+              etapa en la que pasaron.
+            </p>
+          ) : (
+            <ol className="linea">
+              {tramos.map((tramo) => (
+                <li className="linea__tramo" key={tramo.etapa.id}>
+                  <h3 className="linea__etapa">
+                    {tramo.etapa.nombre}
+                    {tramo.etapa.alcanzadaEn !== null && (
+                      <span className="etiqueta">
+                        {fechaLegible(tramo.etapa.alcanzadaEn)}
+                      </span>
+                    )}
+                  </h3>
+                  <ul className="linea__notas sin-viñetas">
+                    {tramo.notas.map((suya) => (
+                      <li className="nota" key={suya.id}>
+                        <p className="nota__texto">{suya.texto}</p>
+                        <p className="nota__firma texto-apagado">
+                          {suya.autorNombre ?? VACIO} ·{" "}
+                          {fechaLegible(suya.creadaEn)}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ol>
+          )}
+        </Pila>
+      </section>
+
+      {/* ---------------------------------------------------------------
+          El formulario de la nota. Separado de la línea y debajo de ella,
+          para que escribir no empuje hacia abajo lo que hay que leer.
+          --------------------------------------------------------------- */}
+      <section aria-labelledby="anotar">
+        <Pila>
+          <h2 id="anotar">Anotar</h2>
+
+          {/* El aviso va ANTES del campo: enterarse de que no se puede
+              corregir recién después de escribir no sirve de nada. */}
+          <Aviso>{AVISO_NOTA_INMUTABLE}</Aviso>
+
+          {avisoDeLaNota !== null && <Aviso tono="error">{avisoDeLaNota}</Aviso>}
+
+          {fallasDeLaNota.length > 0 && (
+            <Aviso tono="error">
+              <ul className="lista-de-fallas">
+                {fallasDeLaNota.map((falla) => (
+                  <li key={`${falla.campo}-${falla.motivo}`}>
+                    {mensajeDeFalla(falla.motivo, falla.cuantos)}
+                  </li>
+                ))}
+              </ul>
+            </Aviso>
+          )}
+
+          <form
+            onSubmit={(evento) => {
+              evento.preventDefault();
+              void escribirNota(estado.detalle.etapas);
+            }}
+            noValidate
+          >
+            <Pila>
+              <div className="campo">
+                <label className="campo__rotulo" htmlFor="campo-nota">
+                  Qué pasó
+                  <span className="campo__marca"> · obligatorio</span>
+                </label>
+                <textarea
+                  id="campo-nota"
+                  className="campo__control campo__control--prosa"
+                  rows={4}
+                  value={nota.texto}
+                  onChange={(evento) => {
+                    setNota((anterior) => ({
+                      ...anterior,
+                      texto: evento.target.value,
+                    }));
+                  }}
+                />
+                <p className="campo__ayuda">
+                  Un hecho, como se lo contaría a alguien del bufete: «el
+                  cliente quiere pago diferido por meses».
+                </p>
+              </div>
+
+              <div className="campo">
+                <label className="campo__rotulo" htmlFor="campo-etapa-nota">
+                  Etapa en la que pasó
+                </label>
+                <select
+                  id="campo-etapa-nota"
+                  className="campo__control"
+                  value={nota.procesoEtapaId}
+                  disabled={estado.detalle.etapas.length === 0}
+                  onChange={(evento) => {
+                    setNota((anterior) => ({
+                      ...anterior,
+                      procesoEtapaId: evento.target.value,
+                    }));
+                  }}
+                >
+                  {/* La opción vacía no es «ninguna»: es «la vigente», que es
+                      lo que el servidor elige y lo que acierta casi siempre.
+                      Se la nombra para que nadie crea que dejó el campo sin
+                      llenar. */}
+                  <option value="">
+                    {etapaVigenteDe(estado.detalle.etapas) === null
+                      ? "Este proceso no tiene etapas todavía"
+                      : `Donde está el proceso hoy: «${
+                          etapaVigenteDe(estado.detalle.etapas)?.nombre ?? ""
+                        }»`}
+                  </option>
+                  {opcionesDeEtapa(estado.detalle.etapas).map((opcion) => (
+                    <option key={opcion.id} value={opcion.id}>
+                      {opcion.etiqueta}
+                    </option>
+                  ))}
+                </select>
+                <p className="campo__ayuda">
+                  Una nota se ancla a la etapa donde ocurrió el hecho, que no
+                  siempre es donde está el proceso cuando alguien se sienta a
+                  escribirlo.
+                </p>
+              </div>
+
+              <Fila>
+                <button
+                  type="submit"
+                  className="boton boton--primario"
+                  disabled={trabajando}
+                >
+                  {trabajando ? "Guardando…" : "Anotar"}
+                </button>
+              </Fila>
+            </Pila>
+          </form>
         </Pila>
       </section>
     </Pila>

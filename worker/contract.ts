@@ -144,11 +144,52 @@ export type MotivoDeFalla =
    * **vaciaría** la plantilla del tipo —`reemplazarEtapas` reemplaza— y el
    * próximo proceso nacería sin pasos sin que nadie lo pidiera.
    */
-  | "plan_vacio";
+  | "plan_vacio"
+  /* --- Notas (T-8) --- */
+  /**
+   * Una nota sin texto no es una nota. Es lo único que una persona escribe
+   * acá, y el resto —autor, momento, etapa— lo pone el sistema.
+   */
+  | "texto_requerido"
+  /**
+   * La etapa elegida no es del plan de ESTE proceso.
+   *
+   * Es un motivo propio y no `etapa_desconocida` porque lo que se está
+   * guardando no es un plan sino un hecho: el mensaje útil es «esa etapa no
+   * es de este proceso», no «volvé a cargar la plantilla».
+   */
+  | "etapa_de_otro_proceso"
+  /**
+   * El proceso no tiene ninguna etapa, y `nota.proceso_etapa_id` es
+   * `NOT NULL`: no hay de dónde colgar la nota. El servidor no inventa una
+   * etapa para resolverlo — inventarla metería en el plan de trabajo un paso
+   * que nadie decidió.
+   */
+  | "proceso_sin_etapas"
+  /**
+   * Se intentó quitar del plan una etapa pendiente que tiene notas.
+   *
+   * Es el encargo que T-7 dejó escrito para T-8, que es la tarea que crea la
+   * dependencia. La guarda **cuenta** las notas antes de escribir; no atrapa
+   * el error de la llave foránea para disfrazarlo. La falla viaja con
+   * `cuantos` para que la pantalla pueda decir cuántas lo impiden.
+   */
+  | "etapa_con_notas_no_se_quita";
 
 export interface FallaDeValidacion {
   campo: string;
   motivo: MotivoDeFalla;
+  /**
+   * Cuántos dependientes impiden la operación.
+   *
+   * Solo lo traen los motivos que **cuentan** antes de rechazar —hoy
+   * `etapa_con_notas_no_se_quita`—, y existe porque un rechazo que dice
+   * «tiene notas» obliga a ir a buscar cuántas. Es la misma información que
+   * T-6 pone en `Dependencia` para el 409 del borrado de catálogos; acá
+   * viaja dentro de la falla porque la operación es el `PUT` del plan
+   * entero, que ya tiene su vocabulario de fallas por etapa.
+   */
+  cuantos?: number;
 }
 
 export interface DatosInvalidos {
@@ -434,4 +475,81 @@ export type DatosDeGuardadoDePlantilla =
 export interface PlantillaGuardada {
   tipo: TipoProceso;
   etapas: EtapaPlantilla[];
+}
+
+/* ==========================================================================
+   Notas y línea de tiempo (T-8)
+
+   Una **nota es un hecho**: fechado, anclado a la etapa donde ocurrió, con
+   autor, e inmutable (`docs/diseno.md` §3). No la escribe el sistema, la
+   escribe una persona porque quiere dejar dicho algo — «el cliente quiere
+   pago diferido por meses». Es distinta de una entrada de `bitacora`, que es
+   un hecho *del sistema* y es T-10.
+
+   Tres decisiones que esta sección hace visibles en el cable:
+
+    - **A qué etapa se ancla.** `nota.proceso_etapa_id` es `NOT NULL`, y un
+      proceso recién abierto no tiene ninguna etapa alcanzada. Se ancla a la
+      **etapa vigente**, que es la misma que el listado ya muestra como «lo
+      que viene»: la primera pendiente en el orden del plan. Si no queda
+      ninguna pendiente, la última alcanzada. Esa es la etapa en la que el
+      trabajo está pasando, que es lo que «anclada a la etapa donde ocurrió»
+      quiere decir mientras se escribe.
+    - **Quien escribe puede elegir otra**, siempre que sea del mismo proceso.
+      Una nota se escribe a veces días después del hecho, y como es inmutable
+      el momento de escribirla es la única oportunidad de anclarla bien.
+    - **No hay forma de editar ni de borrar.** No existe ni la ruta ni el
+      identificador: una nota no tiene dirección propia, se lee como parte de
+      la línea de tiempo de su proceso. La base lo sostiene aparte, con los
+      dos disparadores de T-2.
+   ========================================================================== */
+
+/**
+ * Una nota tal como la lee la pantalla.
+ *
+ * `autorNombre` se resuelve **en lectura**: lo que se guarda es la llave
+ * (§6, «Autoría»). Si alguien cambia de apellido, cuatrocientas notas no
+ * quedan firmadas con un nombre que ya no existe.
+ */
+export interface NotaDeProceso {
+  id: string;
+  procesoEtapaId: string;
+  texto: string;
+  autorId: string;
+  autorNombre: string | null;
+  creadaEn: string;
+}
+
+/** Las notas de una etapa, en el orden en que se escribieron. */
+export interface TramoDeLineaDeTiempo {
+  etapa: EtapaDeProceso;
+  notas: NotaDeProceso[];
+}
+
+/**
+ * La línea de tiempo de un proceso: sus notas agrupadas por etapa, en el
+ * orden del plan.
+ *
+ * **Solo vienen las etapas que tienen notas.** La línea de tiempo es el
+ * registro de lo que pasó, no una segunda copia del plan: el plan ya está en
+ * la pantalla, separado en cumplido y pendiente, y una etapa vacía acá no
+ * dice nada que allá no se vea mejor.
+ */
+export interface LineaDeTiempo {
+  tramos: TramoDeLineaDeTiempo[];
+}
+
+/**
+ * Lo que el formulario manda al anotar. Ya normalizado.
+ *
+ * No lleva autor ni momento: los pone el servidor con la identidad de Access
+ * y el reloj. Que el cliente pudiera mandarlos sería dejar firmar a nombre
+ * de otro y fechar un hecho cuando convenga, sobre una fila que después no
+ * se puede corregir.
+ *
+ * `procesoEtapaId` nulo es «la que el servidor elija»: la etapa vigente.
+ */
+export interface DatosDeNota {
+  texto: string;
+  procesoEtapaId: string | null;
 }

@@ -26,6 +26,8 @@ import type {
   IdentidadActual,
 } from "./contract";
 import { TENANT_UNICO_ID } from "./db/ids";
+import { notasSobreD1, type ServicioDeNotas } from "./notas/repositorio";
+import { rutasDeNotas } from "./notas/rutas";
 import {
   procesosSobreD1,
   type ServicioDeProcesos,
@@ -45,6 +47,9 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
 
   /** Los procesos y su plan de trabajo (T-7). Idem. */
   procesos?: ServicioDeProcesos;
+
+  /** Las notas y su línea de tiempo (T-8). Idem. */
+  notas?: ServicioDeNotas;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -146,11 +151,29 @@ export async function manejar(
   );
   if (catalogos !== null) return catalogos;
 
+  // Un solo servicio de procesos para las dos rutas: las notas cuelgan del
+  // proceso y comprueban su existencia por el mismo puerto, no por una
+  // segunda copia de la consulta.
+  const servicioDeProcesos = dependencias.procesos ?? procesosSobreD1(env.DB);
+
+  // Las notas van **antes** que los procesos porque son una subruta suya:
+  // `rutasDeProcesos` devuelve `null` para `/notas`, así que el orden no
+  // cambia qué contesta cada una, pero sí deja el reparto escrito.
+  const notas = await rutasDeNotas(
+    request,
+    url,
+    acceso.valor,
+    TENANT_UNICO_ID,
+    servicioDeProcesos,
+    dependencias.notas ?? notasSobreD1(env.DB),
+  );
+  if (notas !== null) return notas;
+
   const procesos = await rutasDeProcesos(
     request,
     url,
     TENANT_UNICO_ID,
-    dependencias.procesos ?? procesosSobreD1(env.DB),
+    servicioDeProcesos,
     servicioDeCatalogos,
   );
   if (procesos !== null) return procesos;

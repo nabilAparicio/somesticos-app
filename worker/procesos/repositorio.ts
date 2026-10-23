@@ -10,7 +10,7 @@
  * sola que no filtre por `tenant_id`, ni siquiera las que buscan por llave
  * primaria. Un UUID ajeno sigue siendo un UUID.
  *
- * ## Las dos reglas que este archivo existe para sostener
+ * ## Las tres reglas que este archivo existe para sostener
  *
  * ### 1. La plantilla siembra, el proceso manda
  *
@@ -41,6 +41,15 @@
  * quedarse adelante y en su orden. Un plan que promete un paso *antes* de
  * algo que ya pasó no se puede dibujar separado en cumplido y pendiente, que
  * es exactamente lo que la pantalla de detalle tiene que mostrar.
+ *
+ * ### 3. Una etapa pendiente CON NOTAS tampoco se quita (T-8)
+ *
+ * Hasta T-7 una etapa pendiente no tenía nada colgando y quitarla era
+ * gratis; T-7 dejó escrito que la guarda le tocaba a la tarea que creara la
+ * dependencia. Es `guardarLoAnotado`, más abajo: cuenta las notas de cada
+ * etapa que se va a borrar y rechaza diciendo cuántas lo impiden. Misma
+ * disciplina que la regla 2 — el conteo explícito, nunca un `catch` del
+ * error de la llave foránea.
  *
  * ### El avance es de una sola dirección
  *
@@ -355,6 +364,64 @@ export function procesosSobreD1(db: D1Database): ServicioDeProcesos {
     return fallas;
   }
 
+  /**
+   * La guarda que T-7 dejó encargada a T-8: **una etapa pendiente con notas
+   * no se quita del plan.**
+   *
+   * Hasta T-8 una etapa pendiente no tenía nada colgando y quitarla era
+   * gratis. Desde que existen las notas, quitarla chocaría contra la llave
+   * foránea de `nota.proceso_etapa_id`, que T-2 dejó en `NO ACTION` a
+   * propósito.
+   *
+   * **La guarda es este conteo, no un `catch` de ese choque.** Es la misma
+   * disciplina que T-6 asentó para el borrado de catálogos y T-7 para la
+   * etapa alcanzada: con un `catch` que tradujera el error de la base a una
+   * respuesta amable, aflojar el conteo no rompería ninguna prueba y la
+   * guarda quedaría sin verificar para siempre. Acá no se atrapa nada — al
+   * aflojar esto, lo que sale es `FOREIGN KEY constraint failed` crudo, que
+   * es exactamente lo que no tiene que llegarle a nadie.
+   *
+   * La falla viaja con `cuantos` porque «tiene notas» obliga a ir a
+   * contarlas: el rechazo dice cuántas lo impiden, como el 409 de T-6 dice
+   * cuántos dependientes hay.
+   *
+   * Un solo `GROUP BY` y no una consulta por etapa: quitar seis pasos de un
+   * plan reordenado no tiene por qué costar seis viajes.
+   */
+  async function guardarLoAnotado(
+    tenantId: string,
+    procesoId: string,
+    quitadas: readonly EtapaDeProceso[],
+  ): Promise<FallaDeValidacion[]> {
+    if (quitadas.length === 0) return [];
+
+    const { results } = await db
+      .prepare(
+        "SELECT proceso_etapa_id, count(*) AS cuantas FROM nota" +
+          " WHERE tenant_id = ? AND proceso_id = ?" +
+          " GROUP BY proceso_etapa_id",
+      )
+      .bind(tenantId, procesoId)
+      .all<{ proceso_etapa_id: string; cuantas: number }>();
+
+    const notasPorEtapa = new Map(
+      results.map((fila) => [fila.proceso_etapa_id, fila.cuantas]),
+    );
+
+    return quitadas.flatMap((etapa) => {
+      const cuantos = notasPorEtapa.get(etapa.id) ?? 0;
+      return cuantos === 0
+        ? []
+        : [
+            {
+              campo: `etapa-${String(etapa.orden)}`,
+              motivo: "etapa_con_notas_no_se_quita" as const,
+              cuantos,
+            },
+          ];
+    });
+  }
+
   return {
     async listar(tenantId, clienteId) {
       // Un `clienteId` que no es de este tenant no devuelve nada, porque el
@@ -467,6 +534,16 @@ export function procesosSobreD1(db: D1Database): ServicioDeProcesos {
           .filter((id): id is string => id !== null),
       );
 
+      const quitadas = actuales.filter((etapa) => !conservados.has(etapa.id));
+      const deLasNotas = await guardarLoAnotado(
+        tenantId,
+        procesoId,
+        quitadas,
+      );
+      if (deLasNotas.length > 0) {
+        return { estado: "invalido", fallas: deLasNotas };
+      }
+
       // El `orden` es la posición en el arreglo, asignada acá y no por el
       // cliente: `proceso_etapa.orden` no tiene índice único (T-2 lo dejó así
       // a propósito), así que si el cliente lo eligiera, dos etapas con el
@@ -475,9 +552,7 @@ export function procesosSobreD1(db: D1Database): ServicioDeProcesos {
       // El `UPDATE` **no menciona `alcanzada_en`**. Ese es el candado del
       // avance de una sola dirección: no hay forma de desandar por esta vía.
       const sentencias = [
-        ...actuales
-          .filter((etapa) => !conservados.has(etapa.id))
-          .map((etapa) =>
+        ...quitadas.map((etapa) =>
             db
               .prepare(
                 "DELETE FROM proceso_etapa WHERE tenant_id = ?" +

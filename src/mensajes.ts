@@ -45,8 +45,35 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   plan_vacio:
     "Este proceso no tiene plan todavía: no hay pasos que guardar como" +
     " plantilla.",
+  texto_requerido: "La nota no puede ir vacía: es lo único que se escribe.",
+  etapa_de_otro_proceso:
+    "Esa etapa no es de este proceso. Hay que volver a cargar el proceso.",
+  proceso_sin_etapas:
+    "Este proceso no tiene ningún paso todavía, y una nota se ancla a la" +
+    " etapa donde ocurrió. Hay que agregarle al menos un paso al plan.",
+  etapa_con_notas_no_se_quita:
+    "Esa etapa tiene notas y no se puede quitar del plan: las notas son el" +
+    " registro de lo que pasó y quedarían sin dónde colgar.",
 };
 
-export function mensajeDeFalla(motivo: MotivoDeFalla): string {
+/**
+ * `cuantos` solo lo traen los motivos que cuentan dependientes antes de
+ * rechazar. Un rechazo que dice «tiene notas» obliga a ir a contarlas; con
+ * el número, la frase es accionable de una. El parámetro es opcional para
+ * que los motivos que no cuentan nada sigan llamándose igual.
+ */
+export function mensajeDeFalla(
+  motivo: MotivoDeFalla,
+  cuantos?: number,
+): string {
+  if (motivo === "etapa_con_notas_no_se_quita" && cuantos !== undefined) {
+    return (
+      `Esa etapa tiene ${String(cuantos)} ${
+        cuantos === 1 ? "nota" : "notas"
+      } y no se puede quitar del plan: las notas son el registro de lo que` +
+      " pasó y quedarían sin dónde colgar."
+    );
+  }
+
   return MENSAJES[motivo];
 }

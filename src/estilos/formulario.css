@@ -302,3 +302,79 @@
   border-radius: var(--radio-s);
   padding-inline-start: var(--espacio-xs);
 }
+
+/* ======================================================================
+   La línea de tiempo de un proceso (T-8)
+   ====================================================================== */
+
+/*
+ * Es un `<ol>` porque el orden es el dato: los tramos van en el orden del
+ * plan, que es el orden en que pasaron las cosas. Igual que el plan y la
+ * plantilla, se le quita la sangría que en 320px le roba espacio al texto.
+ */
+.linea {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-m);
+  min-width: 0;
+  margin: 0;
+  padding-inline-start: var(--espacio-m);
+}
+
+.linea__tramo {
+  min-width: 0;
+}
+
+/*
+ * El nombre de la etapa y, si está cumplida, cuándo. La fecha es
+ * información y no decoración: sitúa en el tiempo todo lo que cuelga.
+ */
+.linea__etapa {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--espacio-xs);
+  min-width: 0;
+  margin: 0 0 var(--espacio-xs);
+  font-size: var(--texto-m);
+  overflow-wrap: anywhere;
+}
+
+.linea__notas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-xs);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.nota {
+  min-width: 0;
+  padding: var(--espacio-xs);
+  border-inline-start: 3px solid var(--color-acento);
+  border-radius: var(--radio-s);
+  background: var(--color-superficie);
+}
+
+/*
+ * Una nota se escribe con renglones y viñetas, y así se tiene que leer:
+ * `pre-wrap` conserva los saltos que puso quien la escribió.
+ *
+ * **No lleva `overflow-wrap`, y eso está medido.** El `break-word` de `body`
+ * (`base.css`) ya parte un acuse pegado sin espacios, y agregar acá un
+ * `anywhere` encima daba una regla que ninguna prueba podía matar: al
+ * quitarla, las 104 de punta a punta seguían pasando. Al quitar las dos,
+ * mueren 4. La regla que protege este texto es la global, y la nota larga
+ * del banco de `e2e/procesos.spec.ts` es lo que la obliga a actuar.
+ */
+.nota__texto {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* La firma: quién y cuándo. Es la mitad de lo que hace confiable una nota. */
+.nota__firma {
+  margin: var(--espacio-2xs) 0 0;
+  font-size: var(--texto-s);
+}

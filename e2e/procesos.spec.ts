@@ -84,6 +84,88 @@ const OTRO = {
 
 const DETALLE = { proceso: PROCESO, etapas: ETAPAS };
 
+/* --- T-8 · la línea de tiempo ------------------------------------------ */
+
+const NOTA_PAGO = "El cliente quiere pago diferido por meses.";
+const NOTA_ENTREGA = "Entregó el acta de matrimonio apostillada.";
+
+/**
+ * Una nota con un token largo **de verdad** sin punto de corte.
+ *
+ * Es la lección de T-4, y acá costó el mismo error: la primera versión era
+ * `SNM-2026-RESIDENCIA-...`, y los guiones son oportunidades de corte
+ * naturales, así que el navegador lo partía solo y la regla defensiva nunca
+ * llegaba a actuar. Medido: con `overflow-wrap: normal` el párrafo seguía
+ * midiendo 253px dentro de sus 253px. **Una regla defensiva solo está
+ * probada si el contenido la fuerza a actuar.**
+ *
+ * Este token no tiene ni espacios ni guiones ni puntos: es lo que sale de
+ * copiar un acuse de un portal público y pegarlo en una nota.
+ */
+const NOTA_LARGA =
+  "Acuse SNM2026RESIDENCIAPERMANENTEMATRIMONIO0000984512PAREV3CONSULTAWEB";
+
+const LINEA = {
+  tramos: [
+    {
+      etapa: ETAPAS[0],
+      notas: [
+        {
+          id: "n1",
+          procesoEtapaId: "e1",
+          texto: NOTA_PAGO,
+          autorId: "u1",
+          autorNombre: "Itzel",
+          creadaEn: "2026-09-01T16:00:00.000Z",
+        },
+        {
+          id: "n2",
+          procesoEtapaId: "e1",
+          texto: NOTA_ENTREGA,
+          autorId: "u2",
+          autorNombre: "Ricardo",
+          creadaEn: "2026-09-03T13:20:00.000Z",
+        },
+      ],
+    },
+    {
+      etapa: ETAPAS[2],
+      notas: [
+        {
+          id: "n3",
+          procesoEtapaId: "e3",
+          texto: NOTA_LARGA,
+          autorId: "u1",
+          autorNombre: "Itzel",
+          creadaEn: "2026-10-05T19:45:00.000Z",
+        },
+      ],
+    },
+  ],
+};
+
+/** Lo que el servidor contesta al anotar: la línea entera, ya reagrupada. */
+const NOTA_NUEVA = "El cliente pidió que lo llamemos por la tarde.";
+const LINEA_CON_LA_NUEVA = {
+  tramos: [
+    LINEA.tramos[0],
+    {
+      etapa: ETAPAS[2],
+      notas: [
+        ...LINEA.tramos[1].notas,
+        {
+          id: "n4",
+          procesoEtapaId: "e3",
+          texto: NOTA_NUEVA,
+          autorId: "u1",
+          autorNombre: "Itzel",
+          creadaEn: "2026-10-22T14:00:00.000Z",
+        },
+      ],
+    },
+  ],
+};
+
 const AREA_ID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
 
 /** Las áreas que alimentan el destino «tipo de proceso nuevo» de T-11. */
@@ -106,6 +188,18 @@ async function conProcesosCargados(page: Page): Promise<void> {
     (url) => url.pathname.startsWith("/api/"),
     async (ruta) => {
       const url = new URL(ruta.request().url());
+
+      // T-8: la línea de tiempo. El `POST` contesta la línea entera con la
+      // nota nueva adentro, que es lo que la pantalla asienta: no inserta la
+      // nota donde cree que va.
+      if (url.pathname === `/api/procesos/${PROCESO_ID}/notas`) {
+        const escribe = ruta.request().method() === "POST";
+        await ruta.fulfill({
+          status: escribe ? 201 : 200,
+          json: escribe ? LINEA_CON_LA_NUEVA : LINEA,
+        });
+        return;
+      }
 
       // T-11: guardar como plantilla es una escritura. Se contesta con el
       // tipo y la plantilla ya guardada, que es lo que la pantalla asienta.
@@ -412,6 +506,123 @@ test.describe("los procesos del bufete", () => {
     await expect(await planDibujado(page)).toEqual(ETAPAS.map((e) => e.nombre));
   });
 
+  // -------------------------------------------------------------------------
+  // T-8 · Notas y línea de tiempo
+  // -------------------------------------------------------------------------
+
+  test("la línea de tiempo agrupa las notas por etapa, en el orden del plan", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await expect(
+      page.getByRole("heading", { name: "Línea de tiempo" }),
+    ).toBeVisible();
+
+    // Los tramos, en el orden del plan y no en el de inserción.
+    await expect(page.locator(".linea__etapa")).toHaveText([
+      new RegExp(CUMPLIDA_1),
+      new RegExp(PENDIENTE_1),
+    ]);
+
+    // Solo las etapas con notas: la línea no es una segunda copia del plan.
+    await expect(page.locator(".linea__tramo")).toHaveCount(2);
+
+    // Y las notas, bajo la etapa que les toca.
+    await expect(
+      page.locator(".linea__tramo").first().locator(".nota__texto"),
+    ).toHaveText([NOTA_PAGO, NOTA_ENTREGA]);
+  });
+
+  test("cada nota lleva su firma: quién la escribió y cuándo", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    // Dos autores distintos en la misma etapa: la autoría es por nota, no
+    // por proceso.
+    await expect(page.locator(".nota__firma").first()).toContainText("Itzel");
+    await expect(page.locator(".nota__firma").nth(1)).toContainText("Ricardo");
+
+    // Y el resumen, que es lo que se lee antes de leer la línea.
+    await expect(
+      page.getByText("3 notas, repartidas en 2 etapas."),
+    ).toBeVisible();
+  });
+
+  test("no hay forma de editar ni de borrar una nota desde la pantalla", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    // La inmutabilidad, vista desde afuera: los botones no existen.
+    await expect(
+      page.locator(".nota").getByRole("button"),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /Borrar nota|Editar nota/i }),
+    ).toHaveCount(0);
+
+    // Y se dice ANTES de escribir, no después.
+    await expect(page.getByText(/no se edita ni se borra/i)).toBeVisible();
+  });
+
+  test("el desplegable de etapa arranca en la vigente y ofrece el plan entero", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    const etapa = page.getByLabel("Etapa en la que pasó");
+
+    // La opción por defecto no es «ninguna»: es la vigente, nombrada.
+    await expect(etapa).toHaveValue("");
+    await expect(etapa.locator("option").first()).toHaveText(
+      new RegExp(`Donde está el proceso hoy.*${PENDIENTE_1}`),
+    );
+
+    // Las cuatro etapas se ofrecen, cumplidas incluidas: una nota se escribe
+    // a veces días después del hecho.
+    await expect(etapa.locator("option")).toHaveCount(ETAPAS.length + 1);
+    await expect(etapa.locator("option").nth(1)).toHaveText(
+      `1. ${CUMPLIDA_1} · cumplida`,
+    );
+    await expect(etapa.locator("option").nth(3)).toHaveText(
+      `3. ${PENDIENTE_1} · etapa vigente`,
+    );
+  });
+
+  test("anotar redibuja la línea con lo que contestó el servidor", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await page.getByLabel("Qué pasó").fill(NOTA_NUEVA);
+    await page.getByRole("button", { name: "Anotar" }).click();
+
+    await expect(page.getByText(NOTA_NUEVA)).toBeVisible();
+    await expect(page.locator(".nota")).toHaveCount(4);
+
+    // El campo queda vacío para la próxima, y solo porque se guardó.
+    await expect(page.getByLabel("Qué pasó")).toHaveValue("");
+  });
+
+  test("una nota vacía no se manda: lo dice el navegador antes de ir", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await page.getByRole("button", { name: "Anotar" }).click();
+
+    await expect(page.getByText(/La nota no puede ir vacía/i)).toBeVisible();
+    await expect(page.locator(".nota")).toHaveCount(3);
+  });
+
   for (const ancho of ANCHOS) {
     test(`a ${String(ancho)}px de ancho, sobre el listado de procesos`, async ({
       page,
@@ -440,6 +651,11 @@ test.describe("los procesos del bufete", () => {
       await page.goto(DETALLE_URL);
       await page.evaluate(() => document.fonts.ready);
       await page.locator(".plantilla__etapa .campo__control").first().waitFor();
+      // La línea de tiempo llega en su propia petición, y es la que trae el
+      // token largo sin espacios. Medir antes de que esté dibujada haría que
+      // el criterio pasara sin haber visto el contenido hostil, que es la
+      // vacuidad que T-4 descubrió en su propia rejilla.
+      await page.locator(".nota__texto").last().waitFor();
 
       const desborde = await medirDesborde(page);
 

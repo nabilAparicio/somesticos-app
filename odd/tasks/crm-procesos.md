@@ -156,7 +156,7 @@ se renumera.
       contrapesos que releen y mutaciones, toca worker, front y dos archivos de prueba: el
       disparador de escritor se cumple. Forecast real ~400.*
 
-- [ ] **T-8 · Notas.** Crear ancladas a la etapa vigente, con autor y fecha. Línea de tiempo del
+- [x] **T-8 · Notas.** Crear ancladas a la etapa vigente, con autor y fecha. Línea de tiempo del
       proceso. Inmutables.
       *Ruta: delegada. Forecast ~250.*
 
@@ -219,7 +219,8 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-11 | (este commit) | Rojo observado: 24 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 410/410** · **e2e 98/98**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación del plan vacío (2 muertas). | Pendiente de evaluar |
+| T-8 | (este commit) | Rojo observado: 38 fallas y el archivo de UI sin cargar. Final: los cinco en 0 · **test 476/476** · **e2e 104/104**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de notas (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
+| T-11 | `84a3ce9` | Rojo observado: 24 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 410/410** · **e2e 98/98**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación del plan vacío (2 muertas). | Pendiente de evaluar |
 | T-7 | `bff83c5` | Rojo observado: 42 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 372/372** · **e2e 94/94**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de lo alcanzado (4 muertas). | Pendiente de evaluar |
 | T-6 | `326901b` | Rojo observado: 44 fallas de API, el archivo de UI sin cargar y 25 e2e en rojo. Final: los cinco en 0 · **test 287/287** · **e2e 68/68**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de borrado (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
 | T-5 | `c9f51fc` | Rojo observado: 27 de 35 fallas en la API y el archivo de UI sin cargar. Final: los cinco comandos en 0 · **test 189/189** · **e2e 43/43**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de tenencia (5 muertas). | Pendiente de evaluar |
@@ -373,6 +374,60 @@ una instalación limpia el desplegable de tipo de cliente sale vacío para siemp
 lectura está; falta el CRUD. No es un defecto de T-5: excede su alcance y habría empujado la
 rebanada por encima de su presupuesto. **Entra en T-6**, junto a las áreas y los tipos de proceso,
 que son exactamente el mismo problema de catálogo.
+
+### T-8 decidió: la nota se ancla a la etapa vigente, y quien escribe puede cambiarla
+
+Por defecto va a **la primera pendiente en el orden del plan**, que es la misma definición que
+T-7 usa para "lo que viene". En un proceso recién abierto eso es su primer paso, que es
+exactamente donde el trabajo está pasando cuando alguien escribe. "Anclada a la etapa donde
+ocurrió" significa, mientras se escribe, la etapa **en curso** — no la última cumplida, que es
+donde el trabajo ya no está.
+
+Dos colas resueltas:
+
+- **Sin pendientes** (todo cumplido): la última alcanzada.
+- **Sin ninguna etapa**: se rechaza con 422 `proceso_sin_etapas`. El servidor **no inventa un
+  paso**, porque inventarlo metería en el plan de trabajo algo que nadie decidió, y el plan es lo
+  que el abogado lee para saber qué falta.
+
+Y quien escribe **puede elegir otra etapa del mismo proceso**: una nota se escribe a veces días
+después del hecho y, como es inmutable, el momento de escribirla es la única oportunidad de
+anclarla donde de verdad ocurrió.
+
+### El encargo de T-7, cumplido
+
+T-7 dejó abierto a propósito el agujero de borrar una etapa pendiente con notas, con dueño
+asignado. T-8 lo tapó con la misma disciplina: cuenta los dependientes y rechaza con 422
+`etapa_con_notas_no_se_quita` diciendo **cuántas** notas lo impiden. Al aflojar la guarda mueren
+5 pruebas y mueren con `FOREIGN KEY constraint failed` crudo — reproducido por el orquestador.
+
+`FallaDeValidacion` ganó un `cuantos?: number` para que el mensaje diga cuántas son sin que la
+pantalla tenga que ir a contarlas.
+
+### La trampa de T-4 volvió, y esta vez agarró al escritor
+
+T-8 puso en el banco de e2e un token "sin espacios" para forzar el ajuste de línea… **con
+guiones**. Quitó el `overflow-wrap` del texto de la nota y **las 104 pruebas siguieron pasando**:
+el guion es un punto de corte natural, el navegador partía el token solo, y la regla defensiva
+nunca llegaba a actuar.
+
+Con un token sin guiones apareció el segundo hallazgo: la regla local **seguía siendo inmatable**,
+porque el `break-word` global del `body` ya hacía el trabajo. Quitando las dos mueren 4 pruebas
+responsivas.
+
+La conclusión que aplicó es la correcta y vale escribirla: **quitó la regla local redundante** en
+vez de dejarla. Una regla que ninguna prueba puede matar no es una defensa, es decoración.
+
+### Nota para T-9 y T-10 sobre la limpieza entre pruebas
+
+El disparador `nota_no_se_borra` **no tiene condición**: una nota no se borra nunca, tampoco desde
+la limpieza de una prueba. Y con las llaves foráneas en `NO ACTION`, con una nota viva tampoco se
+borran su etapa, su proceso, su cliente, su autor ni su tenant. Es la consecuencia buscada que
+anuncia el comentario de la migración, comprobada de frente: las pruebas de notas **no pueden
+hacer un solo `DELETE`** y se aíslan al revés, con identificadores nuevos por prueba.
+
+No es una cuarta migración: el comportamiento es el correcto. Pero conviene saberlo antes de
+escribir la limpieza de T-9 o T-10 y estrellarse contra él.
 
 ### T-11 decidió: guardar como tipo nuevo NO reasigna el proceso de origen
 
@@ -558,4 +613,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-8: notas ancladas a etapa, inmutables, en la línea de tiempo del proceso.
+T-9: pendientes con autor y responsable, siempre visibles en la cabecera del proceso.

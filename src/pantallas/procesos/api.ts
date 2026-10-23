@@ -18,8 +18,10 @@ import {
 import type {
   DatosDeEtapa,
   DatosDeGuardadoDePlantilla,
+  DatosDeNota,
   DatosDeProceso,
   DetalleDeProceso,
+  LineaDeTiempo,
   PlantillaGuardada,
   Proceso,
   RespuestaDeProceso,
@@ -127,6 +129,50 @@ export function guardarComoPlantilla(
 ): Promise<Resultado<PlantillaGuardada>> {
   return pedir<PlantillaGuardada>(
     `${PROCESOS}/${encodeURIComponent(procesoId)}/plantilla`,
+    cuerpo(datos, "POST"),
+  );
+}
+
+/* ==========================================================================
+   Notas y línea de tiempo (T-8)
+   ========================================================================== */
+
+/**
+ * La línea de tiempo del proceso: sus notas agrupadas por etapa.
+ *
+ * Es una segunda petición y no un campo del detalle a propósito: la línea
+ * crece sin techo mientras el proceso corre, y el detalle lo pide todo el
+ * mundo —el listado navega ahí— mientras que la línea se lee en la pantalla
+ * del proceso y nada más.
+ */
+export function cargarLineaDeTiempo(
+  procesoId: string,
+  signal: AbortSignal,
+): Promise<Resultado<LineaDeTiempo>> {
+  return pedir<LineaDeTiempo>(
+    `${PROCESOS}/${encodeURIComponent(procesoId)}/notas`,
+    { signal },
+  );
+}
+
+/**
+ * Anota un hecho en el proceso.
+ *
+ * **No hay `editarNota` ni `borrarNota`, y no es un olvido**: una nota es
+ * inmutable (`docs/diseno.md` §3 y §5, I-6). No existe la función porque no
+ * existe la ruta, y no existe la ruta porque la base lo rechazaría igual con
+ * los dos disparadores de T-2.
+ *
+ * La respuesta trae **la línea entera**, ya reagrupada: la pantalla asienta
+ * lo que el servidor dejó guardado en vez de insertar la nota donde cree
+ * que va, igual que el `PUT` del plan en T-7.
+ */
+export function anotar(
+  procesoId: string,
+  datos: DatosDeNota,
+): Promise<Resultado<LineaDeTiempo>> {
+  return pedir<LineaDeTiempo>(
+    `${PROCESOS}/${encodeURIComponent(procesoId)}/notas`,
     cuerpo(datos, "POST"),
   );
 }
