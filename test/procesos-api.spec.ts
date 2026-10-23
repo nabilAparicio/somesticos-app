@@ -2095,7 +2095,10 @@ describe("cerrar un proceso", () => {
     const proceso = await procesoDeResidencia();
     expect((await cerrar(proceso.id)).status).toBe(200);
 
-    expect(await accionesDe(proceso.id)).toEqual(["creado", "cerrado"]);
+    // Del más reciente al más antiguo: la bitácora contesta «¿qué pasó
+    // últimamente?», no cuenta una historia desde el principio —eso es la
+    // línea de tiempo de notas—. T-17 invirtió el orden de la ruta.
+    expect(await accionesDe(proceso.id)).toEqual(["cerrado", "creado"]);
   });
 
   it("el método tiene que ser POST", async () => {
@@ -2214,10 +2217,13 @@ describe("reabrir un proceso", () => {
     expect((await cerrar(proceso.id)).status).toBe(200);
     expect((await reabrir(proceso.id)).status).toBe(200);
 
+    // Del más reciente al más antiguo (T-17). Y el orden importa acá más
+    // que en ningún lado: al reabrir, la fila pierde su `cerrado_en`, así
+    // que esta entrada es lo único que queda de que aquel cierre existió.
     expect(await accionesDe(proceso.id)).toEqual([
-      "creado",
-      "cerrado",
       "reabierto",
+      "cerrado",
+      "creado",
     ]);
   });
 

@@ -1,6 +1,14 @@
 /**
- * Shapes exchanged over the HTTP API. Type-only, so it is safe to compile this
- * file both in the Worker project and in the browser project.
+ * Shapes exchanged over the HTTP API. Compiles both in the Worker project and
+ * in the browser project.
+ *
+ * Casi todo acá son tipos. Las únicas constantes son las dos de T-17
+ * (`LIMITE_DE_BITACORA_POR_DEFECTO` y `TECHO_DEL_LIMITE_DE_BITACORA`), y
+ * están acá por la misma razón por la que están los tipos: son **acuerdo
+ * entre las dos mitades**, no detalle de una. El servidor acota con el techo
+ * y la pantalla necesita el mismo número para no prometer un «ver más» que
+ * el servidor no va a servir. Dos copias del número serían dos números el
+ * día que uno cambie.
  */
 
 export interface HealthReport {
@@ -994,13 +1002,58 @@ export interface EntradaDeBitacora {
 }
 
 /**
- * La bitácora de una entidad, **del hecho más viejo al más nuevo**.
+ * Cuántos hechos trae una página de bitácora cuando nadie pide otra cosa.
  *
- * Se lee como una historia, de arriba hacia abajo, que es la forma del
- * ejemplo que pidió el usuario —«el 3 de marzo…»— y la misma que la línea de
- * tiempo de T-8. Y es el orden que el índice
- * `(entidad, entidad_id, ocurrido_en)` ya sirve sin ordenar nada.
+ * Veinte es una pantalla. La bitácora contesta «¿qué pasó últimamente?» y esa
+ * pregunta se agota en los últimos hechos: en una sucesión de tres años, lo
+ * de la semana pasada importa y lo de la primera semana es arqueología. Un
+ * número más alto no contestaría mejor la pregunta; haría más larga la
+ * pantalla. Y el sitio más apretado donde esto se dibuja —la historia
+ * desplegada dentro de una fila de la tabla de catálogos— no aguanta mucho
+ * más sin tapar la tabla que la contiene.
+ */
+export const LIMITE_DE_BITACORA_POR_DEFECTO = 20;
+
+/**
+ * Lo más que el servidor sirve de una, pida lo que pida la dirección.
+ *
+ * Existe para que `?limite=100000` no sea una consulta sin fondo: el límite
+ * que llega por la URL lo escribe cualquiera, y una ruta que lo obedece sin
+ * mirar es una forma de pedirle a D1 que serialice la tabla entera.
+ *
+ * Quinientos y no cien: el conjunto más grande que este sistema puede
+ * producir de una sola entidad es del orden de unos cientos de hechos —una
+ * sucesión larga medida en el proyecto da ~400—, y el techo tiene que quedar
+ * **por encima** de eso para que «ver más antiguos» pueda llegar hasta el
+ * final. Un techo que corta antes convierte el control en una promesa que no
+ * se puede cumplir. A ~214 bytes por fila, 500 son unos 107 kB: una
+ * respuesta grande, no una desmedida, y solo la pide quien insistió con el
+ * botón hasta el fondo.
+ */
+export const TECHO_DEL_LIMITE_DE_BITACORA = 500;
+
+/**
+ * La bitácora de una entidad, **del hecho más nuevo al más viejo**.
+ *
+ * Al revés que la línea de tiempo de T-8, y la diferencia no es de gusto: la
+ * línea de tiempo son **notas**, que son una narración y se leen hacia
+ * adelante. La bitácora es **auditoría**, y sus preguntas —«¿qué pasó
+ * últimamente?», «¿quién tocó esto?», «¿cuándo se cerró?»— se contestan
+ * empezando por lo último. T-17 corrigió el orden al notar que las dos
+ * cosas se habían dibujado iguales siendo distintas.
+ *
+ * El índice `(entidad, entidad_id, ocurrido_en)` sirve el recorrido
+ * invertido sin ordenar nada —`EXPLAIN QUERY PLAN` no muestra b-tree
+ * temporal, y `test/bitacora-api.spec.ts` lo comprueba—, así que el esquema
+ * no cambió.
+ *
+ * `entradas` es **una página**: a lo sumo el `limite` pedido, siempre los
+ * más recientes. `total` es cuántos hechos tiene la entidad, y por eso no se
+ * puede deducir de `entradas.length`: sin él, la pantalla no puede decir
+ * cuántos está escondiendo y «ver más» sería un botón que no informa.
  */
 export interface RespuestaDeBitacora {
   entradas: EntradaDeBitacora[];
+  /** Cuántos hechos hay en total, no cuántos trae esta página. */
+  total: number;
 }

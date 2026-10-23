@@ -97,16 +97,18 @@ const DETALLE_HOSTIL =
 
 /** La historia del área de Migración: tres hechos, del viejo al nuevo. */
 const BITACORA_MIGRACION = {
+  // Del más nuevo al más viejo, que es como contesta la API desde T-17: el
+  // banco imita al servidor, no al revés.
   entradas: [
     {
-      id: "h1",
+      id: "h5",
       entidad: "area",
       entidadId: AREA_MIGRACION,
-      accion: "creado",
+      accion: "editado",
       usuarioId: ITZEL.id,
       usuarioNombre: ITZEL.nombre,
-      ocurridoEn: "2026-08-15T15:00:00.000Z",
-      detalle: "Migración",
+      ocurridoEn: "2026-09-02T15:00:00.000Z",
+      detalle: DETALLE_HOSTIL,
     },
     {
       id: "h2",
@@ -119,16 +121,17 @@ const BITACORA_MIGRACION = {
       detalle: "Migración y naturalización",
     },
     {
-      id: "h5",
+      id: "h1",
       entidad: "area",
       entidadId: AREA_MIGRACION,
-      accion: "editado",
+      accion: "creado",
       usuarioId: ITZEL.id,
       usuarioNombre: ITZEL.nombre,
-      ocurridoEn: "2026-09-02T15:00:00.000Z",
-      detalle: DETALLE_HOSTIL,
+      ocurridoEn: "2026-08-15T15:00:00.000Z",
+      detalle: "Migración",
     },
   ],
+  total: 3,
 };
 
 /** La de Familia, distinta, para que abrir otra fila se note. */
@@ -145,6 +148,7 @@ const BITACORA_FAMILIA = {
       detalle: "Familia y sucesiones",
     },
   ],
+  total: 1,
 };
 
 /** La del tipo de proceso, que se lee en su propia pantalla. */
@@ -161,6 +165,7 @@ const BITACORA_TIPO = {
       detalle: "Permiso de residencia permanente por matrimonio con nacional",
     },
   ],
+  total: 1,
 };
 
 /** Los anchos del criterio de §9, en los puntos donde suele quebrarse. */
@@ -187,7 +192,7 @@ function cuerpoDe(pathname: string): Record<string, unknown> | null {
   // Los tipos de cliente no tienen hechos todavía: la pantalla tiene que
   // decirlo, no rellenarlo.
   if (/^\/api\/tipos-cliente\/[^/]+\/bitacora$/.test(pathname)) {
-    return { entradas: [] };
+    return { entradas: [], total: 0 };
   }
 
   if (pathname === "/api/areas") return { areas: AREAS };
@@ -388,10 +393,12 @@ test.describe("los catálogos del bufete", () => {
 
     const hechos = page.locator(".bitacora__frase");
     await expect(hechos).toHaveCount(3);
-    await expect(hechos.first()).toContainText("Itzel dio de alta «Migración»");
+
+    // Lo último arriba (T-17): la auditoría se lee empezando por el final.
     await expect(hechos.nth(1)).toContainText(
       "Itzel editó «Migración y naturalización»",
     );
+    await expect(hechos.last()).toContainText("Itzel dio de alta «Migración»");
 
     // El aviso que no puede faltar: la bitácora empieza el día que se
     // encendió y eso se dice, no se disimula.

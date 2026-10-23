@@ -24,7 +24,9 @@
  *  4. **Cada mutación deja su entrada**, con el autor resuelto por nombre en
  *     lectura, su momento y su entidad. Se comprueba **releyendo**, nunca por
  *     el código de respuesta de la escritura.
- *  5. **La bitácora de una entidad sale en orden** y no se escapa del tenant.
+ *  5. **La bitácora de una entidad sale en orden** —del hecho más nuevo al
+ *     más viejo desde T-17, porque es auditoría y no narración— **y por
+ *     páginas**, sin escaparse del tenant.
  *
  * ## Por qué esta suite tampoco borra nada
  *
@@ -47,9 +49,16 @@
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import {
+  LIMITE_DE_BITACORA_POR_DEFECTO,
+  TECHO_DEL_LIMITE_DE_BITACORA,
+} from "../worker/contract";
 import { TENANT_UNICO_ID, nuevoId } from "../worker/db/ids";
 import { manejar } from "../worker/index";
-import type { ServicioDeBitacora } from "../worker/bitacora/repositorio";
+import type {
+  PaginaDeBitacora,
+  ServicioDeBitacora,
+} from "../worker/bitacora/repositorio";
 import {
   ACCIONES_DE_BITACORA,
   ENTIDADES_REGISTRADAS,
@@ -84,6 +93,8 @@ interface EntradaEnElCable {
 
 interface BitacoraEnElCable {
   entradas: EntradaEnElCable[];
+  /** Cuántos hechos hay en total, no cuántos trae la página (T-17). */
+  total: number;
 }
 
 let autorId: string;
@@ -160,6 +171,12 @@ function sinIdentidad(
 /**
  * La bitácora de una entidad, leída **por debajo de la API**.
  *
+ * Lee **del más viejo al más nuevo**, al revés que la API desde T-17, y a
+ * propósito: esto es la tabla, no la pantalla. Lo que contesta es «qué quedó
+ * escrito, en qué orden se escribió», que es la pregunta de las pruebas de
+ * registro; el orden de lectura es una decisión de la ruta y se afirma
+ * donde se prueba la ruta.
+ *
  * Hace falta porque los eventos de catálogo —áreas, tipos de proceso, tipos
  * de cliente— se registran pero todavía no tienen pantalla: T-10 muestra la
  * del proceso y la del cliente, que son las dos que el bufete pide. Que no
@@ -203,7 +220,13 @@ async function entradasEnLaBase(
   }));
 }
 
-/** La bitácora de un proceso, por la API: la lectura que prueba la pantalla. */
+/**
+ * La bitácora de un proceso, por la API: la lectura que prueba la pantalla.
+ *
+ * Sin `?limite`, así que llega la página por defecto. Las pruebas que la
+ * usan registran un puñado de hechos y entran enteras en ella; las que
+ * pasan del tope están en el bloque de paginación y piden explícitamente.
+ */
 async function bitacoraDeProceso(
   procesoId: string,
 ): Promise<EntradaEnElCable[]> {
@@ -665,9 +688,9 @@ describe("la bitácora no se lee desde afuera", () => {
   function espia(): ServicioDeBitacora & { llamado: boolean } {
     const registro = {
       llamado: false,
-      listar: (): Promise<never[]> => {
+      listar: (): Promise<PaginaDeBitacora> => {
         registro.llamado = true;
-        return Promise.resolve([]);
+        return Promise.resolve({ entradas: [], total: 0 });
       },
     };
     return registro as unknown as ServicioDeBitacora & { llamado: boolean };
@@ -748,7 +771,7 @@ describe("el alta y la edición de un cliente quedan registradas", () => {
     expect(momento.getTime()).toBeGreaterThanOrEqual(antes);
   });
 
-  it("registra la edición debajo del alta, en orden", async () => {
+  it("registra la edición encima del alta, en orden", async () => {
     const id = await crearCliente("Carlos Pérez");
 
     const edicion = await comoSocio(
@@ -761,12 +784,13 @@ describe("el alta y la edición de un cliente quedan registradas", () => {
 
     const entradas = await bitacoraDeCliente(id);
 
-    expect(acciones(entradas)).toEqual(["creado", "editado"]);
+    // Lo último arriba (T-17): la edición encabeza y el alta queda debajo.
+    expect(acciones(entradas)).toEqual(["editado", "creado"]);
     expect(entradas.map((e) => e.usuarioNombre)).toEqual([
-      NOMBRE_AUTOR,
       NOMBRE_SOCIO,
+      NOMBRE_AUTOR,
     ]);
-    expect(entradas[1].detalle).toBe("Carlos Pérez Rodríguez");
+    expect(entradas[0].detalle).toBe("Carlos Pérez Rodríguez");
   });
 
   it("no registra nada cuando el alta se rechaza", async () => {
@@ -943,17 +967,23 @@ describe("la bitácora de los catálogos se lee por su entidad", () => {
       const entradas = ((await respuesta.json()) as BitacoraEnElCable)
         .entradas;
 
-      expect(acciones(entradas)).toEqual(["creado", "editado"]);
+      expect(acciones(entradas)).toEqual(["editado", "creado"]);
       expect(entradas.map((entrada) => entrada.entidad)).toEqual([
         entidad,
         entidad,
       ]);
-      expect(entradas[1].detalle).toBe(otroNombre);
-      expect(entradas[1].usuarioNombre).toBe(NOMBRE_AUTOR);
+      expect(entradas[0].detalle).toBe(otroNombre);
+      expect(entradas[0].usuarioNombre).toBe(NOMBRE_AUTOR);
 
-      // Y es exactamente lo que hay en la tabla: la ruta no filtra ni
-      // reordena nada por su cuenta.
-      expect(entradas).toEqual(await entradasEnLaBase(entidad, id));
+      // Y es exactamente lo que hay en la tabla, sin filtrar ni perder
+      // nada: lo único que la ruta decide es el orden, y lo decide al
+      // revés que la inserción. `entradasEnLaBase` lee del más viejo al
+      // más nuevo —es la tabla, no la pantalla—, así que la igualdad se
+      // afirma contra su reverso. Si alguien le quitara el `DESC` a la
+      // consulta, los dos lados coincidirían sin invertir y esto moriría.
+      expect(entradas).toEqual(
+        [...(await entradasEnLaBase(entidad, id))].reverse(),
+      );
     },
   );
 
@@ -1005,9 +1035,9 @@ describe("la bitácora de los catálogos se lee por su entidad", () => {
     async ({ coleccion }) => {
       const registro = {
         llamado: false,
-        listar: (): Promise<never[]> => {
+        listar: (): Promise<PaginaDeBitacora> => {
           registro.llamado = true;
-          return Promise.resolve([]);
+          return Promise.resolve({ entradas: [], total: 0 });
         },
       };
       const vigilante = registro as unknown as ServicioDeBitacora;
@@ -1045,7 +1075,7 @@ describe("la bitácora de los catálogos se lee por su entidad", () => {
     expect(viva.status).toBe(200);
     expect(
       acciones(((await viva.json()) as BitacoraEnElCable).entradas),
-    ).toEqual(["creado", "dado_de_baja"]);
+    ).toEqual(["dado_de_baja", "creado"]);
 
     const borrada = await crearArea(`Borrada ${nuevoId()}`);
     expect(
@@ -1092,9 +1122,9 @@ describe("el proceso registra su vida entera", () => {
 
     const entradas = await bitacoraDeProceso(procesoId);
 
-    expect(acciones(entradas)).toEqual(["creado", "etapa_alcanzada"]);
-    expect(entradas[1].usuarioNombre).toBe(NOMBRE_SOCIO);
-    expect(entradas[1].detalle).toBe(PLAN_DE_RESIDENCIA[0]);
+    expect(acciones(entradas)).toEqual(["etapa_alcanzada", "creado"]);
+    expect(entradas[0].usuarioNombre).toBe(NOMBRE_SOCIO);
+    expect(entradas[0].detalle).toBe(PLAN_DE_RESIDENCIA[0]);
   });
 
   it("no registra un avance que no avanzó nada", async () => {
@@ -1113,11 +1143,11 @@ describe("el proceso registra su vida entera", () => {
     expect(choque.status).toBe(409);
 
     expect(acciones(await bitacoraDeProceso(procesoId))).toEqual([
+      "etapa_alcanzada",
+      "etapa_alcanzada",
+      "etapa_alcanzada",
+      "etapa_alcanzada",
       "creado",
-      "etapa_alcanzada",
-      "etapa_alcanzada",
-      "etapa_alcanzada",
-      "etapa_alcanzada",
     ]);
   });
 
@@ -1136,8 +1166,8 @@ describe("el proceso registra su vida entera", () => {
     expect(respuesta.status).toBe(200);
 
     expect(acciones(await bitacoraDeProceso(procesoId))).toEqual([
-      "creado",
       "plan_editado",
+      "creado",
     ]);
   });
 
@@ -1152,9 +1182,9 @@ describe("el proceso registra su vida entera", () => {
     expect(respuesta.status).toBe(200);
 
     const entradas = await bitacoraDeProceso(procesoId);
-    expect(acciones(entradas)).toEqual(["creado", "plantilla_guardada"]);
-    expect(entradas[1].usuarioNombre).toBe(NOMBRE_SOCIO);
-    expect(entradas[1].detalle).toBe(nombreTipoResidencia);
+    expect(acciones(entradas)).toEqual(["plantilla_guardada", "creado"]);
+    expect(entradas[0].usuarioNombre).toBe(NOMBRE_SOCIO);
+    expect(entradas[0].detalle).toBe(nombreTipoResidencia);
 
     // Y la plantilla del tipo de destino también lo registra: son dos
     // hechos distintos sobre dos entidades distintas, no una entrada
@@ -1175,8 +1205,8 @@ describe("el proceso registra su vida entera", () => {
     expect(respuesta.status).toBe(201);
 
     const entradas = await bitacoraDeProceso(procesoId);
-    expect(acciones(entradas)).toEqual(["creado", "nota_agregada"]);
-    expect(entradas[1].detalle).toBe(PLAN_DE_RESIDENCIA[0]);
+    expect(acciones(entradas)).toEqual(["nota_agregada", "creado"]);
+    expect(entradas[0].detalle).toBe(PLAN_DE_RESIDENCIA[0]);
   });
 
   it("registra la apertura y el cierre de un pendiente", async () => {
@@ -1203,12 +1233,12 @@ describe("el proceso registra su vida entera", () => {
 
     const entradas = await bitacoraDeProceso(procesoId);
     expect(acciones(entradas)).toEqual([
-      "creado",
-      "pendiente_abierto",
       "pendiente_cerrado",
+      "pendiente_abierto",
+      "creado",
     ]);
+    expect(entradas[0].usuarioNombre).toBe(NOMBRE_SOCIO);
     expect(entradas[1].usuarioNombre).toBe(NOMBRE_AUTOR);
-    expect(entradas[2].usuarioNombre).toBe(NOMBRE_SOCIO);
     expect(entradas[1].detalle).toBe(
       "Falta el certificado de matrimonio apostillado.",
     );
@@ -1216,7 +1246,7 @@ describe("el proceso registra su vida entera", () => {
 });
 
 describe("la bitácora sale en orden y acotada a su entidad", () => {
-  it("devuelve los hechos del proceso del más viejo al más nuevo", async () => {
+  it("devuelve los hechos del proceso del más nuevo al más viejo", async () => {
     const procesoId = await crearProceso();
 
     await comoAutor(
@@ -1234,14 +1264,16 @@ describe("la bitácora sale en orden y acotada a su entidad", () => {
     const entradas = await bitacoraDeProceso(procesoId);
 
     expect(acciones(entradas)).toEqual([
-      "creado",
       "etapa_alcanzada",
       "nota_agregada",
       "etapa_alcanzada",
+      "creado",
     ]);
 
+    // Y los momentos vienen en orden descendente, que es lo que hace de
+    // esto una afirmación sobre el orden y no sobre el contenido.
     const momentos = entradas.map((entrada) => entrada.ocurridoEn);
-    expect([...momentos].sort()).toEqual(momentos);
+    expect([...momentos].sort().reverse()).toEqual(momentos);
   });
 
   it("no mezcla dos procesos", async () => {
@@ -1254,8 +1286,8 @@ describe("la bitácora sale en orden y acotada a su entidad", () => {
 
     expect(acciones(await bitacoraDeProceso(uno))).toEqual(["creado"]);
     expect(acciones(await bitacoraDeProceso(otro))).toEqual([
-      "creado",
       "etapa_alcanzada",
+      "creado",
     ]);
   });
 
@@ -1277,6 +1309,236 @@ describe("la bitácora sale en orden y acotada a su entidad", () => {
     expect(acciones(await bitacoraDeCliente(nuevoCliente))).toEqual([
       "creado",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Por páginas, y empezando por lo último (T-17)
+// ---------------------------------------------------------------------------
+
+/**
+ * La paginación de la bitácora, probada **por rechazo**.
+ *
+ * Una prueba que pide veinte y recibe veinte pasa igual con el `LIMIT`
+ * borrado si solo hay veinte filas: no prueba nada. Todo lo de este bloque
+ * siembra **más hechos que el tope** y afirma por contenido *cuáles* vuelven,
+ * que es lo único que distingue «trae una página» de «trae todo» y «trae los
+ * más nuevos» de «trae los más viejos».
+ *
+ * El sujeto es el área que `beforeEach` inserta **directo en la tabla**, sin
+ * pasar por la API: nace sin un solo hecho, así que su historia es
+ * exactamente la que siembra cada prueba y los totales son exactos.
+ */
+describe("la bitácora se lee por páginas, de lo más nuevo a lo más viejo", () => {
+  /** Más que el tope por defecto: sin eso, ninguna de estas pruebas prueba. */
+  const SEMBRADOS = LIMITE_DE_BITACORA_POR_DEFECTO + 7;
+
+  const PRIMER_INSTANTE = Date.parse("2026-01-02T15:00:00.000Z");
+
+  /** Cómo se llama el hecho número `i`, para afirmar *cuál* volvió. */
+  function nombreDelHecho(i: number): string {
+    return `Hecho ${String(i).padStart(3, "0")}`;
+  }
+
+  /**
+   * `cuantos` hechos sobre el área, del más viejo al más nuevo.
+   *
+   * Con `mismoInstante`, todos comparten `ocurrido_en`: es el caso que
+   * obliga al desempate por `rowid`, y el que la base produce de verdad
+   * cuando una sola operación registra varios hechos en el mismo
+   * milisegundo.
+   */
+  async function sembrarHechos(
+    cuantos: number,
+    mismoInstante = false,
+  ): Promise<void> {
+    await env.DB.batch(
+      Array.from({ length: cuantos }, (_sin_usar, i) =>
+        env.DB.prepare(
+          "INSERT INTO bitacora (id, tenant_id, entidad, entidad_id," +
+            " accion, usuario_id, ocurrido_en, detalle)" +
+            " VALUES (?, ?, 'area', ?, 'editado', ?, ?, ?)",
+        ).bind(
+          nuevoId(),
+          TENANT_UNICO_ID,
+          areaId,
+          autorId,
+          new Date(
+            mismoInstante ? PRIMER_INSTANTE : PRIMER_INSTANTE + i * 60_000,
+          ).toISOString(),
+          nombreDelHecho(i),
+        ),
+      ),
+    );
+  }
+
+  /** La bitácora del área por la API, con la consulta que le pase el caso. */
+  async function paginaDelArea(consulta = ""): Promise<BitacoraEnElCable> {
+    const respuesta = await comoAutor(
+      peticion(`/api/areas/${areaId}/bitacora${consulta}`),
+    );
+    expect(respuesta.status).toBe(200);
+    return (await respuesta.json()) as BitacoraEnElCable;
+  }
+
+  function nombres(pagina: BitacoraEnElCable): (string | null)[] {
+    return pagina.entradas.map((entrada) => entrada.detalle);
+  }
+
+  it("trae solo el tope, y son los más recientes", async () => {
+    await sembrarHechos(SEMBRADOS);
+
+    const pagina = await paginaDelArea();
+
+    // Cuántos: muere si alguien borra el `LIMIT`.
+    expect(pagina.entradas).toHaveLength(LIMITE_DE_BITACORA_POR_DEFECTO);
+
+    // Cuáles: muere si alguien le quita el `DESC` y trae los más viejos.
+    // Las dos afirmaciones hacen falta; ninguna de las dos sola alcanza.
+    expect(nombres(pagina)).toEqual(
+      Array.from({ length: LIMITE_DE_BITACORA_POR_DEFECTO }, (_sin_usar, i) =>
+        nombreDelHecho(SEMBRADOS - 1 - i),
+      ),
+    );
+    expect(nombres(pagina), "el más viejo no entra en la página").not.toContain(
+      nombreDelHecho(0),
+    );
+  });
+
+  it("el total cuenta todos los hechos, no los de la página", async () => {
+    // Sin esto la pantalla no puede decir cuántos esconde, y «ver más» sería
+    // un botón que no informa. Es la afirmación que muere si el total se
+    // calcula sobre las filas que se trajeron.
+    await sembrarHechos(SEMBRADOS);
+
+    const pagina = await paginaDelArea();
+
+    expect(pagina.total).toBe(SEMBRADOS);
+    expect(pagina.total).toBeGreaterThan(pagina.entradas.length);
+  });
+
+  it("el desempate del mismo instante también va al revés", async () => {
+    // Varios hechos de una misma operación comparten `ocurrido_en`. Dejar el
+    // `rowid` ascendente mezclaría los criterios: ese grupo quedaría al revés
+    // que el resto de la lista, y nadie lo notaría hasta leerlo.
+    await sembrarHechos(SEMBRADOS, true);
+
+    const pagina = await paginaDelArea();
+
+    expect(nombres(pagina)[0]).toBe(nombreDelHecho(SEMBRADOS - 1));
+    expect(nombres(pagina)).toEqual(
+      Array.from({ length: LIMITE_DE_BITACORA_POR_DEFECTO }, (_sin_usar, i) =>
+        nombreDelHecho(SEMBRADOS - 1 - i),
+      ),
+    );
+  });
+
+  it("un limite mayor alcanza los más viejos sin cambiar el orden", async () => {
+    await sembrarHechos(SEMBRADOS);
+
+    const pagina = await paginaDelArea(`?limite=${String(SEMBRADOS)}`);
+
+    expect(pagina.entradas).toHaveLength(SEMBRADOS);
+    expect(pagina.total).toBe(SEMBRADOS);
+    expect(nombres(pagina)[0]).toBe(nombreDelHecho(SEMBRADOS - 1));
+    expect(nombres(pagina)[SEMBRADOS - 1]).toBe(nombreDelHecho(0));
+  });
+
+  it("un limite más chico que el tope manda", async () => {
+    await sembrarHechos(SEMBRADOS);
+
+    const pagina = await paginaDelArea("?limite=3");
+
+    expect(nombres(pagina)).toEqual([
+      nombreDelHecho(SEMBRADOS - 1),
+      nombreDelHecho(SEMBRADOS - 2),
+      nombreDelHecho(SEMBRADOS - 3),
+    ]);
+    expect(pagina.total).toBe(SEMBRADOS);
+  });
+
+  it("el techo acota lo que la dirección pida de más", async () => {
+    // `?limite=100000` no puede convertirse en una consulta sin fondo. Se
+    // comprueba con el techo puesto como límite real y no con un 200 a secas:
+    // lo que importa es que el servidor NO sirvió lo que le pidieron.
+    await sembrarHechos(SEMBRADOS);
+
+    const pagina = await paginaDelArea(
+      `?limite=${String(TECHO_DEL_LIMITE_DE_BITACORA)}`,
+    );
+
+    expect(pagina.entradas).toHaveLength(SEMBRADOS);
+  });
+
+  it.each([
+    { limite: "0", porque: "cero no es una página" },
+    { limite: "-3", porque: "un negativo tampoco" },
+    { limite: "abc", porque: "no es un número" },
+    { limite: "1.5", porque: "una página no es fraccionaria" },
+    { limite: "", porque: "vacío no dice nada" },
+    { limite: " 5", porque: "con espacio no es un entero escrito" },
+    { limite: "1e3", porque: "la notación científica esquivaría el techo" },
+    {
+      limite: String(TECHO_DEL_LIMITE_DE_BITACORA + 1),
+      porque: "pasa el techo",
+    },
+    { limite: "100000", porque: "sería una consulta sin fondo" },
+  ])("rechaza «?limite=$limite»: $porque", async ({ limite }) => {
+    // La guarda se cuenta, no se atrapa: esto es un 400 decidido por la
+    // ruta, no un error de SQL disfrazado.
+    const respuesta = await comoAutor(
+      peticion(`/api/areas/${areaId}/bitacora?limite=${limite}`),
+    );
+
+    expect(respuesta.status).toBe(400);
+    expect(await respuesta.json()).toEqual({ error: "limite_invalido" });
+  });
+
+  it("el rechazo del limite llega antes que la lectura del dominio", async () => {
+    // Un límite inválido se contesta sin preguntarle nada a la bitácora: si
+    // llegara al puerto, la guarda estaría después de la consulta y no antes.
+    const registro = {
+      llamado: false,
+      listar: (): Promise<never> => {
+        registro.llamado = true;
+        return Promise.reject(new Error("no se tenía que llamar"));
+      },
+    };
+
+    const respuesta = await manejar(
+      peticion(`/api/areas/${areaId}/bitacora?limite=0`),
+      entorno(),
+      {
+        correoDeDesarrollo: () => EMAIL_AUTOR,
+        bitacora: registro as unknown as ServicioDeBitacora,
+      },
+    );
+
+    expect(respuesta.status).toBe(400);
+    expect(registro.llamado, "no llegó al dominio").toBe(false);
+  });
+
+  it("el índice sirve el orden invertido sin b-tree temporal", async () => {
+    // El esquema no cambió, y esto es lo que lo sostiene en vez de la
+    // confianza: SQLite recorre `(entidad, entidad_id, ocurrido_en)` al
+    // revés igual de bien. El día que alguien mezcle las direcciones del
+    // `ORDER BY` —`ocurrido_en DESC, rowid` ascendente— aparece acá un
+    // «USE TEMP B-TREE», que es la tabla entera ordenada en memoria.
+    const { results } = await env.DB.prepare(
+      "EXPLAIN QUERY PLAN" +
+        " SELECT b.id FROM bitacora b" +
+        " WHERE b.tenant_id = ? AND b.entidad = ? AND b.entidad_id = ?" +
+        " ORDER BY b.ocurrido_en DESC, b.rowid DESC LIMIT ?",
+    )
+      .bind(TENANT_UNICO_ID, "area", areaId, LIMITE_DE_BITACORA_POR_DEFECTO)
+      .all<{ detail: string }>();
+
+    const plan = results.map((fila) => fila.detail).join(" | ");
+
+    expect(plan).toContain("bitacora_entidad");
+    expect(plan, "el orden sale del índice, no de un sorter").not.toMatch(
+      /TEMP B-TREE/i,
+    );
   });
 });
 

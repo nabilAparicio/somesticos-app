@@ -13,10 +13,15 @@ import {
   textoDeProblema as textoDeProblemaDe,
   type Resultado,
 } from "../../api/peticiones";
+import {
+  direccionDeBitacora,
+  paginaDeBitacora,
+  type PaginaDeBitacora,
+} from "../../bitacora";
+import { LIMITE_DE_BITACORA_POR_DEFECTO } from "../../../worker/contract";
 import type {
   Cliente,
   DatosDeCliente,
-  EntradaDeBitacora,
   RespuestaDeBitacora,
   RespuestaDeCliente,
   RespuestaDeClientes,
@@ -109,13 +114,22 @@ export async function actualizarCliente(
 export async function cargarBitacoraDeCliente(
   id: string,
   signal: AbortSignal,
-): Promise<Resultado<EntradaDeBitacora[]>> {
+): Promise<Resultado<PaginaDeBitacora>> {
+  const ruta = `/api/clientes/${encodeURIComponent(id)}/bitacora`;
+
   const resultado = await pedir<RespuestaDeBitacora>(
-    `/api/clientes/${encodeURIComponent(id)}/bitacora`,
+    direccionDeBitacora(ruta, LIMITE_DE_BITACORA_POR_DEFECTO),
     { signal },
   );
 
   return resultado.estado === "ok"
-    ? { estado: "ok", valor: resultado.valor.entradas }
+    ? {
+        estado: "ok",
+        valor: paginaDeBitacora(
+          ruta,
+          LIMITE_DE_BITACORA_POR_DEFECTO,
+          resultado.valor,
+        ),
+      }
     : resultado;
 }

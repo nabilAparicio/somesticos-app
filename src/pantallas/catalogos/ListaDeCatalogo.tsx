@@ -33,13 +33,13 @@ import { Fragment, useEffect, useState } from "react";
 
 import type {
   DatosDeCatalogo,
-  EntradaDeBitacora,
   FallaDeValidacion,
 } from "../../../worker/contract";
 import { Aviso } from "../../layout/Aviso";
 import { ContenedorDeTabla } from "../../layout/ContenedorDeTabla";
 import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
+import type { PaginaDeBitacora } from "../../bitacora";
 import { mensajeDeFalla } from "../../mensajes";
 import { Bitacora, type EstadoDeBitacora } from "../Bitacora";
 import { textoDeProblema, type Resultado } from "./api";
@@ -79,7 +79,7 @@ type Props<T extends FilaDeCatalogo> = {
   readonly cargarBitacora: (
     id: string,
     signal: AbortSignal,
-  ) => Promise<Resultado<EntradaDeBitacora[]>>;
+  ) => Promise<Resultado<PaginaDeBitacora>>;
 };
 
 type Carga =

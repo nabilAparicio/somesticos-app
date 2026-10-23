@@ -45,7 +45,12 @@
  *    dicho en un código de estado, que una entrada no se edita ni se borra.
  */
 
-import type { EntidadRegistrada, RespuestaDeBitacora } from "../contract";
+import {
+  LIMITE_DE_BITACORA_POR_DEFECTO,
+  TECHO_DEL_LIMITE_DE_BITACORA,
+  type EntidadRegistrada,
+  type RespuestaDeBitacora,
+} from "../contract";
 import type { ServicioDeCatalogos } from "../catalogos/repositorio";
 import type { ServicioDeClientes } from "../clientes/repositorio";
 import type { ServicioDeProcesos } from "../procesos/repositorio";
@@ -100,6 +105,37 @@ function noEncontrado(): Response {
  */
 function segmentosDe(pathname: string): string[] {
   return pathname.replace(/\/+$/, "").split("/").slice(1);
+}
+
+/**
+ * El tope de la página, leído de `?limite=` (T-17).
+ *
+ * Devuelve `null` cuando lo que llegó no es un tope servible, y ahí está la
+ * guarda entera: **se cuenta, no se atrapa**. Un `?limite=abc` no llega a
+ * SQL para que la base se queje; se mira acá y se contesta. Sin esto,
+ * `?limite=100000` sería una consulta sin fondo escrita por cualquiera que
+ * sepa editar la barra de direcciones.
+ *
+ * `/^[1-9][0-9]*$/` y no `Number.parseInt`: `parseInt` acepta `"12abc"`,
+ * `" 12"`, `"0x10"` y `"1e3"`, y `Number` acepta además `"1.0"` y `" "`. Un
+ * tope es un entero positivo escrito en decimal y nada más; cualquier otra
+ * cosa es una dirección mal armada, no un número raro que haya que
+ * interpretar.
+ *
+ * El techo **rechaza** en vez de recortar en silencio. Recortar le daría al
+ * llamante una página más chica que la que pidió sin decírselo, y una
+ * pantalla que cree tener los 100000 hechos cuando tiene 500 miente sobre lo
+ * que muestra. Que el techo esté en `worker/contract.ts` es lo que deja que
+ * la pantalla pida como mucho lo que el servidor sirve.
+ */
+function limiteDe(url: URL): number | null {
+  const crudo = url.searchParams.get("limite");
+  if (crudo === null) return LIMITE_DE_BITACORA_POR_DEFECTO;
+
+  if (!/^[1-9][0-9]*$/.test(crudo)) return null;
+
+  const limite = Number(crudo);
+  return limite <= TECHO_DEL_LIMITE_DE_BITACORA ? limite : null;
 }
 
 function decodificar(segmento: string): string | null {
@@ -185,6 +221,18 @@ export async function rutasDeBitacora(
     );
   }
 
+  // Antes de preguntarle nada al dominio: un tope mal escrito se contesta
+  // sin leer la historia de nadie. Y con 400 y no 422, que acá es la
+  // distinción que importa: el 422 de esta API lleva `fallas` con un `campo`
+  // que una pantalla subraya debajo del control que lo produjo, y `limite`
+  // no es un campo que nadie escriba — es parte de la dirección. Decirlo con
+  // el vocabulario de los formularios obligaría además a inventar un
+  // `MotivoDeFalla` que ningún formulario puede llegar a mostrar.
+  const limite = limiteDe(url);
+  if (limite === null) {
+    return json({ error: "limite_invalido" }, { status: 400 });
+  }
+
   // Un `switch` exhaustivo y no un mapa de funciones: así una entidad nueva
   // en el vocabulario no compila hasta que alguien diga **cómo se comprueba
   // que existe**. Ése es el único lugar donde se decide si la historia de
@@ -201,8 +249,14 @@ export async function rutasDeBitacora(
 
   if (!existe) return noEncontrado();
 
+  const pagina = await bitacora.listar(tenantId, entidad, id, limite);
+
+  // Se copia campo a campo en vez de devolver la página tal cual: lo que el
+  // puerto produce y lo que la API promete son dos cosas que hoy coinciden,
+  // y el día que dejen de coincidir el compilador lo dice acá.
   const cuerpo: RespuestaDeBitacora = {
-    entradas: await bitacora.listar(tenantId, entidad, id),
+    entradas: pagina.entradas,
+    total: pagina.total,
   };
 
   return json(cuerpo);

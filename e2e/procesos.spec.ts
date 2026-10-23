@@ -302,37 +302,10 @@ const PENDIENTES_TRAS_CERRAR = {
  * comprobación de que no hay scroll horizontal a 320px no mediría nada.
  */
 const BITACORA = {
+  // Del más nuevo al más viejo, que es como contesta la API desde T-17. El
+  // banco imita al servidor: un banco en el orden viejo haría pasar una
+  // pantalla que en producción se ve al revés.
   entradas: [
-    {
-      id: "h1",
-      entidad: "proceso",
-      entidadId: PROCESO_ID,
-      accion: "creado",
-      usuarioId: ITZEL.id,
-      usuarioNombre: ITZEL.nombre,
-      ocurridoEn: "2026-08-15T15:00:00.000Z",
-      detalle: PROCESO.titulo,
-    },
-    {
-      id: "h2",
-      entidad: "proceso",
-      entidadId: PROCESO_ID,
-      accion: "etapa_alcanzada",
-      usuarioId: ITZEL.id,
-      usuarioNombre: ITZEL.nombre,
-      ocurridoEn: "2026-09-01T15:00:00.000Z",
-      detalle: CUMPLIDA_1,
-    },
-    {
-      id: "h3",
-      entidad: "proceso",
-      entidadId: PROCESO_ID,
-      accion: "nota_agregada",
-      usuarioId: RICARDO.id,
-      usuarioNombre: RICARDO.nombre,
-      ocurridoEn: "2026-09-18T15:30:00.000Z",
-      detalle: CUMPLIDA_2,
-    },
     {
       id: "h4",
       entidad: "proceso",
@@ -345,8 +318,60 @@ const BITACORA = {
         "Falta el certificado de matrimonio apostillado por el Ministerio" +
         " de Relaciones…",
     },
+    {
+      id: "h3",
+      entidad: "proceso",
+      entidadId: PROCESO_ID,
+      accion: "nota_agregada",
+      usuarioId: RICARDO.id,
+      usuarioNombre: RICARDO.nombre,
+      ocurridoEn: "2026-09-18T15:30:00.000Z",
+      detalle: CUMPLIDA_2,
+    },
+    {
+      id: "h2",
+      entidad: "proceso",
+      entidadId: PROCESO_ID,
+      accion: "etapa_alcanzada",
+      usuarioId: ITZEL.id,
+      usuarioNombre: ITZEL.nombre,
+      ocurridoEn: "2026-09-01T15:00:00.000Z",
+      detalle: CUMPLIDA_1,
+    },
+    {
+      id: "h1",
+      entidad: "proceso",
+      entidadId: PROCESO_ID,
+      accion: "creado",
+      usuarioId: ITZEL.id,
+      usuarioNombre: ITZEL.nombre,
+      ocurridoEn: "2026-08-15T15:00:00.000Z",
+      detalle: PROCESO.titulo,
+    },
   ],
+  total: 4,
 };
+
+/**
+ * T-17 · una historia más larga que una página, para probar el control.
+ *
+ * Sesenta y cuatro hechos sobre el mismo proceso, ya en el orden en que el
+ * servidor los manda: `HECHOS_LARGOS[0]` es el más nuevo. Con menos que el
+ * tope por defecto no habría nada que probar — una página que entra entera
+ * pasa igual sin paginación.
+ */
+const HECHOS_LARGOS = Array.from({ length: 64 }, (_sin_usar, i) => ({
+  id: `l${String(i)}`,
+  entidad: "proceso",
+  entidadId: PROCESO_ID,
+  accion: "etapa_alcanzada",
+  usuarioId: ITZEL.id,
+  usuarioNombre: ITZEL.nombre,
+  ocurridoEn: new Date(
+    Date.UTC(2026, 0, 1) - i * 86_400_000,
+  ).toISOString(),
+  detalle: `Paso ${String(64 - i)}`,
+}));
 
 const AREA_ID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
 
@@ -1136,11 +1161,132 @@ test.describe("los procesos del bufete", () => {
     await expect(hechos).toHaveCount(BITACORA.entradas.length);
 
     // La frase exacta que pidió el usuario: quién, qué y sobre qué.
-    await expect(hechos.nth(1)).toHaveText(`Itzel avanzó a «${CUMPLIDA_1}».`);
+    await expect(hechos.nth(2)).toHaveText(`Itzel avanzó a «${CUMPLIDA_1}».`);
 
-    // Y el orden es el del servidor: del hecho más viejo al más nuevo.
-    await expect(hechos.first()).toContainText("dio de alta");
-    await expect(hechos.last()).toContainText("abrió el pendiente");
+    // Y el orden es el del servidor: del hecho más nuevo al más viejo
+    // (T-17). Lo último es lo primero que se ve al aterrizar; el alta, que
+    // es arqueología en un proceso largo, queda al fondo.
+    await expect(hechos.first()).toContainText("abrió el pendiente");
+    await expect(hechos.last()).toContainText("dio de alta");
+  });
+
+  /* ---------------------------------------------------------------------
+     T-17 · La bitácora llega por páginas
+     --------------------------------------------------------------------- */
+
+  /**
+   * Contesta la bitácora recortada al `?limite` que pida la pantalla.
+   *
+   * Se registra **después** de `conProcesosCargados`, y en Playwright la
+   * última ruta registrada es la que atiende: así este banco pisa al de
+   * arriba solo para esta dirección.
+   */
+  async function conHistoriaLarga(page: Page): Promise<void> {
+    await page.route(
+      (url) => url.pathname === `/api/procesos/${PROCESO_ID}/bitacora`,
+      async (ruta) => {
+        const limite = Number(
+          new URL(ruta.request().url()).searchParams.get("limite") ?? "0",
+        );
+
+        await ruta.fulfill({
+          status: 200,
+          json: {
+            entradas: HECHOS_LARGOS.slice(0, limite),
+            total: HECHOS_LARGOS.length,
+          },
+        });
+      },
+    );
+  }
+
+  test("la bitácora larga llega cortada, y el resumen cuenta el total", async ({
+    page,
+  }) => {
+    // Lo que se dibuja son veinte; lo que hay son sesenta y cuatro. El
+    // resumen tiene que hablar del total: contar la lista recibida diría
+    // «20 hechos registrados» de un proceso que tiene sesenta y cuatro.
+    await conProcesosCargados(page);
+    await conHistoriaLarga(page);
+    await page.goto(DETALLE_URL);
+
+    await expect(page.locator(".bitacora__frase")).toHaveCount(20);
+    await expect(
+      page.getByText("64 hechos registrados; se muestran los 20 más recientes."),
+    ).toBeVisible();
+
+    // Y los veinte son los más recientes, no los veinte primeros.
+    await expect(page.locator(".bitacora__frase").first()).toContainText(
+      "«Paso 64»",
+    );
+  });
+
+  test("el control de abajo dice cuántos trae y los trae", async ({ page }) => {
+    await conProcesosCargados(page);
+    await conHistoriaLarga(page);
+    await page.goto(DETALLE_URL);
+
+    const pedidos: string[] = [];
+    page.on("request", (peticion) => {
+      const url = new URL(peticion.url());
+      if (url.pathname.endsWith("/bitacora")) pedidos.push(url.search);
+    });
+
+    // «Ver más» a secas no informa: el rótulo lleva el número.
+    const control = page.getByRole("button", {
+      name: "Ver 20 hechos más antiguos",
+    });
+    await expect(control).toBeVisible();
+
+    await control.click();
+
+    await expect(page.locator(".bitacora__frase")).toHaveCount(40);
+
+    // La última petición pidió cuarenta, que es lo que el rótulo prometía.
+    // Se mira la última y no la lista entera: la primera página también se
+    // pide por esta dirección, y en desarrollo React la pide dos veces.
+    await expect.poll(() => pedidos.at(-1)).toBe("?limite=40");
+    expect(
+      pedidos.every((consulta) => consulta.startsWith("?limite=")),
+      "ninguna petición de bitácora sale sin tope",
+    ).toBe(true);
+    await expect(
+      page.getByText("64 hechos registrados; se muestran los 40 más recientes."),
+    ).toBeVisible();
+
+    // Lo más reciente sigue arriba: traer lo viejo no da vuelta la lista.
+    await expect(page.locator(".bitacora__frase").first()).toContainText(
+      "«Paso 64»",
+    );
+  });
+
+  test("el control promete solo lo que falta, y desaparece al terminar", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await conHistoriaLarga(page);
+    await page.goto(DETALLE_URL);
+
+    await page
+      .getByRole("button", { name: "Ver 20 hechos más antiguos" })
+      .click();
+    await expect(page.locator(".bitacora__frase")).toHaveCount(40);
+
+    await page
+      .getByRole("button", { name: "Ver 20 hechos más antiguos" })
+      .click();
+    await expect(page.locator(".bitacora__frase")).toHaveCount(60);
+
+    // Quedan cuatro: el rótulo no puede seguir prometiendo veinte.
+    await page
+      .getByRole("button", { name: "Ver 4 hechos más antiguos" })
+      .click();
+
+    await expect(page.locator(".bitacora__frase")).toHaveCount(64);
+    await expect(page.getByText("64 hechos registrados.")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /hechos? más antiguos?/ }),
+    ).toHaveCount(0);
   });
 
   test("la bitácora dice que no hubo relleno retroactivo", async ({ page }) => {
@@ -1161,8 +1307,11 @@ test.describe("los procesos del bufete", () => {
     await page.goto(DETALLE_URL);
 
     // La bitácora la escribe el sistema al hacer otra cosa. Que no haya un
-    // solo control adentro del bloque es la mitad visible de esa regla; la
-    // otra mitad son los dos disparadores de la migración.
+    // solo control adentro de la lista es la mitad visible de esa regla; la
+    // otra mitad son los dos disparadores de la migración. `.bitacora` es el
+    // `<ol>` de los hechos: el control de «ver más viejos» que T-17 agregó
+    // vive **fuera**, que es donde tiene que estar —no es un hecho de la
+    // historia— y por eso esta cuenta sigue siendo cero.
     await expect(page.locator(".bitacora").getByRole("button")).toHaveCount(0);
     await expect(
       page.locator(".bitacora").getByRole("textbox"),
@@ -1323,6 +1472,33 @@ test.describe("los procesos del bufete", () => {
       // en el bloque de arriba. Medir antes de que estén dibujados sería la
       // misma vacuidad por segunda vez.
       await page.locator(".pendiente__texto").first().waitFor();
+
+      const desborde = await medirDesborde(page);
+
+      expect(
+        desborde.scrollWidth,
+        porQueSeSale(ancho, desborde),
+      ).toBeLessThanOrEqual(desborde.clientWidth);
+    });
+  }
+
+  // T-17 · el control de «ver más viejos» es contenido nuevo, y el rótulo
+  // lleva un número adentro: a 320px es exactamente la clase de cosa que se
+  // sale del ancho sin que nadie la mire. Va en su propio bucle y en los
+  // tres anchos donde esto se quiebra, para no quitarle al de arriba el
+  // contenido hostil de la línea de tiempo, que es lo que ése mide.
+  for (const ancho of [320, 768, 2560] as const) {
+    test(`a ${String(ancho)}px de ancho, con el control de la bitácora`, async ({
+      page,
+    }) => {
+      await conProcesosCargados(page);
+      await conHistoriaLarga(page);
+      await page.setViewportSize({ width: ancho, height: ALTO });
+      await page.goto(DETALLE_URL);
+      await page.evaluate(() => document.fonts.ready);
+      await page
+        .getByRole("button", { name: "Ver 20 hechos más antiguos" })
+        .waitFor();
 
       const desborde = await medirDesborde(page);
 
