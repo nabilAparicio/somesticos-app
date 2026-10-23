@@ -90,14 +90,35 @@ export function Inicio() {
         </Pila>
       </header>
 
+      {/*
+        Esta prosa describe lo que el sistema hace **hoy**, en presente, y por
+        eso no nombra nada como «lo que sigue».
+
+        La versión anterior era de T-5 y prometía como futuro el catálogo, las
+        plantillas de etapas y el plan de trabajo: las tres estaban entregadas
+        desde T-6, T-7 y T-11, y el texto siguió diciendo lo contrario seis
+        tajadas. Es la misma clase de defecto que la revisión marcó en una
+        migración y que ya se corrigió dos veces en comentarios: texto que
+        caduca porque habla en futuro de algo que después pasa.
+
+        Quien agregue una capacidad nueva agrega acá su frase en presente. Lo
+        que **no** se vuelve a escribir es una promesa.
+      */}
       <Prosa>
         <p>
-          La primera pantalla de producto ya está:{" "}
-          <Enlace href="/clientes">clientes</Enlace>. Dar de alta un prospecto
-          cuesta un nombre y un teléfono, que es lo que se sabe de alguien que
-          acaba de llamar. Lo que sigue es el catálogo de áreas y tipos de
-          proceso con sus plantillas de etapas, y el proceso con su plan de
-          trabajo.
+          El bufete lleva acá sus <Enlace href="/clientes">clientes</Enlace> —
+          dar de alta un prospecto cuesta un nombre y un teléfono, que es lo
+          que se sabe de alguien que acaba de llamar — y sus{" "}
+          <Enlace href="/catalogos">catálogos</Enlace> de áreas y tipos de
+          proceso, cada tipo con su plantilla de etapas.
+        </p>
+        <p>
+          Con eso se abre un <Enlace href="/procesos">proceso</Enlace>, que es
+          donde está el trabajo: su plan de etapas, editable caso por caso sin
+          tocar la plantilla; sus notas; sus pendientes con responsable y
+          fecha de vencimiento; y su bitácora, que anota sola quién cambió qué
+          y cuándo. Un proceso se cierra cuando termina, y se reabre si hacía
+          falta.
         </p>
       </Prosa>
 

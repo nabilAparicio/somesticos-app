@@ -160,12 +160,31 @@
 }
 
 .navegacion__item--pendiente {
+  /* Con el destino de hoy debajo, la entrada apagada deja de ser una línea:
+     el rótulo y su marca van en una franja, y el destino en la siguiente. */
+  flex-direction: column;
+  align-items: start;
+  gap: var(--espacio-3xs);
   color: var(--color-tinta-apagada);
   cursor: default;
 }
 
 .navegacion__item--pendiente:hover {
   background: none;
+}
+
+.navegacion__rotulo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--espacio-xs);
+  min-width: 0;
+}
+
+/* Dónde se ve hoy una sección que todavía no tiene pantalla propia. */
+.navegacion__donde {
+  font-size: var(--texto-xs);
+  font-style: italic;
 }
 
 .navegacion__diagnostico {

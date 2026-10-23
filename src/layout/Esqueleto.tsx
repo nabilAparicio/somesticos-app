@@ -24,20 +24,38 @@ type Props = {
 type ItemDeNavegacion = {
   readonly rotulo: string;
   readonly href?: string;
+  /**
+   * Para una sección sin pantalla propia: dónde se ve hoy eso que la entrada
+   * nombra. Solo tiene sentido junto a la marca de «pendiente».
+   */
+  readonly dondeEstaHoy?: string;
 };
 
 /**
  * Las secciones de la tajada 1. Las que todavía no existen se muestran
  * apagadas en vez de omitirse: el armazón tiene que verse con la cantidad de
  * ítems que va a tener de verdad, no con uno solo.
+ *
+ * **Por qué «Pendientes» y «Bitácora» siguen acá, apagadas.** Las dos cosas
+ * existen desde T-9 y T-15; lo que no existe es una pantalla *global* que
+ * las junte, y la marca de «pendiente» dice exactamente eso. Sacarlas sería
+ * peor por dos razones: el armazón volvería a medirse con cuatro ítems y
+ * crecería después sin que nadie lo hubiera visto —la vacuidad que T-4
+ * encontró en su propia rejilla—, y una navegación sin «Pendientes» le dice
+ * al que la lee que el bufete no lleva pendientes, que es falso.
+ *
+ * Lo que sí se les agregó en T-18 es **dónde están hoy**. Una entrada
+ * apagada y muda promete una pantalla y no dice nada más; con el destino
+ * escrito al lado, quien la lee sabe adónde ir ahora mismo en vez de quedar
+ * esperando.
  */
 const SECCIONES: readonly ItemDeNavegacion[] = [
   { rotulo: "Inicio", href: "/" },
   { rotulo: "Clientes", href: "/clientes" },
   { rotulo: "Catálogos", href: "/catalogos" },
   { rotulo: "Procesos", href: "/procesos" },
-  { rotulo: "Pendientes" },
-  { rotulo: "Bitácora" },
+  { rotulo: "Pendientes", dondeEstaHoy: "Hoy, dentro de cada proceso." },
+  { rotulo: "Bitácora", dondeEstaHoy: "Hoy, en la ficha de cada registro." },
 ] as const;
 
 /**
@@ -69,8 +87,15 @@ export function Esqueleto({ children, ruta }: Props) {
             <li key={seccion.rotulo}>
               {seccion.href === undefined ? (
                 <span className="navegacion__item navegacion__item--pendiente">
-                  {seccion.rotulo}
-                  <span className="etiqueta etiqueta--tenue">pendiente</span>
+                  <span className="navegacion__rotulo">
+                    {seccion.rotulo}
+                    <span className="etiqueta etiqueta--tenue">pendiente</span>
+                  </span>
+                  {seccion.dondeEstaHoy !== undefined && (
+                    <span className="navegacion__donde">
+                      {seccion.dondeEstaHoy}
+                    </span>
+                  )}
                 </span>
               ) : (
                 <Enlace
