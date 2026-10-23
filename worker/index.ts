@@ -29,6 +29,16 @@ import { TENANT_UNICO_ID } from "./db/ids";
 import { notasSobreD1, type ServicioDeNotas } from "./notas/repositorio";
 import { rutasDeNotas } from "./notas/rutas";
 import {
+  pendientesSobreD1,
+  type ServicioDePendientes,
+} from "./pendientes/repositorio";
+import { rutasDePendientes } from "./pendientes/rutas";
+import {
+  usuariosSobreD1,
+  type ServicioDeUsuarios,
+} from "./usuarios/repositorio";
+import { rutasDeUsuarios } from "./usuarios/rutas";
+import {
   procesosSobreD1,
   type ServicioDeProcesos,
 } from "./procesos/repositorio";
@@ -50,6 +60,12 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
 
   /** Las notas y su línea de tiempo (T-8). Idem. */
   notas?: ServicioDeNotas;
+
+  /** Los pendientes del proceso (T-9). Idem. */
+  pendientes?: ServicioDePendientes;
+
+  /** Las personas del bufete (T-9). Idem. */
+  usuarios?: ServicioDeUsuarios;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -168,6 +184,28 @@ export async function manejar(
     dependencias.notas ?? notasSobreD1(env.DB),
   );
   if (notas !== null) return notas;
+
+  // Los pendientes, por lo mismo que las notas: son una subruta del proceso
+  // y comprueban su existencia por el mismo puerto.
+  const pendientes = await rutasDePendientes(
+    request,
+    url,
+    acceso.valor,
+    TENANT_UNICO_ID,
+    servicioDeProcesos,
+    dependencias.pendientes ?? pendientesSobreD1(env.DB),
+  );
+  if (pendientes !== null) return pendientes;
+
+  // Las personas del bufete (T-9). Solo se leen: quién entra lo deciden
+  // Access y la fila en `usuario`, no esta API.
+  const usuarios = await rutasDeUsuarios(
+    request,
+    url,
+    TENANT_UNICO_ID,
+    dependencias.usuarios ?? usuariosSobreD1(env.DB),
+  );
+  if (usuarios !== null) return usuarios;
 
   const procesos = await rutasDeProcesos(
     request,

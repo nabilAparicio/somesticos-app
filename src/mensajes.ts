@@ -45,7 +45,13 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   plan_vacio:
     "Este proceso no tiene plan todavía: no hay pasos que guardar como" +
     " plantilla.",
-  texto_requerido: "La nota no puede ir vacía: es lo único que se escribe.",
+  /* `texto_requerido` lo comparten la nota (T-8) y el pendiente (T-9), así
+     que la frase no puede nombrar a ninguno de los dos: un «la nota no
+     puede ir vacía» debajo del formulario de pendientes es un mensaje que
+     habla de otra cosa. */
+  texto_requerido:
+    "Sin texto no hay nada que guardar: es lo único que se escribe acá, y" +
+    " el resto —quién y cuándo— lo pone el sistema.",
   etapa_de_otro_proceso:
     "Esa etapa no es de este proceso. Hay que volver a cargar el proceso.",
   proceso_sin_etapas:
@@ -54,6 +60,13 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   etapa_con_notas_no_se_quita:
     "Esa etapa tiene notas y no se puede quitar del plan: las notas son el" +
     " registro de lo que pasó y quedarían sin dónde colgar.",
+  vencimiento_invalido:
+    "Ese vencimiento no es una fecha del calendario. Va como día, mes y" +
+    " año de un día que exista.",
+  etapa_con_pendientes_no_se_quita:
+    "En esa etapa nació un pendiente y no se puede quitar del plan: un" +
+    " pendiente guarda dónde apareció, y eso no se cambia de lugar. Cerrarlo" +
+    " no alcanza, porque el registro queda igual.",
 };
 
 /**
@@ -66,12 +79,24 @@ export function mensajeDeFalla(
   motivo: MotivoDeFalla,
   cuantos?: number,
 ): string {
-  if (motivo === "etapa_con_notas_no_se_quita" && cuantos !== undefined) {
+  if (cuantos === undefined) return MENSAJES[motivo];
+
+  if (motivo === "etapa_con_notas_no_se_quita") {
     return (
       `Esa etapa tiene ${String(cuantos)} ${
         cuantos === 1 ? "nota" : "notas"
       } y no se puede quitar del plan: las notas son el registro de lo que` +
       " pasó y quedarían sin dónde colgar."
+    );
+  }
+
+  if (motivo === "etapa_con_pendientes_no_se_quita") {
+    return (
+      `En esa etapa ${
+        cuantos === 1 ? "nació 1 pendiente" : `nacieron ${String(cuantos)} pendientes`
+      } y no se puede quitar del plan: un pendiente guarda dónde apareció, y` +
+      " eso no se cambia de lugar. Cerrarlo no alcanza, porque el registro" +
+      " queda igual."
     );
   }
 

@@ -160,7 +160,7 @@ se renumera.
       proceso. Inmutables.
       *Ruta: delegada. Forecast ~250.*
 
-- [ ] **T-9 · Pendientes.** Crear con autor y responsable, cerrar con registro de quién y cuándo.
+- [x] **T-9 · Pendientes.** Crear con autor y responsable, cerrar con registro de quién y cuándo.
       Bloque de pendientes abiertos, contado, en la cabecera del proceso. No bloquean el avance de
       etapa.
       *Criterio: un pendiente abierto en la etapa 1 sigue visible y abierto en la etapa 4 sin que
@@ -219,7 +219,8 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-8 | (este commit) | Rojo observado: 38 fallas y el archivo de UI sin cargar. Final: los cinco en 0 · **test 476/476** · **e2e 104/104**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de notas (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
+| T-9 | (este commit) | Rojo observado: 40 fallas de aserción real contra el Worker y el archivo de UI sin cargar. Final: los cinco en 0 · **test 567/567** · **e2e 112/112**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la propiedad 2 (4 muertas). | Pendiente de evaluar |
+| T-8 | `de03ace` | Rojo observado: 38 fallas y el archivo de UI sin cargar. Final: los cinco en 0 · **test 476/476** · **e2e 104/104**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de notas (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
 | T-11 | `84a3ce9` | Rojo observado: 24 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 410/410** · **e2e 98/98**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación del plan vacío (2 muertas). | Pendiente de evaluar |
 | T-7 | `bff83c5` | Rojo observado: 42 fallas de API y el archivo de UI sin cargar. Final: los cinco en 0 · **test 372/372** · **e2e 94/94**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de lo alcanzado (4 muertas). | Pendiente de evaluar |
 | T-6 | `326901b` | Rojo observado: 44 fallas de API, el archivo de UI sin cargar y 25 e2e en rojo. Final: los cinco en 0 · **test 287/287** · **e2e 68/68**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de borrado (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
@@ -374,6 +375,53 @@ una instalación limpia el desplegable de tipo de cliente sale vacío para siemp
 lectura está; falta el CRUD. No es un defecto de T-5: excede su alcance y habría empujado la
 rebanada por encima de su presupuesto. **Entra en T-6**, junto a las áreas y los tipos de proceso,
 que son exactamente el mismo problema de catálogo.
+
+### T-9: las tres propiedades del pendiente, probadas por mutación
+
+La razón de ser del sistema, y cada propiedad con prueba que muere al romperla:
+
+| Propiedad | Mutación | Muertas |
+|---|---|---|
+| Sobrevive el cambio de etapa sin que nadie lo copie | filtrar la lista por etapa no alcanzada | **4** |
+| No bloquea el avance de etapa | que avanzar rechace si hay pendientes abiertos | **3** |
+| La etapa de nacimiento no se quita | la guarda de conteo devuelve vacío | **2**, con FK crudo |
+
+La primera la reprodujo el orquestador por separado. **Filtrar la lista por proceso y no por
+etapa es toda la mecánica** de que el pendiente sobreviva sin copias — una línea de SQL sostiene
+la propiedad que el bufete más necesita.
+
+### T-9 decidió: un pendiente cerrado no se reabre, y la etapa de nacimiento no se quita
+
+**(a) No se reabre.** El esquema tiene un solo par `cerrado_en`/`cerrado_por`: reabrir es ponerlos
+en nulo, o sea borrar la firma de quién cerró y cuándo. Es lo mismo que el proyecto no hace con
+`alcanzada_en` ni con una nota.
+
+Y el argumento de producto es mejor que el técnico: el caso real —"cerré *falta el documento X* y
+el documento era otro"— **no se dice reabriendo**, se dice con un pendiente nuevo. Reabrir dejaría
+el texto viejo afirmando algo falso; un pendiente nuevo nombra el documento correcto y el cerrado
+queda como registro de que se persiguió el equivocado. Vive como **ausencia del camino** —no hay
+ruta, no hay función, no hay botón—, no como una guarda aflojable, y la pantalla lo avisa antes
+de apretar. El segundo cierre no es un no-op: es 409.
+
+**(b) La etapa de nacimiento no se quita, esté el pendiente abierto o cerrado.** No trasladó el
+argumento de T-8 —correctamente, porque una nota *pertenece* a su etapa y un pendiente solo
+*nació* ahí—. El que vale es otro: `proceso_etapa_id` significa "dónde nació", y quitarlo deja dos
+salidas, huérfano (imposible) o reanclado (falsificar el nacimiento). **Lo que se protege es el
+nacimiento, no la vigencia**, y por eso vale también para los cerrados.
+
+### Tres detalles de T-9 que vale no perder
+
+- **Huso de Panamá, no del servidor.** "Vencido" se decide por **día** con UTC−5 fijo: un
+  pendiente que vence el 22 no aparece vencido a las siete de la tarde del 22. Y `diaLegible`
+  formatea en UTC, porque convertir un `AAAA-MM-DD` con `new Date` y formatearlo con huso local
+  lo corre un día hacia atrás.
+- **Lo vencido no se marca solo con color.** La paleta no tiene rojo y agregarlo por un estado
+  sería decidir media identidad visual de paso. Se usa el fondo de acento existente más borde y
+  negrita, y sobre todo **la marca acompaña una frase**: "Venció el …" en vez de "Vence el …".
+  Un estado que solo existe como color no existe para todo el mundo.
+- **La etapa de nacimiento no se elige**, a diferencia de la nota. Un pendiente nace cuando
+  alguien lo escribe; elegir otra sería afirmar que el cabo suelto apareció antes de que nadie
+  lo viera.
 
 ### T-8 decidió: la nota se ancla a la etapa vigente, y quien escribe puede cambiarla
 
@@ -613,4 +661,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-9: pendientes con autor y responsable, siempre visibles en la cabecera del proceso.
+T-10: bitácora. La última de la tajada.

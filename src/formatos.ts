@@ -40,3 +40,23 @@ export function fechaLegible(iso: string): string {
     timeStyle: "short",
   }).format(momento);
 }
+
+/**
+ * Un **día** del calendario `AAAA-MM-DD`, en la forma que lee una persona.
+ *
+ * No es `fechaLegible` con otro formato, y la diferencia importa: un
+ * vencimiento es un día, no un instante. `new Date("2026-11-30")` es
+ * medianoche UTC, que en Panamá es el 29 a las siete de la tarde, así que
+ * formatearlo con el huso local corre la fecha **un día hacia atrás**. Un
+ * vencimiento mal dicho es peor que ninguno, así que se fuerza UTC a los dos
+ * lados: se interpreta en UTC y se escribe en UTC.
+ */
+export function diaLegible(dia: string): string {
+  const momento = new Date(`${dia}T00:00:00.000Z`);
+  if (Number.isNaN(momento.getTime())) return VACIO;
+
+  return new Intl.DateTimeFormat("es-PA", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).format(momento);
+}

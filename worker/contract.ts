@@ -174,7 +174,32 @@ export type MotivoDeFalla =
    * el error de la llave foránea para disfrazarlo. La falla viaja con
    * `cuantos` para que la pantalla pueda decir cuántas lo impiden.
    */
-  | "etapa_con_notas_no_se_quita";
+  | "etapa_con_notas_no_se_quita"
+  /* --- Pendientes (T-9) --- */
+  /**
+   * `venceEn` no es una fecha `AAAA-MM-DD` real.
+   *
+   * «Real» incluye que el día exista: `2026-02-31` tiene la forma correcta y
+   * no es ningún día. Un vencimiento que la base acepta y nadie puede
+   * alcanzar es peor que no tener vencimiento.
+   */
+  | "vencimiento_invalido"
+  /**
+   * Se intentó quitar del plan la etapa donde nació un pendiente.
+   *
+   * **Vale esté el pendiente abierto o cerrado**, y ahí está la decisión de
+   * T-9: `pendiente.proceso_etapa_id` es `NOT NULL` y significa «donde
+   * nació». Quitar esa etapa obligaría a dejarlo huérfano —que la base no
+   * permite— o a reanclarlo a otra, que es falsificar dónde nació. Un
+   * pendiente cerrado sigue siendo el registro de un cabo suelto que existió
+   * en ese paso.
+   *
+   * No se traslada el argumento de T-8 tal cual: una nota *pertenece* a su
+   * etapa y un pendiente solo *nació* ahí. Lo que se traslada es la
+   * disciplina — se **cuentan** los dependientes y se rechaza; no se atrapa
+   * el error de la llave foránea para disfrazarlo.
+   */
+  | "etapa_con_pendientes_no_se_quita";
 
 export interface FallaDeValidacion {
   campo: string;
@@ -552,4 +577,157 @@ export interface LineaDeTiempo {
 export interface DatosDeNota {
   texto: string;
   procesoEtapaId: string | null;
+}
+
+/* ==========================================================================
+   Las personas del bufete (T-9)
+
+   El sistema **no da de alta a nadie**: quién entra lo deciden Cloudflare
+   Access y la fila en `usuario` (T-3, `docs/diseno.md` §7). Este listado
+   existe para una sola cosa: poder **elegir responsable**, que es lo que un
+   pendiente necesita y lo que T-7 dejó señalado cuando `responsable_id`
+   quedó sin forma de poblarse.
+
+   Por eso solo se lee. Un `POST` acá sería una segunda puerta de entrada al
+   bufete, al lado de la que ya existe.
+   ========================================================================== */
+
+/**
+ * Una persona del bufete.
+ *
+ * `activo` viaja **marcado y no omitido**, igual que en los catálogos de T-5
+ * y T-6: un pendiente viejo puede tener como responsable a alguien que ya no
+ * está, y la pantalla necesita poder nombrarlo sin ofrecerlo para uno nuevo.
+ *
+ * El correo viaja porque es lo que distingue a dos personas que se llaman
+ * igual, y porque ya viaja en `/api/yo` desde T-3.
+ */
+export interface Usuario {
+  id: string;
+  nombre: string;
+  email: string;
+  activo: boolean;
+}
+
+export interface RespuestaDeUsuarios {
+  usuarios: Usuario[];
+}
+
+/* ==========================================================================
+   Pendientes (T-9)
+
+   Un **pendiente es algo que sigue pasando**: «falta el documento X, pero el
+   proceso inicia» (`docs/diseno.md` §3 y §6). Es la razón por la que el
+   bufete quiere este sistema.
+
+   Las tres propiedades que lo definen, y que lo separan de una nota:
+
+    1. **No bloquea el avance de etapa.** Es la otra mitad del ejemplo. Un
+       proceso con cabos sueltos sigue andando; lo que no hace es olvidarlos.
+    2. **Sobrevive el cambio de etapa sin que nadie lo copie.** Nace en una
+       etapa —`proceso_etapa_id` dice cuál— y se lee por proceso, nunca por
+       etapa. Esa es toda la mecánica: no hay copia porque no hace falta.
+    3. **No se calla.** Mientras esté abierto aparece contado arriba del
+       proceso, no en una pestaña.
+
+   Y las dos decisiones que T-9 tomó, visibles acá en el cable:
+
+    - **Un pendiente cerrado no se reabre.** No existe la operación. El
+      esquema tiene un solo par `cerrado_en`/`cerrado_por`, así que reabrir
+      sería ponerlos en nulo: borrar la firma de quien cerró. El proyecto no
+      hace eso con `alcanzada_en` ni con una nota, y el caso real —«cerré
+      *falta el documento X* y el documento era otro»— se dice mejor con un
+      pendiente nuevo que nombre el documento correcto, dejando el cerrado
+      como el registro de que se persiguió el equivocado.
+    - **La etapa donde nació no se quita del plan**, ni con el pendiente
+      cerrado. Ver `etapa_con_pendientes_no_se_quita`.
+
+   **La etapa de nacimiento no se elige.** A diferencia de una nota —que se
+   escribe a veces días después del hecho y por eso deja elegir dónde
+   anclarla—, un pendiente nace cuando alguien lo escribe. El servidor lo
+   ancla a la etapa vigente y no hay campo para discutirlo: elegir otra sería
+   afirmar que el cabo suelto apareció antes de que nadie lo viera.
+   ========================================================================== */
+
+/**
+ * Un pendiente tal como lo lee la pantalla.
+ *
+ * Los nombres de autor, responsable y de quien cerró se resuelven **en
+ * lectura**: lo que se guarda es la llave (`docs/diseno.md` §6, «Autoría»).
+ *
+ * **Autor y responsable son dos personas distintas**, y no por casualidad:
+ * el autor es quien vio el cabo suelto y el responsable quien lo tiene que
+ * resolver. La pantalla los dibuja distinto porque confundirlos es perder la
+ * mitad del dato.
+ *
+ * `responsableId` nulo es legítimo —el esquema lo deja nulo y §5 no lo lista
+ * como invariante—, pero es el estado en el que un pendiente se pierde, así
+ * que la pantalla lo dice en vez de dejar un hueco.
+ *
+ * `venceEn` es un **día** `AAAA-MM-DD`, no un instante. Un vencimiento de
+ * bufete es una fecha del calendario; el instante que guarda la columna es
+ * un detalle del repositorio y no se asoma por acá.
+ *
+ * `cerradoEn` y `cerradoPor` van juntos o no van. Es el `CHECK` del esquema,
+ * y existe porque cerrar sin dejar quién cerró es exactamente el agujero que
+ * esta tabla tapa.
+ */
+export interface PendienteDeProceso {
+  id: string;
+  /** La etapa donde **nació**. No se mueve ni cuando el proceso avanza. */
+  procesoEtapaId: string;
+  procesoEtapaNombre: string | null;
+  texto: string;
+  autorId: string;
+  autorNombre: string | null;
+  responsableId: string | null;
+  responsableNombre: string | null;
+  creadoEn: string;
+  /** Día `AAAA-MM-DD`, o nulo. */
+  venceEn: string | null;
+  cerradoEn: string | null;
+  cerradoPor: string | null;
+  cerradoPorNombre: string | null;
+}
+
+/**
+ * Los pendientes de un proceso, **abiertos y cerrados en una sola lista**.
+ *
+ * Vienen juntos y los separa el navegador, al revés que la línea de tiempo
+ * de T-8, que llega ya agrupada. La razón es que el reparto abierto/cerrado
+ * cambia en cada cierre y la pantalla tiene que poder recontarlo sin pedir
+ * nada: el contador de la cabecera es lo que no puede quedar desactualizado.
+ *
+ * El orden lo pone el servidor: primero los abiertos, dentro de ellos el que
+ * vence antes, los sin fecha al final, y después los cerrados.
+ */
+export interface RespuestaDePendientes {
+  pendientes: PendienteDeProceso[];
+}
+
+/**
+ * Lo que el formulario manda al anotar un pendiente. Ya normalizado.
+ *
+ * No lleva autor, ni momento, ni etapa: los pone el servidor con la
+ * identidad de Access, el reloj y el plan. Que el cliente pudiera mandarlos
+ * sería dejar firmar a nombre de otro (I-6) y decidir dónde nació algo que
+ * está naciendo ahora.
+ */
+export interface DatosDePendiente {
+  texto: string;
+  responsableId: string | null;
+  /** Día `AAAA-MM-DD`, o nulo. */
+  venceEn: string | null;
+}
+
+/**
+ * El 409 de cerrar algo que ya estaba cerrado.
+ *
+ * Es 409 y no 422 por lo mismo que `sin_etapas_pendientes` en T-7: la
+ * petición está bien formada y es el estado el que no la admite. Y es un
+ * rechazo y no un no-op silencioso porque el segundo cierre **no puede**
+ * reescribir la firma del primero.
+ */
+export interface PendienteYaCerrado {
+  error: "pendiente_ya_cerrado";
 }

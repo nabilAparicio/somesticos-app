@@ -51,6 +51,24 @@
  * disciplina que la regla 2 — el conteo explícito, nunca un `catch` del
  * error de la llave foránea.
  *
+ * ### 4. Tampoco se quita la etapa donde NACIÓ un pendiente (T-9)
+ *
+ * Es `guardarLoPendiente`, al lado de la anterior. El argumento **no es el
+ * mismo** que el de las notas y por eso se escribe aparte: una nota
+ * *pertenece* a la etapa donde ocurrió el hecho, mientras que un pendiente
+ * solo *nació* en la suya y después cruza el plan entero. Lo que lo sostiene
+ * es más simple: `pendiente.proceso_etapa_id` es `NOT NULL` y significa
+ * «donde nació». Quitar esa etapa obligaría a dejarlo huérfano —que la base
+ * no permite— o a reanclarlo a otra, que es falsificar dónde nació.
+ *
+ * Y vale **esté el pendiente abierto o cerrado**: lo que impide quitar la
+ * etapa no es que el cabo suelto siga vivo, sino que nació ahí. Un pendiente
+ * cerrado sigue siendo el registro de que existió en ese paso del plan.
+ *
+ * Son dos guardas y no una porque cada una tiene su propio argumento y su
+ * propio motivo de falla: aflojar una tiene que matar sus pruebas y no las
+ * de la otra.
+ *
  * ### El avance es de una sola dirección
  *
  * No existe «desandar». `avanzar` solo escribe `alcanzada_en` donde era nulo,
@@ -422,6 +440,59 @@ export function procesosSobreD1(db: D1Database): ServicioDeProcesos {
     });
   }
 
+  /**
+   * Las etapas que no se pueden quitar porque **ahí nació** un pendiente.
+   *
+   * Hermana de `guardarLoAnotado` y escrita aparte a propósito: el argumento
+   * no se traslada. Una nota pertenece a su etapa; un pendiente solo nació
+   * en ella y después cruza el plan. Lo que lo impide es que
+   * `pendiente.proceso_etapa_id` es `NOT NULL` y dice dónde nació: sacar esa
+   * etapa obliga a dejarlo huérfano —imposible— o a reanclarlo, que es
+   * mentir sobre dónde nació.
+   *
+   * **No se filtra por `cerrado_en`.** Cuentan los abiertos y los cerrados,
+   * porque el hecho que se protege es el nacimiento y no la vigencia. Un
+   * pendiente cerrado es el registro de un cabo suelto que existió en ese
+   * paso del plan.
+   *
+   * Y como en la guarda de las notas: **esto es el conteo, no un `catch`.**
+   * Al aflojarlo sale `FOREIGN KEY constraint failed` crudo, que es
+   * exactamente lo que no tiene que llegarle a nadie.
+   */
+  async function guardarLoPendiente(
+    tenantId: string,
+    procesoId: string,
+    quitadas: readonly EtapaDeProceso[],
+  ): Promise<FallaDeValidacion[]> {
+    if (quitadas.length === 0) return [];
+
+    const { results } = await db
+      .prepare(
+        "SELECT proceso_etapa_id, count(*) AS cuantas FROM pendiente" +
+          " WHERE tenant_id = ? AND proceso_id = ?" +
+          " GROUP BY proceso_etapa_id",
+      )
+      .bind(tenantId, procesoId)
+      .all<{ proceso_etapa_id: string; cuantas: number }>();
+
+    const porEtapa = new Map(
+      results.map((fila) => [fila.proceso_etapa_id, fila.cuantas]),
+    );
+
+    return quitadas.flatMap((etapa) => {
+      const cuantos = porEtapa.get(etapa.id) ?? 0;
+      return cuantos === 0
+        ? []
+        : [
+            {
+              campo: `etapa-${String(etapa.orden)}`,
+              motivo: "etapa_con_pendientes_no_se_quita" as const,
+              cuantos,
+            },
+          ];
+    });
+  }
+
   return {
     async listar(tenantId, clienteId) {
       // Un `clienteId` que no es de este tenant no devuelve nada, porque el
@@ -542,6 +613,19 @@ export function procesosSobreD1(db: D1Database): ServicioDeProcesos {
       );
       if (deLasNotas.length > 0) {
         return { estado: "invalido", fallas: deLasNotas };
+      }
+
+      // La guarda de T-9, aparte de la de T-8 porque su argumento es otro:
+      // acá no se protege lo que *pertenece* a la etapa sino lo que *nació*
+      // en ella. Las notas se consultan primero por antigüedad, no por
+      // precedencia: las dos rechazan antes de que se escriba una sola fila.
+      const deLosPendientes = await guardarLoPendiente(
+        tenantId,
+        procesoId,
+        quitadas,
+      );
+      if (deLosPendientes.length > 0) {
+        return { estado: "invalido", fallas: deLosPendientes };
       }
 
       // El `orden` es la posición en el arreglo, asignada acá y no por el

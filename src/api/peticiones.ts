@@ -143,6 +143,21 @@ export async function pedirVacio(
 }
 
 /**
+ * Los 409 que esta API sabe contestar, dichos para quien mira la pantalla.
+ *
+ * El que falta —el borrado bloqueado de T-6— no está acá porque su frase
+ * sale del `bloqueo` que viaja con él, no del motivo a secas: es el que cae
+ * en el texto de reserva.
+ */
+const CONFLICTOS: Record<string, string> = {
+  sin_etapas_pendientes: "Este proceso ya no tiene etapas por delante.",
+  pendiente_ya_cerrado:
+    "Ese pendiente ya estaba cerrado, y un pendiente cerrado no se vuelve a" +
+    " cerrar ni se reabre. Hay que volver a cargar el proceso para ver quién" +
+    " lo cerró.",
+};
+
+/**
  * El problema, dicho para quien está mirando la pantalla.
  *
  * `sujeto` es cómo se nombra lo que se estaba buscando («ese cliente», «esa
@@ -169,9 +184,13 @@ export function textoDeProblema(
     case "invalido":
       return "Los datos enviados no se aceptaron.";
     case "conflicto":
-      return resultado.motivo === "sin_etapas_pendientes"
-        ? "Este proceso ya no tiene etapas por delante."
-        : "No se pudo borrar: hay datos que dependen de esto.";
+      // Tres motivos ya, así que un mapa en vez de un ternario anidado: el
+      // ternario de tres ramas es donde el día que aparezca el cuarto
+      // alguien lo cuelga de la rama equivocada.
+      return (
+        CONFLICTOS[resultado.motivo] ??
+        "No se pudo borrar: hay datos que dependen de esto."
+      );
     case "falla":
       return `No se pudo consultar: ${resultado.mensaje}`;
   }

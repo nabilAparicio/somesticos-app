@@ -48,6 +48,7 @@
     "../src/pantallas/procesos/plan.ts",
     "../src/pantallas/procesos/plantilla.ts",
     "../src/pantallas/procesos/presentacion.ts",
-    "../src/pantallas/procesos/notas.ts"
+    "../src/pantallas/procesos/notas.ts",
+    "../src/pantallas/procesos/pendientes.ts"
   ]
 }

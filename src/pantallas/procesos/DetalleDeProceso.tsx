@@ -26,7 +26,17 @@
  * (`docs/diseno.md` §6). A las cuarenta notas, nada sería visible si todo
  * compitiera por el mismo lugar.
  *
- * Lo que todavía no está, y se nota: los pendientes (T-9).
+ * T-9 le colgó los **pendientes**, y los puso donde el diseño manda: el
+ * bloque contado va **arriba de todo**, inmediatamente debajo del título,
+ * antes que los datos del proceso y antes que el plan. «Los pendientes
+ * abiertos viven arriba del proceso, contados y a la vista» no es una
+ * sugerencia de maquetado — es la diferencia entre que el documento que
+ * falta se vea o se pierda otra vez, ahora con una aplicación encima
+ * recordando que estaba anotado.
+ *
+ * Lo que se escribe y lo que se lee están separados, igual que con las
+ * notas: arriba va lo que no se puede perder de vista; el formulario de
+ * anotar y los pendientes ya cerrados van abajo, donde se los busca.
  */
 import { useEffect, useState } from "react";
 
@@ -34,9 +44,11 @@ import type {
   Area,
   DetalleDeProceso as Detalle,
   FallaDeValidacion,
+  PendienteDeProceso,
   TramoDeLineaDeTiempo,
+  Usuario,
 } from "../../../worker/contract";
-import { VACIO, fechaLegible } from "../../formatos";
+import { VACIO, diaLegible, fechaLegible } from "../../formatos";
 import { Aviso } from "../../layout/Aviso";
 import { Enlace } from "../../layout/Enlace";
 import { Fila } from "../../layout/Fila";
@@ -45,16 +57,35 @@ import { Prosa } from "../../layout/Prosa";
 import { Rejilla } from "../../layout/Rejilla";
 import { mensajeDeFalla } from "../../mensajes";
 import { enlaceDe } from "../../ruteo";
+import { cargarUsuarios } from "../../api/usuarios";
 import { cargarAreas } from "../catalogos/api";
 import {
   anotar,
+  anotarPendiente,
   avanzarEtapa,
   cargarLineaDeTiempo,
+  cargarPendientes,
   cargarProceso,
+  cerrarPendiente,
   guardarComoPlantilla,
   guardarPlan,
   textoDeProblema,
 } from "./api";
+import {
+  AVISO_PENDIENTE_NO_SE_REABRE,
+  BORRADOR_DE_PENDIENTE_VACIO,
+  aPeticionDePendiente,
+  estaVencido,
+  firmaDeAutor,
+  firmaDeCierre,
+  firmaDeResponsable,
+  hoyEnPanama,
+  responsablesSeleccionables,
+  resumenDePendientes,
+  separarPendientes,
+  validarPendiente,
+  type BorradorDePendiente,
+} from "./pendientes";
 import { tipoSeleccionables } from "./formulario";
 import {
   AVISO_NOTA_INMUTABLE,
@@ -109,6 +140,101 @@ function Dato({ rotulo, valor }: { rotulo: string; valor: string }) {
   );
 }
 
+/**
+ * Un pendiente dibujado.
+ *
+ * El reparto visual sale de qué hace falta para que no se pierda:
+ *
+ *  - **El texto manda**, en el cuerpo del párrafo. Es lo que falta.
+ *  - **El responsable va en una etiqueta**, destacada, porque es quien tiene
+ *    que hacer algo. Si no hay ninguno, la etiqueta lo dice en vez de
+ *    desaparecer: un hueco en blanco no se ve, y un pendiente que nadie
+ *    tiene es justo el que se pierde.
+ *  - **El autor va apagado**, abajo, con la fecha. Es contexto, no una
+ *    tarea. Confundirlo con el responsable pierde la mitad del dato, así
+ *    que no se parecen.
+ *  - **Lo vencido se marca**, y solo si está abierto: en rojo sobre algo ya
+ *    cerrado sería ruido sobre lo que no hay que hacer.
+ */
+function Pendiente({
+  pendiente,
+  hoy,
+  trabajando,
+  alCerrar,
+}: {
+  readonly pendiente: PendienteDeProceso;
+  readonly hoy: string;
+  readonly trabajando: boolean;
+  readonly alCerrar?: (pendienteId: string) => void;
+}) {
+  const vencido = estaVencido(pendiente, hoy);
+  const cierre = firmaDeCierre(pendiente);
+
+  return (
+    <li
+      className={[
+        "pendiente",
+        vencido ? "pendiente--vencido" : "",
+        pendiente.cerradoEn !== null ? "pendiente--cerrado" : "",
+        // No hay modificador para «sin responsable»: ese estado ya se dice
+        // con la etiqueta apagada y con su frase, y una clase que ninguna
+        // regla usa y ninguna prueba puede matar es decoración, no defensa
+        // — la lección que T-8 dejó escrita sobre el `overflow-wrap`.
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <p className="pendiente__texto">{pendiente.texto}</p>
+
+      <Fila>
+        <span
+          className={[
+            "etiqueta",
+            pendiente.responsableId === null ? "etiqueta--tenue" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {firmaDeResponsable(pendiente)}
+        </span>
+
+        {pendiente.venceEn !== null && (
+          <span className="pendiente__vence">
+            {vencido ? "Venció el " : "Vence el "}
+            {diaLegible(pendiente.venceEn)}
+          </span>
+        )}
+
+        {alCerrar !== undefined && (
+          <button
+            type="button"
+            className="boton boton--tenue"
+            disabled={trabajando}
+            onClick={() => {
+              alCerrar(pendiente.id);
+            }}
+          >
+            Cerrar
+          </button>
+        )}
+      </Fila>
+
+      <p className="pendiente__firma texto-apagado">
+        {firmaDeAutor(pendiente)} · {fechaLegible(pendiente.creadoEn)}
+        {pendiente.procesoEtapaNombre !== null && (
+          <> · nació en «{pendiente.procesoEtapaNombre}»</>
+        )}
+        {cierre !== null && (
+          <>
+            {" · "}
+            {cierre} · {fechaLegible(pendiente.cerradoEn ?? "")}
+          </>
+        )}
+      </p>
+    </li>
+  );
+}
+
 export function DetalleDeProceso({ id }: Props) {
   const [estado, setEstado] = useState<Estado>({ fase: "cargando" });
   const [plan, setPlan] = useState<PasoDelPlan[]>([]);
@@ -136,6 +262,28 @@ export function DetalleDeProceso({ id }: Props) {
     [],
   );
   const [avisoDeLaNota, setAvisoDeLaNota] = useState<string | null>(null);
+
+  /* --- T-9: los pendientes --------------------------------------------- */
+  const [pendientes, setPendientes] = useState<PendienteDeProceso[]>([]);
+  const [equipo, setEquipo] = useState<Usuario[]>([]);
+  const [pendiente, setPendiente] = useState<BorradorDePendiente>(
+    BORRADOR_DE_PENDIENTE_VACIO,
+  );
+  const [fallasDelPendiente, setFallasDelPendiente] = useState<
+    FallaDeValidacion[]
+  >([]);
+  const [avisoDelPendiente, setAvisoDelPendiente] = useState<string | null>(
+    null,
+  );
+  /**
+   * El día de hoy se calcula **una vez al montar** y no en cada dibujo.
+   *
+   * Es lo que decide qué se ve vencido, y recalcularlo en cada render haría
+   * que la pantalla cambiara de estado sola a la medianoche sin que nadie
+   * tocara nada. Quien deje la pestaña abierta dos días recarga, que es lo
+   * que ya hace para ver cualquier otro cambio.
+   */
+  const [hoy] = useState(() => hoyEnPanama(new Date()));
 
   useEffect(() => {
     const control = new AbortController();
@@ -172,6 +320,36 @@ export function DetalleDeProceso({ id }: Props) {
       if (control.signal.aborted) return;
       if (resultado.estado === "ok") setTramos(resultado.valor.tramos);
     });
+
+    return () => {
+      control.abort();
+    };
+  }, [id]);
+
+  /**
+   * Los pendientes y el equipo, en su propia petición.
+   *
+   * Van juntos porque el desplegable de responsable no sirve sin el equipo
+   * y el equipo no se usa en ninguna otra parte de esta pantalla. Ninguno
+   * de los dos bloquea el detalle: un proceso sin pendientes se lee igual,
+   * y si el equipo no llega, el bloque de arriba —que es lo que no se puede
+   * perder— se dibuja lo mismo.
+   */
+  useEffect(() => {
+    const control = new AbortController();
+
+    async function cargar() {
+      const [lista, personas] = await Promise.all([
+        cargarPendientes(id, control.signal),
+        cargarUsuarios(control.signal),
+      ]);
+      if (control.signal.aborted) return;
+
+      if (lista.estado === "ok") setPendientes(lista.valor);
+      if (personas.estado === "ok") setEquipo(personas.valor);
+    }
+
+    void cargar();
 
     return () => {
       control.abort();
@@ -322,6 +500,61 @@ export function DetalleDeProceso({ id }: Props) {
     setNota(BORRADOR_DE_NOTA_VACIO);
   }
 
+  /**
+   * Anota un cabo suelto.
+   *
+   * El borrador se vacía **solo si el servidor lo guardó**, por lo mismo que
+   * con una nota: perder el texto por un 403 sería perderlo de verdad.
+   */
+  async function escribirPendiente(etapas: readonly Detalle["etapas"][number][]) {
+    if (trabajando) return;
+
+    const previas = validarPendiente(pendiente, etapas, equipo);
+    setFallasDelPendiente(previas);
+    setAvisoDelPendiente(null);
+    if (previas.length > 0) return;
+
+    setTrabajando(true);
+    const resultado = await anotarPendiente(id, aPeticionDePendiente(pendiente));
+    setTrabajando(false);
+
+    if (resultado.estado === "invalido") {
+      setFallasDelPendiente(resultado.fallas);
+      return;
+    }
+    if (resultado.estado !== "ok") {
+      setAvisoDelPendiente(textoDeProblema(resultado, "ese pendiente"));
+      return;
+    }
+
+    setPendientes(resultado.valor);
+    setPendiente(BORRADOR_DE_PENDIENTE_VACIO);
+  }
+
+  /**
+   * Cierra un pendiente.
+   *
+   * **No hay forma de deshacerlo**, y la pantalla lo dice antes con
+   * `AVISO_PENDIENTE_NO_SE_REABRE`, no después. El 409 de «ya estaba
+   * cerrado» llega acá como un aviso con texto propio y no como «algo salió
+   * mal»: es lo que pasa cuando dos personas cierran lo mismo a la vez.
+   */
+  async function cerrar(pendienteId: string) {
+    if (trabajando) return;
+
+    setAvisoDelPendiente(null);
+    setTrabajando(true);
+    const resultado = await cerrarPendiente(id, pendienteId);
+    setTrabajando(false);
+
+    if (resultado.estado !== "ok") {
+      setAvisoDelPendiente(textoDeProblema(resultado, "ese pendiente"));
+      return;
+    }
+
+    setPendientes(resultado.valor);
+  }
+
   if (estado.fase === "cargando") return <p>Consultando…</p>;
 
   if (estado.fase === "problema") {
@@ -338,7 +571,10 @@ export function DetalleDeProceso({ id }: Props) {
   }
 
   const { proceso } = estado.detalle;
-  const { cumplidas, pendientes } = separarPlan(estado.detalle.etapas);
+  const { cumplidas, pendientes: etapasPendientes } = separarPlan(
+    estado.detalle.etapas,
+  );
+  const { abiertos, cerrados } = separarPendientes(pendientes);
   /* El borrador tiene cambios sin guardar respecto de lo que está en la base. */
   const sinGuardar =
     JSON.stringify(aPeticionDePlan(plan)) !==
@@ -354,6 +590,50 @@ export function DetalleDeProceso({ id }: Props) {
           <h1>{proceso.titulo}</h1>
         </Pila>
       </header>
+
+      {/* ---------------------------------------------------------------
+          T-9 · Los pendientes abiertos, contados y arriba de todo.
+
+          Va **antes** de los datos del proceso y antes del plan, y no es
+          una preferencia de maquetado: «los pendientes abiertos viven
+          arriba del proceso, contados y a la vista» (`docs/diseno.md` §6).
+          Un pendiente que hay que ir a buscar no cumple su única función.
+
+          Se dibuja también cuando no hay ninguno. Un bloque que aparece y
+          desaparece obliga a preguntarse si no hay pendientes o si no se
+          cargaron, y esa duda es exactamente lo que este bloque existe
+          para no tener.
+          --------------------------------------------------------------- */}
+      <section aria-labelledby="pendientes-abiertos" className="pendientes">
+        <Pila espacio="ceñido">
+          <Fila>
+            <h2 id="pendientes-abiertos">Pendientes</h2>
+            <span className="etiqueta" role="status">
+              {resumenDePendientes(abiertos, hoy)}
+            </span>
+          </Fila>
+
+          {avisoDelPendiente !== null && (
+            <Aviso tono="error">{avisoDelPendiente}</Aviso>
+          )}
+
+          {abiertos.length > 0 && (
+            <ul className="pendientes__lista sin-viñetas">
+              {abiertos.map((suyo) => (
+                <Pendiente
+                  key={suyo.id}
+                  pendiente={suyo}
+                  hoy={hoy}
+                  trabajando={trabajando}
+                  alCerrar={(pendienteId) => {
+                    void cerrar(pendienteId);
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+        </Pila>
+      </section>
 
       <Rejilla minimo="16rem">
         <dl className="definiciones">
@@ -425,7 +705,7 @@ export function DetalleDeProceso({ id }: Props) {
         <Pila>
           <h2 id="etapas-pendientes">Lo que falta</h2>
 
-          {pendientes.length === 0 ? (
+          {etapasPendientes.length === 0 ? (
             <Aviso>
               {proceso.etapasTotales === 0
                 ? "Este proceso no tiene plan todavía. Se le pueden agregar" +
@@ -435,7 +715,7 @@ export function DetalleDeProceso({ id }: Props) {
             </Aviso>
           ) : (
             <ol className="plan plan--pendiente">
-              {pendientes.map((etapa) => (
+              {etapasPendientes.map((etapa) => (
                 <li className="plan__paso" key={etapa.id}>
                   <span className="plan__nombre">{etapa.nombre}</span>
                 </li>
@@ -447,14 +727,14 @@ export function DetalleDeProceso({ id }: Props) {
             <button
               type="button"
               className="boton boton--primario"
-              disabled={trabajando || pendientes.length === 0}
+              disabled={trabajando || etapasPendientes.length === 0}
               onClick={() => {
                 void avanzar();
               }}
             >
-              {pendientes.length === 0
+              {etapasPendientes.length === 0
                 ? "Nada por avanzar"
-                : `Avanzar a «${pendientes[0].nombre}»`}
+                : `Avanzar a «${etapasPendientes[0].nombre}»`}
             </button>
           </Fila>
           <p className="campo__ayuda">
@@ -767,6 +1047,160 @@ export function DetalleDeProceso({ id }: Props) {
               Guardar como plantilla
             </button>
           </Fila>
+        </Pila>
+      </section>
+
+      {/* ---------------------------------------------------------------
+          T-9 · Anotar un pendiente, y los que ya se cerraron.
+
+          Escribir va acá abajo y leer va arriba, igual que con las notas:
+          el formulario no puede empujar hacia abajo lo que hay que ver sin
+          buscarlo. Los cerrados también viven acá — ya no hay que hacer
+          nada con ellos, pero son el registro de lo que se persiguió.
+          --------------------------------------------------------------- */}
+      <section aria-labelledby="anotar-pendiente">
+        <Pila>
+          <h2 id="anotar-pendiente">Anotar un pendiente</h2>
+
+          <Prosa como="p" className="texto-apagado">
+            Un cabo suelto que no detiene el proceso pero no se puede
+            olvidar: «falta el certificado apostillado, pero el proceso
+            inicia». Mientras esté abierto se ve arriba, contado.
+          </Prosa>
+
+          {fallasDelPendiente.length > 0 && (
+            <Aviso tono="error">
+              <ul className="lista-de-fallas">
+                {fallasDelPendiente.map((falla) => (
+                  <li key={`${falla.campo}-${falla.motivo}`}>
+                    {mensajeDeFalla(falla.motivo, falla.cuantos)}
+                  </li>
+                ))}
+              </ul>
+            </Aviso>
+          )}
+
+          <form
+            onSubmit={(evento) => {
+              evento.preventDefault();
+              void escribirPendiente(estado.detalle.etapas);
+            }}
+            noValidate
+          >
+            <Pila>
+              <div className="campo">
+                <label className="campo__rotulo" htmlFor="campo-pendiente">
+                  Qué falta
+                  <span className="campo__marca"> · obligatorio</span>
+                </label>
+                <textarea
+                  id="campo-pendiente"
+                  className="campo__control campo__control--prosa"
+                  rows={3}
+                  value={pendiente.texto}
+                  onChange={(evento) => {
+                    setPendiente((anterior) => ({
+                      ...anterior,
+                      texto: evento.target.value,
+                    }));
+                  }}
+                />
+              </div>
+
+              <Rejilla minimo="16rem">
+                <div className="campo">
+                  <label
+                    className="campo__rotulo"
+                    htmlFor="campo-responsable-pendiente"
+                  >
+                    Quién lo tiene que resolver
+                  </label>
+                  <select
+                    id="campo-responsable-pendiente"
+                    className="campo__control"
+                    value={pendiente.responsableId}
+                    onChange={(evento) => {
+                      setPendiente((anterior) => ({
+                        ...anterior,
+                        responsableId: evento.target.value,
+                      }));
+                    }}
+                  >
+                    {/* La opción vacía se NOMBRA, no se deja en blanco: un
+                        pendiente sin dueño es legítimo y es el que se
+                        pierde, así que hay que elegirlo a sabiendas. */}
+                    <option value="">Sin responsable asignado</option>
+                    {responsablesSeleccionables(
+                      equipo,
+                      pendiente.responsableId,
+                    ).map((persona) => (
+                      <option key={persona.id} value={persona.id}>
+                        {persona.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="campo__ayuda">
+                    Es distinto de quien lo anota: el sistema firma con tu
+                    identidad quién lo vio, y acá va quien lo persigue.
+                  </p>
+                </div>
+
+                <div className="campo">
+                  <label className="campo__rotulo" htmlFor="campo-vence">
+                    Vence el
+                  </label>
+                  <input
+                    id="campo-vence"
+                    className="campo__control"
+                    type="date"
+                    value={pendiente.venceEn}
+                    onChange={(evento) => {
+                      setPendiente((anterior) => ({
+                        ...anterior,
+                        venceEn: evento.target.value,
+                      }));
+                    }}
+                  />
+                  <p className="campo__ayuda">
+                    Opcional. Si se pasa, el pendiente se ve marcado arriba
+                    hasta que alguien lo cierre.
+                  </p>
+                </div>
+              </Rejilla>
+
+              <Fila>
+                <button
+                  type="submit"
+                  className="boton boton--primario"
+                  disabled={trabajando}
+                >
+                  {trabajando ? "Guardando…" : "Anotar pendiente"}
+                </button>
+              </Fila>
+            </Pila>
+          </form>
+
+          {/* El aviso va pegado a lo que se cierra, no en un manual: es el
+              momento en que alguien va a apretar «Cerrar». */}
+          <Aviso>{AVISO_PENDIENTE_NO_SE_REABRE}</Aviso>
+
+          <h3>Cerrados</h3>
+          {cerrados.length === 0 ? (
+            <p className="texto-apagado">
+              Todavía no se cerró ningún pendiente de este proceso.
+            </p>
+          ) : (
+            <ul className="pendientes__lista sin-viñetas">
+              {cerrados.map((suyo) => (
+                <Pendiente
+                  key={suyo.id}
+                  pendiente={suyo}
+                  hoy={hoy}
+                  trabajando={trabajando}
+                />
+              ))}
+            </ul>
+          )}
         </Pila>
       </section>
 

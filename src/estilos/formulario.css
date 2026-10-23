@@ -378,3 +378,92 @@
   margin: var(--espacio-2xs) 0 0;
   font-size: var(--texto-s);
 }
+
+/* ======================================================================
+   Los pendientes de un proceso (T-9)
+   ====================================================================== */
+
+/*
+ * El bloque va arriba del proceso y tiene que leerse de un vistazo: es lo
+ * que no se puede perder de vista (`docs/diseno.md` §6). De ahí el borde
+ * que lo separa del resto y el fondo propio — sin eso es un párrafo más
+ * entre otros doce y el ojo lo salta, que es el fracaso exacto que esta
+ * parte del sistema existe para evitar.
+ */
+.pendientes {
+  min-width: 0;
+  padding: var(--espacio-s);
+  border: 1px solid var(--color-borde);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+}
+
+.pendientes__lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-xs);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * `min-width: 0` en cada fila y no solo en la lista: sin él, un acuse
+ * pegado sin espacios dentro de un hijo de flex estira el contenedor y se
+ * lleva por delante el criterio de §9 a 320px.
+ */
+.pendiente {
+  min-width: 0;
+  padding: var(--espacio-xs);
+  border-inline-start: 3px solid var(--color-acento);
+  border-radius: var(--radio-s);
+  background: var(--color-fondo);
+}
+
+/*
+ * Lo vencido se ve distinto **sin estrenar un color**. La paleta de este
+ * sistema es sobria a propósito (`src/estilos/tokens.css`) y no tiene rojo:
+ * agregarlo por un estado sería decidir media identidad visual de paso. La
+ * marca es la misma que ya usa `.aviso--error` —fondo de acento— más un
+ * borde más grueso y la fecha en negrita.
+ *
+ * Y la marca visual **acompaña una frase, no la reemplaza**: el texto dice
+ * «Venció el …» en vez de «Vence el …», así que quien no distinga el matiz
+ * del fondo igual lo lee. Un estado que solo existe como color no existe
+ * para todo el mundo.
+ */
+.pendiente--vencido {
+  border-inline-start-width: 5px;
+  background: var(--color-acento-tenue);
+}
+
+/* Lo cerrado baja de intensidad: está ahí como registro, no como tarea. */
+.pendiente--cerrado {
+  border-inline-start-color: var(--color-borde);
+  opacity: 0.75;
+}
+
+.pendiente__texto {
+  margin: 0 0 var(--espacio-2xs);
+  /* Un pendiente se anota con renglones, igual que una nota. */
+  white-space: pre-wrap;
+}
+
+/* La fecha de vencimiento, al lado del responsable y no debajo. */
+.pendiente__vence {
+  font-size: var(--texto-s);
+}
+
+.pendiente--vencido .pendiente__vence {
+  font-weight: var(--peso-fuerte);
+}
+
+/*
+ * La firma del autor y del cierre: contexto, no tarea. Va apagada y chica
+ * para que no compita con el responsable, que es quien tiene que actuar.
+ * Que se vean distinto es el requisito, no un detalle.
+ */
+.pendiente__firma {
+  margin: var(--espacio-2xs) 0 0;
+  font-size: var(--texto-s);
+}

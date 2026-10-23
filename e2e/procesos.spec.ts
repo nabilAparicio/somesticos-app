@@ -166,6 +166,91 @@ const LINEA_CON_LA_NUEVA = {
   ],
 };
 
+/* --- T-9 · los pendientes ---------------------------------------------- */
+
+const ITZEL = { id: "u1", nombre: "Itzel", email: "itzel@bufete.test", activo: true };
+const RICARDO = {
+  id: "u2",
+  nombre: "Ricardo",
+  email: "ricardo@bufete.test",
+  activo: true,
+};
+const EQUIPO = [ITZEL, RICARDO];
+
+/**
+ * Un pendiente con un token largo **sin guiones ni espacios**.
+ *
+ * La lección de T-4 que volvió a morder en T-8: un token con guiones no
+ * sirve como contenido hostil, porque el guion ya es un punto de corte y el
+ * navegador lo parte solo. Este es lo que sale de pegar un acuse de un
+ * portal público dentro de un pendiente, y vive en el bloque de arriba —que
+ * T-9 estrena— para que el criterio de §9 mida contenido de verdad.
+ */
+const PENDIENTE_LARGO =
+  "Falta acuse SNM2026APOSTILLAMATRIMONIO0000771249PAREV7CONSULTAWEBPORTAL";
+
+/**
+ * El pendiente que **nació en una etapa ya cumplida** y sigue abierto con el
+ * proceso dos pasos más adelante. Es la propiedad 2 de T-9 vista desde la
+ * pantalla: nadie lo copió y sigue diciendo dónde apareció.
+ */
+const PENDIENTE_VENCIDO = {
+  id: "pend1",
+  procesoEtapaId: "e1",
+  procesoEtapaNombre: CUMPLIDA_1,
+  texto: PENDIENTE_LARGO,
+  autorId: ITZEL.id,
+  autorNombre: ITZEL.nombre,
+  responsableId: null,
+  responsableNombre: null,
+  creadoEn: "2026-09-02T15:00:00.000Z",
+  // Fija y muy anterior: el criterio no puede depender de cuándo corra la
+  // suite.
+  venceEn: "2020-01-01",
+  cerradoEn: null,
+  cerradoPor: null,
+  cerradoPorNombre: null,
+};
+
+const PENDIENTE_CON_DUENO = {
+  ...PENDIENTE_VENCIDO,
+  id: "pend2",
+  procesoEtapaId: "e3",
+  procesoEtapaNombre: PENDIENTE_1,
+  texto: "Falta la verificación domiciliaria del Servicio Nacional.",
+  responsableId: RICARDO.id,
+  responsableNombre: RICARDO.nombre,
+  venceEn: "2099-12-31",
+};
+
+const PENDIENTE_CERRADO = {
+  ...PENDIENTE_VENCIDO,
+  id: "pend3",
+  texto: "Faltaba el pago de la tasa migratoria.",
+  venceEn: null,
+  cerradoEn: "2026-09-20T15:00:00.000Z",
+  cerradoPor: RICARDO.id,
+  cerradoPorNombre: RICARDO.nombre,
+};
+
+const PENDIENTES = {
+  pendientes: [PENDIENTE_VENCIDO, PENDIENTE_CON_DUENO, PENDIENTE_CERRADO],
+};
+
+/** Lo que el servidor contesta al cerrar: la lista entera, ya recontada. */
+const PENDIENTES_TRAS_CERRAR = {
+  pendientes: [
+    PENDIENTE_CON_DUENO,
+    {
+      ...PENDIENTE_VENCIDO,
+      cerradoEn: "2026-10-22T15:00:00.000Z",
+      cerradoPor: ITZEL.id,
+      cerradoPorNombre: ITZEL.nombre,
+    },
+    PENDIENTE_CERRADO,
+  ],
+};
+
 const AREA_ID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
 
 /** Las áreas que alimentan el destino «tipo de proceso nuevo» de T-11. */
@@ -201,6 +286,20 @@ async function conProcesosCargados(page: Page): Promise<void> {
         return;
       }
 
+      // T-9: los pendientes. El `POST` de cerrar contesta la lista entera
+      // recontada, que es lo que la pantalla asienta: no tacha la fila por
+      // su cuenta.
+      if (
+        url.pathname.startsWith(`/api/procesos/${PROCESO_ID}/pendientes`)
+      ) {
+        const cierra = url.pathname.endsWith("/cerrar");
+        await ruta.fulfill({
+          status: 200,
+          json: cierra ? PENDIENTES_TRAS_CERRAR : PENDIENTES,
+        });
+        return;
+      }
+
       // T-11: guardar como plantilla es una escritura. Se contesta con el
       // tipo y la plantilla ya guardada, que es lo que la pantalla asienta.
       if (url.pathname === `/api/procesos/${PROCESO_ID}/plantilla`) {
@@ -232,7 +331,9 @@ async function conProcesosCargados(page: Page): Promise<void> {
             ? DETALLE
             : url.pathname === "/api/areas"
               ? { areas: AREAS }
-              : null;
+              : url.pathname === "/api/usuarios"
+                ? { usuarios: EQUIPO }
+                : null;
 
       if (cuerpo === null) {
         await ruta.fulfill({ status: 404, json: { error: "not_found" } });
@@ -507,6 +608,160 @@ test.describe("los procesos del bufete", () => {
   });
 
   // -------------------------------------------------------------------------
+  // T-9 · Pendientes
+  // -------------------------------------------------------------------------
+
+  test("el bloque de pendientes abiertos va ARRIBA, contado y sin buscarlo", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    // La cuenta, que es lo que se lee de un vistazo: dos abiertos de los
+    // tres que hay, y uno de ellos vencido.
+    await expect(
+      page.getByText("2 pendientes abiertos, 1 vencido."),
+    ).toBeVisible();
+
+    // Y arriba de verdad: antes de los datos del proceso y antes del plan.
+    // Es la única parte del criterio que una prueba de datos no puede ver.
+    const posicion = await page.evaluate(() => {
+      const bloque = document.querySelector(".pendientes");
+      const cumplido = document.querySelector("#etapas-cumplidas");
+      if (bloque === null || cumplido === null) return "falta alguno";
+      return (bloque.compareDocumentPosition(cumplido) &
+        Node.DOCUMENT_POSITION_FOLLOWING) !==
+        0
+        ? "arriba"
+        : "abajo";
+    });
+    expect(posicion).toBe("arriba");
+
+    // Solo los abiertos en el bloque: el cerrado no compite por ese lugar.
+    await expect(page.locator(".pendientes .pendiente")).toHaveCount(2);
+  });
+
+  test("un pendiente vencido se ve distinto, y lo DICE además de marcarlo", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await expect(page.locator(".pendiente--vencido")).toHaveCount(1);
+    // La marca visual acompaña una frase: un estado que solo existe como
+    // color no existe para todo el mundo.
+    await expect(page.locator(".pendiente--vencido")).toContainText(
+      /Venció el/,
+    );
+    await expect(page.locator(".pendiente--vencido")).toContainText("2020");
+
+    // Y el que vence dentro de mucho no está marcado.
+    await expect(
+      page.locator(".pendiente", { hasText: "verificación domiciliaria" }),
+    ).not.toHaveClass(/pendiente--vencido/);
+  });
+
+  test("el autor y el responsable se ven distinto, y el sin dueño lo dice", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    const conDueno = page.locator(".pendiente", {
+      hasText: "verificación domiciliaria",
+    });
+
+    // El responsable, destacado: es quien tiene que hacer algo.
+    await expect(conDueno.locator(".etiqueta")).toHaveText(
+      "Responsable: Ricardo",
+    );
+    // El autor, apagado y aparte: es contexto, no una tarea.
+    await expect(conDueno.locator(".pendiente__firma")).toContainText(
+      "Anotado por Itzel",
+    );
+
+    // Y el que no tiene dueño no deja el hueco en blanco.
+    await expect(
+      page.locator(".pendiente--vencido .etiqueta"),
+    ).toHaveText("Sin responsable asignado");
+  });
+
+  test("un pendiente dice dónde NACIÓ, aunque el proceso ya esté más adelante", async ({
+    page,
+  }) => {
+    // La propiedad 2 vista desde la pantalla: el proceso está en la tercera
+    // etapa y este pendiente, abierto, sigue colgando de la primera. Nadie
+    // lo copió ni lo movió.
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await expect(page.locator(".pendiente--vencido")).toContainText(
+      `nació en «${CUMPLIDA_1}»`,
+    );
+  });
+
+  test("cerrar redibuja con lo que contestó el servidor", async ({ page }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await page.locator(".pendiente--vencido").getByRole("button", {
+      name: "Cerrar",
+    }).click();
+
+    // La respuesta trae la lista recontada: queda uno abierto y dos
+    // cerrados, y el contador lo dice sin pedir nada más.
+    await expect(page.getByText("1 pendiente abierto.")).toBeVisible();
+    await expect(page.locator(".pendientes .pendiente")).toHaveCount(1);
+    await expect(page.locator(".pendiente--cerrado")).toHaveCount(2);
+  });
+
+  test("no hay forma de reabrir ni de editar un pendiente desde la pantalla", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await expect(page.getByRole("button", { name: /Reabrir/i })).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByRole("button", { name: /Editar pendiente|Borrar pendiente/i }),
+    ).toHaveCount(0);
+
+    // Un pendiente ya cerrado no ofrece ni siquiera el botón de cerrar.
+    await expect(
+      page.locator(".pendiente--cerrado").getByRole("button"),
+    ).toHaveCount(0);
+
+    // Y el aviso está antes de apretar, no después.
+    await expect(page.getByText(/no se reabre/i)).toBeVisible();
+  });
+
+  test("el desplegable de responsable ofrece al equipo, y nombra el «sin dueño»", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await expect(
+      page.locator("#campo-responsable-pendiente option"),
+    ).toHaveText(["Sin responsable asignado", "Itzel", "Ricardo"]);
+  });
+
+  test("un pendiente vacío no se manda: lo dice el navegador antes de ir", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await page.getByRole("button", { name: "Anotar pendiente" }).click();
+
+    await expect(page.getByText(/Sin texto no hay nada que guardar/i)).toBeVisible();
+    // Y nada cambió arriba.
+    await expect(page.locator(".pendientes .pendiente")).toHaveCount(2);
+  });
+
+  // -------------------------------------------------------------------------
   // T-8 · Notas y línea de tiempo
   // -------------------------------------------------------------------------
 
@@ -602,7 +857,9 @@ test.describe("los procesos del bufete", () => {
     await page.goto(DETALLE_URL);
 
     await page.getByLabel("Qué pasó").fill(NOTA_NUEVA);
-    await page.getByRole("button", { name: "Anotar" }).click();
+    await page
+      .getByRole("button", { name: "Anotar", exact: true })
+      .click();
 
     await expect(page.getByText(NOTA_NUEVA)).toBeVisible();
     await expect(page.locator(".nota")).toHaveCount(4);
@@ -617,9 +874,11 @@ test.describe("los procesos del bufete", () => {
     await conProcesosCargados(page);
     await page.goto(DETALLE_URL);
 
-    await page.getByRole("button", { name: "Anotar" }).click();
+    await page
+      .getByRole("button", { name: "Anotar", exact: true })
+      .click();
 
-    await expect(page.getByText(/La nota no puede ir vacía/i)).toBeVisible();
+    await expect(page.getByText(/Sin texto no hay nada que guardar/i)).toBeVisible();
     await expect(page.locator(".nota")).toHaveCount(3);
   });
 
@@ -656,6 +915,10 @@ test.describe("los procesos del bufete", () => {
       // el criterio pasara sin haber visto el contenido hostil, que es la
       // vacuidad que T-4 descubrió en su propia rejilla.
       await page.locator(".nota__texto").last().waitFor();
+      // Y los pendientes, que desde T-9 traen el otro token hostil y están
+      // en el bloque de arriba. Medir antes de que estén dibujados sería la
+      // misma vacuidad por segunda vez.
+      await page.locator(".pendiente__texto").first().waitFor();
 
       const desborde = await medirDesborde(page);
 

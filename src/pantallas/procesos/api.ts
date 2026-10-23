@@ -19,11 +19,14 @@ import type {
   DatosDeEtapa,
   DatosDeGuardadoDePlantilla,
   DatosDeNota,
+  DatosDePendiente,
   DatosDeProceso,
   DetalleDeProceso,
   LineaDeTiempo,
+  PendienteDeProceso,
   PlantillaGuardada,
   Proceso,
+  RespuestaDePendientes,
   RespuestaDeProceso,
   RespuestaDeProcesos,
 } from "../../../worker/contract";
@@ -175,4 +178,82 @@ export function anotar(
     `${PROCESOS}/${encodeURIComponent(procesoId)}/notas`,
     cuerpo(datos, "POST"),
   );
+}
+
+/* ==========================================================================
+   Pendientes (T-9)
+   ========================================================================== */
+
+/**
+ * Los pendientes del proceso, abiertos y cerrados en una sola lista.
+ *
+ * Es una segunda petición y no un campo del detalle, por lo mismo que la
+ * línea de tiempo: el detalle lo pide todo el mundo —el listado navega
+ * ahí— y esto se lee en la pantalla del proceso.
+ */
+export function cargarPendientes(
+  procesoId: string,
+  signal: AbortSignal,
+): Promise<Resultado<PendienteDeProceso[]>> {
+  return listaDePendientes(
+    pedir<RespuestaDePendientes>(
+      `${PROCESOS}/${encodeURIComponent(procesoId)}/pendientes`,
+      { signal },
+    ),
+  );
+}
+
+/**
+ * Anota un cabo suelto en el proceso.
+ *
+ * La respuesta trae **la lista entera**, ya reordenada: la pantalla asienta
+ * lo que el servidor dejó guardado en vez de insertar el pendiente donde
+ * cree que va, igual que el alta de una nota en T-8.
+ */
+export function anotarPendiente(
+  procesoId: string,
+  datos: DatosDePendiente,
+): Promise<Resultado<PendienteDeProceso[]>> {
+  return listaDePendientes(
+    pedir<RespuestaDePendientes>(
+      `${PROCESOS}/${encodeURIComponent(procesoId)}/pendientes`,
+      cuerpo(datos, "POST"),
+    ),
+  );
+}
+
+/**
+ * Cierra un pendiente, firmado con quien está mirando la pantalla.
+ *
+ * **No hay `reabrirPendiente`, y no es un olvido**: cerrar es de una sola
+ * dirección (decisión de T-9). No existe la función porque no existe la
+ * ruta, y no existe la ruta porque reabrir sería borrar la firma de quien
+ * cerró. Si el cierre estuvo mal, lo que corresponde es anotar un pendiente
+ * nuevo que diga qué falta ahora.
+ *
+ * Quien cierra **no viaja en el cuerpo**: sale de la identidad de Access.
+ * Una firma que el cliente pudiera elegir no es una firma.
+ */
+export function cerrarPendiente(
+  procesoId: string,
+  pendienteId: string,
+): Promise<Resultado<PendienteDeProceso[]>> {
+  return listaDePendientes(
+    pedir<RespuestaDePendientes>(
+      `${PROCESOS}/${encodeURIComponent(procesoId)}/pendientes/` +
+        `${encodeURIComponent(pendienteId)}/cerrar`,
+      { method: "POST" },
+    ),
+  );
+}
+
+/** Desenvuelve `{ pendientes }` sin repetir la rama tres veces. */
+async function listaDePendientes(
+  promesa: Promise<Resultado<RespuestaDePendientes>>,
+): Promise<Resultado<PendienteDeProceso[]>> {
+  const resultado = await promesa;
+
+  return resultado.estado === "ok"
+    ? { estado: "ok", valor: resultado.valor.pendientes }
+    : resultado;
 }
