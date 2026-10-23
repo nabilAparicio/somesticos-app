@@ -416,6 +416,11 @@ describe("una fecha de vencimiento se lee sin corrimiento de un día", () => {
     // `new Date("2026-11-30")` es medianoche UTC, que en Panamá es el 29 a
     // las 7 de la tarde. Formatearla con el huso local corre la fecha un
     // día hacia atrás, y un vencimiento mal dicho es peor que ninguno.
+    //
+    // Esta prueba vigila el **corrimiento de día**, y nada más: `toContain`
+    // se cumple igual con `11/30/2026` que con `30 nov 2026`, así que no vio
+    // el defecto de orden que T-18 encontró. El orden de los campos tiene su
+    // propia prueba, contra cadenas literales, en `test/formatos.spec.ts`.
     const legible = diaLegible("2026-11-30");
 
     expect(legible).toContain("30");

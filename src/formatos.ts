@@ -30,14 +30,47 @@ export function plano(texto: string): string {
     .toLowerCase();
 }
 
+/**
+ * El patrón de fecha, escrito campo por campo y no con `dateStyle`.
+ *
+ * **Por qué no `dateStyle: "medium"`, que es lo que había.** CLDR define
+ * Panamá con el orden mes/día, así que `es-PA` + `medium` escribía el 2 de
+ * julio como `07/02/2026`. Un panameño lee eso como 7 de febrero. En un
+ * plazo procesal, una presentación o una audiencia, eso no es cosmética: es
+ * una fecha equivocada escrita con todas las letras.
+ *
+ * **Y por qué no se cambió el locale a `es-419`, que también lo arreglaba.**
+ * `es-PA` es correcto para Panamá en todo lo demás: la separación de miles,
+ * el «a. m.» con sus espacios, el colador `ORDEN_ES` de más arriba. Lo único
+ * equivocado era el patrón. Cambiar el locale entero para arreglar un patrón
+ * habría cambiado en silencio todo lo otro, y ninguna prueba de fecha se
+ * habría enterado.
+ *
+ * Con el mes en letras la ambigüedad desaparece de raíz: `2 jul` no se puede
+ * leer de dos maneras.
+ *
+ * Va como constante y no copiada en las dos funciones porque dos copias son
+ * dos formatos de fecha, y el que se desincronice primero lo hace sin que
+ * nadie lo note — la misma razón por la que este archivo existe.
+ */
+const PATRON_DE_FECHA = {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+} as const satisfies Intl.DateTimeFormatOptions;
+
 /** El momento ISO que guarda la base, en la forma que lee una persona. */
 export function fechaLegible(iso: string): string {
   const momento = new Date(iso);
   if (Number.isNaN(momento.getTime())) return VACIO;
 
+  // `timeStyle` no se puede mezclar con campos sueltos —`Intl` lo rechaza
+  // con un `TypeError`—, así que la hora también va campo por campo. Sale
+  // idéntica a la de `timeStyle: "short"`: `9:30 a. m.`.
   return new Intl.DateTimeFormat("es-PA", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    ...PATRON_DE_FECHA,
+    hour: "numeric",
+    minute: "2-digit",
   }).format(momento);
 }
 
@@ -56,7 +89,7 @@ export function diaLegible(dia: string): string {
   if (Number.isNaN(momento.getTime())) return VACIO;
 
   return new Intl.DateTimeFormat("es-PA", {
-    dateStyle: "medium",
+    ...PATRON_DE_FECHA,
     timeZone: "UTC",
   }).format(momento);
 }

@@ -25,7 +25,6 @@ import type {
   PendienteDeProceso,
   Proceso,
 } from "../worker/contract";
-import { fechaLegible } from "../src/formatos";
 import {
   BORRADOR_DE_PROCESO_VACIO,
   aPeticionDeProceso,
@@ -786,8 +785,17 @@ describe("el estado del proceso, dicho", () => {
   });
 
   it("un proceso cerrado dice cuándo se cerró", () => {
-    expect(estadoLegible(cerrado())).toBe(
-      `Cerrado el ${fechaLegible(CERRADO_EN)}`,
+    // El valor esperado va escrito a mano. Hasta T-18 esta aserción decía
+    // `Cerrado el ${fechaLegible(CERRADO_EN)}`, o sea calculaba lo esperado
+    // con la misma función que tenía el defecto: concordaba consigo misma
+    // escribiera `22 oct 2026` o `10/22/2026`. Con el defecto adentro, pasó.
+    //
+    // La hora va con un patrón y no con una cifra porque `fechaLegible`
+    // escribe en el huso local: lo que esta prueba vigila es la **frase**,
+    // y el orden de la fecha tiene su propia prueba literal en
+    // `test/formatos.spec.ts`.
+    expect(estadoLegible(cerrado())).toMatch(
+      /^Cerrado el 22 oct 2026, \d{1,2}:\d{2} [ap]\. m\.$/,
     );
   });
 
