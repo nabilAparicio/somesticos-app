@@ -34,7 +34,7 @@ type ItemDeNavegacion = {
 const SECCIONES: readonly ItemDeNavegacion[] = [
   { rotulo: "Inicio", href: "/" },
   { rotulo: "Clientes", href: "/clientes" },
-  { rotulo: "Áreas y tipos de proceso" },
+  { rotulo: "Catálogos", href: "/catalogos" },
   { rotulo: "Procesos" },
   { rotulo: "Pendientes" },
   { rotulo: "Bitácora" },

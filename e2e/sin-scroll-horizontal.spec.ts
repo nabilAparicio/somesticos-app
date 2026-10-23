@@ -14,7 +14,9 @@
  * texto a la tabla "para que se vea mejor", el criterio se vuelve vacuo sin
  * que nadie se entere; esa prueba es la que avisa.
  */
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
+import { medirDesborde } from "./desborde";
 
 const BANCO = "/banco-de-pruebas";
 
@@ -33,47 +35,6 @@ const ANCHOS = [
 ] as const;
 
 const ALTO = 900;
-
-type Desborde = {
-  readonly scrollWidth: number;
-  readonly clientWidth: number;
-  readonly culpables: readonly string[];
-};
-
-/**
- * Además de la medición del criterio, devuelve qué elementos se salen del
- * ancho del documento. Sin eso, una falla dice "1347 > 320" y deja al
- * siguiente buscando a mano cuál de doscientos nodos fue.
- */
-async function medirDesborde(page: Page): Promise<Desborde> {
-  return page.evaluate(() => {
-    const raiz = document.documentElement;
-    const limite = raiz.clientWidth;
-
-    const culpables: string[] = [];
-    for (const elemento of Array.from(document.body.querySelectorAll("*"))) {
-      const caja = elemento.getBoundingClientRect();
-      if (caja.width === 0 && caja.height === 0) continue;
-      if (caja.right <= limite + 0.5 && caja.left >= -0.5) continue;
-
-      const clases =
-        typeof elemento.className === "string" && elemento.className !== ""
-          ? `.${elemento.className.trim().split(/\s+/).join(".")}`
-          : "";
-      culpables.push(
-        `${elemento.tagName.toLowerCase()}${clases} ` +
-          `[left=${String(Math.round(caja.left))} right=${String(Math.round(caja.right))}]`,
-      );
-      if (culpables.length === 8) break;
-    }
-
-    return {
-      scrollWidth: raiz.scrollWidth,
-      clientWidth: limite,
-      culpables,
-    };
-  });
-}
 
 test.describe("la página no scrollea en horizontal", () => {
   test("el banco de pruebas sigue siendo contenido hostil", async ({

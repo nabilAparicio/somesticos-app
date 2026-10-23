@@ -95,7 +95,16 @@ export type MotivoDeFalla =
   /** Tipo de documento sin número, o número sin tipo. */
   | "documento_incompleto"
   /** El `tipoClienteId` no es una fila del catálogo de ESTE tenant. */
-  | "tipo_cliente_desconocido";
+  | "tipo_cliente_desconocido"
+  /* --- Catálogos (T-6). Un solo vocabulario de fallas para toda la API:
+     dos uniones paralelas obligarían a dos `Resultado`, dos `pedir` y dos
+     mapas de mensajes para decir lo mismo. --- */
+  /** Un tipo de proceso sin área. El área no es opcional. */
+  | "area_requerida"
+  /** El `areaId` no es una fila de `area` de ESTE tenant. */
+  | "area_desconocida"
+  /** Un id de etapa que no pertenece a la plantilla que se está guardando. */
+  | "etapa_desconocida";
 
 export interface FallaDeValidacion {
   campo: string;
@@ -117,4 +126,120 @@ export interface RespuestaDeClientes {
 
 export interface RespuestaDeTiposCliente {
   tipos: TipoCliente[];
+}
+
+/* ==========================================================================
+   Catálogos del bufete (T-6)
+
+   `area`, `tipo_proceso`, `etapa_plantilla` y `tipo_cliente` son datos del
+   bufete, no configuración de desarrollador: se crean, se editan y se borran
+   desde la aplicación (`docs/diseno.md` §6, «Las plantillas son del bufete,
+   no del sistema»). `tipo_cliente` entra acá porque T-5 lo dejó sin forma de
+   poblarse.
+
+   Los cuatro llevan la misma marca `activo` que `tipo_cliente` estrenó en
+   T-5, y por la misma razón: dar de baja saca la fila de lo *elegible* sin
+   invalidar lo ya guardado. Viaja marcada, no omitida.
+   ========================================================================== */
+
+/** Una rama del derecho: familia, migración, civil, penal. */
+export interface Area {
+  id: string;
+  nombre: string;
+  activo: boolean;
+}
+
+/**
+ * Un tipo de proceso dentro de su área, tan granular como haga falta: una
+ * visa de trabajo y una de pensionado son tipos distintos (`docs/diseno.md`
+ * §6). `areaNombre` se resuelve en lectura, igual que el autor de un cliente.
+ */
+export interface TipoProceso {
+  id: string;
+  areaId: string;
+  areaNombre: string | null;
+  nombre: string;
+  descripcion: string | null;
+  activo: boolean;
+}
+
+/**
+ * Un paso del plan por defecto de un tipo de proceso.
+ *
+ * No lleva `activo`: una etapa de plantilla que sobra se quita, porque nada
+ * cuelga de ella. Y su nombre es **texto de cara al cliente** (§6, «Una
+ * consecuencia futura que obliga hoy»).
+ */
+export interface EtapaPlantilla {
+  id: string;
+  nombre: string;
+  orden: number;
+}
+
+/** Lo que el formulario manda para un `area` o un `tipo_cliente`. */
+export interface DatosDeCatalogo {
+  nombre: string;
+  activo: boolean;
+}
+
+export interface DatosDeTipoProceso {
+  areaId: string;
+  nombre: string;
+  descripcion: string | null;
+  activo: boolean;
+}
+
+/** Una etapa en el envío: sin `id` es nueva, con `id` es la que ya existía. */
+export interface DatosDeEtapa {
+  id: string | null;
+  nombre: string;
+}
+
+/**
+ * Qué impide borrar una fila de catálogo, y cuántos son.
+ *
+ * La política de borrado de T-6: se puede borrar lo que no tiene
+ * dependientes; lo que los tiene se da de baja. El choque contra la llave
+ * foránea —que T-2 dejó en `NO ACTION` a propósito— nunca sale como un 500
+ * ni como un error de SQL crudo: se cuenta antes y se contesta esto con 409.
+ */
+export type EntidadDependiente =
+  | "tipo_proceso"
+  | "etapa_plantilla"
+  | "proceso"
+  | "cliente";
+
+export interface Dependencia {
+  entidad: EntidadDependiente;
+  cuantos: number;
+}
+
+export interface BorradoBloqueado {
+  error: "tiene_dependientes";
+  entidad: "area" | "tipo_proceso" | "tipo_cliente";
+  dependencias: Dependencia[];
+}
+
+export interface RespuestaDeAreas {
+  areas: Area[];
+}
+
+export interface RespuestaDeArea {
+  area: Area;
+}
+
+export interface RespuestaDeTiposProceso {
+  tipos: TipoProceso[];
+}
+
+export interface RespuestaDeTipoProceso {
+  tipo: TipoProceso;
+}
+
+export interface RespuestaDeTipoCliente {
+  tipo: TipoCliente;
+}
+
+export interface RespuestaDeEtapas {
+  etapas: EtapaPlantilla[];
 }

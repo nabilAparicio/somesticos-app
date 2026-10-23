@@ -2,7 +2,6 @@
  * Las rutas HTTP de clientes. Traduce peticiones a llamadas del puerto y
  * resultados a respuestas; no decide ninguna regla de negocio.
  *
- *   GET    /api/tipos-cliente      el catálogo (`docs/diseno.md` §6)
  *   GET    /api/clientes           listado
  *   POST   /api/clientes           alta
  *   GET    /api/clientes/{id}      detalle
@@ -25,7 +24,6 @@ import type {
   FallaDeValidacion,
   RespuestaDeCliente,
   RespuestaDeClientes,
-  RespuestaDeTiposCliente,
 } from "../contract";
 import { normalizarDatos } from "./dominio";
 import type { ResultadoDeEscritura, ServicioDeClientes } from "./repositorio";
@@ -110,16 +108,6 @@ export async function rutasDeClientes(
 ): Promise<Response | null> {
   const segmentos = segmentosDe(url.pathname);
   if (segmentos[0] !== "api") return null;
-
-  if (segmentos.length === 2 && segmentos[1] === "tipos-cliente") {
-    if (request.method !== "GET") return metodoNoPermitido("GET");
-
-    const cuerpo: RespuestaDeTiposCliente = {
-      tipos: await servicio.listarTipos(tenantId),
-    };
-    return json(cuerpo);
-  }
-
   if (segmentos[1] !== "clientes") return null;
 
   if (segmentos.length === 2) {

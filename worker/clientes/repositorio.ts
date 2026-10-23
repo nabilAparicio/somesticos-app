@@ -17,12 +17,7 @@
  * comandos. Esparcirlo ahora obligaría a T-10 a deshacerlo.
  */
 
-import type {
-  Cliente,
-  DatosDeCliente,
-  FallaDeValidacion,
-  TipoCliente,
-} from "../contract";
+import type { Cliente, DatosDeCliente, FallaDeValidacion } from "../contract";
 import { nuevoId } from "../db/ids";
 import { ahoraIso } from "../db/momentos";
 
@@ -32,7 +27,6 @@ export type ResultadoDeEscritura =
   | { estado: "no_encontrado" };
 
 export interface ServicioDeClientes {
-  listarTipos(tenantId: string): Promise<TipoCliente[]>;
   listar(tenantId: string): Promise<Cliente[]>;
   obtener(tenantId: string, id: string): Promise<Cliente | null>;
   crear(
@@ -61,12 +55,6 @@ interface FilaDeCliente {
   creado_por: string;
   creado_por_nombre: string | null;
   creado_en: string;
-}
-
-interface FilaDeTipo {
-  id: string;
-  nombre: string;
-  activo: number;
 }
 
 /**
@@ -125,7 +113,8 @@ export function servicioSobreD1(db: D1Database): ServicioDeClientes {
    * No se exige `activo = 1`: dar de baja un tipo dejaría sin poder guardar a
    * todos los clientes que ya lo tienen, y editar un teléfono fallaría con un
    * error que no se entiende. Quién se puede *elegir* es decisión de la
-   * pantalla (`tiposSeleccionables`); qué es *válido* es esto.
+   * pantalla (`tiposSeleccionables`); qué es *válido* es esto. El listado del
+   * catálogo vive en `worker/catalogos/` desde T-6, que es quien lo escribe.
    */
   async function tipoDesconocido(
     tenantId: string,
@@ -150,22 +139,6 @@ export function servicioSobreD1(db: D1Database): ServicioDeClientes {
   }
 
   return {
-    async listarTipos(tenantId) {
-      const { results } = await db
-        .prepare(
-          "SELECT id, nombre, activo FROM tipo_cliente" +
-            " WHERE tenant_id = ? ORDER BY nombre COLLATE NOCASE",
-        )
-        .bind(tenantId)
-        .all<FilaDeTipo>();
-
-      return results.map((fila) => ({
-        id: fila.id,
-        nombre: fila.nombre,
-        activo: fila.activo === 1,
-      }));
-    },
-
     async listar(tenantId) {
       const { results } = await db
         .prepare(`${SELECCION} ORDER BY c.nombre COLLATE NOCASE`)

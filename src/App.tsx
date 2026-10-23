@@ -15,6 +15,9 @@ import { useEffect, useState } from "react";
 import { Esqueleto } from "./layout/Esqueleto";
 import { BancoDePruebas } from "./pantallas/BancoDePruebas";
 import { Inicio } from "./pantallas/Inicio";
+import { Catalogos } from "./pantallas/catalogos/Catalogos";
+import { FormularioDeTipoDeProceso } from "./pantallas/catalogos/FormularioDeTipoDeProceso";
+import { TiposDeProceso } from "./pantallas/catalogos/TiposDeProceso";
 import { DetalleDeCliente } from "./pantallas/clientes/DetalleDeCliente";
 import { FormularioDeCliente } from "./pantallas/clientes/FormularioDeCliente";
 import { ListaDeClientes } from "./pantallas/clientes/ListaDeClientes";
@@ -43,6 +46,14 @@ function pantallaDe(ruta: Ruta) {
       return <DetalleDeCliente key={ruta.id} id={ruta.id} />;
     case "cliente-edicion":
       return <FormularioDeCliente key={ruta.id} clienteId={ruta.id} />;
+    case "catalogos":
+      return <Catalogos />;
+    case "tipos-proceso":
+      return <TiposDeProceso />;
+    case "tipo-proceso-nuevo":
+      return <FormularioDeTipoDeProceso key="nuevo" />;
+    case "tipo-proceso":
+      return <FormularioDeTipoDeProceso key={ruta.id} tipoId={ruta.id} />;
     case "desconocida":
       return (
         <section>

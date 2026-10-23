@@ -21,11 +21,19 @@ export type Ruta =
   | { nombre: "cliente-nuevo" }
   | { nombre: "cliente"; id: string }
   | { nombre: "cliente-edicion"; id: string }
+  | { nombre: "catalogos" }
+  | { nombre: "tipos-proceso" }
+  | { nombre: "tipo-proceso-nuevo" }
+  | { nombre: "tipo-proceso"; id: string }
   | { nombre: "desconocida"; ruta: string };
 
 /** El segmento literal del alta. No puede ser el identificador de nadie. */
 const NUEVO = "nuevo";
 const EDITAR = "editar";
+
+/** La raíz de las pantallas de catálogo (T-6) y su única subsección. */
+const CATALOGOS = "catalogos";
+const TIPOS_PROCESO = "tipos-proceso";
 
 /**
  * Los segmentos de la ruta, sin la barra final.
@@ -51,6 +59,25 @@ function identificador(segmento: string): string | null {
   }
 }
 
+/**
+ * Las tres pantallas de catálogo. Se resuelven aparte y no con tres `if` más
+ * dentro de `resolverRuta` porque el árbol de clientes ya ocupa esa función
+ * entera, y dos árboles de profundidad tres en un solo cuerpo es donde un
+ * `return` cae en la rama equivocada sin que se note.
+ */
+function resolverCatalogos(segmentos: string[], pathname: string): Ruta {
+  const desconocida: Ruta = { nombre: "desconocida", ruta: pathname };
+
+  if (segmentos.length === 1) return { nombre: "catalogos" };
+  if (segmentos[1] !== TIPOS_PROCESO) return desconocida;
+  if (segmentos.length === 2) return { nombre: "tipos-proceso" };
+  if (segmentos.length !== 3) return desconocida;
+  if (segmentos[2] === NUEVO) return { nombre: "tipo-proceso-nuevo" };
+
+  const id = identificador(segmentos[2]);
+  return id === null ? desconocida : { nombre: "tipo-proceso", id };
+}
+
 export function resolverRuta(pathname: string): Ruta {
   const segmentos = segmentosDe(pathname);
   const desconocida: Ruta = { nombre: "desconocida", ruta: pathname };
@@ -59,6 +86,8 @@ export function resolverRuta(pathname: string): Ruta {
   if (segmentos.length === 1 && segmentos[0] === "banco-de-pruebas") {
     return { nombre: "banco-de-pruebas" };
   }
+
+  if (segmentos[0] === CATALOGOS) return resolverCatalogos(segmentos, pathname);
 
   if (segmentos[0] !== "clientes") return desconocida;
 
@@ -99,6 +128,14 @@ export function enlaceDe(ruta: Ruta): string {
       return `/clientes/${encodeURIComponent(ruta.id)}`;
     case "cliente-edicion":
       return `/clientes/${encodeURIComponent(ruta.id)}/${EDITAR}`;
+    case "catalogos":
+      return `/${CATALOGOS}`;
+    case "tipos-proceso":
+      return `/${CATALOGOS}/${TIPOS_PROCESO}`;
+    case "tipo-proceso-nuevo":
+      return `/${CATALOGOS}/${TIPOS_PROCESO}/${NUEVO}`;
+    case "tipo-proceso":
+      return `/${CATALOGOS}/${TIPOS_PROCESO}/${encodeURIComponent(ruta.id)}`;
     case "desconocida":
       return ruta.ruta;
   }

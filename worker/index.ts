@@ -10,6 +10,11 @@
  */
 import { autenticar, type DependenciasDeAcceso } from "./acceso/puerta";
 import type { Rechazo } from "./acceso/rechazo";
+import {
+  catalogosSobreD1,
+  type ServicioDeCatalogos,
+} from "./catalogos/repositorio";
+import { rutasDeCatalogos } from "./catalogos/rutas";
 import { rutasDeClientes } from "./clientes/rutas";
 import {
   servicioSobreD1,
@@ -29,6 +34,9 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
    * distingue "no se ejecutó" de "se ejecutó y después se rechazó".
    */
   clientes?: ServicioDeClientes;
+
+  /** Los catálogos del bufete (T-6). Se sustituye por la misma razón. */
+  catalogos?: ServicioDeCatalogos;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -116,6 +124,14 @@ export async function manejar(
     dependencias.clientes ?? servicioSobreD1(env.DB),
   );
   if (clientes !== null) return clientes;
+
+  const catalogos = await rutasDeCatalogos(
+    request,
+    url,
+    TENANT_UNICO_ID,
+    dependencias.catalogos ?? catalogosSobreD1(env.DB),
+  );
+  if (catalogos !== null) return catalogos;
 
   return noEncontrado();
 }

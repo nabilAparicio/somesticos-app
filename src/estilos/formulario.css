@@ -193,3 +193,55 @@
   /* Las notas se cargan con saltos de línea y así se tienen que leer. */
   white-space: pre-wrap;
 }
+
+/* ======================================================================
+   Catálogos y plantillas (T-6)
+   ====================================================================== */
+
+/*
+ * Un campo que se come el espacio que le sobra a su `Fila`, sin imponer un
+ * ancho: `flex: 1 1 <base>` con `min-inline-size: 0`, que es lo que deja que
+ * se encoja por debajo del ancho intrínseco del `<input>` en vez de empujar
+ * la fila. Ese ancho intrínseco es el ancho fijo encubierto que §9 prohíbe.
+ */
+.campo--crecer {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+
+/*
+ * La casilla y su texto en una sola línea que envuelve. `align-items: start`
+ * y no `center` para que, cuando el texto se parta en dos renglones, la
+ * casilla quede a la altura del primero y no flotando en el medio.
+ */
+.campo__casilla {
+  display: flex;
+  align-items: start;
+  gap: var(--espacio-2xs);
+  min-width: 0;
+  font-size: var(--texto-s);
+}
+
+.campo__casilla input {
+  /* El único ancho fijo admisible: el de un control nativo que ya lo tiene. */
+  flex: none;
+  margin-block-start: 0.2em;
+}
+
+/*
+ * La plantilla es una lista ordenada de verdad —`<ol>`— porque el orden es
+ * el dato. El número lo pone el navegador; lo que se quita es la sangría que
+ * en 320px le roba espacio al campo.
+ */
+.plantilla {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-2xs);
+  min-width: 0;
+  margin: 0;
+  padding-inline-start: var(--espacio-m);
+}
+
+.plantilla__etapa {
+  min-width: 0;
+}

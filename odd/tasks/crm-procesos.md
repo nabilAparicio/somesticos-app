@@ -134,7 +134,7 @@ se renumera.
       *Criterio: se puede dar de alta un prospecto con nombre y teléfono solamente.
       Ruta: delegada. Forecast ~400.*
 
-- [ ] **T-6 · Áreas, tipos de proceso y plantillas.** CRUD de `area`, de `tipo_proceso` dentro de
+- [x] **T-6 · Áreas, tipos de proceso y plantillas.** CRUD de `area`, de `tipo_proceso` dentro de
       su área, y de la `etapa_plantilla` ordenada. Las plantillas las crea, edita y borra el
       bufete; no hay plantillas de fábrica intocables. La pantalla de edición dice explícitamente
       que editar la plantilla no altera los procesos ya abiertos.
@@ -218,7 +218,8 @@ Rama: `feat/r1-fundacion`. Ninguna tarea de código empezada.
 |---|---|---|---|
 | — (encuadre: diseño y plan) | `a3997c7` | n/a, sin código | Concedida y acusada. Lineaje `review-5c192d4319c7f42e`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos, no bloqueantes. |
 | T-1 | `b4edd18` + `d4b7559` | `pnpm typecheck` verde · `pnpm test` **5/5 en verde** (vitest 4.1.12) · `pnpm lint` verde. Verificación del orquestador: los tres recorridos de nuevo. | Concedida y acusada. Lineaje `review-9959b28b722a5401`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 7 hallazgos informativos; 6 corregidos, 1 diferido con razón. |
-| T-5 | (este commit) | Rojo observado: 27 de 35 fallas en la API y el archivo de UI sin cargar. Final: los cinco comandos en 0 · **test 189/189** · **e2e 43/43**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de tenencia (5 muertas). | Pendiente de evaluar |
+| T-6 | (este commit) | Rojo observado: 44 fallas de API, el archivo de UI sin cargar y 25 e2e en rojo. Final: los cinco en 0 · **test 287/287** · **e2e 68/68**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de la guarda de borrado (5 muertas, con el error de FK crudo). | Pendiente de evaluar |
+| T-5 | `c9f51fc` | Rojo observado: 27 de 35 fallas en la API y el archivo de UI sin cargar. Final: los cinco comandos en 0 · **test 189/189** · **e2e 43/43**. Verificación del orquestador: los cinco códigos de salida más la reproducción propia de la mutación de tenencia (5 muertas). | Pendiente de evaluar |
 | T-4 | `3893ccb` | Rojo observado: 10 fallas de e2e sin hoja de estilos. Final: typecheck 0 · test 0 (122/122) · lint 0 · build 0 · **e2e 0 (22/22)**. Verificación del orquestador: los cinco códigos de salida, más la reproducción propia de la mutación B. | **Escalada sin veredicto.** Lineaje `review-9705305831e89372`, riesgo alto, cuatro lentes. Ver abajo. |
 | T-3 | `4a9118f` | Rojo observado: 26 fallas por `manejar is not a function`. Final: typecheck 0 · test **122/122**, exit 0 · lint 0. Verificación del orquestador: los tres códigos de salida, inspección propia del bundle, y pruebas de mutación sobre la compuerta de artefacto y sobre la cobertura de `origenRemoto`. | **Aprobada y acusada** tras TRES rondas de corrección. Lineajes `review-4dbfcc0616c91689` → `review-6a5f14d2c564cb45` → `review-155e9995d4c99a7e`, autoridad quemada. 4 hallazgos CRÍTICOS, los 4 reales, los 4 corregidos. |
 | T-2 | `eb08588` + `5486347` | Rojo observado primero: 59 fallas por `no such table`. Después: `pnpm typecheck` verde · `pnpm test` **64/64 en verde** · `pnpm lint` verde. Verificación del orquestador: los tres recorridos, más una prueba de mutación propia que confirmó que las pruebas de rechazo muerden. | Concedida y acusada. Lineaje `review-3469d152112ea53a`, riesgo medio, lente `review-reliability`, **aprobada**, autoridad quemada. 6 hallazgos informativos, los 6 reales, los 6 corregidos. |
@@ -362,13 +363,52 @@ Diferido con razón: **la lógica de `Inicio` sigue sin prueba unitaria.** T-4 c
 punta a punta, que era su alcance. La cobertura de `src/` que T-1 había diferido acá pasa a T-5,
 que es cuando aparece la primera pantalla con lógica propia.
 
-### Agujero abierto por T-5: no hay cómo poblar `tipo_cliente`
+### Agujero abierto por T-5, CERRADO en T-6: no había cómo poblar `tipo_cliente`
 
 La migración no siembra filas y no existe pantalla de administración del catálogo, así que **en
 una instalación limpia el desplegable de tipo de cliente sale vacío para siempre**. La API de
 lectura está; falta el CRUD. No es un defecto de T-5: excede su alcance y habría empujado la
 rebanada por encima de su presupuesto. **Entra en T-6**, junto a las áreas y los tipos de proceso,
 que son exactamente el mismo problema de catálogo.
+
+### La política de borrado, que T-2 había delegado
+
+T-2 dejó las llaves foráneas en `NO ACTION` y escribió que la política de borrado la definían T-6
+y T-7. Quedó así: **se borra solo lo que no tiene dependientes; lo demás se da de baja.**
+
+El `DELETE` cuenta los dependientes antes y, si hay, contesta **409** con la entidad y cuántos de
+cada cosa cuelgan, que la pantalla convierte en "No se puede borrar «Migración»: tiene 2 tipos de
+proceso. Se puede dar de baja…". Nunca sale un 500 ni SQL crudo.
+
+Y hay una decisión fina adentro que vale subrayar: **no se atrapa el error de llave foránea para
+disfrazarlo de 409.** Era lo tentador y habría arruinado la prueba — con ese `catch`, aflojar la
+guarda de conteo no rompería nada y la guarda quedaría sin verificar. La guarda es el conteo, y
+se la ve fallar: al aflojarla mueren 5 pruebas y lo hacen con `FOREIGN KEY constraint failed`
+crudo, que es exactamente lo que la tarea pedía evitar. Reproducido por el orquestador.
+
+El 409 tampoco es una pared sin puerta: hay prueba de que vaciar la plantilla desbloquea el
+borrado del tipo. Y dar de baja es coherente con T-5: no seleccionable, pero sigue siendo válido
+para lo ya guardado.
+
+### Dos migraciones que T-6 señala y no hizo
+
+Las reporta en vez de hacerlas, porque tocar el esquema estaba fuera de su superficie:
+
+1. **Falta unicidad de nombre**: `(tenant_id, nombre)` en `area` y `tipo_cliente`, y
+   `(tenant_id, area_id, nombre)` en `tipo_proceso`. Hoy nada impide dos áreas "Familia". No la
+   puso en la aplicación a propósito: una regla sin respaldo en la base es justo lo que §5
+   critica, porque el primer script de importación se la salta.
+2. **Nada obliga a que `etapa_plantilla.tenant_id` coincida con el de su `tipo_proceso`.** Hoy lo
+   sostiene el código, porque toda escritura pasa por una función que verifica el tipo antes. Un
+   `CHECK` no lo expresa; pide un trigger, el mismo candidato que el de `nota.proceso_etapa_id`
+   que ya había señalado T-2.
+
+### Trampa de Playwright encontrada en T-6
+
+`page.route("**/api/**")` **también intercepta los módulos que sirve Vite en desarrollo** cuando
+el proyecto tiene un directorio `src/api/`. Devolverle JSON en lugar de un módulo deja la página
+en blanco **sin un solo error en consola**. Fue la causa de las 25 fallas iniciales de e2e. Queda
+resuelto con un predicado sobre `url.pathname` y un comentario que explica la trampa.
 
 ### Decisiones de T-5 que quedan asentadas
 
@@ -451,4 +491,4 @@ contradiciendo una decisión ya tomada.
 
 ## Próximo paso
 
-T-6: áreas, tipos de proceso y plantillas — **y el CRUD de `tipo_cliente`, que T-5 dejó sin forma de poblar**.
+T-7: procesos y su plan de trabajo.

@@ -38,6 +38,10 @@
     "../worker",
     "../src/ruteo.ts",
     "../src/pantallas/clientes/formulario.ts",
-    "../src/pantallas/clientes/presentacion.ts"
+    "../src/pantallas/clientes/presentacion.ts",
+    "../src/mensajes.ts",
+    "../src/pantallas/catalogos/formulario.ts",
+    "../src/pantallas/catalogos/plantilla.ts",
+    "../src/pantallas/catalogos/presentacion.ts"
   ]
 }
