@@ -72,3 +72,23 @@ export function agruparPorArea(
     .sort((a, b) => ORDEN_ES.compare(a.areaNombre, b.areaNombre))
     .map((grupo) => ({ ...grupo, tipos: ordenarCatalogo(grupo.tipos) }));
 }
+
+/**
+ * Qué fila queda con la historia abierta al tocar el botón de `id` (T-15).
+ *
+ * **De a una por vez**, y es una decisión, no una limitación técnica: cada
+ * apertura es una petición —la bitácora se pide recién al abrirse— así que
+ * treinta áreas desplegadas serían treinta peticiones, y una pared de texto
+ * donde antes había una lista que se leía de un vistazo. La bitácora se
+ * consulta de a una duda.
+ *
+ * Vive acá y no dentro del `.tsx` por lo mismo que el resto de este módulo:
+ * es una función de datos a datos y adentro de un componente solo se podría
+ * probar montando un navegador.
+ */
+export function alternarHistoria(
+  abierta: string | null,
+  id: string,
+): string | null {
+  return abierta === id ? null : id;
+}

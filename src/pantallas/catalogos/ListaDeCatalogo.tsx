@@ -15,11 +15,25 @@
  * válida para lo ya guardado; **borrar** la saca de la base, y solo funciona
  * si no cuelga nada de ella. Cuando cuelga algo, el servidor contesta 409 y
  * acá se lee qué lo impide y cuántos son.
+ *
+ * ## La historia, desplegable en la fila (T-15)
+ *
+ * Estas dos entidades no tienen pantalla de detalle, y no la van a tener:
+ * son un nombre y una marca de vigencia, así que una pantalla propia sería
+ * una pantalla entera para un campo, con ruta, enlace y navegación de vuelta
+ * inventados. La bitácora va entonces **donde está la fila**, que además es
+ * donde mira quien acaba de dar de baja un área por error.
+ *
+ * Se pide **al abrirse** y no al pintar la lista: una tabla de treinta áreas
+ * serían treinta peticiones que casi nadie va a leer. Y **de a una por vez**
+ * —la regla está en `alternarHistoria`, probada aparte— para que la tabla no
+ * se convierta en una pared de texto.
  */
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import type {
   DatosDeCatalogo,
+  EntradaDeBitacora,
   FallaDeValidacion,
 } from "../../../worker/contract";
 import { Aviso } from "../../layout/Aviso";
@@ -27,6 +41,7 @@ import { ContenedorDeTabla } from "../../layout/ContenedorDeTabla";
 import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
 import { mensajeDeFalla } from "../../mensajes";
+import { Bitacora, type EstadoDeBitacora } from "../Bitacora";
 import { textoDeProblema, type Resultado } from "./api";
 import {
   BORRADOR_DE_CATALOGO_VACIO,
@@ -36,7 +51,10 @@ import {
   validarCatalogo,
   type BorradorDeCatalogo,
 } from "./formulario";
-import { estadoDe, ordenarCatalogo } from "./presentacion";
+import { alternarHistoria, estadoDe, ordenarCatalogo } from "./presentacion";
+
+/** Las tres columnas de la tabla, para el `colSpan` de la fila desplegada. */
+const COLUMNAS = 3;
 
 /** Lo mínimo que esta pantalla necesita saber de una fila de catálogo. */
 export interface FilaDeCatalogo {
@@ -57,6 +75,11 @@ type Props<T extends FilaDeCatalogo> = {
     datos: DatosDeCatalogo,
   ) => Promise<Resultado<T>>;
   readonly borrar: (id: string) => Promise<Resultado<null>>;
+  /** La historia de una fila. Se pide recién cuando alguien la despliega. */
+  readonly cargarBitacora: (
+    id: string,
+    signal: AbortSignal,
+  ) => Promise<Resultado<EntradaDeBitacora[]>>;
 };
 
 type Carga =
@@ -72,6 +95,7 @@ export function ListaDeCatalogo<T extends FilaDeCatalogo>({
   cargar,
   guardar,
   borrar,
+  cargarBitacora,
 }: Props<T>) {
   const [filas, setFilas] = useState<T[]>([]);
   const [carga, setCarga] = useState<Carga>({ fase: "cargando" });
@@ -85,6 +109,11 @@ export function ListaDeCatalogo<T extends FilaDeCatalogo>({
   const [fallas, setFallas] = useState<FallaDeValidacion[]>([]);
   const [problema, setProblema] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  /** Qué fila tiene la historia desplegada, y qué se sabe de ella. */
+  const [historiaDe, setHistoriaDe] = useState<string | null>(null);
+  const [historia, setHistoria] = useState<EstadoDeBitacora>({
+    fase: "cargando",
+  });
 
   useEffect(() => {
     const control = new AbortController();
@@ -107,6 +136,35 @@ export function ListaDeCatalogo<T extends FilaDeCatalogo>({
       control.abort();
     };
   }, [cargar, sujeto]);
+
+  /**
+   * La historia de la fila desplegada, pedida recién acá.
+   *
+   * Depende de `historiaDe`, así que no corre al pintar la lista: corre la
+   * primera vez que alguien abre una fila, y de nuevo cada vez que se abre
+   * otra. Volver a pedirla al reabrir la misma fila es deliberado: entre una
+   * apertura y la otra alguien pudo editarla, y una historia cacheada que se
+   * quedó vieja es peor que una petición de más.
+   */
+  useEffect(() => {
+    if (historiaDe === null) return undefined;
+
+    const control = new AbortController();
+
+    void cargarBitacora(historiaDe, control.signal).then((resultado) => {
+      if (control.signal.aborted) return;
+
+      setHistoria(
+        resultado.estado === "ok"
+          ? { fase: "listo", entradas: resultado.valor }
+          : { fase: "problema", mensaje: textoDeProblema(resultado, sujeto) },
+      );
+    });
+
+    return () => {
+      control.abort();
+    };
+  }, [cargarBitacora, historiaDe, sujeto]);
 
   /** Relee la lista entera: es más corto que reconciliar a mano y no miente. */
   async function recargar() {
@@ -209,7 +267,8 @@ export function ListaDeCatalogo<T extends FilaDeCatalogo>({
                 </thead>
                 <tbody>
                   {visibles.map((fila) => (
-                    <tr key={fila.id}>
+                    <Fragment key={fila.id}>
+                    <tr>
                       {editandoId === fila.id ? (
                         <>
                           <th scope="row">
@@ -318,11 +377,45 @@ export function ListaDeCatalogo<T extends FilaDeCatalogo>({
                               >
                                 Borrar
                               </button>
+                              {/* El rótulo nombra la fila: en una tabla de
+                                  treinta, «Historia» a secas se repite
+                                  treinta veces y deja de decir cuál. */}
+                              <button
+                                type="button"
+                                className="boton boton--tenue"
+                                aria-expanded={historiaDe === fila.id}
+                                aria-controls={`historia-${fila.id}`}
+                                onClick={() => {
+                                  // «Consultando…» se pone acá y no dentro
+                                  // del efecto: un `setState` síncrono en el
+                                  // cuerpo de un efecto encadena renders, y
+                                  // además es el gesto el que invalida lo
+                                  // que había, no la petición.
+                                  setHistoria({ fase: "cargando" });
+                                  setHistoriaDe((anterior) =>
+                                    alternarHistoria(anterior, fila.id),
+                                  );
+                                }}
+                              >
+                                {`Historia de ${fila.nombre}`}
+                              </button>
                             </Fila>
                           </td>
                         </>
                       )}
                     </tr>
+
+                    {historiaDe === fila.id && (
+                      <tr className="catalogo__historia">
+                        <td colSpan={COLUMNAS} id={`historia-${fila.id}`}>
+                          <Bitacora
+                            estado={historia}
+                            id={`bitacora-${fila.id}`}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </ContenedorDeTabla>

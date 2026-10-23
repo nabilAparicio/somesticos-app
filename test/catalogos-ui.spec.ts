@@ -53,6 +53,7 @@ import {
   agruparPorArea,
   estadoDe,
   ordenarCatalogo,
+  alternarHistoria,
 } from "../src/pantallas/catalogos/presentacion";
 import { enlaceDe, resolverRuta } from "../src/ruteo";
 
@@ -612,5 +613,29 @@ describe("el ruteo de catálogos", () => {
     ] as const) {
       expect(resolverRuta(enlaceDe(ruta))).toEqual(ruta);
     }
+  });
+});
+
+
+describe("la historia de una fila de catálogo se abre de a una", () => {
+  /*
+   * T-15 · Una sola fila abierta por vez, y la regla vive en una función
+   * pura para que se pueda afirmar sin montar un navegador.
+   *
+   * Por qué de a una: cada apertura es una petición, y una tabla de treinta
+   * áreas con todas desplegadas son treinta peticiones y una pared de texto
+   * donde antes había una lista que se leía de un vistazo. La bitácora se
+   * mira de a una fila porque se consulta de a una duda.
+   */
+  it("abrir una fila cerrada la abre", () => {
+    expect(alternarHistoria(null, "a1")).toBe("a1");
+  });
+
+  it("volver a tocar la misma fila la cierra", () => {
+    expect(alternarHistoria("a1", "a1")).toBeNull();
+  });
+
+  it("abrir otra fila cierra la anterior en el mismo paso", () => {
+    expect(alternarHistoria("a1", "a2")).toBe("a2");
   });
 });

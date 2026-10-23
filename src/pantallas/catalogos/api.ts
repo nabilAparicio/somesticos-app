@@ -19,12 +19,14 @@ import {
 } from "../../api/peticiones";
 import type {
   Area,
+  EntradaDeBitacora,
   DatosDeCatalogo,
   DatosDeEtapa,
   DatosDeTipoProceso,
   EtapaPlantilla,
   RespuestaDeArea,
   RespuestaDeAreas,
+  RespuestaDeBitacora,
   RespuestaDeEtapas,
   RespuestaDeTipoCliente,
   RespuestaDeTipoProceso,
@@ -49,6 +51,65 @@ const TIPOS_PROCESO = "/api/tipos-proceso";
 
 function cuerpo(datos: unknown, method: "POST" | "PUT"): RequestInit {
   return { method, ...ESCRITURA, body: JSON.stringify(datos) };
+}
+
+// ---------------------------------------------------------------------------
+// La bitácora de una fila de catálogo (T-15)
+// ---------------------------------------------------------------------------
+
+/** Las tres colecciones que tienen bitácora propia, tal como van en la URL. */
+export type ColeccionConBitacora =
+  | typeof AREAS
+  | typeof TIPOS_CLIENTE
+  | typeof TIPOS_PROCESO;
+
+/**
+ * Una sola función para los tres catálogos, y no tres.
+ *
+ * Lo único que cambia entre «la historia de un área» y «la de un tipo de
+ * cliente» es el prefijo de la dirección: la respuesta es la misma forma y
+ * el desenvuelto es el mismo. Tres copias serían tres rutas que se
+ * desincronizan, que es el argumento con el que `src/api/usuarios.ts` vive
+ * fuera de las pantallas.
+ *
+ * **Solo lectura, y por ausencia del camino.** No hay `POST` acá porque no
+ * hay ruta: una entrada no la escribe una persona, la escribe el sistema al
+ * hacer otra cosa.
+ */
+export async function cargarBitacoraDeCatalogo(
+  coleccion: ColeccionConBitacora,
+  id: string,
+  signal: AbortSignal,
+): Promise<Resultado<EntradaDeBitacora[]>> {
+  const resultado = await pedir<RespuestaDeBitacora>(
+    `${coleccion}/${encodeURIComponent(id)}/bitacora`,
+    { signal },
+  );
+
+  return resultado.estado === "ok"
+    ? { estado: "ok", valor: resultado.valor.entradas }
+    : resultado;
+}
+
+export function cargarBitacoraDeArea(
+  id: string,
+  signal: AbortSignal,
+): Promise<Resultado<EntradaDeBitacora[]>> {
+  return cargarBitacoraDeCatalogo(AREAS, id, signal);
+}
+
+export function cargarBitacoraDeTipoCliente(
+  id: string,
+  signal: AbortSignal,
+): Promise<Resultado<EntradaDeBitacora[]>> {
+  return cargarBitacoraDeCatalogo(TIPOS_CLIENTE, id, signal);
+}
+
+export function cargarBitacoraDeTipoProceso(
+  id: string,
+  signal: AbortSignal,
+): Promise<Resultado<EntradaDeBitacora[]>> {
+  return cargarBitacoraDeCatalogo(TIPOS_PROCESO, id, signal);
 }
 
 // ---------------------------------------------------------------------------

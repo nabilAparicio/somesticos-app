@@ -81,9 +81,127 @@ const ETAPAS = [
   { id: "e4", nombre: "Resolución y entrega del carné", orden: 3 },
 ];
 
+/* --- T-15 · la bitácora de los catálogos -------------------------------- */
+
+const ITZEL = { id: "u1", nombre: "Itzel" };
+
+/**
+ * Un nombre de área pegado de un expediente: sin espacios ni guiones, o sea
+ * sin punto de corte. Es la lección de T-4 que volvió a morder en T-8 — un
+ * token con guiones no sirve como contenido hostil porque el navegador lo
+ * parte solo— y es lo que hace que la medida de §9 sobre la historia
+ * desplegada mida algo.
+ */
+const DETALLE_HOSTIL =
+  "MIGRACIONYNATURALIZACIONEXPEDIENTESNM2026RESIDENCIAPERMANENTEMATRIMONIO";
+
+/** La historia del área de Migración: tres hechos, del viejo al nuevo. */
+const BITACORA_MIGRACION = {
+  entradas: [
+    {
+      id: "h1",
+      entidad: "area",
+      entidadId: AREA_MIGRACION,
+      accion: "creado",
+      usuarioId: ITZEL.id,
+      usuarioNombre: ITZEL.nombre,
+      ocurridoEn: "2026-08-15T15:00:00.000Z",
+      detalle: "Migración",
+    },
+    {
+      id: "h2",
+      entidad: "area",
+      entidadId: AREA_MIGRACION,
+      accion: "editado",
+      usuarioId: ITZEL.id,
+      usuarioNombre: ITZEL.nombre,
+      ocurridoEn: "2026-09-01T15:00:00.000Z",
+      detalle: "Migración y naturalización",
+    },
+    {
+      id: "h5",
+      entidad: "area",
+      entidadId: AREA_MIGRACION,
+      accion: "editado",
+      usuarioId: ITZEL.id,
+      usuarioNombre: ITZEL.nombre,
+      ocurridoEn: "2026-09-02T15:00:00.000Z",
+      detalle: DETALLE_HOSTIL,
+    },
+  ],
+};
+
+/** La de Familia, distinta, para que abrir otra fila se note. */
+const BITACORA_FAMILIA = {
+  entradas: [
+    {
+      id: "h3",
+      entidad: "area",
+      entidadId: AREA_FAMILIA,
+      accion: "dado_de_baja",
+      usuarioId: ITZEL.id,
+      usuarioNombre: ITZEL.nombre,
+      ocurridoEn: "2026-09-20T15:00:00.000Z",
+      detalle: "Familia y sucesiones",
+    },
+  ],
+};
+
+/** La del tipo de proceso, que se lee en su propia pantalla. */
+const BITACORA_TIPO = {
+  entradas: [
+    {
+      id: "h4",
+      entidad: "tipo_proceso",
+      entidadId: TIPO_ID,
+      accion: "plantilla_editada",
+      usuarioId: ITZEL.id,
+      usuarioNombre: ITZEL.nombre,
+      ocurridoEn: "2026-10-02T15:00:00.000Z",
+      detalle: "Permiso de residencia permanente por matrimonio con nacional",
+    },
+  ],
+};
+
 /** Los anchos del criterio de §9, en los puntos donde suele quebrarse. */
 const ANCHOS = [320, 360, 414, 767, 768, 1024, 1280, 1920, 2560] as const;
 const ALTO = 900;
+
+/**
+ * Qué contesta cada dirección.
+ *
+ * Es una función y no una cadena de ternarios desde que T-15 sumó las cinco
+ * direcciones de bitácora: con nueve ramas, el ternario encadenado deja de
+ * leerse y el error de indentación se esconde adentro.
+ */
+function cuerpoDe(pathname: string): Record<string, unknown> | null {
+  if (pathname === `/api/areas/${AREA_MIGRACION}/bitacora`) {
+    return BITACORA_MIGRACION;
+  }
+  if (pathname === `/api/areas/${AREA_FAMILIA}/bitacora`) {
+    return BITACORA_FAMILIA;
+  }
+  if (pathname === `/api/tipos-proceso/${TIPO_ID}/bitacora`) {
+    return BITACORA_TIPO;
+  }
+  // Los tipos de cliente no tienen hechos todavía: la pantalla tiene que
+  // decirlo, no rellenarlo.
+  if (/^\/api\/tipos-cliente\/[^/]+\/bitacora$/.test(pathname)) {
+    return { entradas: [] };
+  }
+
+  if (pathname === "/api/areas") return { areas: AREAS };
+  if (pathname === "/api/tipos-cliente") return { tipos: TIPOS_CLIENTE };
+  if (pathname === "/api/tipos-proceso") return { tipos: TIPOS_PROCESO };
+  if (pathname === `/api/tipos-proceso/${TIPO_ID}`) {
+    return { tipo: TIPOS_PROCESO[0] };
+  }
+  if (pathname === `/api/tipos-proceso/${TIPO_ID}/etapas`) {
+    return { etapas: ETAPAS };
+  }
+
+  return null;
+}
 
 /**
  * La API, contestada desde acá. Solo lecturas: estas pruebas miden layout y
@@ -99,18 +217,7 @@ async function conCatalogoCargado(page: Page): Promise<void> {
     (url) => url.pathname.startsWith("/api/"),
     async (ruta) => {
       const url = new URL(ruta.request().url());
-      const cuerpo: Record<string, unknown> | null =
-        url.pathname === "/api/areas"
-          ? { areas: AREAS }
-          : url.pathname === "/api/tipos-cliente"
-            ? { tipos: TIPOS_CLIENTE }
-            : url.pathname === "/api/tipos-proceso"
-              ? { tipos: TIPOS_PROCESO }
-              : url.pathname === `/api/tipos-proceso/${TIPO_ID}`
-                ? { tipo: TIPOS_PROCESO[0] }
-                : url.pathname === `/api/tipos-proceso/${TIPO_ID}/etapas`
-                  ? { etapas: ETAPAS }
-                  : null;
+      const cuerpo = cuerpoDe(url.pathname);
 
       if (cuerpo === null) {
         await ruta.fulfill({ status: 404, json: { error: "not_found" } });
@@ -237,6 +344,121 @@ test.describe("los catálogos del bufete", () => {
     await expect(page.getByText(/se copian al crear cada proceso/i)).toBeVisible();
   });
 
+  /* --- T-15 · la bitácora de los catálogos ---------------------------- */
+
+  test("la historia de un área no se pide hasta que alguien la abre", async ({
+    page,
+  }) => {
+    // Lo diferido no es optimización prematura: sin esto, pintar una tabla
+    // de treinta áreas serían treinta peticiones de bitácora al entrar.
+    const pedidas: string[] = [];
+    page.on("request", (peticion) => {
+      const ruta = new URL(peticion.url()).pathname;
+      if (ruta.endsWith("/bitacora")) pedidas.push(ruta);
+    });
+
+    await conCatalogoCargado(page);
+    await page.goto("/catalogos");
+    await expect(
+      page.getByRole("rowheader", { name: "Migración y naturalización" }),
+    ).toBeVisible();
+
+    expect(pedidas, "la lista no pide ninguna bitácora al pintarse").toEqual(
+      [],
+    );
+
+    await page
+      .getByRole("button", { name: "Historia de Migración y naturalización" })
+      .click();
+
+    await expect
+      .poll(() => pedidas)
+      .toEqual([`/api/areas/${AREA_MIGRACION}/bitacora`]);
+  });
+
+  test("al abrir la historia de un área se leen sus hechos, en frases", async ({
+    page,
+  }) => {
+    await conCatalogoCargado(page);
+    await page.goto("/catalogos");
+
+    await page
+      .getByRole("button", { name: "Historia de Migración y naturalización" })
+      .click();
+
+    const hechos = page.locator(".bitacora__frase");
+    await expect(hechos).toHaveCount(3);
+    await expect(hechos.first()).toContainText("Itzel dio de alta «Migración»");
+    await expect(hechos.nth(1)).toContainText(
+      "Itzel editó «Migración y naturalización»",
+    );
+
+    // El aviso que no puede faltar: la bitácora empieza el día que se
+    // encendió y eso se dice, no se disimula.
+    await expect(
+      page.getByText("La bitácora empieza el día que se encendió", {
+        exact: false,
+      }),
+    ).toBeVisible();
+  });
+
+  test("abrir la historia de otra fila cierra la anterior", async ({
+    page,
+  }) => {
+    await conCatalogoCargado(page);
+    await page.goto("/catalogos");
+
+    const migracion = page.getByRole("button", {
+      name: "Historia de Migración y naturalización",
+    });
+    const familia = page.getByRole("button", {
+      name: "Historia de Familia y sucesiones",
+    });
+
+    await migracion.click();
+    await expect(migracion).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".bitacora__frase")).toHaveCount(3);
+
+    await familia.click();
+    await expect(migracion).toHaveAttribute("aria-expanded", "false");
+    await expect(familia).toHaveAttribute("aria-expanded", "true");
+
+    const hechos = page.locator(".bitacora__frase");
+    await expect(hechos).toHaveCount(1);
+    await expect(hechos.first()).toContainText(
+      "Itzel dio de baja «Familia y sucesiones»",
+    );
+  });
+
+  test("un tipo de cliente sin hechos lo dice, y no rellena nada", async ({
+    page,
+  }) => {
+    await conCatalogoCargado(page);
+    await page.goto("/catalogos");
+
+    await page
+      .getByRole("button", { name: "Historia de Particular" })
+      .click();
+
+    await expect(page.getByText("Todavía no hay nada registrado.")).toBeVisible();
+    await expect(page.locator(".bitacora__frase")).toHaveCount(0);
+  });
+
+  test("la pantalla de un tipo de proceso muestra su bitácora", async ({
+    page,
+  }) => {
+    // Acá no hace falta desplegable: el tipo tiene pantalla propia, así que
+    // la bitácora va montada como en el detalle del cliente y del proceso.
+    await conCatalogoCargado(page);
+    await page.goto(EDICION);
+
+    const hechos = page.locator(".bitacora__frase");
+    await expect(hechos).toHaveCount(1);
+    await expect(hechos.first()).toContainText(
+      "Itzel guardó la plantilla «Permiso de residencia permanente",
+    );
+  });
+
   test("el botón de subir mueve la etapa un lugar y deja las demás", async ({
     page,
   }) => {
@@ -298,6 +520,15 @@ test.describe("los catálogos del bufete", () => {
       await page.evaluate(() => document.fonts.ready);
       await page.locator("table tbody tr").first().waitFor();
 
+      // Con la historia desplegada, que es el contenido nuevo de T-15 y el
+      // que trae el token sin punto de corte. Medir con la fila cerrada
+      // sería medir la tabla de T-6 otra vez y dar por buena una pantalla
+      // que nunca se vio: la vacuidad que T-4 descubrió en su rejilla.
+      await page
+        .getByRole("button", { name: "Historia de Migración y naturalización" })
+        .click();
+      await page.locator(".bitacora__frase").last().waitFor();
+
       const desborde = await medirDesborde(page);
 
       expect(
@@ -316,6 +547,9 @@ test.describe("los catálogos del bufete", () => {
       await page.goto(EDICION);
       await page.evaluate(() => document.fonts.ready);
       await page.locator(".plantilla__etapa .campo__control").first().waitFor();
+      // La bitácora llega en su propia petición: medir antes de que esté
+      // dibujada sería medir la pantalla sin lo que T-15 le agregó.
+      await page.locator(".bitacora__frase").first().waitFor();
 
       const desborde = await medirDesborde(page);
 

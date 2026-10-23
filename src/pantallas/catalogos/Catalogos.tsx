@@ -19,6 +19,8 @@ import {
   borrarArea,
   borrarTipoCliente,
   cargarAreas,
+  cargarBitacoraDeArea,
+  cargarBitacoraDeTipoCliente,
   cargarTiposCliente,
   guardarArea,
   guardarTipoCliente,
@@ -48,6 +50,7 @@ export function Catalogos() {
         cargar={cargarAreas}
         guardar={guardarArea}
         borrar={borrarArea}
+        cargarBitacora={cargarBitacoraDeArea}
       />
 
       <ListaDeCatalogo
@@ -58,6 +61,7 @@ export function Catalogos() {
         cargar={cargarTiposCliente}
         guardar={guardarTipoCliente}
         borrar={borrarTipoCliente}
+        cargarBitacora={cargarBitacoraDeTipoCliente}
       />
 
       <section aria-labelledby="catalogo-tipos-proceso">

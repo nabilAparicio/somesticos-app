@@ -30,9 +30,11 @@ import { Rejilla } from "../../layout/Rejilla";
 import { mensajeDeFalla } from "../../mensajes";
 import { navegarA } from "../../navegacion";
 import { enlaceDe } from "../../ruteo";
+import { Bitacora, type EstadoDeBitacora } from "../Bitacora";
 import {
   borrarTipoProceso,
   cargarAreas,
+  cargarBitacoraDeTipoProceso,
   cargarEtapas,
   cargarTipoProceso,
   guardarEtapas,
@@ -90,6 +92,16 @@ export function FormularioDeTipoDeProceso({ tipoId }: Props) {
   const [fallasDeEtapas, setFallasDeEtapas] = useState<FallaDeValidacion[]>([]);
   const [avisoDePlantilla, setAvisoDePlantilla] = useState<string | null>(null);
 
+  /**
+   * T-15 · La historia del tipo. Acá va montada entera y no desplegable,
+   * al revés que en la lista de áreas: el tipo de proceso **sí** tiene
+   * pantalla propia, así que es el mismo trato que le dan el detalle del
+   * cliente y el del proceso.
+   */
+  const [bitacora, setBitacora] = useState<EstadoDeBitacora>({
+    fase: "cargando",
+  });
+
   useEffect(() => {
     const control = new AbortController();
 
@@ -136,6 +148,36 @@ export function FormularioDeTipoDeProceso({ tipoId }: Props) {
     }
 
     void cargar();
+
+    return () => {
+      control.abort();
+    };
+  }, [tipoId]);
+
+  /**
+   * La bitácora, en su propia petición y **solo en la edición**: un tipo
+   * que todavía no existe no tiene historia, y pedirla daría un 404 dibujado
+   * como aviso de error en una pantalla que está perfectamente bien.
+   *
+   * No bloquea: si no llega, el formulario se sigue usando. Lo que no se
+   * puede perder es la plantilla, no el registro de quién la tocó.
+   */
+  useEffect(() => {
+    if (tipoId === undefined) return undefined;
+
+    const control = new AbortController();
+
+    void cargarBitacoraDeTipoProceso(tipoId, control.signal).then(
+      (resultado) => {
+        if (control.signal.aborted) return;
+
+        setBitacora(
+          resultado.estado === "ok"
+            ? { fase: "listo", entradas: resultado.valor }
+            : { fase: "problema", mensaje: textoDeProblema(resultado, SUJETO) },
+        );
+      },
+    );
 
     return () => {
       control.abort();
@@ -536,6 +578,11 @@ export function FormularioDeTipoDeProceso({ tipoId }: Props) {
           )}
         </Pila>
       </section>
+
+      {/* Solo en la edición: en el alta no hay de qué contar la historia. */}
+      {editando && (
+        <Bitacora estado={bitacora} id="bitacora-del-tipo-de-proceso" />
+      )}
     </Pila>
   );
 }

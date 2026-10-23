@@ -369,3 +369,13 @@
     font-size: var(--texto-xs);
   }
 }
+
+/* --- La historia desplegada de una fila de catálogo (T-15) ---
+
+   Ocupa el ancho entero de la tabla porque no es una celda más de la fila:
+   es la fila contada en el tiempo. Se separa con un fondo tenue para que la
+   lista siga leyéndose como lista con una de sus filas abierta, y no como
+   dos tablas pegadas. */
+.catalogo__historia > td {
+  background: var(--color-superficie-tenue);
+}
