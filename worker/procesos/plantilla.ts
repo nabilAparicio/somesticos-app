@@ -83,7 +83,10 @@ import type {
   PlantillaGuardada,
   TipoProceso,
 } from "../contract";
-import type { ServicioDeCatalogos } from "../catalogos/repositorio";
+import type {
+  NombreTomado,
+  ServicioDeCatalogos,
+} from "../catalogos/repositorio";
 import type { BaseDeDatos } from "../db/base";
 import type { ServicioDeProcesos } from "./repositorio";
 
@@ -94,6 +97,16 @@ export type ResultadoDeGuardadoDePlantilla =
       creado: boolean;
     } & PlantillaGuardada)
   | { estado: "invalido"; fallas: FallaDeValidacion[] }
+  /**
+   * El tipo nuevo chocaría con uno que ya existe en esa área (T-12).
+   *
+   * Este estado existe porque **ésta es la segunda puerta de escritura
+   * hacia `crearTipoProceso`**, la que no pasa por las rutas de catálogos.
+   * La guarda vive en el repositorio justamente para cubrir las dos; lo que
+   * falta acá es reenviar su resultado, porque tragárselo devolvería el
+   * mismo 500 que T-12 vino a eliminar en el otro camino.
+   */
+  | { estado: "duplicado"; existente: NombreTomado }
   | { estado: "no_encontrado" };
 
 /**
@@ -145,9 +158,26 @@ export async function guardarPlanComoPlantilla(
       tenantId,
       detalle.proceso.tipoProcesoId,
     );
-    // Alcanzable de verdad: la llave foránea de `proceso.tipo_proceso_id` no
-    // lleva el tenant, así que una fila cruzada a mano apuntaría al tipo del
-    // bufete vecino. Desde acá, ese tipo no existe.
+    // Defensa en profundidad, y **ya no alcanzable desde la base**.
+    //
+    // Hasta `migrations/0003_tenencia_y_unicidad.sql` esta rama se podía
+    // ejercitar de verdad: la llave foránea de `proceso.tipo_proceso_id` no
+    // lleva el tenant, así que una fila cruzada insertada a mano apuntaba al
+    // tipo del bufete vecino y llegaba hasta acá. Desde M-3 esa fila es
+    // inexpresable —el disparador `proceso_tenencia_coherente_al_insertar`
+    // la aborta—, así que no hay forma de llegar por este camino.
+    //
+    // Se conserva igual, y no por costumbre: la guarda que se puede apagar
+    // es la de la base, y si alguien desactivara ese disparador o
+    // reconstruyera la tabla sin él, esto es lo único que quedaría en pie.
+    // Es el mismo criterio con el que `0003` argumenta que un disparador no
+    // vuelve redundante al filtro de tenencia del repositorio.
+    //
+    // Que la base la rechace ahora está probado por rechazo en
+    // `test/esquema.spec.ts` («M-2 y M-3 · ninguna fila referencia a otro
+    // bufete») y en `test/procesos-api.spec.ts` («la fila cruzada que esta
+    // prueba necesitaba ya no se puede escribir»), que es la prueba que
+    // antes armaba esa fila para ejercitar justamente esta línea.
     if (existente === null) return { estado: "no_encontrado" };
     tipo = existente;
   } else {
@@ -160,6 +190,13 @@ export async function guardarPlanComoPlantilla(
     if (alta.estado === "no_encontrado") return { estado: "no_encontrado" };
     if (alta.estado === "invalido") {
       return { estado: "invalido", fallas: alta.fallas };
+    }
+    // El nombre tomado se reenvía tal cual, sin traducirlo a una falla de
+    // validación: es un 409 y no un 422, igual que por el otro camino. Dos
+    // códigos distintos para el mismo choque obligarían a la pantalla a
+    // tratar el mismo problema de dos maneras según de dónde vino.
+    if (alta.estado === "duplicado") {
+      return { estado: "duplicado", existente: alta.existente };
     }
 
     tipo = alta.fila;

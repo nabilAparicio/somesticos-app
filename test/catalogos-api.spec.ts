@@ -737,6 +737,224 @@ describe("borrar un catálogo con dependientes se rechaza con una respuesta clar
 });
 
 // ---------------------------------------------------------------------------
+// Rechazos: el nombre repetido dentro del mismo bufete (T-12)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lo que trae el 409 del nombre tomado. Declarado acá y no importado del
+ * contrato, por lo mismo que el resto de las formas de este archivo: lo que
+ * esta suite vigila es el JSON que ve el navegador.
+ */
+interface DuplicadoEnElCable {
+  error: string;
+  entidad: string;
+  nombre: string;
+}
+
+/**
+ * El 409 del nombre tomado, con su código comprobado acá.
+ *
+ * **Este es el lugar donde se ve si la guarda sigue siendo la consulta
+ * previa.** `0003` creó tres índices únicos; si alguien borra la consulta
+ * que se hace antes de escribir, esto deja de ser un 409 y pasa a ser un 500
+ * con «UNIQUE constraint failed» adentro. Y si en cambio siguiera siendo un
+ * 409, querría decir que alguien envolvió el error de la base en un
+ * `try/catch` — que es justo lo que este proyecto prohíbe desde T-6, porque
+ * con ese `catch` aflojar el índice no rompería ninguna prueba.
+ */
+async function duplicadoDe(respuesta: Response): Promise<DuplicadoEnElCable> {
+  expect(respuesta.status).toBe(409);
+  return (await respuesta.json()) as DuplicadoEnElCable;
+}
+
+describe("un nombre de catálogo no se repite dentro del mismo bufete", () => {
+  it("rechaza un área cuyo nombre ya existe, y no deja una segunda fila", async () => {
+    await crearArea("Familia");
+
+    const respuesta = await comoAutor(
+      conCuerpo("/api/areas", "POST", { nombre: "Familia" }),
+    );
+
+    const duplicado = await duplicadoDe(respuesta);
+    expect(duplicado.error).toBe("nombre_duplicado");
+    expect(duplicado.entidad).toBe("area");
+    expect(duplicado.nombre).toBe("Familia");
+
+    // El contrapeso que relee: el rechazo no sirve de nada si la segunda
+    // fila entró igual. Un catálogo partido en dos es el mal silencioso que
+    // `0003` describe — cada mitad junta tipos de proceso y nadie se entera.
+    const listado = await comoAutor(peticion("/api/areas"));
+    const { areas } = (await listado.json()) as { areas: AreaEnElCable[] };
+    expect(areas.filter((area) => area.nombre === "Familia")).toHaveLength(1);
+  });
+
+  it("un nombre dado de baja también está tomado, y lo dice con otro motivo", async () => {
+    const familia = await crearArea("Familia");
+    const baja = await comoAutor(
+      conCuerpo(`/api/areas/${familia.id}`, "PUT", {
+        nombre: "Familia",
+        activo: false,
+      }),
+    );
+    expect(baja.status).toBe(200);
+
+    const respuesta = await comoAutor(
+      conCuerpo("/api/areas", "POST", { nombre: "Familia" }),
+    );
+
+    // El índice de `0003` **no** es parcial: cubre también las filas dadas
+    // de baja, porque la respuesta correcta a «quiero un área Familia»
+    // cuando ya hubo una es reactivarla, no crear una segunda homónima.
+    //
+    // El motivo es otro, y esa es la decisión de esta unidad: con la fila
+    // activa lo que hay que hacer es elegir otro nombre; con la fila de
+    // baja, reactivarla. Un «ya existe» a secas obligaría a adivinar cuál
+    // de las dos cosas corresponde.
+    expect((await duplicadoDe(respuesta)).error).toBe(
+      "nombre_duplicado_de_baja",
+    );
+  });
+
+  it("renombrar una fila a su mismo nombre no es un duplicado", async () => {
+    const area = await crearArea("Familia");
+
+    const respuesta = await comoAutor(
+      conCuerpo(`/api/areas/${area.id}`, "PUT", {
+        nombre: "Familia",
+        activo: true,
+      }),
+    );
+
+    // La consulta previa excluye la propia fila. Sin esa exclusión el
+    // catálogo quedaría congelado: el `PUT` manda siempre el juego completo
+    // de campos, así que cambiar la marca de vigencia reenvía el nombre tal
+    // cual y chocaría consigo mismo.
+    expect(respuesta.status).toBe(200);
+  });
+
+  it("rechaza renombrar un área al nombre de otra", async () => {
+    await crearArea("Familia");
+    const penal = await crearArea("Penal");
+
+    const respuesta = await comoAutor(
+      conCuerpo(`/api/areas/${penal.id}`, "PUT", {
+        nombre: "Familia",
+        activo: true,
+      }),
+    );
+
+    expect((await duplicadoDe(respuesta)).error).toBe("nombre_duplicado");
+
+    // Y «Penal» sigue llamándose Penal: el rechazo no escribió a medias.
+    const releida = await comoAutor(peticion(`/api/areas/${penal.id}`));
+    const { area } = (await releida.json()) as { area: AreaEnElCable };
+    expect(area.nombre).toBe("Penal");
+  });
+
+  it("rechaza un tipo de cliente cuyo nombre ya existe", async () => {
+    await crearTipoCliente("Empresa");
+
+    const respuesta = await comoAutor(
+      conCuerpo("/api/tipos-cliente", "POST", { nombre: "Empresa" }),
+    );
+
+    const duplicado = await duplicadoDe(respuesta);
+    expect(duplicado.error).toBe("nombre_duplicado");
+    expect(duplicado.entidad).toBe("tipo_cliente");
+  });
+
+  it("rechaza dos tipos de proceso con el mismo nombre dentro de un área", async () => {
+    await crearTipoProceso(areaMigracionId, "Traspaso");
+
+    const respuesta = await comoAutor(
+      conCuerpo("/api/tipos-proceso", "POST", {
+        areaId: areaMigracionId,
+        nombre: "Traspaso",
+      }),
+    );
+
+    const duplicado = await duplicadoDe(respuesta);
+    expect(duplicado.error).toBe("nombre_duplicado");
+    expect(duplicado.entidad).toBe("tipo_proceso");
+  });
+
+  it("el mismo nombre en dos áreas distintas convive", async () => {
+    const civil = await crearArea("Civil");
+    await crearTipoProceso(areaMigracionId, "Traspaso");
+
+    // La unicidad de `tipo_proceso` lleva el área en la llave: un traspaso
+    // civil y uno migratorio son dos trámites distintos que el bufete nombra
+    // igual. Sin esta prueba, apretar la guarda a (tenant, nombre) pasaría
+    // inadvertido y el catálogo granular de §6 dejaría de ser expresable.
+    const traspasoCivil = await crearTipoProceso(civil.id, "Traspaso");
+    expect(traspasoCivil.areaId).toBe(civil.id);
+
+    const listado = await comoAutor(peticion("/api/tipos-proceso"));
+    const { tipos } = (await listado.json()) as {
+      tipos: TipoProcesoEnElCable[];
+    };
+    expect(tipos.filter((tipo) => tipo.nombre === "Traspaso")).toHaveLength(2);
+  });
+
+  it("rechaza mover un tipo de proceso a un área donde ese nombre ya está", async () => {
+    const civil = await crearArea("Civil");
+    await crearTipoProceso(civil.id, "Traspaso");
+    const migratorio = await crearTipoProceso(areaMigracionId, "Traspaso");
+
+    const respuesta = await comoAutor(
+      conCuerpo(`/api/tipos-proceso/${migratorio.id}`, "PUT", {
+        areaId: civil.id,
+        nombre: "Traspaso",
+        activo: true,
+      }),
+    );
+
+    // Lo que choca no es el nombre ni el área sino el par, así que la
+    // consulta previa tiene que mirar el área **de destino** y no la que la
+    // fila tiene hoy. Mover es el camino por el que esto se escapa.
+    expect((await duplicadoDe(respuesta)).error).toBe("nombre_duplicado");
+  });
+
+  it("guardar un tipo de proceso sin cambiarle el nombre no es un duplicado", async () => {
+    const tipo = await crearTipoProceso(areaMigracionId, "Traspaso");
+
+    const respuesta = await comoAutor(
+      conCuerpo(`/api/tipos-proceso/${tipo.id}`, "PUT", {
+        areaId: areaMigracionId,
+        nombre: "Traspaso",
+        descripcion: "Traspaso de bienes inmuebles",
+        activo: true,
+      }),
+    );
+
+    expect(respuesta.status).toBe(200);
+  });
+
+  it("el nombre que usa el bufete vecino no está tomado acá", async () => {
+    // El contrapeso de tenencia: la consulta previa filtra por `tenant_id`
+    // igual que todo lo demás en este repositorio. Sin el filtro, el
+    // catálogo del vecino decidiría cómo podemos llamar a lo nuestro.
+    const area = await crearArea("Área del vecino");
+
+    expect(area.nombre).toBe("Área del vecino");
+  });
+
+  it("la comparación es exacta: «Familia» y «familia» conviven", async () => {
+    // La decisión 1 de `0003`, fijada acá para que nadie la revierta sin
+    // querer: los índices van **sin** `COLLATE NOCASE`. El NOCASE de SQLite
+    // pliega solo ASCII, así que «Migración» y «MIGRACIÓN» seguirían siendo
+    // dos filas distintas: en un catálogo en español eso no es media
+    // cobertura, es una falsa sensación de cobertura. Normalizar de verdad
+    // es una decisión de producto con su propia columna normalizada.
+    await crearArea("Familia");
+
+    const minuscula = await crearArea("familia");
+
+    expect(minuscula.nombre).toBe("familia");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Rechazos: sin identidad de Access
 // ---------------------------------------------------------------------------
 

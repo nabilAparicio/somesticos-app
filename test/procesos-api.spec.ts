@@ -1331,8 +1331,10 @@ describe("guardar el plan de un proceso como plantilla rechaza lo que no puede g
   // `if (existente === null) return { estado: "no_encontrado" }` de
   // `plantilla.ts` pasó a ser inalcanzable desde la base. Sigue siendo
   // defensa correcta —es la que aguantaría si alguien apagara el
-  // disparador—, pero ya no hay forma de ejercitarla por este camino. No se
-  // toca en esta unidad de trabajo: `worker/` está fuera de su superficie.
+  // disparador—, pero ya no hay forma de ejercitarla por este camino. La
+  // rama se conserva y su comentario quedó corregido en la segunda unidad
+  // de T-12: decía que el caso era «alcanzable de verdad», y eso dejó de
+  // ser cierto el día que M-3 entró.
   it("la fila cruzada que esta prueba necesitaba ya no se puede escribir", async () => {
     const procesoCruzadoId = nuevoId();
 
@@ -1454,6 +1456,43 @@ describe("guardar el plan de un proceso como plantilla rechaza lo que no puede g
     expect(await fallasDe(respuesta)).toContain("plan_vacio");
     // El tipo nuevo tampoco se creó: el plan vacío se comprueba antes.
     expect(await cuantosTipos(TENANT_UNICO_ID)).toBe(2);
+  });
+
+  it("rechaza crear un tipo nuevo cuyo NOMBRE YA EXISTE en esa área", async () => {
+    // El agujero que T-12 destapó al ampliar `ResultadoDeEscritura`: éste es
+    // el otro camino de escritura hacia `crearTipoProceso`, el que no pasa
+    // por las rutas de catálogos. Sin el reenvío del estado `duplicado`, el
+    // nombre repetido llegaba a la base y volvía como el
+    // `UNIQUE constraint failed` crudo de `tipo_proceso_nombre_unico`, que
+    // es justo el 500 que esta unidad de trabajo vino a eliminar.
+    const proceso = await procesoDeResidencia();
+
+    const respuesta = await guardarComoPlantilla(proceso.id, {
+      destino: "nuevo",
+      areaId,
+      // El nombre del tipo que ya está en esa área desde la preparación.
+      nombre: "Residencia permanente por matrimonio con nacional",
+    });
+
+    expect(respuesta.status).toBe(409);
+    const cuerpo = (await respuesta.json()) as {
+      error: string;
+      entidad: string;
+      nombre: string;
+    };
+    expect(cuerpo.error).toBe("nombre_duplicado");
+    expect(cuerpo.entidad).toBe("tipo_proceso");
+    expect(cuerpo.nombre).toBe(
+      "Residencia permanente por matrimonio con nacional",
+    );
+
+    // Y no escribió nada: siguen los dos tipos de la preparación, y la
+    // plantilla del que ya existía quedó como estaba. Sin esta relectura,
+    // un rechazo que creara el tipo y fallara después pasaría igual.
+    expect(await cuantosTipos(TENANT_UNICO_ID)).toBe(2);
+    expect(await plantillaCompletaDe(tipoResidenciaId)).toEqual(
+      PLAN_DE_RESIDENCIA.map((nombre, orden) => ({ nombre, orden })),
+    );
   });
 
   it("rechaza un destino que no es ninguno de los dos", async () => {

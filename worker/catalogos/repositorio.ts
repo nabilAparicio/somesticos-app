@@ -27,6 +27,31 @@
  *    lo elegible sin invalidar lo ya guardado — la misma distinción entre
  *    *válido* y *seleccionable* que estableció T-5.
  *
+ * ## El nombre único, que `0003` dejó a esta tarea (T-12)
+ *
+ * La migración creó `area_nombre_unico`, `tipo_cliente_nombre_unico` y
+ * `tipo_proceso_nombre_unico`, y dejó escrito que la API era de la unidad
+ * siguiente: hasta acá un nombre repetido llegaba a la base y volvía como
+ * 500. Se paga con **exactamente la misma forma** que el borrado, y no es
+ * casualidad sino la regla del proyecto:
+ *
+ *  - **Se consulta antes de escribir.** `nombreTomado` y
+ *    `nombreDeTipoTomado` preguntan si el nombre ya está en este tenant; si
+ *    está, no se intenta el `INSERT` ni el `UPDATE`.
+ *  - **No se atrapa el error del índice para disfrazarlo de 409.** Con ese
+ *    `catch`, borrar el índice no rompería ninguna prueba y la guarda
+ *    quedaría inverificable para siempre. El criterio de que esto está bien
+ *    hecho es que **borrar la consulta previa haga aparecer el
+ *    `UNIQUE constraint failed` crudo**, y eso es justo lo que
+ *    `test/catalogos-api.spec.ts` verá si alguien la saca.
+ *  - **El índice es el respaldo que no debería dispararse nunca**, y que
+ *    siga vivo lo prueba `test/esquema.spec.ts`, no esta capa.
+ *
+ * La consulta excluye la propia fila en la edición, cubre también las filas
+ * dadas de baja —el índice tampoco es parcial— y lleva el área en la llave
+ * cuando se trata de un tipo de proceso. Cada una de las tres cosas tiene su
+ * prueba de rechazo o de convivencia.
+ *
  * ## El registro de bitácora (T-10)
  *
  * Viaja con la escritura, no al lado. Este archivo no recibe un
@@ -56,9 +81,22 @@ import type { BaseDeDatos } from "../db/base";
 import { sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 
+/**
+ * La fila que ya ocupa el nombre.
+ *
+ * Viaja `activo` y no el motivo del cable porque este archivo sabe de filas,
+ * no de códigos HTTP: cuál de los dos motivos corresponde lo elige el ruteo,
+ * igual que elige el 409 del borrado bloqueado a partir del conteo.
+ */
+export interface NombreTomado {
+  nombre: string;
+  activo: boolean;
+}
+
 export type ResultadoDeEscritura<T> =
   | { estado: "guardado"; fila: T }
   | { estado: "invalido"; fallas: FallaDeValidacion[] }
+  | { estado: "duplicado"; existente: NombreTomado }
   | { estado: "no_encontrado" };
 
 export type ResultadoDeBorrado =
@@ -198,6 +236,39 @@ export function catalogosSobreD1(base: BaseDeDatos): ServicioDeCatalogos {
       return fila === null ? null : aSimple(fila);
     }
 
+    /**
+     * La fila que ya ocupa ese nombre en este tenant, o `null`.
+     *
+     * `exceptoId` es la propia fila cuando esto se llama desde una edición:
+     * el `PUT` manda el juego completo de campos, así que cambiar solo la
+     * marca de vigencia reenvía el nombre tal cual, y sin la exclusión la
+     * fila chocaría consigo misma y el catálogo quedaría inmodificable.
+     *
+     * Se escribe `IS NOT` y no `<>` por la trampa de NULL que `0001`
+     * documenta y `0003` vuelve a pisar: con `<>`, el alta —donde no hay
+     * fila que excluir y el parámetro va nulo— compararía contra NULL, la
+     * condición valdría NULL, y la consulta no devolvería ninguna fila. Es
+     * decir: la guarda entera quedaría apagada justo en el alta, que es el
+     * camino más transitado.
+     */
+    async function nombreTomado(
+      tenantId: string,
+      nombre: string,
+      exceptoId: string | null,
+    ): Promise<NombreTomado | null> {
+      const fila = await db
+        .prepare(
+          `SELECT nombre, activo FROM ${tabla}` +
+            " WHERE tenant_id = ? AND nombre = ? AND id IS NOT ?",
+        )
+        .bind(tenantId, nombre, exceptoId)
+        .first<{ nombre: string; activo: number }>();
+
+      return fila === null
+        ? null
+        : { nombre: fila.nombre, activo: fila.activo === 1 };
+    }
+
     async function listar(tenantId: string): Promise<Area[]> {
       const { results } = await db
         .prepare(
@@ -214,6 +285,9 @@ export function catalogosSobreD1(base: BaseDeDatos): ServicioDeCatalogos {
       tenantId: string,
       datos: DatosDeCatalogo,
     ): Promise<ResultadoDeEscritura<Area>> {
+      const tomado = await nombreTomado(tenantId, datos.nombre, null);
+      if (tomado !== null) return { estado: "duplicado", existente: tomado };
+
       const id = nuevoId();
 
       await base.mutar(
@@ -252,6 +326,9 @@ export function catalogosSobreD1(base: BaseDeDatos): ServicioDeCatalogos {
       // tenant es, desde acá, una fila que no existe.
       const previa = await obtener(tenantId, id);
       if (previa === null) return { estado: "no_encontrado" };
+
+      const tomado = await nombreTomado(tenantId, datos.nombre, id);
+      if (tomado !== null) return { estado: "duplicado", existente: tomado };
 
       await base.mutar(
         {
@@ -390,6 +467,36 @@ export function catalogosSobreD1(base: BaseDeDatos): ServicioDeCatalogos {
       : [];
   }
 
+  /**
+   * El tipo de proceso que ya ocupa ese nombre **dentro de esa área**.
+   *
+   * El área va en la llave y no es un detalle: «Traspaso» en Civil y
+   * «Traspaso» en Migración son dos trámites distintos que el bufete nombra
+   * igual, y el catálogo es granular a propósito (`docs/diseno.md` §6).
+   *
+   * El área que se consulta es la **de destino**, la que trae el envío, no
+   * la que la fila tiene guardada: mover un tipo de un área a otra es el
+   * camino por el que un choque se cuela sin que el nombre haya cambiado.
+   */
+  async function nombreDeTipoTomado(
+    tenantId: string,
+    areaId: string,
+    nombre: string,
+    exceptoId: string | null,
+  ): Promise<NombreTomado | null> {
+    const fila = await db
+      .prepare(
+        "SELECT nombre, activo FROM tipo_proceso" +
+          " WHERE tenant_id = ? AND area_id = ? AND nombre = ? AND id IS NOT ?",
+      )
+      .bind(tenantId, areaId, nombre, exceptoId)
+      .first<{ nombre: string; activo: number }>();
+
+    return fila === null
+      ? null
+      : { nombre: fila.nombre, activo: fila.activo === 1 };
+  }
+
   // -------------------------------------------------------------------------
   // La plantilla
   // -------------------------------------------------------------------------
@@ -455,6 +562,16 @@ export function catalogosSobreD1(base: BaseDeDatos): ServicioDeCatalogos {
       const fallas = await validarArea(tenantId, datos.areaId);
       if (fallas.length > 0) return { estado: "invalido", fallas };
 
+      // El área primero: sin un área real no hay par (área, nombre) contra
+      // el cual preguntar si el nombre está tomado.
+      const tomado = await nombreDeTipoTomado(
+        tenantId,
+        datos.areaId,
+        datos.nombre,
+        null,
+      );
+      if (tomado !== null) return { estado: "duplicado", existente: tomado };
+
       const id = nuevoId();
 
       await base.mutar(
@@ -490,6 +607,14 @@ export function catalogosSobreD1(base: BaseDeDatos): ServicioDeCatalogos {
 
       const fallas = await validarArea(tenantId, datos.areaId);
       if (fallas.length > 0) return { estado: "invalido", fallas };
+
+      const tomado = await nombreDeTipoTomado(
+        tenantId,
+        datos.areaId,
+        datos.nombre,
+        id,
+      );
+      if (tomado !== null) return { estado: "duplicado", existente: tomado };
 
       await base.mutar(
         {

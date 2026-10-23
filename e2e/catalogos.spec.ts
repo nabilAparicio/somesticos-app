@@ -170,6 +170,55 @@ test.describe("los catálogos del bufete", () => {
     );
   });
 
+  test("un nombre ya usado se rechaza en la pantalla diciendo qué hacer", async ({
+    page,
+  }) => {
+    await conCatalogoCargado(page);
+
+    // Registrada **después** de la de lectura y por eso gana: Playwright
+    // atiende las rutas en orden inverso al de registro. Lo que no es el
+    // alta se devuelve con `fallback` a la de arriba, que es la que trae las
+    // filas de la tabla.
+    await page.route(
+      (url) => url.pathname === "/api/areas",
+      async (ruta) => {
+        if (ruta.request().method() !== "POST") {
+          await ruta.fallback();
+          return;
+        }
+        await ruta.fulfill({
+          status: 409,
+          json: {
+            error: "nombre_duplicado_de_baja",
+            entidad: "area",
+            nombre: "Derecho penal económico y corporativo",
+          },
+        });
+      },
+    );
+
+    await page.goto("/catalogos");
+
+    const areas = page.getByRole("region", { name: "Áreas" });
+    await areas
+      .getByLabel("Nombre del área nueva")
+      .fill("Derecho penal económico y corporativo");
+    await areas.getByRole("button", { name: "Agregar" }).click();
+
+    // Que el 409 llegue hasta el ojo es lo único que esta prueba agrega: la
+    // frase ya está probada como función en `test/catalogos-ui.spec.ts`, y
+    // el código de estado en `test/catalogos-api.spec.ts`. Lo que falta
+    // comprobar es el cable entre los dos.
+    //
+    // Se lee del `role="alert"` y no de la página entera: la fila dada de
+    // baja ya tiene un botón «Reactivar» a la vista, así que buscar esa
+    // palabra suelta pasaría sin que el aviso existiera.
+    const aviso = page.getByRole("alert");
+    await expect(aviso).toContainText("Derecho penal económico y corporativo");
+    await expect(aviso).toContainText(/dada de baja/i);
+    await expect(aviso).toContainText(/reactivar/i);
+  });
+
   test("la edición de un tipo dice, ahí mismo, que la plantilla no es retroactiva", async ({
     page,
   }) => {

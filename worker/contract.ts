@@ -320,10 +320,59 @@ export interface Dependencia {
   cuantos: number;
 }
 
+/**
+ * Las tres tablas de catálogo que se administran desde la aplicación.
+ *
+ * Se nombra una sola vez porque los dos 409 de los catálogos —el borrado
+ * bloqueado de T-6 y el nombre tomado de T-12— hablan del mismo conjunto, y
+ * dos listas paralelas son dos listas que se desincronizan.
+ */
+export type EntidadDeCatalogo = "area" | "tipo_proceso" | "tipo_cliente";
+
 export interface BorradoBloqueado {
   error: "tiene_dependientes";
-  entidad: "area" | "tipo_proceso" | "tipo_cliente";
+  entidad: EntidadDeCatalogo;
   dependencias: Dependencia[];
+}
+
+/**
+ * Qué clase de choque de nombre fue.
+ *
+ * Son **dos** motivos y no uno, y la diferencia no es cosmética: es la única
+ * parte de esta respuesta que cambia qué tiene que hacer quien la recibe.
+ * Con la fila vigente, lo que corresponde es elegir otro nombre. Con la fila
+ * dada de baja, lo que corresponde es **reactivar la que está** —es la
+ * decisión que `migrations/0003_tenencia_y_unicidad.sql` ya tomó al dejar el
+ * índice sin `WHERE activo = 1`— y un «ya existe» a secas obligaría a
+ * adivinar cuál de las dos salidas es la buena.
+ */
+export type MotivoDeNombreDuplicado =
+  | "nombre_duplicado"
+  | "nombre_duplicado_de_baja";
+
+/**
+ * El nombre de catálogo que ya está tomado dentro de este tenant.
+ *
+ * `0003` creó los tres índices únicos y dejó escrito que la API era de la
+ * unidad siguiente: hasta T-12 un nombre repetido llegaba a la base y volvía
+ * como 500. Ahora se consulta antes y se contesta esto con 409.
+ *
+ * **La guarda es la consulta previa, no un `try/catch` sobre el error del
+ * índice.** Es la misma regla que T-6 fijó para el borrado con dependientes,
+ * y por el mismo motivo: con un `catch` que traduzca el error de SQLite a un
+ * 409, aflojar o borrar el índice no rompería ninguna prueba y la guarda
+ * quedaría inverificable. El índice es el respaldo que no debería dispararse
+ * nunca, y que siga vivo lo prueba `test/esquema.spec.ts`.
+ *
+ * `nombre` es el de la fila que ya está. Hoy es idéntico al que se mandó
+ * —la comparación es exacta, sin `COLLATE NOCASE`— pero viaja igual para que
+ * el mensaje cite lo que hay guardado y no lo que se tipeó, que es lo que
+ * seguiría siendo cierto el día que haya una columna normalizada.
+ */
+export interface NombreDuplicado {
+  error: MotivoDeNombreDuplicado;
+  entidad: EntidadDeCatalogo;
+  nombre: string;
 }
 
 export interface RespuestaDeAreas {

@@ -9,7 +9,11 @@
  * texto y descubrirlo en producción como un mensaje en blanco.
  */
 
-import type { MotivoDeFalla } from "../worker/contract";
+import type {
+  MotivoDeFalla,
+  MotivoDeNombreDuplicado,
+  NombreDuplicado,
+} from "../worker/contract";
 
 const MENSAJES: Record<MotivoDeFalla, string> = {
   tipo_invalido: "Ese campo no se entendió.",
@@ -101,4 +105,64 @@ export function mensajeDeFalla(
   }
 
   return MENSAJES[motivo];
+}
+
+/* ==========================================================================
+   El nombre de catálogo ya tomado (T-12)
+
+   El 409 que `migrations/0003_tenencia_y_unicidad.sql` dejó pendiente de
+   contestar bien. Vive acá por lo mismo que el `Record` de arriba: el
+   vocabulario de fallas con nombre es uno solo para toda la API, y los dos
+   `Record` de esta sección son exhaustivos, así que un motivo o una entidad
+   nuevos no compilan hasta que alguien escriba qué decirle a la persona.
+   ========================================================================== */
+
+/**
+ * Cómo se nombra cada catálogo dentro de la frase.
+ *
+ * El fragmento viene armado con su artículo y la concordancia hecha —«un
+ * área llamada», «un tipo de cliente llamado»— porque componerlo a pedazos
+ * exigiría cargar el género de cada entidad para ganar nada.
+ *
+ * El tipo de proceso dice «en esa área» y los otros dos no: es el único cuya
+ * unicidad lleva el área en la llave. Sin esa aclaración, el mensaje haría
+ * pensar que el nombre está tomado en todo el bufete, cuando «Traspaso» en
+ * Civil y «Traspaso» en Migración conviven a propósito.
+ */
+const CATALOGOS: Record<NombreDuplicado["entidad"], string> = {
+  area: "un área llamada",
+  tipo_cliente: "un tipo de cliente llamado",
+  tipo_proceso: "un tipo de proceso en esa área, llamado",
+};
+
+/**
+ * Las dos frases, y lo que las separa: **la salida que ofrecen**.
+ *
+ * Con la fila vigente, la única salida es otro nombre. Con la fila dada de
+ * baja, la salida es reactivar la que está, y decir «elegí otro nombre»
+ * sería mandar a crear justamente la segunda fila que el índice sin
+ * `WHERE activo = 1` existe para impedir: el día que alguien reactivara la
+ * primera, el catálogo quedaría partido en dos con historia colgando de cada
+ * mitad, y unirlas ya no sería posible.
+ *
+ * Ninguna de las dos es una pared sin puerta, que es el criterio que T-6
+ * fijó para el otro 409 de los catálogos.
+ */
+const DUPLICADOS: Record<MotivoDeNombreDuplicado, (hay: string) => string> = {
+  nombre_duplicado: (hay) =>
+    `Ya hay ${hay}. Dos filas con el mismo nombre parten el catálogo en dos` +
+    " y nadie se entera hasta que un listado muestra la misma palabra dos" +
+    " veces: hay que elegir otro nombre, o editar la fila que ya está.",
+  nombre_duplicado_de_baja: (hay) =>
+    `Ya hay ${hay}, y está dada de baja. Lo que corresponde es reactivar esa` +
+    " fila desde el listado, donde aparece marcada: crear una segunda con el" +
+    " mismo nombre dejaría dos mitades del mismo catálogo, cada una con su" +
+    " propia historia colgando.",
+};
+
+/** El nombre tomado, dicho para quien está mirando la pantalla. */
+export function mensajeDeNombreDuplicado(duplicado: NombreDuplicado): string {
+  return DUPLICADOS[duplicado.error](
+    `${CATALOGOS[duplicado.entidad]} «${duplicado.nombre}»`,
+  );
 }

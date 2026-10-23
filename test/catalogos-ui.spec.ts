@@ -22,8 +22,10 @@ import type {
   Area,
   BorradoBloqueado,
   EtapaPlantilla,
+  NombreDuplicado,
   TipoProceso,
 } from "../worker/contract";
+import { mensajeDeNombreDuplicado } from "../src/mensajes";
 import {
   BORRADOR_DE_CATALOGO_VACIO,
   BORRADOR_DE_TIPO_VACIO,
@@ -425,6 +427,76 @@ describe("mensajeDeBloqueo", () => {
         "Empresa",
       ),
     ).toMatch(/dar de baja/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// El nombre tomado, dicho para quien mira la pantalla (T-12)
+// ---------------------------------------------------------------------------
+
+describe("mensajeDeNombreDuplicado", () => {
+  function duplicado(
+    error: NombreDuplicado["error"],
+    entidad: NombreDuplicado["entidad"],
+    nombre: string,
+  ): NombreDuplicado {
+    return { error, entidad, nombre };
+  }
+
+  it("nombra la fila que choca y dice que hay que elegir otro nombre", () => {
+    const texto = mensajeDeNombreDuplicado(
+      duplicado("nombre_duplicado", "area", "Familia"),
+    );
+
+    expect(texto).toContain("Familia");
+    expect(texto).toContain("área");
+    expect(texto).toMatch(/otro nombre/i);
+  });
+
+  it("cuando la fila está dada de baja, manda a reactivarla y no a renombrar", () => {
+    // La razón de que sean dos motivos y no uno: las dos salidas son
+    // distintas. Con la fila vigente hay que elegir otro nombre; con la
+    // fila de baja hay que reactivar la que está, porque crear una segunda
+    // partiría el catálogo igual que si las dos estuvieran vigentes.
+    const texto = mensajeDeNombreDuplicado(
+      duplicado("nombre_duplicado_de_baja", "area", "Familia"),
+    );
+
+    expect(texto).toContain("Familia");
+    expect(texto).toMatch(/dada de baja/i);
+    expect(texto).toMatch(/reactivar/i);
+    expect(texto).not.toMatch(/otro nombre/i);
+  });
+
+  it("nombra cada catálogo por lo que es, y el tipo de proceso por su área", () => {
+    expect(
+      mensajeDeNombreDuplicado(
+        duplicado("nombre_duplicado", "tipo_cliente", "Empresa"),
+      ),
+    ).toContain("tipo de cliente");
+
+    // El tipo de proceso es el único cuya unicidad es por área, así que el
+    // mensaje tiene que decirlo: «ya hay un Traspaso» a secas haría pensar
+    // que el nombre está tomado en todo el bufete, cuando convive con el
+    // Traspaso de cualquier otra área.
+    const texto = mensajeDeNombreDuplicado(
+      duplicado("nombre_duplicado", "tipo_proceso", "Traspaso"),
+    );
+    expect(texto).toContain("tipo de proceso");
+    expect(texto).toMatch(/área/i);
+  });
+
+  it("ninguna de las dos frases deja sin saber qué hacer", () => {
+    // El criterio de T-6 aplicado al 409 nuevo: un rechazo no puede ser una
+    // pared sin puerta. Las dos frases terminan en una acción posible.
+    for (const error of [
+      "nombre_duplicado",
+      "nombre_duplicado_de_baja",
+    ] as const) {
+      expect(
+        mensajeDeNombreDuplicado(duplicado(error, "area", "Familia")),
+      ).toMatch(/elegir otro nombre|reactivar/i);
+    }
   });
 });
 

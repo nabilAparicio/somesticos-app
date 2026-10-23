@@ -40,6 +40,12 @@
  *    el motivo es lo que la pantalla convierte en una frase.
  *  - **409** para avanzar un plan que ya no tiene nada por delante: la
  *    petición está bien formada y el estado es el que no la admite.
+ *  - **409** también para guardar el plan como un tipo de proceso **nuevo**
+ *    cuyo nombre ya está tomado en esa área (T-12). Es el mismo cuerpo y la
+ *    misma traducción que `POST /api/tipos-proceso`, importada de allá: esta
+ *    ruta es la segunda puerta hacia `crearTipoProceso`, y dos respuestas
+ *    distintas para el mismo choque obligarían a la pantalla a tratarlo de
+ *    dos maneras según por dónde entró.
  *
  * En el `PUT`, la existencia se comprueba **antes** de validar el cuerpo
  * (decisión de T-5): si no, un cuerpo inválido contra un id ajeno contestaría
@@ -47,6 +53,7 @@
  */
 
 import type { ServicioDeCatalogos } from "../catalogos/repositorio";
+import { nombreYaTomado } from "../catalogos/rutas";
 import type { BaseDeDatos } from "../db/base";
 import type {
   DatosInvalidos,
@@ -270,6 +277,12 @@ async function manejarGuardadoDePlantilla(
   );
   if (resultado.estado === "no_encontrado") return noEncontrado();
   if (resultado.estado === "invalido") return invalido(resultado.fallas);
+  // El mismo 409 y la misma traducción que `POST /api/tipos-proceso`: el
+  // tipo nuevo es el mismo tipo, y de dónde se pidió crearlo no cambia qué
+  // tiene que leer quien está mirando la pantalla.
+  if (resultado.estado === "duplicado") {
+    return nombreYaTomado(resultado.existente, "tipo_proceso");
+  }
 
   const cuerpo: PlantillaGuardada = {
     tipo: resultado.tipo,

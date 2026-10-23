@@ -21,7 +21,9 @@ import type {
   BorradoBloqueado,
   DatosInvalidos,
   FallaDeValidacion,
+  NombreDuplicado,
 } from "../../worker/contract";
+import { mensajeDeNombreDuplicado } from "../mensajes";
 
 export type Resultado<T> =
   | { estado: "ok"; valor: T }
@@ -29,16 +31,22 @@ export type Resultado<T> =
   /**
    * 409: la petición está bien formada y el estado es el que no la admite.
    *
-   * Hay dos, y por eso viaja `motivo`: el borrado de un catálogo que chocó
-   * con dependientes (`tiene_dependientes`, T-6) y el avance de un proceso
-   * que ya no tiene etapas por delante (`sin_etapas_pendientes`, T-7).
-   * `bloqueo` solo trae algo en el primer caso; inventarle un valor al
-   * segundo sería ofrecerle a la pantalla un detalle que no existe.
+   * Hay varios, y por eso viaja `motivo`: el borrado de un catálogo que
+   * chocó con dependientes (`tiene_dependientes`, T-6), el avance de un
+   * proceso que ya no tiene etapas por delante (`sin_etapas_pendientes`,
+   * T-7) y el nombre de catálogo ya tomado dentro del bufete
+   * (`nombre_duplicado` y `nombre_duplicado_de_baja`, T-12).
+   *
+   * Los dos detalles son nulos salvo en el 409 que los trae. Son campos
+   * distintos y no uno solo porque son formas distintas: unificarlos en un
+   * `detalle: unknown` obligaría a cada pantalla a adivinar cuál le tocó, y
+   * la adivinanza se resuelve mal el día que aparezca el tercero.
    */
   | {
       estado: "conflicto";
       motivo: string;
       bloqueo: BorradoBloqueado | null;
+      duplicado: NombreDuplicado | null;
     }
   | { estado: "no_encontrado" }
   | { estado: "sin_acceso"; motivo: string }
@@ -79,6 +87,10 @@ async function problemaDe(respuesta: Response): Promise<Problema | null> {
       bloqueo:
         motivo === "tiene_dependientes"
           ? (cuerpo as BorradoBloqueado)
+          : null,
+      duplicado:
+        motivo === "nombre_duplicado" || motivo === "nombre_duplicado_de_baja"
+          ? (cuerpo as NombreDuplicado)
           : null,
     };
   }
@@ -143,11 +155,13 @@ export async function pedirVacio(
 }
 
 /**
- * Los 409 que esta API sabe contestar, dichos para quien mira la pantalla.
+ * Los 409 que esta API sabe contestar **con el motivo a secas**, dichos para
+ * quien mira la pantalla.
  *
- * El que falta —el borrado bloqueado de T-6— no está acá porque su frase
- * sale del `bloqueo` que viaja con él, no del motivo a secas: es el que cae
- * en el texto de reserva.
+ * Los dos que faltan son los que traen un detalle y arman la frase con él:
+ * el borrado bloqueado de T-6, cuya frase necesita además el nombre de la
+ * fila que la pantalla está mirando y por eso se compone allá; y el nombre
+ * duplicado de T-12, que trae el suyo y se resuelve más abajo.
  */
 const CONFLICTOS: Record<string, string> = {
   sin_etapas_pendientes: "Este proceso ya no tiene etapas por delante.",
@@ -184,6 +198,17 @@ export function textoDeProblema(
     case "invalido":
       return "Los datos enviados no se aceptaron.";
     case "conflicto":
+      // El nombre duplicado se resuelve acá y no en cada pantalla, al revés
+      // que el borrado bloqueado: su frase se arma entera con lo que trae la
+      // respuesta, así que no necesita nada del componente. Dejárselo a cada
+      // llamador sería repetir la misma rama en dos archivos y descubrir el
+      // día que aparezca el tercero que a ese se le olvidó — y lo que se
+      // vería entonces es el texto de reserva, que habla de un borrado que
+      // nadie pidió.
+      if (resultado.duplicado !== null) {
+        return mensajeDeNombreDuplicado(resultado.duplicado);
+      }
+
       // Tres motivos ya, así que un mapa en vez de un ternario anidado: el
       // ternario de tres ramas es donde el día que aparezca el cuarto
       // alguien lo cuelga de la rama equivocada.

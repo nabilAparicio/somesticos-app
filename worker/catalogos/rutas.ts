@@ -31,6 +31,11 @@
  *  - **409** para el borrado que choca con dependientes, con el detalle de
  *    qué lo impide y cuántos son. Esa es la política de borrado de T-6: lo
  *    normal para un catálogo no es borrar, es dar de baja.
+ *  - **409** también para el alta o el renombre cuyo nombre ya está tomado
+ *    dentro del tenant (T-12), diciendo además si la fila que lo ocupa está
+ *    vigente o dada de baja, porque la salida no es la misma. Hasta `0003`
+ *    esto era un 500; el que lo evita es el repositorio, que **consulta
+ *    antes de escribir** en vez de atrapar el error del índice.
  *
  * En el `PUT`, la existencia se comprueba **antes** de validar el cuerpo
  * (decisión de T-5): si no, un cuerpo inválido contra un id ajeno contestaría
@@ -42,7 +47,9 @@ import type {
   BorradoBloqueado,
   DatosDeCatalogo,
   DatosInvalidos,
+  EntidadDeCatalogo,
   FallaDeValidacion,
+  NombreDuplicado,
   RespuestaDeArea,
   RespuestaDeAreas,
   RespuestaDeEtapas,
@@ -58,6 +65,7 @@ import {
   normalizarTipoProceso,
 } from "./dominio";
 import type {
+  NombreTomado,
   ResultadoDeBorrado,
   ResultadoDeEscritura,
   ServicioDeCatalogos,
@@ -124,6 +132,34 @@ function decodificar(segmento: string): string | null {
     // lo que llega cuando alguien edita la barra de direcciones a mano.
     return null;
   }
+}
+
+/**
+ * El 409 del nombre tomado.
+ *
+ * Cuál de los dos motivos corresponde se decide acá y no en el repositorio,
+ * por lo mismo que el 409 del borrado: el repositorio informa el hecho —hay
+ * una fila con ese nombre, y está vigente o está de baja— y esta capa elige
+ * la palabra del cable. Es la única traducción que hace, y es la que decide
+ * qué va a poder decirle la pantalla a quien está esperando.
+ *
+ * Se exporta porque hay **dos** rutas que crean un tipo de proceso: ésta y
+ * `POST /api/procesos/{id}/plantilla` con destino «nuevo» (T-11). Una
+ * segunda copia de esta traducción es una segunda copia de la decisión de
+ * qué motivo corresponde a qué estado, y el día que una aprenda algo la
+ * otra no se entera — el mismo argumento por el que `EntidadDeCatalogo` se
+ * nombra una sola vez en el contrato.
+ */
+export function nombreYaTomado(
+  existente: NombreTomado,
+  entidad: EntidadDeCatalogo,
+): Response {
+  const cuerpo: NombreDuplicado = {
+    error: existente.activo ? "nombre_duplicado" : "nombre_duplicado_de_baja",
+    entidad,
+    nombre: existente.nombre,
+  };
+  return json(cuerpo, { status: 409 });
 }
 
 function respuestaDeBorrado(
@@ -226,6 +262,9 @@ async function manejarPlano<T extends { id: string }>(
     const resultado = await plano.crear(tenantId, normalizado.datos);
     if (resultado.estado === "no_encontrado") return noEncontrado();
     if (resultado.estado === "invalido") return invalido(resultado.fallas);
+    if (resultado.estado === "duplicado") {
+      return nombreYaTomado(resultado.existente, plano.entidad);
+    }
 
     return json(plano.envolverUna(resultado.fila), {
       status: 201,
@@ -266,6 +305,9 @@ async function manejarPlano<T extends { id: string }>(
   const resultado = await plano.actualizar(tenantId, id, normalizado.datos);
   if (resultado.estado === "no_encontrado") return noEncontrado();
   if (resultado.estado === "invalido") return invalido(resultado.fallas);
+  if (resultado.estado === "duplicado") {
+    return nombreYaTomado(resultado.existente, plano.entidad);
+  }
 
   return json(plano.envolverUna(resultado.fila));
 }
@@ -301,6 +343,9 @@ async function manejarTiposProceso(
     );
     if (resultado.estado === "no_encontrado") return noEncontrado();
     if (resultado.estado === "invalido") return invalido(resultado.fallas);
+    if (resultado.estado === "duplicado") {
+      return nombreYaTomado(resultado.existente, "tipo_proceso");
+    }
 
     const cuerpo: RespuestaDeTipoProceso = { tipo: resultado.fila };
     return json(cuerpo, {
@@ -356,6 +401,9 @@ async function manejarTiposProceso(
   );
   if (resultado.estado === "no_encontrado") return noEncontrado();
   if (resultado.estado === "invalido") return invalido(resultado.fallas);
+  if (resultado.estado === "duplicado") {
+    return nombreYaTomado(resultado.existente, "tipo_proceso");
+  }
 
   const cuerpo: RespuestaDeTipoProceso = { tipo: resultado.fila };
   return json(cuerpo);
