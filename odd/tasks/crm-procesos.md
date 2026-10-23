@@ -356,9 +356,29 @@ se renumera.
       que más rápido se nota en uso real, porque el listado se llena de procesos terminados y la
       cabecera de pendientes cuenta lo que ya no importa.
 
-      Alcance: `PUT`/`POST` de cierre y de reapertura, con su entrada de bitácora
-      (`proceso_cerrado`, `proceso_reabierto` — el vocabulario de `0002` hay que ampliarlo, y eso
-      es migración); el filtro por estado en el listado; y el botón en la pantalla de detalle.
+      Alcance: cierre y reapertura por la API, cada uno con su entrada de bitácora; el filtro
+      por estado en el listado; y el botón en la pantalla de detalle.
+
+      **Los verbos son `cerrado` y `reabierto`, pelados.** Esta tarea los había propuesto como
+      `proceso_cerrado`/`proceso_reabierto` y **estaba mal**: el escritor fue a mirar
+      `worker/contract.ts` y la convención es la contraria. Los hechos propios de la entidad van
+      sin prefijo —`creado`, `editado`, `dado_de_baja`, `reactivado`, `borrado`— porque la
+      entidad ya viaja en su columna; el prefijo es solo para lo que cuelga de ella
+      (`nota_agregada`, `pendiente_cerrado`, `plan_editado`). Si el nacimiento de un proceso es
+      `creado`, su cierre es `cerrado`.
+
+      **El vocabulario tiene tres mitades acopladas, no dos:** el `CHECK` de `0002`, la unión
+      `AccionDeBitacora` de `worker/contract.ts` y el `Record` exhaustivo `VERBOS_DE_BITACORA`
+      de `src/bitacora.ts`. `test/bitacora-api.spec.ts` compara las dos primeras; la tercera la
+      cobra el compilador, y como `typecheck` y `build` corren `tsc -b`, faltar una frase tumba
+      dos de las cinco verificaciones.
+
+      **Los verbos nuevos se agregan editando el `CHECK` de `0002`, no con una cuarta
+      migración.** Agregar un valor a un `CHECK` en SQLite exige reconstruir la tabla, y
+      acumular otra reconstrucción de `bitacora` antes del primer despliegue es ceremonia sin
+      consecuencia: nada se aplicó nunca a una base real. El día que el D1 exista, las
+      migraciones pasan a ser solo-agregar para siempre; éste es el último momento barato para
+      consolidar.
 
       *Preguntas que hay que resolver dentro de la tarea, no antes:* ¿se puede cerrar un proceso
       con pendientes abiertos? Mi posición es **sí, pero avisando cuántos quedan** — el bufete
@@ -366,8 +386,17 @@ se renumera.
       dejar que pase inadvertido. ¿Se puede escribir una nota en un proceso cerrado? **Sí**: la
       historia no se congela porque el trámite terminó.
 
-      *Criterio: cerrar y reabrir dejan rastro en la bitácora, y el conteo de pendientes de la
-      cabecera deja de contar los de procesos cerrados. Ruta: delegada. Forecast ~350.*
+      *Sobre el conteo, otra corrección del escritor:* esta tarea hablaba de «el conteo de
+      pendientes de la cabecera», y **esa cabecera no existe**. El único contador del sistema es
+      `resumenDePendientes`, en la sección «Pendientes» del detalle del proceso. Lo correcto es
+      que con el proceso cerrado los pendientes **dejen de reportarse como trabajo vigente y se
+      apague la marca de vencido** —la misma lógica que `estaVencido` ya aplica a un pendiente
+      cerrado— **sin ocultar cuántos quedaron**. Apagar la alarma de un trámite terminado es
+      sensato; esconder cabos sueltos, no.
+
+      *Criterio: cerrar y reabrir dejan rastro en la bitácora, avanzar de etapa en un proceso
+      cerrado se rechaza, y los pendientes de un proceso cerrado dejan de contar como trabajo
+      vigente sin desaparecer. Ruta: delegada. Forecast ~350.*
 
 ---
 
