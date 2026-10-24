@@ -1,0 +1,1038 @@
+/**
+ * Los módulos de prosa de una cotización (`odd/tasks/cotizaciones.md`, T-2 C).
+ *
+ * El esquema de T-1 ya rechaza en la base el tipo fuera del catálogo, el
+ * orden repetido dentro de una cotización y la arista de tenencia entre el
+ * módulo y su cotización. **Esta suite no vuelve a probar nada de eso**
+ * —`test/esquema-cotizaciones.spec.ts` es su dueño— salvo el índice único de
+ * `orden`, que acá se prueba por otra razón: no para afirmar que la base lo
+ * sostiene, sino para demostrar que el reordenamiento **no lo viola ni por un
+ * instante**, que es la trampa entera de esta unidad.
+ *
+ * Lo que sí se prueba acá:
+ *
+ *  - **Las dos mitades acopladas del catálogo.** El `CHECK` de
+ *    `cotizacion_modulo.tipo` y el registro tipado de
+ *    `worker/cotizaciones/modulos.ts` tienen que nombrar exactamente lo
+ *    mismo. Es la misma prueba que `test/bitacora-api.spec.ts` ya hace con
+ *    el vocabulario de la bitácora, y por el mismo motivo: si se separan, el
+ *    sistema rechaza un tipo que la pantalla ofrece.
+ *  - **La forma de la entrada**, con la lista entera de fallas.
+ *  - **Que sólo se escribe sobre un borrador**, por la ruta y por el puerto.
+ *    Las dos, porque T-4 y T-5 van a llamar al puerto directo.
+ *  - **La tenencia, en cada consulta nueva.** I-8 (`docs/diseno.md` §5).
+ *
+ * Los contrapesos releen **por la API**: un `POST` que contesta 201 y no
+ * guardó nada pasa cualquier aserción hecha sobre su propio eco.
+ */
+import { env } from "cloudflare:workers";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+
+import { ACCIONES_POR_ENTIDAD } from "../worker/bitacora/vocabulario";
+import {
+  CATALOGO_DE_MODULOS,
+  TIPOS_DE_MODULO,
+  normalizarModulo,
+  normalizarOrdenDeModulos,
+} from "../worker/cotizaciones/modulos";
+import { cotizacionesSobreD1 } from "../worker/cotizaciones/repositorio";
+import { baseSobreD1, type BaseDeDatos } from "../worker/db/base";
+import { TENANT_UNICO_ID, nuevoId } from "../worker/db/ids";
+import { manejar } from "../worker/index";
+
+// ---------------------------------------------------------------------------
+// Las dos mitades acopladas del catálogo
+// ---------------------------------------------------------------------------
+
+describe("el catálogo de la base y el del código dicen lo mismo", () => {
+  /** El `CREATE TABLE` tal como quedó en la base, con sus `CHECK`. */
+  async function definicionDeModulo(): Promise<string> {
+    const fila = await env.DB.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table'" +
+        " AND name = 'cotizacion_modulo'",
+    ).first<{ sql: string }>();
+
+    expect(fila, "la tabla `cotizacion_modulo` tiene que existir").not.toBeNull();
+    return fila?.sql ?? "";
+  }
+
+  it("el CHECK de tipo nombra exactamente los tipos del registro", async () => {
+    // Las dos mitades existen a propósito y hacen cosas distintas: el `CHECK`
+    // es el que sobrevive a un script de importación (§5), y el registro
+    // tipado es el que le da rótulo y orden a cada tipo y el que impide que
+    // el generador de T-9 invente uno. Lo que no puede pasar es que se
+    // separen sin que nadie se entere: la pantalla ofrecería un tipo que la
+    // base rechaza con un 500 que nadie puede leer.
+    const definicion = await definicionDeModulo();
+
+    const clausula = /tipo\s+TEXT\s+NOT\s+NULL[\s\S]*?IN\s*\(([^)]*)\)/i.exec(
+      definicion,
+    );
+    expect(clausula, "el CHECK de `tipo` tiene que estar").not.toBeNull();
+
+    const enLaBase = [...(clausula?.[1] ?? "").matchAll(/'([^']*)'/g)].map(
+      (coincidencia) => coincidencia[1],
+    );
+
+    expect([...enLaBase].sort()).toEqual([...TIPOS_DE_MODULO].sort());
+  });
+
+  it("cada tipo del registro trae su rótulo, y ninguno se repite", () => {
+    // El rótulo es lo único que una persona ve de un tipo. Dos tipos con el
+    // mismo rótulo son dos opciones indistinguibles en el desplegable, que es
+    // el mismo defecto que `VERBOS_DE_BITACORA` evita con sus verbos.
+    const rotulos = CATALOGO_DE_MODULOS.map((entrada) => entrada.rotulo);
+
+    for (const rotulo of rotulos) {
+      expect(rotulo.trim(), "un rótulo en blanco no rotula nada").not.toBe("");
+    }
+
+    expect(new Set(rotulos).size, "hay dos tipos con el mismo rótulo").toBe(
+      rotulos.length,
+    );
+  });
+
+  it("el orden sugerido es el del registro y no se repite ningún tipo", () => {
+    // El orden en que se sugieren **es** el orden del arreglo: no hay una
+    // columna `orden` en el registro porque sería un segundo lugar donde
+    // decir lo mismo, y el día que los dos no coincidan gana el que alguien
+    // mire primero.
+    expect(TIPOS_DE_MODULO).toEqual(
+      CATALOGO_DE_MODULOS.map((entrada) => entrada.tipo),
+    );
+    expect(new Set(TIPOS_DE_MODULO).size).toBe(TIPOS_DE_MODULO.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Los verbos de los módulos cuelgan de la cotización
+// ---------------------------------------------------------------------------
+
+describe("los verbos de módulo están en el vocabulario de la cotización", () => {
+  const VERBOS = [
+    "modulo_agregado",
+    "modulo_editado",
+    "modulo_quitado",
+    "modulos_reordenados",
+  ];
+
+  it("los cuatro son acciones de la cotización y de ninguna otra entidad", () => {
+    // Un módulo no es una entidad propia: se lee dentro de su cotización, así
+    // que su hecho es un hecho de la cotización. Es la misma regla que hace
+    // que `nota_agregada` cuelgue del proceso.
+    for (const verbo of VERBOS) {
+      expect(
+        [...ACCIONES_POR_ENTIDAD.cotizacion] as string[],
+        `falta «${verbo}» en las acciones de la cotización`,
+      ).toContain(verbo);
+    }
+
+    for (const [entidad, acciones] of Object.entries(ACCIONES_POR_ENTIDAD)) {
+      if (entidad === "cotizacion") continue;
+
+      for (const verbo of VERBOS) {
+        expect(
+          [...acciones] as string[],
+          `«${verbo}» no es un hecho de ${entidad}`,
+        ).not.toContain(verbo);
+      }
+    }
+  });
+
+  it("el CHECK de accion los admite", async () => {
+    const fila = await env.DB.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'bitacora'",
+    ).first<{ sql: string }>();
+
+    for (const verbo of VERBOS) {
+      expect(fila?.sql ?? "", `falta «${verbo}» en el CHECK`).toContain(
+        `'${verbo}'`,
+      );
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// El andamio de la mitad que pasa por HTTP
+// ---------------------------------------------------------------------------
+
+const DOMINIO_DE_ACCESS = "https://bufete-de-prueba.cloudflareaccess.com";
+const AUD = "aud-de-la-aplicacion-del-bufete";
+
+const EMAIL_AUTOR = "itzel@bufete.test";
+
+/** El tenant vecino. Existe solo para que la fuga sea expresable. */
+const OTRO_TENANT_ID = "0a5a6e0a-9f1e-4a6e-9f03-3b6a2a0e1d77";
+
+/**
+ * La forma del módulo en el cable. Se declara acá, y no se importa del
+ * contrato del Worker, a propósito: lo que esta prueba vigila es el JSON que
+ * ve el navegador. Importando el tipo, renombrar un campo en el servidor
+ * renombraría también la expectativa y el cambio de contrato pasaría mudo.
+ */
+interface ModuloEnElCable {
+  id: string;
+  tipo: string;
+  orden: number;
+  contenido: string;
+}
+
+interface FallaEnElCable {
+  campo: string;
+  motivo: string;
+}
+
+let autorId: string;
+let autorAjenoId: string;
+let clienteId: string;
+let clienteAjenoId: string;
+let cotizacionId: string;
+let cotizacionAjenaId: string;
+let moduloAjenoId: string;
+
+function entorno(): Env {
+  // Hermético, por la misma razón que en `test/acceso.spec.ts`: un
+  // `.dev.vars` local con `ACCESO_DEV_EMAIL` no puede decidir qué identidad
+  // observa la suite.
+  return {
+    ...env,
+    ACCESO_TEAM_DOMAIN: DOMINIO_DE_ACCESS,
+    ACCESO_AUD: AUD,
+    ACCESO_DEV_EMAIL: undefined,
+  };
+}
+
+function peticion(ruta: string, init?: RequestInit): Request {
+  return new Request(`https://cotizador.bufete.pa${ruta}`, init);
+}
+
+function conCuerpo(ruta: string, metodo: string, cuerpo: unknown): Request {
+  return peticion(ruta, {
+    method: metodo,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(cuerpo),
+  });
+}
+
+/** Una petición hecha por la identidad del bufete. */
+function comoAutor(request: Request): Promise<Response> {
+  return manejar(request, entorno(), { correoDeDesarrollo: () => EMAIL_AUTOR });
+}
+
+function rutaDeModulos(id = cotizacionId): string {
+  return `/api/cotizaciones/${id}/modulos`;
+}
+
+async function modulosDe(respuesta: Response): Promise<ModuloEnElCable[]> {
+  const cuerpo = (await respuesta.json()) as { modulos?: ModuloEnElCable[] };
+  expect(cuerpo.modulos, "la respuesta no trae `modulos`").toBeDefined();
+  return cuerpo.modulos ?? [];
+}
+
+async function fallasDe(respuesta: Response): Promise<FallaEnElCable[]> {
+  const cuerpo = (await respuesta.json()) as {
+    error?: string;
+    fallas?: FallaEnElCable[];
+  };
+  expect(cuerpo.error).toBe("datos_invalidos");
+  return cuerpo.fallas ?? [];
+}
+
+function motivos(fallas: readonly FallaEnElCable[]): string[] {
+  return fallas.map((falla) => falla.motivo);
+}
+
+/** Relee por la API, que es la única lectura que prueba que algo se guardó. */
+async function listar(id = cotizacionId): Promise<ModuloEnElCable[]> {
+  const respuesta = await comoAutor(peticion(rutaDeModulos(id)));
+  expect(respuesta.status).toBe(200);
+  return modulosDe(respuesta);
+}
+
+/** El alta mínima, que es la que casi todas las pruebas necesitan antes. */
+async function agregar(
+  cuerpo: unknown = { tipo: "alcance", contenido: "Lo que se hace." },
+): Promise<ModuloEnElCable[]> {
+  const respuesta = await comoAutor(
+    conCuerpo(rutaDeModulos(), "POST", cuerpo),
+  );
+  expect(respuesta.status, await respuesta.clone().text()).toBe(201);
+  return modulosDe(respuesta);
+}
+
+/** Tres módulos, en un orden conocido: la base de las pruebas de orden. */
+async function agregarTres(): Promise<ModuloEnElCable[]> {
+  await agregar({ tipo: "antecedentes", contenido: "De dónde viene." });
+  await agregar({ tipo: "alcance", contenido: "Qué se hace." });
+  return agregar({ tipo: "exclusiones", contenido: "Qué no." });
+}
+
+/**
+ * Emite la cotización **por SQL**, porque la ruta que lo hace es de T-4.
+ *
+ * El `snapshot` va junto con el estado y no es decoración: el `CHECK` de
+ * coherencia de `0004` exige que una emitida lo tenga. Escribir sólo el
+ * estado abortaría acá, y la prueba del 409 pasaría por el motivo
+ * equivocado.
+ */
+async function emitir(id = cotizacionId): Promise<void> {
+  await env.DB.prepare(
+    "UPDATE cotizacion SET estado = 'emitida', snapshot = ? WHERE id = ?",
+  )
+    .bind("{}", id)
+    .run();
+}
+
+/** Las acciones de bitácora de la cotización, de la más vieja a la más nueva. */
+async function bitacoraDe(
+  id = cotizacionId,
+): Promise<{ accion: string; detalle: string | null }[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT accion, detalle FROM bitacora WHERE entidad = 'cotizacion'" +
+      " AND entidad_id = ? ORDER BY ocurrido_en, rowid",
+  )
+    .bind(id)
+    .all<{ accion: string; detalle: string | null }>();
+
+  return results;
+}
+
+/** Los `orden` guardados, tal cual, sin pasar por la API. */
+async function ordenesGuardados(id = cotizacionId): Promise<number[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT orden FROM cotizacion_modulo WHERE cotizacion_id = ? ORDER BY orden",
+  )
+    .bind(id)
+    .all<{ orden: number }>();
+
+  return results.map((fila) => fila.orden);
+}
+
+/**
+ * La persona del bufete se crea **una sola vez**: `usuario` lleva
+ * `UNIQUE (tenant_id, email)` desde T-2 y, desde T-10, con una entrada de
+ * bitácora viva tampoco se puede borrar para volver a insertarla.
+ */
+beforeAll(async () => {
+  autorId = nuevoId();
+
+  await env.DB.prepare(
+    "INSERT INTO usuario (id, tenant_id, nombre, email, activo)" +
+      " VALUES (?, ?, ?, ?, 1)",
+  )
+    .bind(autorId, TENANT_UNICO_ID, "Itzel", EMAIL_AUTOR)
+    .run();
+});
+
+beforeEach(async () => {
+  // El almacenamiento está aislado por archivo, no por prueba. El orden del
+  // borrado es el de las llaves foráneas, que están en `NO ACTION`: los
+  // módulos antes que las cotizaciones, y éstas antes que los clientes.
+  await env.DB.prepare("DELETE FROM cotizacion_modulo").run();
+  await env.DB.prepare("DELETE FROM cotizacion").run();
+  await env.DB.prepare("DELETE FROM cliente").run();
+  await env.DB.prepare("DELETE FROM usuario WHERE tenant_id <> ?")
+    .bind(TENANT_UNICO_ID)
+    .run();
+  await env.DB.prepare("DELETE FROM tenant WHERE id <> ?")
+    .bind(TENANT_UNICO_ID)
+    .run();
+
+  clienteId = nuevoId();
+  clienteAjenoId = nuevoId();
+  cotizacionId = nuevoId();
+  cotizacionAjenaId = nuevoId();
+  autorAjenoId = nuevoId();
+  moduloAjenoId = nuevoId();
+
+  const ahora = new Date().toISOString();
+  const anio = ahora.slice(0, 4);
+
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO tenant (id, nombre) VALUES (?, ?)").bind(
+      OTRO_TENANT_ID,
+      "Otro bufete",
+    ),
+    env.DB.prepare(
+      "INSERT INTO usuario (id, tenant_id, nombre, email, activo)" +
+        " VALUES (?, ?, ?, ?, 1)",
+    ).bind(autorAjenoId, OTRO_TENANT_ID, "Ajena", "ajena@otro-bufete.test"),
+    env.DB.prepare(
+      "INSERT INTO cliente (id, tenant_id, nombre, telefono, creado_por," +
+        " creado_en) VALUES (?, ?, ?, ?, ?, ?)",
+    ).bind(
+      clienteId,
+      TENANT_UNICO_ID,
+      "Panamá Trading",
+      "+507 6123-4567",
+      autorId,
+      ahora,
+    ),
+    env.DB.prepare(
+      "INSERT INTO cliente (id, tenant_id, nombre, telefono, creado_por," +
+        " creado_en) VALUES (?, ?, ?, ?, ?, ?)",
+    ).bind(
+      clienteAjenoId,
+      OTRO_TENANT_ID,
+      "Cliente del vecino",
+      "+507 6000-0000",
+      autorAjenoId,
+      ahora,
+    ),
+    env.DB.prepare(
+      "INSERT INTO cotizacion (id, tenant_id, cliente_id, codigo, estado," +
+        " fecha, moneda, creada_por, creada_en)" +
+        " VALUES (?, ?, ?, ?, 'borrador', ?, 'USD', ?, ?)",
+    ).bind(
+      cotizacionId,
+      TENANT_UNICO_ID,
+      clienteId,
+      `COT-${anio}-0001`,
+      ahora,
+      autorId,
+      ahora,
+    ),
+    // La cotización del vecino y su módulo: el objeto de las pruebas de fuga.
+    env.DB.prepare(
+      "INSERT INTO cotizacion (id, tenant_id, cliente_id, codigo, estado," +
+        " fecha, moneda, creada_por, creada_en)" +
+        " VALUES (?, ?, ?, ?, 'borrador', ?, 'USD', ?, ?)",
+    ).bind(
+      cotizacionAjenaId,
+      OTRO_TENANT_ID,
+      clienteAjenoId,
+      `COT-${anio}-0007`,
+      ahora,
+      autorAjenoId,
+      ahora,
+    ),
+    env.DB.prepare(
+      "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, tipo," +
+        " orden, contenido) VALUES (?, ?, ?, 'alcance', 0, ?)",
+    ).bind(
+      moduloAjenoId,
+      OTRO_TENANT_ID,
+      cotizacionAjenaId,
+      "El alcance del vecino.",
+    ),
+  ]);
+});
+
+// ---------------------------------------------------------------------------
+// La forma de la entrada
+// ---------------------------------------------------------------------------
+
+describe("el alta rechaza lo que no es un módulo", () => {
+  it("rechaza un módulo sin tipo", async () => {
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "POST", { contenido: "Algo." }),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toContain(
+      "tipo_de_modulo_desconocido",
+    );
+    expect(await listar(), "no se guardó nada").toHaveLength(0);
+  });
+
+  it("rechaza un tipo que no está en el catálogo", async () => {
+    // Es la barandilla de §8 vista desde el cable: el generador de T-9 no
+    // puede inventar un tipo, y esta ruta es por dónde lo intentaría.
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "POST", {
+        tipo: "garantias",
+        contenido: "Algo.",
+      }),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toContain(
+      "tipo_de_modulo_desconocido",
+    );
+  });
+
+  it("rechaza un contenido que es sólo espacios", async () => {
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "POST", {
+        tipo: "alcance",
+        contenido: "  \n\t ",
+      }),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toContain("contenido_requerido");
+  });
+
+  it("devuelve las dos fallas juntas y no la primera", async () => {
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "POST", {}),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(motivos(await fallasDe(respuesta)).sort()).toEqual([
+      "contenido_requerido",
+      "tipo_de_modulo_desconocido",
+    ]);
+  });
+
+  it("recorta el contenido antes de guardarlo", async () => {
+    const [modulo] = await agregar({
+      tipo: "alcance",
+      contenido: "  Constitución de la sociedad.  ",
+    });
+
+    expect(modulo.contenido).toBe("Constitución de la sociedad.");
+  });
+
+  it("ignora un `orden` que llegue por el cuerpo", async () => {
+    // El `orden` lo asigna el servidor, siempre. Si el cuerpo pudiera
+    // imponerlo, dos módulos en la misma posición despertarían el índice
+    // único con un 500 que nadie puede leer.
+    await agregar({ tipo: "antecedentes", contenido: "Primero." });
+    const modulos = await agregar({
+      tipo: "alcance",
+      contenido: "Segundo.",
+      orden: 0,
+    });
+
+    expect(modulos.map((modulo) => modulo.orden)).toEqual([0, 1]);
+    expect(modulos[1].contenido).toBe("Segundo.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agregar, editar y quitar
+// ---------------------------------------------------------------------------
+
+describe("los módulos de un borrador", () => {
+  it("el primero nace en la posición 0 y el siguiente al final", async () => {
+    const modulos = await agregarTres();
+
+    expect(modulos.map((modulo) => modulo.orden)).toEqual([0, 1, 2]);
+    expect(modulos.map((modulo) => modulo.tipo)).toEqual([
+      "antecedentes",
+      "alcance",
+      "exclusiones",
+    ]);
+  });
+
+  it("el alta contesta 201 y la lista queda guardada de verdad", async () => {
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "POST", {
+        tipo: "clausulas",
+        contenido: "Jurisdicción de Panamá.",
+      }),
+    );
+
+    expect(respuesta.status).toBe(201);
+
+    const releidos = await listar();
+    expect(releidos).toHaveLength(1);
+    expect(releidos[0].contenido).toBe("Jurisdicción de Panamá.");
+  });
+
+  it("editar cambia el tipo y el texto sin mover el orden", async () => {
+    const modulos = await agregarTres();
+    const delMedio = modulos[1];
+
+    const respuesta = await comoAutor(
+      conCuerpo(`${rutaDeModulos()}/${delMedio.id}`, "PUT", {
+        tipo: "supuestos",
+        contenido: "Sobre qué se apoya el precio.",
+      }),
+    );
+
+    expect(respuesta.status).toBe(200);
+
+    const releidos = await listar();
+    expect(releidos[1].id, "la edición no puede cambiar el id").toBe(
+      delMedio.id,
+    );
+    expect(releidos[1].tipo).toBe("supuestos");
+    expect(releidos[1].orden).toBe(1);
+    expect(releidos.map((modulo) => modulo.tipo)).toEqual([
+      "antecedentes",
+      "supuestos",
+      "exclusiones",
+    ]);
+  });
+
+  it("editar un módulo que no es de esta cotización da 404", async () => {
+    await agregar();
+
+    const respuesta = await comoAutor(
+      conCuerpo(`${rutaDeModulos()}/${nuevoId()}`, "PUT", {
+        tipo: "alcance",
+        contenido: "Nada.",
+      }),
+    );
+
+    expect(respuesta.status).toBe(404);
+  });
+
+  it("quitar saca el módulo y deja los demás en su orden relativo", async () => {
+    const modulos = await agregarTres();
+
+    const respuesta = await comoAutor(
+      peticion(`${rutaDeModulos()}/${modulos[1].id}`, { method: "DELETE" }),
+    );
+
+    expect(respuesta.status).toBe(200);
+
+    const releidos = await listar();
+    expect(releidos.map((modulo) => modulo.tipo)).toEqual([
+      "antecedentes",
+      "exclusiones",
+    ]);
+  });
+
+  it("quitar un módulo que no existe da 404", async () => {
+    await agregar();
+
+    const respuesta = await comoAutor(
+      peticion(`${rutaDeModulos()}/${nuevoId()}`, { method: "DELETE" }),
+    );
+
+    expect(respuesta.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// El reordenamiento, que es donde está el índice único
+// ---------------------------------------------------------------------------
+
+describe("el reordenamiento no viola el índice único ni por un instante", () => {
+  it("invierte el orden de tres módulos sin perder ningún id", async () => {
+    // Es la prueba central de la unidad. Con una sola pasada de `UPDATE … SET
+    // orden = ?`, la primera sentencia le pondría 2 a un módulo cuando el 2
+    // todavía lo tiene otro: `cotizacion_modulo_orden_unico` aborta el
+    // `batch` entero y esto sería un 500. Que conteste 200 es lo que
+    // demuestra que el tramo pasa por un rango disjunto antes de aterrizar.
+    const modulos = await agregarTres();
+    const invertido = [modulos[2].id, modulos[1].id, modulos[0].id];
+
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "PUT", { orden: invertido }),
+    );
+
+    expect(respuesta.status, await respuesta.clone().text()).toBe(200);
+
+    const releidos = await listar();
+    expect(releidos.map((modulo) => modulo.id)).toEqual(invertido);
+    expect(
+      releidos.map((modulo) => modulo.tipo),
+      "los ids sobreviven, así que el contenido viaja con ellos",
+    ).toEqual(["exclusiones", "alcance", "antecedentes"]);
+  });
+
+  it("no deja ninguna posición del rango de paso en la base", async () => {
+    // El rango de paso es negativo, y eso es lo que lo hace disjunto de todo
+    // orden definitivo, que siempre es la posición en el arreglo. Si la
+    // segunda pasada no corriera —o corriera a medias— quedarían órdenes
+    // negativos guardados y la lista se leería al revés sin que nada fallara.
+    const modulos = await agregarTres();
+
+    await comoAutor(
+      conCuerpo(rutaDeModulos(), "PUT", {
+        orden: [modulos[1].id, modulos[2].id, modulos[0].id],
+      }),
+    );
+
+    expect(await ordenesGuardados()).toEqual([0, 1, 2]);
+  });
+
+  it("rechaza una lista a la que le falta un módulo", async () => {
+    const modulos = await agregarTres();
+
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "PUT", {
+        orden: [modulos[1].id, modulos[0].id],
+      }),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toContain("orden_incompleto");
+    expect(
+      (await listar()).map((modulo) => modulo.id),
+      "una lista rechazada no mueve nada",
+    ).toEqual(modulos.map((modulo) => modulo.id));
+  });
+
+  it("rechaza una lista que repite un módulo", async () => {
+    const modulos = await agregarTres();
+
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "PUT", {
+        orden: [modulos[0].id, modulos[0].id, modulos[1].id],
+      }),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toContain("orden_incompleto");
+  });
+
+  it("rechaza una lista que nombra un módulo de otra cotización", async () => {
+    const modulos = await agregarTres();
+
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "PUT", {
+        orden: [moduloAjenoId, modulos[0].id, modulos[1].id],
+      }),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toContain("modulo_desconocido");
+  });
+
+  it("rechaza un cuerpo que no trae un arreglo", async () => {
+    await agregar();
+
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "PUT", { orden: "primero" }),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toContain("tipo_invalido");
+  });
+
+  it("reordenar a lo que ya estaba no escribe ningún hecho", async () => {
+    // Un `PUT` que no mueve nada no es un hecho, y la pantalla lo va a mandar
+    // igual cuando alguien arrastre un módulo y lo suelte donde estaba. Una
+    // entrada de bitácora ahí sería una decisión inventada.
+    const modulos = await agregarTres();
+    const antes = await bitacoraDe();
+
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "PUT", {
+        orden: modulos.map((modulo) => modulo.id),
+      }),
+    );
+
+    expect(respuesta.status).toBe(200);
+    expect(await bitacoraDe()).toEqual(antes);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sólo sobre un borrador
+// ---------------------------------------------------------------------------
+
+describe("una cotización que ya no es borrador no acepta módulos", () => {
+  it("los módulos de una emitida se siguen pudiendo leer", async () => {
+    // Leer nunca se bloquea: lo que no se puede es cambiar el documento que
+    // ya salió. Un 409 en el `GET` escondería la cotización emitida de su
+    // propia pantalla.
+    await agregar();
+    await emitir();
+
+    const respuesta = await comoAutor(peticion(rutaDeModulos()));
+
+    expect(respuesta.status).toBe(200);
+    expect(await modulosDe(respuesta)).toHaveLength(1);
+  });
+
+  it("agregar sobre una emitida da 409 y dice en qué quedó", async () => {
+    await emitir();
+
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "POST", {
+        tipo: "alcance",
+        contenido: "Tarde.",
+      }),
+    );
+
+    expect(respuesta.status).toBe(409);
+    expect(await respuesta.json()).toEqual({
+      error: "cotizacion_no_es_borrador",
+      estado: "emitida",
+    });
+    expect(await listar(), "no se escribió nada").toHaveLength(0);
+  });
+
+  it("editar un módulo de una emitida da 409", async () => {
+    const [modulo] = await agregar();
+    await emitir();
+
+    const respuesta = await comoAutor(
+      conCuerpo(`${rutaDeModulos()}/${modulo.id}`, "PUT", {
+        tipo: "supuestos",
+        contenido: "Tarde.",
+      }),
+    );
+
+    expect(respuesta.status).toBe(409);
+    expect((await listar())[0].tipo, "no se tocó").toBe("alcance");
+  });
+
+  it("quitar un módulo de una emitida da 409", async () => {
+    const [modulo] = await agregar();
+    await emitir();
+
+    const respuesta = await comoAutor(
+      peticion(`${rutaDeModulos()}/${modulo.id}`, { method: "DELETE" }),
+    );
+
+    expect(respuesta.status).toBe(409);
+    expect(await listar(), "el módulo sigue ahí").toHaveLength(1);
+  });
+
+  it("reordenar los módulos de una emitida da 409", async () => {
+    const modulos = await agregarTres();
+    await emitir();
+
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(), "PUT", {
+        orden: [modulos[2].id, modulos[1].id, modulos[0].id],
+      }),
+    );
+
+    expect(respuesta.status).toBe(409);
+    expect((await listar()).map((modulo) => modulo.id)).toEqual(
+      modulos.map((modulo) => modulo.id),
+    );
+  });
+
+  it("el puerto se niega igual, sin pasar por la ruta", async () => {
+    // **La prueba que hace real la copia del repositorio.** La ruta ya
+    // contesta 409 antes de llegar acá, así que sin esta prueba la
+    // comprobación del repositorio sería código que se puede borrar sin que
+    // nada se ponga rojo — y T-4 y T-5 llaman al puerto directo, sin ruta
+    // delante. Es la lección que la unidad A dejó escrita.
+    //
+    // Y no alcanza con mirar el resultado, que es lo que se midió mutando:
+    // la cláusula `EXISTS` de la sentencia también impide la escritura, así
+    // que neutralizar la comprobación del puerto devolvería el **mismo**
+    // `no_es_borrador` por el otro camino y la prueba pasaría igual. Lo que
+    // de verdad distingue a las dos guardas es la bitácora: sin la
+    // comprobación de arriba la sentencia no escribe, pero su entrada —que
+    // `mutar` manda en el mismo `batch`— sí, y queda un «agregó el módulo»
+    // de algo que nunca se agregó. Por eso la aserción que importa acá es la
+    // de abajo y no la del resultado.
+    const base: BaseDeDatos = baseSobreD1(env.DB, TENANT_UNICO_ID, autorId);
+    const servicio = cotizacionesSobreD1(base);
+
+    await agregar();
+    await emitir();
+    const antes = await bitacoraDe();
+
+    const resultado = await servicio.agregarModulo(
+      TENANT_UNICO_ID,
+      cotizacionId,
+      { tipo: "clausulas", contenido: "Por el puerto." },
+    );
+
+    expect(resultado).toEqual({ estado: "no_es_borrador", actual: "emitida" });
+    expect(await listar(), "el puerto no escribió nada").toHaveLength(1);
+    expect(
+      await bitacoraDe(),
+      "un intento bloqueado no deja ningún hecho",
+    ).toEqual(antes);
+  });
+
+  it("el puerto también se niega a reordenar", async () => {
+    const base: BaseDeDatos = baseSobreD1(env.DB, TENANT_UNICO_ID, autorId);
+    const servicio = cotizacionesSobreD1(base);
+
+    const modulos = await agregarTres();
+    await emitir();
+    const antes = await bitacoraDe();
+
+    const resultado = await servicio.reordenarModulos(
+      TENANT_UNICO_ID,
+      cotizacionId,
+      [modulos[2].id, modulos[1].id, modulos[0].id],
+    );
+
+    expect(resultado).toEqual({ estado: "no_es_borrador", actual: "emitida" });
+    expect(await ordenesGuardados()).toEqual([0, 1, 2]);
+    expect(
+      await bitacoraDe(),
+      "un reordenamiento bloqueado no deja ningún hecho",
+    ).toEqual(antes);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// La tenencia: I-8 en cada consulta nueva
+// ---------------------------------------------------------------------------
+
+describe("los módulos del bufete vecino no existen desde acá", () => {
+  it("leer los módulos de una cotización ajena da 404", async () => {
+    const respuesta = await comoAutor(
+      peticion(rutaDeModulos(cotizacionAjenaId)),
+    );
+
+    expect(respuesta.status).toBe(404);
+  });
+
+  it("agregar un módulo a una cotización ajena da 404", async () => {
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeModulos(cotizacionAjenaId), "POST", {
+        tipo: "alcance",
+        contenido: "Intruso.",
+      }),
+    );
+
+    expect(respuesta.status).toBe(404);
+
+    const { results } = await env.DB.prepare(
+      "SELECT id FROM cotizacion_modulo WHERE cotizacion_id = ?",
+    )
+      .bind(cotizacionAjenaId)
+      .all();
+    expect(results, "no se escribió en la cotización del vecino").toHaveLength(
+      1,
+    );
+  });
+
+  it("editar un módulo del vecino desde una cotización propia da 404", async () => {
+    // El módulo existe, pero no es de esta cotización ni de este bufete. Un
+    // 403 confirmaría que ese identificador existe.
+    await agregar();
+
+    const respuesta = await comoAutor(
+      conCuerpo(`${rutaDeModulos()}/${moduloAjenoId}`, "PUT", {
+        tipo: "alcance",
+        contenido: "Secuestrado.",
+      }),
+    );
+
+    expect(respuesta.status).toBe(404);
+
+    const fila = await env.DB.prepare(
+      "SELECT contenido FROM cotizacion_modulo WHERE id = ?",
+    )
+      .bind(moduloAjenoId)
+      .first<{ contenido: string }>();
+    expect(fila?.contenido).toBe("El alcance del vecino.");
+  });
+
+  it("el listado del puerto no trae los del vecino", async () => {
+    // Directo contra el puerto, con el tenant del vecino como argumento: si
+    // la consulta no filtrara por `tenant_id`, la cotización ajena traería
+    // sus módulos desde este tenant.
+    const base: BaseDeDatos = baseSobreD1(env.DB, TENANT_UNICO_ID, autorId);
+    const servicio = cotizacionesSobreD1(base);
+
+    expect(
+      await servicio.listarModulos(TENANT_UNICO_ID, cotizacionAjenaId),
+    ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lo que queda escrito en la bitácora
+// ---------------------------------------------------------------------------
+
+describe("cada operación deja su hecho contra la cotización", () => {
+  it("las cuatro escriben su verbo, y el reordenamiento sin detalle", async () => {
+    const modulos = await agregarTres();
+
+    await comoAutor(
+      conCuerpo(`${rutaDeModulos()}/${modulos[0].id}`, "PUT", {
+        tipo: "supuestos",
+        contenido: "Cambiado.",
+      }),
+    );
+    await comoAutor(
+      peticion(`${rutaDeModulos()}/${modulos[2].id}`, { method: "DELETE" }),
+    );
+    await comoAutor(
+      conCuerpo(rutaDeModulos(), "PUT", {
+        orden: [modulos[1].id, modulos[0].id],
+      }),
+    );
+
+    expect(await bitacoraDe()).toEqual([
+      { accion: "modulo_agregado", detalle: "Antecedentes" },
+      { accion: "modulo_agregado", detalle: "Alcance" },
+      { accion: "modulo_agregado", detalle: "Exclusiones" },
+      // El rótulo es el del tipo **nuevo**: es lo que quedó escrito, y la
+      // bitácora guarda hechos, no diffs.
+      { accion: "modulo_editado", detalle: "Supuestos" },
+      { accion: "modulo_quitado", detalle: "Exclusiones" },
+      { accion: "modulos_reordenados", detalle: null },
+    ]);
+  });
+
+  it("un hecho de módulo no se registra contra ninguna otra entidad", async () => {
+    await agregar();
+
+    // Sobre la tabla entera y no sobre esta cotización: la bitácora es
+    // inmutable, así que acá se acumulan los hechos de toda la suite y
+    // cualquiera de ellos que colgara de otra entidad aparecería.
+    const { results } = await env.DB.prepare(
+      "SELECT DISTINCT entidad FROM bitacora WHERE accion LIKE 'modulo%'",
+    ).all<{ entidad: string }>();
+
+    expect(results.map((fila) => fila.entidad)).toEqual(["cotizacion"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Los verbos que no existen
+// ---------------------------------------------------------------------------
+
+describe("la superficie es exactamente la que se decidió", () => {
+  it("la colección no acepta DELETE", async () => {
+    const respuesta = await comoAutor(
+      peticion(rutaDeModulos(), { method: "DELETE" }),
+    );
+
+    expect(respuesta.status).toBe(405);
+    expect(respuesta.headers.get("allow")).toBe("GET, POST, PUT");
+  });
+
+  it("un módulo suelto no acepta ni GET ni POST", async () => {
+    const [modulo] = await agregar();
+
+    for (const metodo of ["GET", "POST"]) {
+      const respuesta = await comoAutor(
+        peticion(`${rutaDeModulos()}/${modulo.id}`, { method: metodo }),
+      );
+
+      expect(respuesta.status, metodo).toBe(405);
+      expect(respuesta.headers.get("allow")).toBe("PUT, DELETE");
+    }
+  });
+
+  it("una subruta inventada cae en el 404 general", async () => {
+    // El nombre está inventado a propósito y no es ninguna ruta planificada
+    // —decía `duplicar`, que es el verbo de T-5—: lo que se mide es que un
+    // sexto segmento que el ruteo no reconoce termine en el 404 general, no
+    // la ausencia de una ruta concreta. Nombrar una que está en el plan
+    // convierte esta prueba en una bomba que estalla el día que esa ruta se
+    // construya, con un rojo que no señala ningún defecto.
+    //
+    // Es el mismo segmento que usa `test/cotizaciones-api.spec.ts` para su
+    // 404 general, y a propósito: el criterio es uno solo.
+    const respuesta = await comoAutor(
+      peticion(`${rutaDeModulos()}/${nuevoId()}/no-existe-esta-subruta`, {
+        method: "POST",
+      }),
+    );
+
+    expect(respuesta.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// El dominio, sin servidor
+// ---------------------------------------------------------------------------
+
+describe("la normalización, sin base ni HTTP", () => {
+  it("acepta los seis tipos del catálogo", () => {
+    for (const tipo of TIPOS_DE_MODULO) {
+      const resultado = normalizarModulo({ tipo, contenido: "Algo." });
+
+      expect(resultado.ok, tipo).toBe(true);
+    }
+  });
+
+  it("el orden tiene que ser un arreglo de cadenas con algo adentro", () => {
+    expect(normalizarOrdenDeModulos({ orden: [1, 2] }).ok).toBe(false);
+    expect(normalizarOrdenDeModulos({ orden: ["a", "  "] }).ok).toBe(false);
+    expect(normalizarOrdenDeModulos({ orden: [] }).ok).toBe(true);
+    expect(normalizarOrdenDeModulos(null).ok).toBe(false);
+  });
+});

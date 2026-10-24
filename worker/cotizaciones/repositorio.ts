@@ -31,10 +31,13 @@
 import type {
   Cotizacion,
   DatosDeCotizacion,
+  DatosDeModulo,
   EstadoDeCotizacion,
   FallaDeValidacion,
+  ModuloDeCotizacion,
+  TipoDeModulo,
 } from "../contract";
-import type { BaseDeDatos } from "../db/base";
+import type { BaseDeDatos, Sentencia } from "../db/base";
 import { sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 import {
@@ -42,9 +45,24 @@ import {
   diaEnPanama,
   finDelDiaEnPanama,
 } from "../db/momentos";
+import { rotuloDeTipo } from "./modulos";
 
 export type ResultadoDeEscritura =
   | { estado: "guardado"; cotizacion: Cotizacion }
+  | { estado: "invalido"; fallas: FallaDeValidacion[] }
+  | { estado: "no_es_borrador"; actual: EstadoDeCotizacion }
+  | { estado: "no_encontrado" };
+
+/**
+ * Lo que devuelve cualquiera de las cuatro escrituras de módulos.
+ *
+ * Trae **la lista entera** y no el módulo tocado, igual que los pendientes
+ * de T-9: lo que cambió no es un módulo sino el documento, y una respuesta
+ * parcial obligaría a la pantalla a recomponer el orden a mano justo después
+ * de haberlo cambiado.
+ */
+export type ResultadoDeModulos =
+  | { estado: "guardado"; modulos: ModuloDeCotizacion[] }
   | { estado: "invalido"; fallas: FallaDeValidacion[] }
   | { estado: "no_es_borrador"; actual: EstadoDeCotizacion }
   | { estado: "no_encontrado" };
@@ -62,6 +80,44 @@ export interface ServicioDeCotizaciones {
     id: string,
     datos: DatosDeCotizacion,
   ): Promise<ResultadoDeEscritura>;
+
+  /* --- Los módulos de prosa (T-2 C) --- */
+
+  /**
+   * Los módulos de una cotización, en su orden.
+   *
+   * **Leer no depende del estado**: una emitida muestra sus módulos igual
+   * que un borrador. Lo que el estado bloquea es cambiarlos.
+   */
+  listarModulos(
+    tenantId: string,
+    cotizacionId: string,
+  ): Promise<ModuloDeCotizacion[]>;
+  agregarModulo(
+    tenantId: string,
+    cotizacionId: string,
+    datos: DatosDeModulo,
+  ): Promise<ResultadoDeModulos>;
+  editarModulo(
+    tenantId: string,
+    cotizacionId: string,
+    moduloId: string,
+    datos: DatosDeModulo,
+  ): Promise<ResultadoDeModulos>;
+  quitarModulo(
+    tenantId: string,
+    cotizacionId: string,
+    moduloId: string,
+  ): Promise<ResultadoDeModulos>;
+  /**
+   * La lista completa de identificadores en su orden nuevo. El `orden` que se
+   * guarda es la **posición en ese arreglo**, nunca un número del cuerpo.
+   */
+  reordenarModulos(
+    tenantId: string,
+    cotizacionId: string,
+    orden: readonly string[],
+  ): Promise<ResultadoDeModulos>;
 }
 
 interface FilaDeCotizacion {
@@ -138,6 +194,43 @@ function aMomento(dia: string | null): string | null {
 /** La vuelta exacta de `aMomento`. */
 function aDia(momento: string | null): string | null {
   return momento === null ? null : diaEnPanama(momento);
+}
+
+interface FilaDeModulo {
+  id: string;
+  tipo: TipoDeModulo;
+  orden: number;
+  contenido: string;
+}
+
+/**
+ * La subconsulta que exige que la cotización siga siendo un borrador.
+ *
+ * Va pegada a **cada** sentencia de escritura de módulos, y no es una
+ * segunda copia de la comprobación que el puerto hace antes: entre leer el
+ * estado y escribir hay una ventana en la que otra petición puede emitir la
+ * cotización —T-4—, y sin esta cláusula el módulo entraría o se movería en
+ * un documento ya congelado cuyo snapshot pasaría a decir otra cosa. La
+ * comprobación de arriba contesta bien el caso corriente; ésta es la que lo
+ * hace cierto. Es exactamente lo que `actualizar` ya hace con su
+ * `AND estado = 'borrador'`.
+ *
+ * Lleva su propio `tenant_id` aunque la fila del módulo ya esté filtrada:
+ * sin él, una cotización del bufete vecino en estado borrador habilitaría la
+ * escritura. El filtro de tenencia no se hereda de la sentencia que lo
+ * contiene.
+ */
+const SOBRE_UN_BORRADOR =
+  " EXISTS (SELECT 1 FROM cotizacion c WHERE c.tenant_id = ?" +
+  " AND c.id = ? AND c.estado = 'borrador')";
+
+function aModulo(fila: FilaDeModulo): ModuloDeCotizacion {
+  return {
+    id: fila.id,
+    tipo: fila.tipo,
+    orden: fila.orden,
+    contenido: fila.contenido,
+  };
 }
 
 function aCotizacion(fila: FilaDeCotizacion): Cotizacion {
@@ -262,6 +355,80 @@ export function cotizacionesSobreD1(
     const siguiente = (fila?.ultimo ?? 0) + 1;
 
     return `${prefijo}${String(siguiente).padStart(4, "0")}`;
+  }
+
+  /**
+   * Los módulos de la cotización, en su orden. Con el filtro de tenencia
+   * puesto, igual que todas las demás consultas de este archivo (I-8).
+   */
+  async function leerModulos(
+    tenantId: string,
+    cotizacionId: string,
+  ): Promise<ModuloDeCotizacion[]> {
+    const { results } = await db
+      .prepare(
+        "SELECT id, tipo, orden, contenido FROM cotizacion_modulo" +
+          " WHERE tenant_id = ? AND cotizacion_id = ? ORDER BY orden",
+      )
+      .bind(tenantId, cotizacionId)
+      .all<FilaDeModulo>();
+
+    return results.map(aModulo);
+  }
+
+  /**
+   * El guardián de las cuatro escrituras: que la cotización exista en este
+   * bufete y que siga siendo un borrador.
+   *
+   * **Esta comprobación vive acá y no sólo en la ruta, y es a propósito.**
+   * T-4 y T-5 van a llamar al puerto directo, sin ruta delante; una regla
+   * que sólo estuviera en el ruteo sería una regla que esas tareas se
+   * saltan sin enterarse. La prueba «el puerto se niega igual, sin pasar
+   * por la ruta» de `test/modulos-api.spec.ts` es la que la mantiene viva:
+   * sin ella, borrar estas tres líneas no pondría nada en rojo.
+   *
+   * Y no atrapa nada: la base no tiene hoy ninguna guarda contra agregarle
+   * un módulo a una emitida —I-4 es de T-4, con su propio disparador—, así
+   * que no hay error que disfrazar. Se **cuenta** el estado.
+   */
+  async function borradorParaEscribir(
+    tenantId: string,
+    cotizacionId: string,
+  ): Promise<ResultadoDeModulos | null> {
+    const cotizacion = await obtener(tenantId, cotizacionId);
+    if (cotizacion === null) return { estado: "no_encontrado" };
+
+    if (cotizacion.estado !== "borrador") {
+      return { estado: "no_es_borrador", actual: cotizacion.estado };
+    }
+
+    return null;
+  }
+
+  /**
+   * Qué contestar cuando la escritura no tocó ninguna fila.
+   *
+   * Cero cambios con la cláusula `EXISTS` puesta quiere decir que perdimos
+   * la carrera contra una emisión. Se relee para decir la verdad sobre en
+   * qué quedó: contestar con el estado que se había leído antes sería
+   * repetir la foto vieja que acaba de quedar mal.
+   *
+   * **Lo que esto cuesta, dicho para que sea una decisión**, y es el mismo
+   * residuo que la unidad A dejó anotado en `actualizar`: la entrada de
+   * bitácora viajó en el mismo `batch` —así lo exige `mutar`, y es lo que
+   * impide escribir sin registrar—, así que en esta rama queda un
+   * «agregó el módulo» de algo que no se agregó. Un hecho de más en el
+   * registro contra un documento emitido corrompido en silencio: de los dos
+   * males, el menor.
+   */
+  async function carreraPerdida(
+    tenantId: string,
+    cotizacionId: string,
+  ): Promise<ResultadoDeModulos> {
+    const ahora = await obtener(tenantId, cotizacionId);
+    if (ahora === null) return { estado: "no_encontrado" };
+
+    return { estado: "no_es_borrador", actual: ahora.estado };
   }
 
   return {
@@ -407,6 +574,294 @@ export function cotizacionesSobreD1(
       if (cotizacion === null) return { estado: "no_encontrado" };
 
       return { estado: "guardado", cotizacion };
+    },
+
+    listarModulos: leerModulos,
+
+    async agregarModulo(tenantId, cotizacionId, datos) {
+      const bloqueo = await borradorParaEscribir(tenantId, cotizacionId);
+      if (bloqueo !== null) return bloqueo;
+
+      // Al final de la lista, siempre. Un módulo nuevo que apareciera en el
+      // medio movería lo que la persona ya había ordenado, y el único lugar
+      // donde el orden se decide es el reordenamiento.
+      //
+      // Es `MAX(orden) + 1` y no `COUNT(*)`: quitar un módulo deja un hueco
+      // —no se recompacta, porque lo que vale es el orden relativo y no el
+      // número— y contar devolvería una posición que otra fila ya tiene,
+      // que es un 500 del índice único.
+      const fila = await db
+        .prepare(
+          "SELECT MAX(orden) AS ultimo FROM cotizacion_modulo" +
+            " WHERE tenant_id = ? AND cotizacion_id = ?",
+        )
+        .bind(tenantId, cotizacionId)
+        .first<{ ultimo: number | null }>();
+
+      const orden = fila?.ultimo === null || fila === null ? 0 : fila.ultimo + 1;
+
+      const [efecto] = await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: cotizacionId,
+          accion: "modulo_agregado",
+          // El rótulo del tipo y no el contenido: `detalle` es el nombre de
+          // cara al usuario de lo que el hecho señala, nunca una segunda
+          // copia del dato. El texto del módulo sigue estando en su fila.
+          detalle: rotuloDeTipo(datos.tipo),
+        },
+        sentencia(
+          "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
+            " tipo, orden, contenido) SELECT ?, ?, ?, ?, ?, ? WHERE" +
+            SOBRE_UN_BORRADOR,
+          nuevoId(),
+          tenantId,
+          cotizacionId,
+          datos.tipo,
+          orden,
+          datos.contenido,
+          tenantId,
+          cotizacionId,
+        ),
+      );
+
+      if (efecto.meta.changes === 0) {
+        return carreraPerdida(tenantId, cotizacionId);
+      }
+
+      return {
+        estado: "guardado",
+        modulos: await leerModulos(tenantId, cotizacionId),
+      };
+    },
+
+    async editarModulo(tenantId, cotizacionId, moduloId, datos) {
+      const bloqueo = await borradorParaEscribir(tenantId, cotizacionId);
+      if (bloqueo !== null) return bloqueo;
+
+      // Que el módulo sea de **esta** cotización y de **este** bufete se
+      // comprueba leyéndolo, no dejando que el `UPDATE` no encuentre nada:
+      // sin esto, editar un módulo ajeno y perder la carrera contra una
+      // emisión se contestarían iguales, y son cosas muy distintas.
+      const existentes = await leerModulos(tenantId, cotizacionId);
+      if (!existentes.some((modulo) => modulo.id === moduloId)) {
+        return { estado: "no_encontrado" };
+      }
+
+      // El `SET` no menciona `orden`: editar el texto de un módulo no lo
+      // mueve de lugar. Mover es la otra operación, con su propio verbo.
+      const [efecto] = await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: cotizacionId,
+          accion: "modulo_editado",
+          // El rótulo del tipo **nuevo**: es lo que quedó escrito. La
+          // bitácora guarda hechos, no diffs.
+          detalle: rotuloDeTipo(datos.tipo),
+        },
+        sentencia(
+          "UPDATE cotizacion_modulo SET tipo = ?, contenido = ?" +
+            " WHERE tenant_id = ? AND cotizacion_id = ? AND id = ? AND" +
+            SOBRE_UN_BORRADOR,
+          datos.tipo,
+          datos.contenido,
+          tenantId,
+          cotizacionId,
+          moduloId,
+          tenantId,
+          cotizacionId,
+        ),
+      );
+
+      if (efecto.meta.changes === 0) {
+        return carreraPerdida(tenantId, cotizacionId);
+      }
+
+      return {
+        estado: "guardado",
+        modulos: await leerModulos(tenantId, cotizacionId),
+      };
+    },
+
+    async quitarModulo(tenantId, cotizacionId, moduloId) {
+      const bloqueo = await borradorParaEscribir(tenantId, cotizacionId);
+      if (bloqueo !== null) return bloqueo;
+
+      const existentes = await leerModulos(tenantId, cotizacionId);
+      const quitado = existentes.find((modulo) => modulo.id === moduloId);
+      if (quitado === undefined) return { estado: "no_encontrado" };
+
+      // El hueco que esto deja en `orden` no se recompacta, y es una
+      // decisión: lo que la lista usa es el orden **relativo**, el índice
+      // único sólo exige que no se repita, y recompactar sería reescribir
+      // cada fila siguiente para que el número quede bonito. El
+      // reordenamiento ya los deja consecutivos cuando de verdad hace falta.
+      const [efecto] = await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: cotizacionId,
+          accion: "modulo_quitado",
+          detalle: rotuloDeTipo(quitado.tipo),
+        },
+        sentencia(
+          "DELETE FROM cotizacion_modulo" +
+            " WHERE tenant_id = ? AND cotizacion_id = ? AND id = ? AND" +
+            SOBRE_UN_BORRADOR,
+          tenantId,
+          cotizacionId,
+          moduloId,
+          tenantId,
+          cotizacionId,
+        ),
+      );
+
+      if (efecto.meta.changes === 0) {
+        return carreraPerdida(tenantId, cotizacionId);
+      }
+
+      return {
+        estado: "guardado",
+        modulos: await leerModulos(tenantId, cotizacionId),
+      };
+    },
+
+    /**
+     * El reordenamiento, que es donde vive la trampa de esta tarea.
+     *
+     * ## Por qué no se puede incrementar en su lugar
+     *
+     * `cotizacion_modulo` lleva índice único sobre `(cotizacion_id, orden)`,
+     * al revés que `proceso_etapa`, y `migrations/0004_cotizaciones.sql`
+     * explica que la diferencia es deliberada. La consecuencia es concreta:
+     * un `UPDATE … SET orden = ?` fila por fila choca **transitoriamente**
+     * —ponerle 2 al primero mientras el 2 todavía lo tiene otro— y SQLite no
+     * tiene restricciones únicas diferibles, así que el `batch` entero
+     * aborta. `reemplazarEtapas` no sirve de modelo para esto porque allá el
+     * problema no existe; lo que sí se le copia es la forma de armar un
+     * arreglo de sentencias para un solo `mutar`.
+     *
+     * ## De las dos salidas, la que conserva los identificadores
+     *
+     * La migración nombra dos: borrar el tramo y volver a insertarlo, o
+     * pasar por un rango disjunto antes de asignar los definitivos. Se eligió
+     * **el rango disjunto**, y el criterio es el identificador:
+     *
+     *  - Borrar e insertar le cambia el `id` a cada módulo en cada
+     *    reordenamiento. Un `id` que cambia es una fila que perdió su
+     *    historia: la dirección `/modulos/{id}` que la pantalla tenía abierta
+     *    deja de existir, el `detalle` de una entrada de bitácora ya no se
+     *    puede atar a nada, y cualquier cosa que T-4 o T-7 quieran referir
+     *    desde afuera apunta a una fila borrada. Arrastrar un módulo no es
+     *    reemplazarlo.
+     *  - El rango disjunto conserva cada fila y cuesta **lo mismo**: dos
+     *    sentencias por módulo contra un borrado más un alta por módulo.
+     *
+     * ## Por qué el rango de paso es negativo
+     *
+     * La primera pasada aparca cada módulo en `-(posición + 1)`, es decir
+     * −1, −2, −3… La segunda le pone su posición definitiva, 0, 1, 2…
+     *
+     * Que no choquen no es suerte y no depende de cuántos módulos haya: todo
+     * orden que este código escribe es una posición de arreglo, o sea `>= 0`,
+     * así que el rango negativo es disjunto de **cualquier** valor guardado,
+     * y los definitivos son disjuntos del rango negativo porque después de la
+     * primera pasada no queda ninguna fila de esta cotización en positivo.
+     * Un desplazamiento del tipo `orden + 1000` tendría la misma forma y un
+     * tope: el módulo mil choca.
+     *
+     * Las dos pasadas viajan en el mismo `batch`, que en D1 es una
+     * transacción: no hay ningún instante observable desde afuera en que los
+     * órdenes negativos existan, y si algo abortara no queda media lista.
+     */
+    async reordenarModulos(tenantId, cotizacionId, orden) {
+      const bloqueo = await borradorParaEscribir(tenantId, cotizacionId);
+      if (bloqueo !== null) return bloqueo;
+
+      const existentes = await leerModulos(tenantId, cotizacionId);
+      const conocidos = new Set(existentes.map((modulo) => modulo.id));
+
+      // Un id que no es de ESTA cotización no se toca. Primero éste, porque
+      // «ese módulo no es tuyo» es más preciso que «la lista no coincide».
+      const fallas: FallaDeValidacion[] = [];
+      orden.forEach((moduloId, indice) => {
+        if (!conocidos.has(moduloId)) {
+          fallas.push({
+            campo: `orden-${String(indice)}`,
+            motivo: "modulo_desconocido",
+          });
+        }
+      });
+      if (fallas.length > 0) return { estado: "invalido", fallas };
+
+      // Y la lista tiene que ser una permutación exacta: ni falta ni repite.
+      // Lo primero dejaría filas con el orden viejo mezcladas entre las
+      // nuevas; lo segundo pediría dos posiciones para la misma fila, que el
+      // índice único rechazaría con un 500.
+      const nombrados = new Set(orden);
+      if (nombrados.size !== orden.length || orden.length !== conocidos.size) {
+        return {
+          estado: "invalido",
+          fallas: [{ campo: "orden", motivo: "orden_incompleto" }],
+        };
+      }
+
+      // Reordenar a lo que ya estaba no es un hecho, y la pantalla lo va a
+      // mandar igual cuando alguien suelte un módulo donde lo levantó. Se
+      // corta acá, **antes** de `mutar`: una entrada de bitácora que dice
+      // «reordenó los módulos» cuando nada se movió es una decisión
+      // inventada, y la bitácora existe para no mentir.
+      const yaEstaba = existentes.every(
+        (modulo, indice) => modulo.id === orden[indice],
+      );
+      if (yaEstaba) return { estado: "guardado", modulos: existentes };
+
+      const aparcar = (moduloId: string, indice: number): Sentencia =>
+        sentencia(
+          "UPDATE cotizacion_modulo SET orden = ?" +
+            " WHERE tenant_id = ? AND cotizacion_id = ? AND id = ? AND" +
+            SOBRE_UN_BORRADOR,
+          -(indice + 1),
+          tenantId,
+          cotizacionId,
+          moduloId,
+          tenantId,
+          cotizacionId,
+        );
+
+      const asentar = (moduloId: string, indice: number): Sentencia =>
+        sentencia(
+          "UPDATE cotizacion_modulo SET orden = ?" +
+            " WHERE tenant_id = ? AND cotizacion_id = ? AND id = ? AND" +
+            SOBRE_UN_BORRADOR,
+          indice,
+          tenantId,
+          cotizacionId,
+          moduloId,
+          tenantId,
+          cotizacionId,
+        );
+
+      // Un solo hecho para el movimiento entero, y sin `detalle`: lo que se
+      // movió es la lista, y nombrar uno de los módulos diría menos que no
+      // nombrar ninguno. Es el mismo criterio que `plan_editado`.
+      const resultados = await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: cotizacionId,
+          accion: "modulos_reordenados",
+        },
+        ...orden.map(aparcar),
+        ...orden.map(asentar),
+      );
+
+      if (resultados[0].meta.changes === 0) {
+        return carreraPerdida(tenantId, cotizacionId);
+      }
+
+      return {
+        estado: "guardado",
+        modulos: await leerModulos(tenantId, cotizacionId),
+      };
     },
   };
 }

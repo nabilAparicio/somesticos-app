@@ -237,7 +237,58 @@ export type MotivoDeFalla =
    * disciplina — se **cuentan** los dependientes y se rechaza; no se atrapa
    * el error de la llave foránea para disfrazarlo.
    */
-  | "etapa_con_pendientes_no_se_quita";
+  | "etapa_con_pendientes_no_se_quita"
+  /* --- Módulos de prosa de una cotización (tajada 2, T-2 C) --- */
+  /**
+   * El `tipo` no es ninguno del catálogo cerrado de `TipoDeModulo`.
+   *
+   * **Cubre también el tipo ausente, y ahí está la decisión.** El precedente
+   * de al lado parte en dos el mismo caso —`cliente_requerido` y
+   * `cliente_desconocido`— y acá no se copia, porque las dos situaciones no
+   * son distinguibles desde donde está la persona: el tipo sale de un
+   * desplegable que la pantalla dibuja **del mismo registro** contra el que
+   * el servidor valida, así que «no mandaste ninguno» y «mandaste uno
+   * inventado» son el mismo defecto y se arreglan con la misma frase. El
+   * `clienteId`, en cambio, es un identificador que puede quedar viejo entre
+   * que el formulario cargó y se envió: ahí «elegí uno» y «ese ya no existe»
+   * son dos cosas que pasan por motivos distintos.
+   *
+   * Y no es una copia del `CHECK` de la base: el `CHECK` convierte el tipo
+   * inventado en un 500 que nadie puede leer; esto lo convierte en un 422
+   * que dice qué arreglar. Las dos mitades siguen existiendo, y
+   * `test/modulos-api.spec.ts` falla si se separan.
+   */
+  | "tipo_de_modulo_desconocido"
+  /**
+   * Un módulo de prosa sin contenido.
+   *
+   * Es motivo propio y no `texto_requerido`, que la nota y el pendiente
+   * comparten, porque la frase que a ellos les sirve —«es lo único que se
+   * escribe acá, y el resto lo pone el sistema»— acá es falsa: en un módulo
+   * la persona también elige el tipo. Lo que hay que decirle es otra cosa:
+   * un módulo vacío es un título sin nada debajo, y eso es lo que va a salir
+   * impreso.
+   */
+  | "contenido_requerido"
+  /**
+   * El reordenamiento nombra un módulo que no es de esta cotización.
+   *
+   * Es el equivalente de `etapa_de_otro_proceso` para los módulos, y por el
+   * mismo motivo que aquél no es `etapa_desconocida`: lo que falla no es un
+   * catálogo mal cargado sino una lista que quedó vieja.
+   */
+  | "modulo_desconocido"
+  /**
+   * El reordenamiento no nombra **cada** módulo exactamente una vez.
+   *
+   * El cuerpo es la lista completa en su orden nuevo, no un movimiento: el
+   * servidor asigna el `orden` como la posición en ese arreglo. Una lista a
+   * la que le falta un módulo dejaría filas con el orden viejo mezcladas
+   * entre las nuevas, y una que repite uno pediría dos posiciones para la
+   * misma fila. Las dos son la misma causa —la pantalla tiene una copia
+   * vieja— y se arreglan igual.
+   */
+  | "orden_incompleto";
 
 export interface FallaDeValidacion {
   campo: string;
@@ -1015,6 +1066,83 @@ export interface CotizacionNoEsBorrador {
   estado: EstadoDeCotizacion;
 }
 
+/**
+ * Los seis tipos de módulo de prosa (T-2 C, `docs/diseno.md` §8).
+ *
+ * Es la familia de **prosa** de la tabla de §8: la que el modelo escribe
+ * libremente. La otra familia —líneas de honorarios, gastos estimados, plan
+ * de pagos, totales— no está acá y no es un olvido: es estructurada, vive en
+ * `cotizacion_linea` y en `cuota`, y es donde la barandilla manda («el modelo
+ * no suma, nunca»).
+ *
+ * El catálogo es **cerrado y vive en código**, no en una tabla editable:
+ * agregar un tipo es un despliegue. El criterio del proyecto —catálogo en la
+ * base cuando el valor es sólo una etiqueta, en código cuando hay código
+ * detrás— apunta al código, igual que con el vocabulario de la bitácora:
+ * detrás de cada tipo hay un rótulo, un lugar en el orden sugerido y, desde
+ * T-9, un prompt. Y §5 obliga a que la base lo sostenga igual, así que
+ * también está el `CHECK` de `migrations/0004_cotizaciones.sql`.
+ *
+ * Las dos mitades se mueven juntas o no se mueven:
+ * `test/modulos-api.spec.ts` las compara y falla si se separan. El rótulo y
+ * el orden sugerido viven en `worker/cotizaciones/modulos.ts`; acá está sólo
+ * la unión, que es lo que cruza el cable.
+ */
+export type TipoDeModulo =
+  | "alcance"
+  | "exclusiones"
+  | "antecedentes"
+  | "supuestos"
+  | "clausulas"
+  | "nota_cliente";
+
+/**
+ * Un módulo tal como lo lee la pantalla.
+ *
+ * **No trae rótulo**, y la ausencia es el diseño: el rótulo sale del registro
+ * tipado, que la pantalla importa igual que lo importa el servidor.
+ * Mandarlo por el cable sería una segunda copia que el día que alguien
+ * cambie un rótulo se queda vieja en las cotizaciones ya cargadas.
+ *
+ * `orden` es la posición dentro de la cotización y **lo asigna el servidor**,
+ * nunca el cuerpo. Se manda de vuelta porque es lo que ordena la lista, y
+ * porque la pantalla necesita poder dibujar «subir» y «bajar» sabiendo dónde
+ * está cada uno. Los valores son consecutivos desde 0 después de un
+ * reordenamiento, pero quitar un módulo deja un hueco: lo que vale es el
+ * orden relativo, no el número.
+ */
+export interface ModuloDeCotizacion {
+  id: string;
+  tipo: TipoDeModulo;
+  orden: number;
+  contenido: string;
+}
+
+/**
+ * Lo que el formulario manda al agregar o editar un módulo. Ya normalizado.
+ *
+ * Son **dos campos y no cuatro**: `id` y `orden` los pone el servidor. Un
+ * `orden` que llegara del cuerpo sería el camino para pedirle a la base dos
+ * módulos en la misma posición —que el índice único rechazaría con un 500— y
+ * para que el generador de T-9 decida un número en vez de una lista.
+ */
+export interface DatosDeModulo {
+  tipo: TipoDeModulo;
+  contenido: string;
+}
+
+/**
+ * Los módulos de una cotización, **en su orden**.
+ *
+ * Las cuatro operaciones de escritura devuelven la lista entera, igual que
+ * los pendientes de T-9: lo que cambió no es un módulo sino el documento, y
+ * una respuesta parcial obligaría a la pantalla a recomponer el orden a mano
+ * justo después de haberlo cambiado.
+ */
+export interface RespuestaDeModulos {
+  modulos: ModuloDeCotizacion[];
+}
+
 /* ==========================================================================
    Bitácora (T-10)
 
@@ -1129,7 +1257,45 @@ export type AccionDeBitacora =
   /** Apareció un cabo suelto. */
   | "pendiente_abierto"
   /** Se cerró. Quién y cuándo ya viven en la fila; esto lo pone en la historia. */
-  | "pendiente_cerrado";
+  | "pendiente_cerrado"
+  /**
+   * Entró un módulo de prosa en una cotización (T-2 C). `detalle` lleva el
+   * rótulo de su tipo.
+   *
+   * Los cuatro verbos de módulo van **con prefijo**, al revés que `creado` y
+   * `cerrado`, por la regla que este vocabulario ya tenía escrita: pelados
+   * van los hechos propios de la entidad, prefijados los de algo que *cuelga*
+   * de ella. Un módulo cuelga de su cotización igual que una nota cuelga de
+   * su proceso, y por eso `nota_agregada` es el precedente exacto.
+   *
+   * Son cuatro y no uno porque las cuatro preguntas son distintas: «¿quién
+   * metió esta cláusula?», «¿quién la cambió?», «¿quién la sacó?» y «¿quién
+   * movió el alcance al final?». Un solo `modulos_editados` las contestaría
+   * las cuatro con la misma línea, que es exactamente lo que el vocabulario
+   * cerrado existe para impedir.
+   */
+  | "modulo_agregado"
+  /** Cambió el tipo o el texto de un módulo. `detalle` lleva su rótulo. */
+  | "modulo_editado"
+  /**
+   * Un módulo salió de la cotización. `detalle` lleva su rótulo.
+   *
+   * Es `modulo_quitado` y no `modulo_borrado` aunque la fila sí se borre: el
+   * `borrado` pelado es el de una entidad que tenía existencia propia y
+   * pantalla propia, y un módulo nunca la tuvo. Lo que la persona hizo fue
+   * sacarlo de una lista, y es lo que la bitácora tiene que decir.
+   */
+  | "modulo_quitado"
+  /**
+   * Cambió el orden de los módulos. Va **sin `detalle`**, igual que
+   * `plan_editado`: lo que se movió es la lista entera, y nombrar uno solo de
+   * los módulos diría menos que no nombrar ninguno.
+   *
+   * Va en plural porque reordenar es un hecho de la colección y no de cada
+   * fila que cambió de número: una entrada por módulo movido llenaría la
+   * historia de ruido para contar una sola decisión.
+   */
+  | "modulos_reordenados";
 
 /**
  * Una entrada tal como la lee la pantalla.

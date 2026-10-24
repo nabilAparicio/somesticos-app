@@ -82,6 +82,23 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
     "En esa etapa nació un pendiente y no se puede quitar del plan: un" +
     " pendiente guarda dónde apareció, y eso no se cambia de lugar. Cerrarlo" +
     " no alcanza, porque el registro queda igual.",
+  /* El tipo sale de un desplegable que la pantalla dibuja del mismo registro
+     contra el que el servidor valida, así que la frase sirve igual para «no
+     elegiste ninguno» y para «ese no existe»: en los dos casos lo que hay
+     que hacer es elegir uno de la lista. */
+  tipo_de_modulo_desconocido:
+    "Ese no es un tipo de módulo. Hay que elegir uno de la lista.",
+  /* No dice «el texto es obligatorio» sino qué pasa si se guarda vacío: lo
+     que la persona está por hacer es emitir un título sin nada debajo. */
+  contenido_requerido:
+    "Un módulo sin texto es un título sin nada debajo. Hay que escribir qué" +
+    " dice, o quitarlo.",
+  modulo_desconocido:
+    "Uno de los módulos ya no es de esta cotización. Hay que volver a" +
+    " cargarla.",
+  orden_incompleto:
+    "La lista no coincide con los módulos de esta cotización. Hay que volver" +
+    " a cargarla antes de reordenarlos.",
 };
 
 /**

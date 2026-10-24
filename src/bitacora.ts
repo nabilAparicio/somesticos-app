@@ -61,6 +61,13 @@ export const VERBOS_DE_BITACORA: Record<AccionDeBitacora, string> = {
   nota_agregada: "anotó en",
   pendiente_abierto: "abrió el pendiente",
   pendiente_cerrado: "cerró el pendiente",
+  /* Los cuatro de los módulos de prosa (T-2 C). `detalle` lleva el rótulo
+     del tipo —«Alcance», «Cláusulas»— salvo en el reordenamiento, que no
+     nombra ninguno porque lo que se movió es la lista entera. */
+  modulo_agregado: "agregó el módulo",
+  modulo_editado: "editó el módulo",
+  modulo_quitado: "quitó el módulo",
+  modulos_reordenados: "reordenó los módulos",
 };
 
 /**

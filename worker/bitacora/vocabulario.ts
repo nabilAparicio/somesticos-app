@@ -129,8 +129,30 @@ export const ACCIONES_POR_ENTIDAD = {
      entidad+verbo porque la entidad ya viaja en su columna»—. Un verbo que
      cambia de forma según a qué entidad se le cuelga es un par entidad+verbo
      disfrazado, y por ese camino el vocabulario se multiplica por el número
-     de entidades para decir lo mismo. */
-  cotizacion: ["creado", "editado"],
+     de entidades para decir lo mismo.
+
+     ## Los cuatro verbos de módulo (unidad C)
+
+     Los módulos de prosa **no son una entidad propia**: se leen dentro de la
+     cotización, no tienen pantalla ni dirección propia, y por eso sus hechos
+     son hechos de la cotización. Es exactamente lo que `nota_agregada` y
+     `pendiente_abierto` hacen con el proceso, y por eso llevan prefijo: en
+     este vocabulario van pelados los hechos propios de la entidad y
+     prefijados los de lo que cuelga de ella.
+
+     Son cuatro, uno por operación, porque las cuatro preguntas son
+     distintas y la bitácora existe para contestarlas por separado. Lo que
+     **no** hay es un verbo por módulo movido: reordenar es un hecho de la
+     lista entera, y una entrada por fila convertiría una decisión en seis
+     líneas de ruido. */
+  cotizacion: [
+    "creado",
+    "editado",
+    "modulo_agregado",
+    "modulo_editado",
+    "modulo_quitado",
+    "modulos_reordenados",
+  ],
 } as const satisfies Record<EntidadRegistrada, readonly AccionDeBitacora[]>;
 
 /**

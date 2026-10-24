@@ -93,6 +93,46 @@
 -- `worker/bitacora/vocabulario.ts` escribe entero—, así que la ampliación es
 -- de una sola de las dos listas.
 --
+-- ## La tercera vez, y por qué no hay una cuarta
+--
+-- La unidad C de T-2 la usó por **tercera** vez, para agregar los cuatro
+-- verbos de los módulos de prosa —`modulo_agregado`, `modulo_editado`,
+-- `modulo_quitado` y `modulos_reordenados`— al `CHECK` de `accion`, que es la
+-- lista que las dos ediciones anteriores no habían tocado. Las dos
+-- condiciones se verificaron otra vez y las dos siguen en pie: el párrafo de
+-- arriba no caducó porque no hubo primer despliegue —la tajada 1 todavía está
+-- sin desplegar—, y `wrangler.jsonc` sigue con el marcador de ceros en
+-- `database_id`.
+--
+-- Lo que se midió esta vez, y que es lo que decide, es **el costo real de la
+-- alternativa**. De `bitacora` cuelgan hoy **tres** disparadores y un índice:
+--
+--     $ ... "SELECT name FROM sqlite_master WHERE type='trigger'
+--              AND tbl_name='bitacora' ORDER BY name"
+--     bitacora_no_se_actualiza                 <- este archivo
+--     bitacora_no_se_borra                     <- este archivo
+--     bitacora_tenencia_coherente_al_insertar  <- 0003
+--
+-- Un `DROP TABLE bitacora` se los lleva a los tres. O sea que la `0005` que
+-- evitaría tocar este archivo tendría que **recrear un disparador que es de
+-- `0003`**, y a partir de ahí quien lea `0003` vería declarada una guarda de
+-- tenencia que en la base ya no es la que ese archivo escribió. Esa es la
+-- parte cara, y no las líneas: la prueba que vigila la lista —«los
+-- disparadores de la bitácora siguen todos en la base», en
+-- `test/bitacora-api.spec.ts`— compara **nombres**, así que la mudanza
+-- pasaría entera sin que nada se pusiera rojo. Mover una guarda de archivo
+-- en silencio es peor que editar una migración que no corrió en ninguna
+-- parte.
+--
+-- **Y acá se termina.** No hay cuarta: tres es el tope, y lo que lo sostiene
+-- no es la buena voluntad del que siga sino que el próximo verbo ya no
+-- entra por acá. Si hace falta uno más antes del primer despliegue, va en
+-- una migración nueva que reconstruya `bitacora` y **que se lleve los tres
+-- disparadores con su comentario diciendo de dónde vino cada uno**, con el
+-- costo pagado a la vista. La regla que esta excepción suspende sigue siendo
+-- la regla; una excepción que se invoca una cuarta vez ya no es una
+-- excepción.
+--
 -- ## Lo que esto le cuesta a quien ya corrió la aplicación en local
 --
 -- Que no haya D1 remoto es lo que hace legítimo editar este archivo. Lo que
@@ -113,11 +153,14 @@
 --     ... CHECK (entidad IN ('area','cliente','proceso','tipo_cliente','tipo_proceso'))
 --
 -- O sea: `0004` sí va a correr, porque es nueva, y van a aparecer las tablas
--- de cotización; pero el `CHECK` de `entidad` se queda sin `'cotizacion'`.
--- La consecuencia es un 500 en **toda** alta y edición de cotización, porque
--- su entrada de bitácora viola el `CHECK` y viaja en el mismo `batch` que el
--- efecto. Las pruebas no lo muestran: el runner levanta bases nuevas y
--- aplica las cuatro migraciones desde cero en cada corrida.
+-- de cotización; pero el `CHECK` de `entidad` se queda sin `'cotizacion'` y
+-- el de `accion` sin los cuatro verbos de módulo. La consecuencia es un 500
+-- en **toda** escritura de cotización —su alta, su edición, y cada agregar,
+-- editar, quitar y reordenar de un módulo— porque su entrada de bitácora
+-- viola el `CHECK` y viaja en el mismo `batch` que el efecto. Las dos listas
+-- fallan por separado y el síntoma es el mismo. Las pruebas no lo muestran:
+-- el runner levanta bases nuevas y aplica las cuatro migraciones desde cero
+-- en cada corrida.
 --
 -- **Quien ya haya corrido `pnpm dev` antes de esta tajada tiene que borrar
 -- el estado local antes de usar cotizaciones:**
@@ -148,7 +191,7 @@ CREATE TABLE bitacora_nueva (
   tenant_id   TEXT NOT NULL REFERENCES tenant (id),
   entidad     TEXT NOT NULL CHECK (entidad IN ('area', 'cliente', 'cotizacion', 'proceso', 'tipo_cliente', 'tipo_proceso')),
   entidad_id  TEXT NOT NULL,
-  accion      TEXT NOT NULL CHECK (accion IN ('borrado', 'cerrado', 'creado', 'dado_de_baja', 'editado', 'etapa_alcanzada', 'nota_agregada', 'pendiente_abierto', 'pendiente_cerrado', 'plan_editado', 'plantilla_editada', 'plantilla_guardada', 'reabierto', 'reactivado')),
+  accion      TEXT NOT NULL CHECK (accion IN ('borrado', 'cerrado', 'creado', 'dado_de_baja', 'editado', 'etapa_alcanzada', 'modulo_agregado', 'modulo_editado', 'modulo_quitado', 'modulos_reordenados', 'nota_agregada', 'pendiente_abierto', 'pendiente_cerrado', 'plan_editado', 'plantilla_editada', 'plantilla_guardada', 'reabierto', 'reactivado')),
   usuario_id  TEXT NOT NULL REFERENCES usuario (id),
   ocurrido_en TEXT NOT NULL CHECK (ocurrido_en IS strftime('%Y-%m-%dT%H:%M:%fZ', ocurrido_en)),
   detalle     TEXT

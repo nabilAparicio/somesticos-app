@@ -1136,10 +1136,24 @@ describe("los verbos que la colección no admite", () => {
   });
 
   it("una subruta que no existe cae en el 404 general", async () => {
+    // **El nombre está inventado a propósito, y eso es la prueba.** Lo que
+    // se mide acá es que `rutasDeCotizaciones` devuelva `null` ante un
+    // cuarto segmento que no reconoce, y que el ruteo general termine en su
+    // 404; no se mide la ausencia de ninguna ruta concreta.
+    //
+    // Decía `/modulos` hasta que T-2 C construyó esa ruta, y la prueba se
+    // puso roja sin que nada se hubiera roto. `/lineas` habría sido el mismo
+    // defecto con la mecha más larga: existe en T-3. Una prueba del 404
+    // general que nombra una ruta planificada es una bomba de tiempo que
+    // estalla cuando ya nadie se acuerda de por qué estaba ahí — y es el
+    // mismo defecto que la unidad A sacó de esta suite con los vencimientos
+    // literales. Por eso el segmento es uno que **no puede existir nunca**.
+    //
+    // `test/modulos-api.spec.ts` usa el mismo nombre, por el mismo motivo.
     const creada = await crear();
 
     const respuesta = await comoAutor(
-      peticion(`/api/cotizaciones/${creada.id}/modulos`),
+      peticion(`/api/cotizaciones/${creada.id}/no-existe-esta-subruta`),
     );
 
     expect(respuesta.status).toBe(404);

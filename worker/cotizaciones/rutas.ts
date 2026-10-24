@@ -2,16 +2,38 @@
  * Las rutas HTTP de las cotizaciones. Traduce peticiones a llamadas del
  * puerto y resultados a respuestas; no decide ninguna regla de negocio.
  *
- *   GET    /api/cotizaciones           listado
- *   POST   /api/cotizaciones           alta de un borrador
- *   GET    /api/cotizaciones/{id}      detalle
- *   PUT    /api/cotizaciones/{id}      edición de un borrador
+ *   GET    /api/cotizaciones                      listado
+ *   POST   /api/cotizaciones                      alta de un borrador
+ *   GET    /api/cotizaciones/{id}                 detalle
+ *   PUT    /api/cotizaciones/{id}                 edición de un borrador
+ *   GET    /api/cotizaciones/{id}/modulos         los módulos, en su orden
+ *   POST   /api/cotizaciones/{id}/modulos         agrega uno al final
+ *   PUT    /api/cotizaciones/{id}/modulos         reordena la lista entera
+ *   PUT    /api/cotizaciones/{id}/modulos/{mid}   edita uno
+ *   DELETE /api/cotizaciones/{id}/modulos/{mid}   lo saca
  *
- * **Y nada más por ahora.** No hay ruta de emitir —es de T-4, con su propio
- * disparador de inmutabilidad en la base— ni de módulos ni de líneas. La
- * cuarta parte de la dirección (`/api/cotizaciones/{id}/bitacora`) la atiende
+ * **Y nada más.** No hay ruta de emitir —es de T-4, con su propio disparador
+ * de inmutabilidad en la base— ni de líneas, que son de T-3. La cuarta parte
+ * de la dirección `/api/cotizaciones/{id}/bitacora` la atiende
  * `worker/bitacora/rutas.ts`, que corre antes y para la que este archivo
- * devuelve `null`: acá se corta en `segmentos.length !== 3`.
+ * devuelve `null`: acá sólo se reconoce `modulos` en esa posición.
+ *
+ * ## Por qué el reordenamiento es un `PUT` a la colección
+ *
+ * Es el mismo precedente que el plan de un proceso (`PUT
+ * /api/procesos/{id}/etapas`): el orden es una propiedad de **la lista**, no
+ * de ningún módulo, así que la dirección a la que corresponde es la de la
+ * lista. La alternativa —una subruta `/modulos/orden`— mete una cadena fija
+ * en la misma posición donde van los identificadores, y quien lea el ruteo
+ * tiene que saber que los identificadores son UUID para convencerse de que
+ * nunca van a chocar. Una ambigüedad que se resuelve con un dato que está en
+ * otro archivo no es una ambigüedad resuelta.
+ *
+ * Y este `PUT` **sólo reordena**: no reemplaza el contenido de la colección,
+ * aunque la forma del verbo lo sugiera. Agregar, editar y quitar tienen sus
+ * propias rutas porque la bitácora tiene que poder decir cuál de las cuatro
+ * cosas pasó. Un `PUT` que mandara la lista entera con tipos y textos
+ * aplastaría las cuatro preguntas en un solo hecho.
  *
  * Todo esto corre **después** de la puerta de Access: la identidad llega
  * resuelta como argumento, no como algo que este archivo tenga que ir a
@@ -42,11 +64,14 @@ import type {
   FallaDeValidacion,
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
+  RespuestaDeModulos,
 } from "../contract";
 import { ahoraIso, hoyEnPanama } from "../db/momentos";
 import { normalizarCotizacion } from "./dominio";
+import { normalizarModulo, normalizarOrdenDeModulos } from "./modulos";
 import type {
   ResultadoDeEscritura,
+  ResultadoDeModulos,
   ServicioDeCotizaciones,
 } from "./repositorio";
 
@@ -92,6 +117,22 @@ async function leerCuerpo(request: Request): Promise<CuerpoLeido> {
   }
 }
 
+/**
+ * El 409 de tocar algo que ya salió del borrador.
+ *
+ * Lo comparten la edición de la cotización y las cuatro escrituras de
+ * módulos, y está en una función y no copiado cuatro veces por lo mismo que
+ * `procesoCerrado` en las rutas de proceso: de dónde se chocó contra el
+ * estado no cambia qué tiene que leer quien está mirando la pantalla.
+ */
+function noEsBorrador(estado: CotizacionNoEsBorrador["estado"]): Response {
+  const cuerpo: CotizacionNoEsBorrador = {
+    error: "cotizacion_no_es_borrador",
+    estado,
+  };
+  return json(cuerpo, { status: 409 });
+}
+
 function respuestaDeEscritura(
   resultado: ResultadoDeEscritura,
   estadoAlGuardar: 200 | 201,
@@ -100,11 +141,7 @@ function respuestaDeEscritura(
   if (resultado.estado === "invalido") return invalido(resultado.fallas);
 
   if (resultado.estado === "no_es_borrador") {
-    const cuerpo: CotizacionNoEsBorrador = {
-      error: "cotizacion_no_es_borrador",
-      estado: resultado.actual,
-    };
-    return json(cuerpo, { status: 409 });
+    return noEsBorrador(resultado.actual);
   }
 
   const cuerpo: RespuestaDeCotizacion = { cotizacion: resultado.cotizacion };
@@ -114,6 +151,23 @@ function respuestaDeEscritura(
       : { ...SIN_CACHE };
 
   return json(cuerpo, { status: estadoAlGuardar, headers: cabeceras });
+}
+
+function respuestaDeModulos(
+  resultado: ResultadoDeModulos,
+  estadoAlGuardar: 200 | 201,
+): Response {
+  if (resultado.estado === "no_encontrado") return noEncontrado();
+  if (resultado.estado === "invalido") return invalido(resultado.fallas);
+  if (resultado.estado === "no_es_borrador") {
+    return noEsBorrador(resultado.actual);
+  }
+
+  // Sin `location` ni en el alta: un módulo tiene dirección para editarlo y
+  // para quitarlo, pero no para leerlo solo. Apuntar a una dirección que no
+  // contesta `GET` sería prometer un recurso que no existe.
+  const cuerpo: RespuestaDeModulos = { modulos: resultado.modulos };
+  return json(cuerpo, { status: estadoAlGuardar });
 }
 
 /**
@@ -153,6 +207,118 @@ function decodificar(segmento: string): string | null {
     // lo que llega cuando alguien edita la barra de direcciones a mano.
     return null;
   }
+}
+
+/**
+ * Las cinco rutas de los módulos de prosa.
+ *
+ * **El orden de los tres rechazos es el mismo que el del `PUT` de la
+ * cotización, y por los mismos motivos:** 404 antes que todo —un cuerpo
+ * inválido contra un identificador ajeno contestaría 422 y eso bastaría para
+ * saber que existe—, 409 antes que 422 —lo que bloquea es el estado, no el
+ * formulario— y 422 al final, que es el único que la persona puede resolver
+ * escribiendo.
+ *
+ * La regla en sí —una cotización que ya no es borrador no se toca— vive en
+ * el puerto, que vuelve a negarse aunque esta comprobación no existiera.
+ * Está escrita dos veces a propósito: acá para elegir el orden de los
+ * rechazos, y allá porque T-4 y T-5 van a llamar al puerto sin ruta delante.
+ *
+ * **Leer nunca se bloquea.** El `GET` de la colección contesta igual sobre
+ * una emitida: lo que el estado impide es cambiar el documento, no mirarlo.
+ */
+async function rutasDeModulos(
+  request: Request,
+  segmentos: string[],
+  tenantId: string,
+  cotizacionId: string,
+  servicio: ServicioDeCotizaciones,
+  unModulo: boolean,
+): Promise<Response> {
+  const permitidos = unModulo ? "PUT, DELETE" : "GET, POST, PUT";
+  const metodo = request.method;
+
+  const reconocido = unModulo
+    ? metodo === "PUT" || metodo === "DELETE"
+    : metodo === "GET" || metodo === "POST" || metodo === "PUT";
+
+  // El 405 va **antes** de mirar si la cotización existe, al revés que el
+  // 404 de los demás rechazos: un verbo que esta dirección no tiene no es
+  // una pregunta sobre ninguna cotización, así que contestarlo no dice si
+  // existe. Lo que sí diría es llegar hasta el dominio para rechazarlo.
+  if (!reconocido) {
+    return json(
+      { error: "method_not_allowed" },
+      { status: 405, headers: { allow: permitidos, ...SIN_CACHE } },
+    );
+  }
+
+  const cotizacion = await servicio.obtener(tenantId, cotizacionId);
+  if (cotizacion === null) return noEncontrado();
+
+  if (metodo === "GET") {
+    const cuerpo: RespuestaDeModulos = {
+      modulos: await servicio.listarModulos(tenantId, cotizacionId),
+    };
+    return json(cuerpo);
+  }
+
+  if (cotizacion.estado !== "borrador") {
+    return noEsBorrador(cotizacion.estado);
+  }
+
+  if (unModulo) {
+    const moduloId = decodificar(segmentos[4]);
+    if (moduloId === null) return noEncontrado();
+
+    if (metodo === "DELETE") {
+      return respuestaDeModulos(
+        await servicio.quitarModulo(tenantId, cotizacionId, moduloId),
+        200,
+      );
+    }
+
+    const leido = await leerCuerpo(request);
+    if (!leido.ok) return leido.respuesta;
+
+    const normalizado = normalizarModulo(leido.valor);
+    if (!normalizado.ok) return invalido(normalizado.fallas);
+
+    return respuestaDeModulos(
+      await servicio.editarModulo(
+        tenantId,
+        cotizacionId,
+        moduloId,
+        normalizado.datos,
+      ),
+      200,
+    );
+  }
+
+  const leido = await leerCuerpo(request);
+  if (!leido.ok) return leido.respuesta;
+
+  if (metodo === "PUT") {
+    const normalizado = normalizarOrdenDeModulos(leido.valor);
+    if (!normalizado.ok) return invalido(normalizado.fallas);
+
+    return respuestaDeModulos(
+      await servicio.reordenarModulos(
+        tenantId,
+        cotizacionId,
+        normalizado.orden,
+      ),
+      200,
+    );
+  }
+
+  const normalizado = normalizarModulo(leido.valor);
+  if (!normalizado.ok) return invalido(normalizado.fallas);
+
+  return respuestaDeModulos(
+    await servicio.agregarModulo(tenantId, cotizacionId, normalizado.datos),
+    201,
+  );
 }
 
 /**
@@ -197,9 +363,28 @@ export async function rutasDeCotizaciones(
     );
   }
 
-  // Tres segmentos y no más: la bitácora es el cuarto y la atiende su propio
-  // módulo, que corre antes. Todo lo demás —módulos, líneas, emitir— todavía
+  // Cuatro segmentos con `modulos` al final es la colección; cinco es un
+  // módulo concreto. La bitácora es el otro cuarto segmento y la atiende su
+  // propio módulo, que corre antes. Todo lo demás —líneas, emitir— todavía
   // no existe y tiene que caer en el 404 general y no acá.
+  const esDeModulos = segmentos[3] === "modulos";
+  const coleccionDeModulos = segmentos.length === 4 && esDeModulos;
+  const unModulo = segmentos.length === 5 && esDeModulos;
+
+  if (coleccionDeModulos || unModulo) {
+    const cotizacionId = decodificar(segmentos[2]);
+    if (cotizacionId === null) return noEncontrado();
+
+    return rutasDeModulos(
+      request,
+      segmentos,
+      tenantId,
+      cotizacionId,
+      servicio,
+      unModulo,
+    );
+  }
+
   if (segmentos.length !== 3) return null;
 
   const id = decodificar(segmentos[2]);
