@@ -102,20 +102,51 @@ function anioDeLaSiembra(): string {
   return new Date().toISOString().slice(0, 4);
 }
 
+const UN_DIA = 24 * 60 * 60 * 1000;
+const CORRIMIENTO_DE_PANAMA = 5 * 60 * 60 * 1000;
+
 /**
- * Ayer **en Panamá**, que es el huso del bufete y el que usa el servidor.
+ * Un día relativo a hoy **en Panamá**, como `AAAA-MM-DD`.
  *
- * Los cinco de corrimiento son literales y no se importan de
- * `worker/cotizaciones/dominio.ts` a propósito: una prueba que calcula su
- * expectativa con la misma función que está probando pasa aunque las dos
- * estén mal. Lo único que esta cuenta necesita garantizar es que el día
- * resultante sea **estrictamente anterior** al de hoy en Panamá, y restar un
- * día entero lo garantiza con cualquier reloj.
+ * **Todo vencimiento que pase por la ruta real sale de acá y nunca de un
+ * literal.** Un `"2027-01-15"` escrito a mano es una bomba de tiempo: el 16
+ * de enero de 2027 la prueba empieza a fallar con un 422 sin que nadie haya
+ * roto nada, y falla cuando ya nadie se acuerda de por qué. Es el mismo
+ * defecto que la dependencia del reloj que estas pruebas ya corrigieron, con
+ * el signo cambiado — y peor, porque una prueba frágil falla hoy y una bomba
+ * falla sola dentro de dos años.
+ *
+ * Los cinco de corrimiento son literales y **no** se importan de
+ * `worker/db/momentos.ts` a propósito: una prueba que calcula su expectativa
+ * con la misma función que está probando pasa aunque las dos estén mal.
+ *
+ * El desfase entre esta lectura del reloj y la del servidor no abre ninguna
+ * carrera, porque ningún llamador pide un día pegado al borde: el más
+ * cercano está a un día entero de distancia, y el borde exacto —«hoy no es
+ * pasado»— vive en las pruebas unitarias, con el día fijo.
  */
+function enDias(cuantos: number): string {
+  return new Date(Date.now() - CORRIMIENTO_DE_PANAMA + cuantos * UN_DIA)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** Ayer en Panamá: estrictamente anterior a hoy con cualquier reloj. */
 function ayer(): string {
-  const PANAMA = 5 * 60 * 60 * 1000;
-  const UN_DIA = 24 * 60 * 60 * 1000;
-  return new Date(Date.now() - PANAMA - UN_DIA).toISOString().slice(0, 10);
+  return enDias(-1);
+}
+
+/**
+ * El día siguiente a uno dado, como `AAAA-MM-DD`.
+ *
+ * Aritmética de calendario a secas, sin huso: existe para poder afirmar el
+ * momento guardado —que cae en el día **siguiente** de UTC— sin usar
+ * `finDelDiaEnPanama`, que es justamente la función bajo prueba.
+ */
+function diaSiguienteDe(dia: string): string {
+  return new Date(new Date(`${dia}T00:00:00.000Z`).getTime() + UN_DIA)
+    .toISOString()
+    .slice(0, 10);
 }
 
 /**
@@ -380,6 +411,8 @@ describe("el alta rechaza lo que no es una cotización", () => {
     const respuesta = await comoAutor(
       conCuerpo("/api/cotizaciones", "POST", {
         clienteId,
+        // Literal a propósito, y no caduca: lo rechaza la **forma** —el
+        // cable lleva días— mucho antes de que nadie mire el calendario.
         venceEn: "2027-01-15T00:00:00.000Z",
       }),
     );
@@ -414,9 +447,10 @@ describe("el alta rechaza lo que no es una cotización", () => {
     // el reloj de la suite y el del servidor caigan en el mismo día, y una
     // corrida que cruce la medianoche fallaría sin que nadie haya roto nada.
     // Vive en las pruebas unitarias del dominio, con un día fijo.
-    const creada = await crear({ clienteId, venceEn: "2027-06-30" });
+    const futuro = enDias(200);
+    const creada = await crear({ clienteId, venceEn: futuro });
 
-    expect((await releer(creada.id)).venceEn).toBe("2027-06-30");
+    expect((await releer(creada.id)).venceEn).toBe(futuro);
   });
 
   it("rechaza un vencimiento que no es texto", async () => {
@@ -539,9 +573,10 @@ describe("el alta de un borrador", () => {
   });
 
   it("guarda el vencimiento como el día que llegó", async () => {
-    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
+    const dia = enDias(90);
+    const creada = await crear({ clienteId, venceEn: dia });
 
-    expect((await releer(creada.id)).venceEn).toBe("2027-01-15");
+    expect((await releer(creada.id)).venceEn).toBe(dia);
   });
 
   it("guarda el vencimiento al final del día **de Panamá**", async () => {
@@ -555,9 +590,13 @@ describe("el alta de un borrador", () => {
     // del día UTC, un vencimiento «de hoy» se moriría a las 18:59 hora local,
     // con la oficina todavía abierta.
     //
-    // La fecha va fija y no calculada del reloj: así la prueba no cambia de
-    // significado según a qué hora corra la suite.
-    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
+    // El día sale del reloj y no de un literal —un literal futuro caduca—,
+    // y la expectativa se arma con `diaSiguienteDe`, que es aritmética de
+    // calendario sin huso. El **valor exacto** de la conversión lo fija la
+    // prueba unitaria de `finDelDiaEnPanama`, que es pura y no caduca; acá
+    // lo que se comprueba es que la ruta real use esa conversión y no otra.
+    const dia = enDias(90);
+    const creada = await crear({ clienteId, venceEn: dia });
 
     const fila = await env.DB.prepare(
       "SELECT vence_en FROM cotizacion WHERE id = ?",
@@ -565,7 +604,7 @@ describe("el alta de un borrador", () => {
       .bind(creada.id)
       .first<{ vence_en: string }>();
 
-    expect(fila?.vence_en).toBe("2027-01-16T04:59:59.999Z");
+    expect(fila?.vence_en).toBe(`${diaSiguienteDe(dia)}T04:59:59.999Z`);
   });
 
   it("el día vuelve a ser el mismo al releerlo", async () => {
@@ -575,16 +614,14 @@ describe("el alta de un borrador", () => {
     // UTC con un `slice(0, 10)`, el detalle muestra **el día siguiente** al
     // que la persona eligió. Las dos conversiones tienen que ser la misma
     // función dada vuelta, y esto es lo que lo exige.
-    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
+    const dia = enDias(90);
+    const creada = await crear({ clienteId, venceEn: dia });
 
-    expect(creada.venceEn, "lo que contesta el alta").toBe("2027-01-15");
+    expect(creada.venceEn, "lo que contesta el alta").toBe(dia);
     expect((await releer(creada.id)).venceEn, "lo que contesta el detalle").toBe(
-      "2027-01-15",
+      dia,
     );
-    expect(
-      (await listar())[0].venceEn,
-      "lo que contesta el listado",
-    ).toBe("2027-01-15");
+    expect((await listar())[0].venceEn, "lo que contesta el listado").toBe(dia);
   });
 });
 
@@ -703,12 +740,13 @@ describe("el listado y el detalle", () => {
 
 describe("la edición de un borrador", () => {
   it("cambia el cliente y el vencimiento, y se relee", async () => {
-    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
+    const creada = await crear({ clienteId, venceEn: enDias(90) });
+    const otroDia = enDias(120);
 
     const respuesta = await comoAutor(
       conCuerpo(`/api/cotizaciones/${creada.id}`, "PUT", {
         clienteId: otroClienteId,
-        venceEn: "2027-03-01",
+        venceEn: otroDia,
       }),
     );
 
@@ -717,11 +755,11 @@ describe("la edición de un borrador", () => {
     const guardada = await releer(creada.id);
     expect(guardada.clienteId).toBe(otroClienteId);
     expect(guardada.clienteNombre).toBe("Zafiro S.A.");
-    expect(guardada.venceEn).toBe("2027-03-01");
+    expect(guardada.venceEn).toBe(otroDia);
   });
 
   it("vacía el vencimiento cuando llega nulo", async () => {
-    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
+    const creada = await crear({ clienteId, venceEn: enDias(90) });
 
     const respuesta = await comoAutor(
       conCuerpo(`/api/cotizaciones/${creada.id}`, "PUT", {
@@ -885,16 +923,17 @@ describe("el vencimiento vencido de un borrador viejo", () => {
 
   it("deja corregirlo a un día futuro", async () => {
     const id = await borradorVencido();
+    const futuro = enDias(365);
 
     const respuesta = await comoAutor(
       conCuerpo(`/api/cotizaciones/${id}`, "PUT", {
         clienteId,
-        venceEn: "2099-12-31",
+        venceEn: futuro,
       }),
     );
 
     expect(respuesta.status).toBe(200);
-    expect((await releer(id)).venceEn).toBe("2099-12-31");
+    expect((await releer(id)).venceEn).toBe(futuro);
   });
 });
 
@@ -913,7 +952,7 @@ describe("una cotización que ya no es borrador", () => {
   }
 
   it("contesta 409 con el estado que tiene, y no 500", async () => {
-    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
+    const creada = await crear({ clienteId, venceEn: enDias(90) });
     await emitir(creada.id);
 
     const respuesta = await comoAutor(
@@ -934,19 +973,20 @@ describe("una cotización que ya no es borrador", () => {
   });
 
   it("el 409 no deja escrito nada", async () => {
-    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
+    const dia = enDias(90);
+    const creada = await crear({ clienteId, venceEn: dia });
     await emitir(creada.id);
 
     await comoAutor(
       conCuerpo(`/api/cotizaciones/${creada.id}`, "PUT", {
         clienteId: otroClienteId,
-        venceEn: "2028-12-31",
+        venceEn: enDias(400),
       }),
     );
 
     const guardada = await releer(creada.id);
     expect(guardada.clienteId).toBe(clienteId);
-    expect(guardada.venceEn).toBe("2027-01-15");
+    expect(guardada.venceEn).toBe(dia);
   });
 
   it("el rechazo es anterior a la validación del cuerpo", async () => {
@@ -983,7 +1023,8 @@ describe("una cotización que ya no es borrador", () => {
     // cotización justo antes de delegar en la real, que es exactamente el
     // instante de la ventana. Sin un `WHERE` que lleve la guarda, el
     // `UPDATE` pisa la emitida y esta prueba lo ve.
-    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
+    const dia = enDias(90);
+    const creada = await crear({ clienteId, venceEn: dia });
     const real = baseSobreD1(env.DB, TENANT_UNICO_ID, autorId);
 
     const conCarrera: BaseDeDatos = {
@@ -1003,7 +1044,7 @@ describe("una cotización que ya no es borrador", () => {
     const resultado = await cotizacionesSobreD1(conCarrera).actualizar(
       TENANT_UNICO_ID,
       creada.id,
-      { clienteId: otroClienteId, venceEn: "2027-06-30" },
+      { clienteId: otroClienteId, venceEn: enDias(200) },
     );
 
     // El 409 dice el estado **releído**, no el que se había leído antes de
@@ -1013,7 +1054,33 @@ describe("una cotización que ya no es borrador", () => {
 
     const guardada = await releer(creada.id);
     expect(guardada.clienteId, "no se pisó el cliente").toBe(clienteId);
-    expect(guardada.venceEn, "no se pisó el vencimiento").toBe("2027-01-15");
+    expect(guardada.venceEn, "no se pisó el vencimiento").toBe(dia);
+
+    // **El costo de la carrera perdida, fijado en una aserción.**
+    //
+    // La entrada de bitácora viaja en el mismo `batch` que el `UPDATE` —así
+    // lo exige `mutar`, y es lo que hace que no se pueda escribir sin
+    // registrar—, así que acá queda un «editó» de una edición que no
+    // ocurrió. `worker/cotizaciones/repositorio.ts` lo documenta y lo
+    // acepta: es un hecho de más en el registro contra un documento emitido
+    // corrompido en silencio, y de los dos males es claramente el menor.
+    //
+    // Se afirma en vez de solo describirse porque un comentario que fija un
+    // comportamiento que ninguna prueba mira es exactamente la distancia
+    // entre «no se puede escribir la prueba» y «la regla es correcta» que
+    // `migrations/0004_cotizaciones.sql` nombra — y acá sí se puede
+    // escribir. Son **dos** entradas, medido: el alta y la edición
+    // fantasma. El día que `mutar` admita un registro condicional, esta
+    // aserción es la que avisa que el costo desapareció y que el comentario
+    // de allá quedó viejo.
+    const { results } = await env.DB.prepare(
+      "SELECT accion FROM bitacora WHERE entidad = 'cotizacion'" +
+        " AND entidad_id = ? ORDER BY ocurrido_en, rowid",
+    )
+      .bind(creada.id)
+      .all<{ accion: string }>();
+
+    expect(results.map((fila) => fila.accion)).toEqual(["creado", "editado"]);
   });
 
   it("el puerto se niega igual, sin pasar por la ruta", async () => {
