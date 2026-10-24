@@ -30,7 +30,6 @@ import { Rejilla } from "../../layout/Rejilla";
 import { navegarA } from "../../navegacion";
 import { enlaceDe } from "../../ruteo";
 import { hoyEnPanama } from "../../../worker/db/momentos";
-import { ORDEN_ES } from "../../formatos";
 import { cargarClientes } from "../clientes/api";
 import {
   actualizarCotizacion,
@@ -41,11 +40,14 @@ import {
 import {
   BORRADOR_DE_COTIZACION_VACIO,
   aPeticion,
+  avisoDelDesplegable,
   borradorDesde,
+  clientesSeleccionables,
   mensajeDeFalla,
   minimoDeVencimiento,
   validarBorrador,
   type BorradorDeCotizacion,
+  type ClienteDeLaCotizacion,
 } from "./formulario";
 import { avisoDeNoEsBorrador } from "./presentacion";
 
@@ -83,6 +85,15 @@ export function FormularioDeCotizacion({ cotizacionId }: Props) {
    * exactamente cuando hace falta.
    */
   const [venceEnActual, setVenceEnActual] = useState<string | null>(null);
+  /**
+   * El cliente que la cotización ya tiene, guardado aparte por la misma
+   * razón que el vencimiento: es lo que el desplegable tiene que poder
+   * ofrecer aunque la lista no lo traiga. Sacarlo del borrador no serviría
+   * —ahí vive el id elegido, que cambia— y sacarlo de la lista es
+   * justamente lo que no se puede dar por sentado.
+   */
+  const [clienteActual, setClienteActual] =
+    useState<ClienteDeLaCotizacion | null>(null);
 
   useEffect(() => {
     const control = new AbortController();
@@ -105,6 +116,7 @@ export function FormularioDeCotizacion({ cotizacionId }: Props) {
       if (cotizacionId === undefined) {
         setBorrador(BORRADOR_DE_COTIZACION_VACIO);
         setVenceEnActual(null);
+        setClienteActual(null);
         setCarga({ fase: "listo" });
         return;
       }
@@ -125,6 +137,10 @@ export function FormularioDeCotizacion({ cotizacionId }: Props) {
 
       setBorrador(borradorDesde(cotizacion.valor));
       setVenceEnActual(cotizacion.valor.venceEn);
+      setClienteActual({
+        id: cotizacion.valor.clienteId,
+        nombre: cotizacion.valor.clienteNombre,
+      });
       setCarga({ fase: "listo" });
     }
 
@@ -191,8 +207,10 @@ export function FormularioDeCotizacion({ cotizacionId }: Props) {
     );
   }
 
-  const ordenados = [...clientes].sort((a, b) =>
-    ORDEN_ES.compare(a.nombre, b.nombre),
+  const seleccionables = clientesSeleccionables(clientes, clienteActual);
+  const avisoDeLaLista = avisoDelDesplegable(
+    avisoDeClientes,
+    clienteActual !== null,
   );
   const destinoAlCancelar =
     cotizacionId === undefined
@@ -246,16 +264,18 @@ export function FormularioDeCotizacion({ cotizacionId }: Props) {
                 }}
               >
                 <option value="">Elegir cliente…</option>
-                {ordenados.map((cliente) => (
-                  <option key={cliente.id} value={cliente.id}>
-                    {cliente.nombre}
+                {seleccionables.map((opcion) => (
+                  <option key={opcion.id} value={opcion.id}>
+                    {opcion.nombre}
                   </option>
                 ))}
               </select>
-              {ordenados.length === 0 && (
+              {avisoDeLaLista !== null && (
+                <p className="campo__ayuda">{avisoDeLaLista}</p>
+              )}
+              {avisoDeLaLista === null && seleccionables.length === 0 && (
                 <p className="campo__ayuda">
-                  {avisoDeClientes ??
-                    "Todavía no hay ningún cliente. Para cotizar hace falta uno."}
+                  Todavía no hay ningún cliente. Para cotizar hace falta uno.
                 </p>
               )}
             </div>

@@ -60,12 +60,15 @@ function hoyDeLaPrueba(): string {
     .slice(0, 10);
 }
 
+/** El nombre del cliente que la cotización de prueba ya tiene. */
+const NOMBRE_DEL_CLIENTE = "Carlos Pérez Domínguez";
+
 const CLIENTES = [
   {
     id: CLIENTE_ID,
     tipoClienteId: null,
     tipoClienteNombre: null,
-    nombre: "Carlos Pérez Domínguez",
+    nombre: NOMBRE_DEL_CLIENTE,
     documentoTipo: "Cédula",
     documentoNumero: "8-888-8888",
     representanteLegal: null,
@@ -216,17 +219,26 @@ test.describe("las cotizaciones del bufete", () => {
     // El estado se muestra. Lo que no hay es con qué cambiarlo.
     await expect(page.getByText("Emitida").first()).toBeVisible();
 
-    const filas = await page.locator("table tbody tr").count();
-    expect(filas, "la tabla tiene que traer las tres filas").toBe(3);
+    // `toHaveCount` y no `.count()`: el segundo es una foto del instante y
+    // no reintenta, así que mide lo que haya montado React hasta ahí.
+    await expect(
+      page.locator("table tbody tr"),
+      "la tabla tiene que traer las tres filas",
+    ).toHaveCount(3);
   });
 
   test("la más nueva va primero", async ({ page }) => {
     await conCotizacionesCargadas(page);
     await page.goto("/cotizaciones");
 
-    const codigos = await page
-      .locator("table tbody th[scope='row']")
-      .allInnerTexts();
+    // La espera va primero y no es adorno: `allInnerTexts` no reintenta, así
+    // que leer apenas vuelve el `goto` devuelve lo que React alcanzó a
+    // montar —a veces nada, a veces media tabla— y la falla se lee como un
+    // orden equivocado cuando en realidad es una lectura temprana.
+    const filas = page.locator("table tbody th[scope='row']");
+    await expect(filas).toHaveCount(3);
+
+    const codigos = await filas.allInnerTexts();
 
     // El borrador de 2024 llega primero en la respuesta y tiene que quedar
     // último: el orden lo pone la pantalla, no el arreglo que llegó.
@@ -367,6 +379,71 @@ test.describe("las cotizaciones del bufete", () => {
     // dependientes. Sin la entrada propia, acá se leería «no se pudo
     // borrar», que es un borrado que nadie pidió.
     await expect(alerta).not.toContainText("borrar");
+  });
+
+  test("si la lista de clientes no carga, el control muestra el cliente que se va a guardar", async ({
+    page,
+  }) => {
+    /*
+     * El defecto medido antes de arreglarlo: el `<select>` controlado con un
+     * valor que no corresponde a ninguna opción cae en la primera y dibuja
+     * «Elegir cliente…», mientras el `PUT` sale con el `clienteId` original.
+     * La persona lee «no hay ninguno elegido» sobre una cotización que sí
+     * tiene cliente — y si elige otro creyendo que confirma, lo cambia.
+     *
+     * Lo que esta prueba fija es la coincidencia entre las dos puntas: lo
+     * que el control dice y lo que el cuerpo lleva.
+     */
+    await conCotizacionesCargadas(page);
+
+    await page.route(
+      (url) => url.pathname === "/api/clientes",
+      async (ruta) => {
+        await ruta.fulfill({
+          status: 403,
+          json: { error: "acceso_denegado", motivo: "sin_token" },
+        });
+      },
+    );
+
+    let enviado: string | null = null;
+    await page.route(
+      (url) => url.pathname === `/api/cotizaciones/${BORRADOR_ID}`,
+      async (ruta) => {
+        if (ruta.request().method() !== "PUT") {
+          await ruta.fallback();
+          return;
+        }
+        enviado = ruta.request().postData();
+        await ruta.fulfill({ status: 200, json: { cotizacion: BORRADOR } });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}/editar`);
+
+    const cliente = page.locator("#campo-clienteId");
+    await expect(cliente).toBeVisible();
+
+    // Lo que se lee en el control, que es la opción seleccionada y no el
+    // `value`: el defecto consistía justamente en que las dos cosas se
+    // separaran.
+    const visible = await cliente.evaluate((nodo) => {
+      const control = nodo as HTMLSelectElement;
+      return control.selectedIndex < 0
+        ? "(ninguna)"
+        : control.options[control.selectedIndex].text;
+    });
+    expect(visible).toBe(NOMBRE_DEL_CLIENTE);
+
+    // Y que la lista no cargó se dice, en vez de dejar un desplegable de un
+    // solo cliente que parece el catálogo entero.
+    await expect(page.getByText("la cotización ya tenía")).toBeVisible();
+
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect.poll(() => enviado).not.toBeNull();
+    expect(JSON.parse(enviado ?? "{}")).toMatchObject({
+      clienteId: CLIENTE_ID,
+    });
   });
 
   test("el alta sin cliente avisa antes de mandar nada", async ({ page }) => {

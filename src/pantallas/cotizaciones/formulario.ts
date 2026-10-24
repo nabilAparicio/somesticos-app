@@ -24,12 +24,14 @@
  */
 
 import type {
+  Cliente,
   Cotizacion,
   DatosDeCotizacion,
   FallaDeValidacion,
   MotivoDeFalla,
 } from "../../../worker/contract";
 import { hoyEnPanama } from "../../../worker/db/momentos";
+import { ORDEN_ES } from "../../formatos";
 
 export interface BorradorDeCotizacion {
   clienteId: string;
@@ -182,6 +184,111 @@ export function validarBorrador(
   }
 
   return fallas;
+}
+
+/* ==========================================================================
+   El desplegable de clientes
+
+   **El defecto que esta sección existe para impedir, medido.** Al editar un
+   borrador, el `clienteId` del formulario sale de la cotización guardada. Si
+   la lista de clientes no trae a ese cliente, el `<select>` controlado
+   queda con un valor que no corresponde a ninguna opción, y el navegador
+   cae en la primera: dibuja **«Elegir cliente…»**. El estado de React, en
+   cambio, sigue teniendo el identificador original, así que la validación
+   previa pasa y el `PUT` sale con ese cliente. Se midió contra el navegador,
+   con la lista fallando en 403 y con una lista que no lo contenía: en los
+   dos casos el control decía «Elegir cliente…» y el cuerpo enviado llevaba
+   `clienteId` original.
+
+   Que el envío conserve el cliente **no es** lo que está mal: reenviar el
+   que ya estaba es justo lo que un `PUT` tiene que hacer cuando nadie lo
+   tocó. Lo que está mal es que el control diga que no hay ninguno elegido
+   mientras sí lo hay — y peor, que quien lee «Elegir cliente…» pueda elegir
+   otro creyendo que confirma, y ahí sí cambiar el cliente sin querer.
+
+   La salida es la misma que tomó `tiposSeleccionables` en T-5 con el tipo
+   de cliente dado de baja: **lo que la ficha ya tiene se ofrece siempre**,
+   esté o no en el catálogo del momento. Así el control muestra la verdad en
+   vez de inventar un «no elegido» que no es cierto.
+   ========================================================================== */
+
+/** Una opción del desplegable: lo único que el control necesita. */
+export interface OpcionDeCliente {
+  readonly id: string;
+  readonly nombre: string;
+}
+
+/** El cliente que la cotización ya tiene. `null` en el alta. */
+export interface ClienteDeLaCotizacion {
+  readonly id: string;
+  readonly nombre: string | null;
+}
+
+/**
+ * Cómo se nombra al cliente que la cotización tiene y no se pudo nombrar.
+ *
+ * `clienteNombre` llega nulo solo si la fila cruzara la frontera del bufete,
+ * que es lo que I-8 impide. Aun así el tipo lo admite, y la opción necesita
+ * un texto: poner el identificador crudo sería una fila de UUID en un
+ * desplegable, y dejarlo vacío sería la misma mentira que esta sección
+ * arregla. Es el mismo recurso que `AUTOR_SIN_NOMBRE` en `src/bitacora.ts`:
+ * decir el hueco en vez de taparlo.
+ */
+const CLIENTE_SIN_NOMBRE = "El cliente que la cotización ya tenía";
+
+/**
+ * Las opciones del desplegable, ordenadas por nombre.
+ *
+ * **El cliente que la cotización ya tiene va siempre**, aunque la lista no
+ * lo traiga. Sin esa excepción el control dice «Elegir cliente…» sobre una
+ * cotización que sí tiene cliente; el porqué entero está arriba.
+ *
+ * El orden se arma acá y no en el componente para que sea afirmable sin
+ * montar un navegador, que es la regla del proyecto para todo lo que no sea
+ * dibujo.
+ */
+export function clientesSeleccionables(
+  clientes: readonly Cliente[],
+  actual: ClienteDeLaCotizacion | null,
+): OpcionDeCliente[] {
+  const opciones: OpcionDeCliente[] = clientes.map((cliente) => ({
+    id: cliente.id,
+    nombre: cliente.nombre,
+  }));
+
+  if (actual !== null && !opciones.some((opcion) => opcion.id === actual.id)) {
+    opciones.push({
+      id: actual.id,
+      nombre: actual.nombre ?? CLIENTE_SIN_NOMBRE,
+    });
+  }
+
+  return opciones.sort((a, b) => ORDEN_ES.compare(a.nombre, b.nombre));
+}
+
+/**
+ * El pie del desplegable cuando la lista de clientes no se pudo traer.
+ *
+ * Se muestra **siempre que haya problema**, y no solo cuando el desplegable
+ * quedó vacío. Es la trampa que trae el arreglo de arriba: con el cliente de
+ * la cotización inyectado, el desplegable ya no está vacío, así que un aviso
+ * condicionado a «no hay opciones» desaparecería justo en el caso en que
+ * hace falta — la lista falló y lo único ofrecible es el cliente que ya
+ * estaba.
+ *
+ * Y cuando hay un cliente actual, la frase lo dice: sin esa media línea, un
+ * desplegable con una sola opción parece un catálogo de un solo cliente.
+ */
+export function avisoDelDesplegable(
+  problemaDeClientes: string | null,
+  hayClienteActual: boolean,
+): string | null {
+  if (problemaDeClientes === null) return null;
+
+  return hayClienteActual
+    ? `${problemaDeClientes} Mientras tanto, lo único que se puede elegir es` +
+        " el cliente que la cotización ya tenía."
+    : problemaDeClientes;
 }
 
 /**

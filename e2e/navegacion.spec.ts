@@ -138,13 +138,29 @@ function raizDe(ruta: Ruta): string {
  * la misma clase `.navegacion__item` y no es una sección. Y se piden solo
  * los `<a>` porque las entradas sin pantalla propia se dibujan como `<span>`
  * sin `href`, que es exactamente la distinción que esta prueba mide.
+ *
+ * **La espera no es higiene: sin ella esta prueba miente.** `evaluateAll` no
+ * reintenta — devuelve las anclas que existan en ese instante—, y el armazón
+ * lo monta React después del `goto`. Sin esperar, un montaje lento da un
+ * arreglo vacío y las tres pruebas fallan diciendo «la prueba está rota»
+ * con el menú perfecto. O sea: el control de hostilidad que existe para
+ * separar «falta un `href`» de «el selector no encuentra nada» se
+ * convertiría en el que confunde, porque habría una tercera causa que no es
+ * ninguna de las dos. Se espera a que exista la primera ancla y recién ahí
+ * se lee.
  */
 async function menuDibujado(page: Page): Promise<string[]> {
-  return page
-    .locator(".navegacion__lista a.navegacion__item")
-    .evaluateAll((nodos) =>
-      nodos.map((nodo) => (nodo as HTMLAnchorElement).getAttribute("href") ?? ""),
-    );
+  const anclas = page.locator(".navegacion__lista a.navegacion__item");
+
+  await expect(
+    anclas.first(),
+    "el menú no llegó a dibujarse: `.navegacion__lista a.navegacion__item`" +
+      " no apareció nunca",
+  ).toBeAttached();
+
+  return anclas.evaluateAll((nodos) =>
+    nodos.map((nodo) => (nodo as HTMLAnchorElement).getAttribute("href") ?? ""),
+  );
 }
 
 test.describe("la navegación del armazón", () => {

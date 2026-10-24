@@ -30,12 +30,14 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { Cotizacion } from "../worker/contract";
+import type { Cliente, Cotizacion } from "../worker/contract";
 import { textoDeProblema } from "../src/api/peticiones";
 import {
   BORRADOR_DE_COTIZACION_VACIO,
   aPeticion,
+  avisoDelDesplegable,
   borradorDesde,
+  clientesSeleccionables,
   minimoDeVencimiento,
   validarBorrador,
   type BorradorDeCotizacion,
@@ -550,10 +552,17 @@ describe("textoDeProblema, sobre `cotizacion_no_es_borrador`", () => {
   } as const;
 
   it("tiene su propia frase y no cae en el texto de reserva", () => {
-    // El texto de reserva habla de un borrado con dependientes. Ante este
-    // 409 diría «no se pudo borrar», que es un borrado que nadie pidió.
     const texto = textoDeProblema(CONFLICTO, "esa cotización");
 
+    // Afirmar **algo del texto nuevo**, y no solo la ausencia de «borrar».
+    // Un `not.toContain` a secas lo pasa cualquier texto de reserva que no
+    // use esa palabra, así que no demuestra que la entrada de `CONFLICTOS`
+    // se esté usando: solo que la de reserva cambió de redacción.
+    expect(texto).toContain("ya no es un borrador");
+    expect(texto).toContain("el registro de lo que se mandó");
+
+    // Y el texto de reserva habla de un borrado con dependientes: ante este
+    // 409 diría «no se pudo borrar», que es un borrado que nadie pidió.
     expect(texto.toLowerCase()).not.toContain("borrar");
   });
 
@@ -561,6 +570,128 @@ describe("textoDeProblema, sobre `cotizacion_no_es_borrador`", () => {
     // Sin eso, la única salida visible es reintentar lo mismo.
     expect(textoDeProblema(CONFLICTO, "esa cotización")).toContain(
       "volver a cargar",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// El desplegable de clientes
+//
+// El defecto que estas pruebas fijan, medido contra el navegador antes de
+// arreglarlo: al editar un borrador cuyo cliente no estaba en la lista, el
+// `<select>` controlado caía en la primera opción y dibujaba «Elegir
+// cliente…» mientras el `PUT` salía con el `clienteId` original. Dos casos
+// medidos, los dos con el mismo síntoma: la lista fallando en 403, y una
+// lista que cargaba sin ese cliente.
+// ---------------------------------------------------------------------------
+
+function cliente(id: string, nombre: string): Cliente {
+  return {
+    id,
+    nombre,
+    tipoClienteId: null,
+    tipoClienteNombre: null,
+    documentoTipo: null,
+    documentoNumero: null,
+    representanteLegal: null,
+    email: null,
+    telefono: "+507 6000-0000",
+    notas: null,
+    creadoPor: "7335d417-61da-459d-899c-0a01c76a2f94",
+    creadoPorNombre: "Itzel",
+    creadoEn: "2026-10-22T14:03:00.000Z",
+  };
+}
+
+const OTRO_CLIENTE_ID = "4a3f1d0e-0e2c-4c1f-9a6b-2d8a1c5e7b99";
+
+describe("clientesSeleccionables", () => {
+  const ACTUAL = { id: CLIENTE_ID, nombre: "Carlos Pérez" };
+
+  it("el primer caso medido: la lista no cargó y el cliente de la cotización se ofrece igual", () => {
+    // Sin esto el desplegable queda con la sola opción vacía, dibuja
+    // «Elegir cliente…» y el envío lleva el cliente original: el control
+    // diciendo una cosa y el cuerpo llevando otra.
+    expect(clientesSeleccionables([], ACTUAL)).toEqual([
+      { id: CLIENTE_ID, nombre: "Carlos Pérez" },
+    ]);
+  });
+
+  it("el segundo caso medido: la lista cargó sin ese cliente y se agrega", () => {
+    const opciones = clientesSeleccionables(
+      [cliente(OTRO_CLIENTE_ID, "Inmobiliaria del Istmo")],
+      ACTUAL,
+    );
+
+    expect(opciones.map((opcion) => opcion.id)).toContain(CLIENTE_ID);
+    expect(opciones).toHaveLength(2);
+  });
+
+  it("no lo duplica cuando la lista ya lo trae", () => {
+    const opciones = clientesSeleccionables(
+      [cliente(CLIENTE_ID, "Carlos Pérez"), cliente(OTRO_CLIENTE_ID, "Istmo")],
+      ACTUAL,
+    );
+
+    expect(opciones.filter((opcion) => opcion.id === CLIENTE_ID)).toHaveLength(1);
+  });
+
+  it("en el alta no agrega nada: no hay cliente previo que conservar", () => {
+    expect(clientesSeleccionables([cliente(OTRO_CLIENTE_ID, "Istmo")], null)).toEqual([
+      { id: OTRO_CLIENTE_ID, nombre: "Istmo" },
+    ]);
+  });
+
+  it("dice el hueco cuando el cliente guardado no se pudo nombrar", () => {
+    // Un identificador crudo en un desplegable no le habla a nadie, y una
+    // opción con texto vacío es la misma mentira de antes con otra cara.
+    const [opcion] = clientesSeleccionables([], { id: CLIENTE_ID, nombre: null });
+
+    expect(opcion.nombre).not.toBe("");
+    expect(opcion.nombre).not.toBe(CLIENTE_ID);
+    expect(opcion.nombre).toContain("cotización ya tenía");
+  });
+
+  it("ordena por nombre con las reglas del español", () => {
+    const opciones = clientesSeleccionables(
+      [cliente("b", "ávila"), cliente("a", "Álvarez"), cliente("c", "Zamora")],
+      null,
+    );
+
+    expect(opciones.map((opcion) => opcion.nombre)).toEqual([
+      "Álvarez",
+      "ávila",
+      "Zamora",
+    ]);
+  });
+
+  it("no toca el arreglo que recibe, que puede ser estado de React", () => {
+    const original = [cliente("z", "Zamora"), cliente("a", "Álvarez")];
+
+    clientesSeleccionables(original, ACTUAL);
+
+    expect(original.map((uno) => uno.id)).toEqual(["z", "a"]);
+  });
+});
+
+describe("avisoDelDesplegable", () => {
+  it("sin problema no dice nada", () => {
+    expect(avisoDelDesplegable(null, true)).toBeNull();
+  });
+
+  it("con la lista caída y un cliente ya elegido, explica qué queda elegible", () => {
+    // Es la trampa del arreglo: con el cliente de la cotización inyectado,
+    // el desplegable deja de estar vacío, así que un aviso condicionado a
+    // «no hay opciones» se apagaría justo cuando hace falta.
+    const aviso = avisoDelDesplegable("No se pudo consultar: red.", true) ?? "";
+
+    expect(aviso).toContain("No se pudo consultar: red.");
+    expect(aviso).toContain("el cliente que la cotización ya tenía");
+  });
+
+  it("en el alta no promete un cliente previo que no existe", () => {
+    expect(avisoDelDesplegable("No se pudo consultar: red.", false)).toBe(
+      "No se pudo consultar: red.",
     );
   });
 });
