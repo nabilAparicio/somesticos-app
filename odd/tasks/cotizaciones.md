@@ -151,6 +151,19 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
 - [ ] **T-5 · Ganada, perdida, duplicada.** El resto del ciclo. Duplicar nace un borrador atado
       por `duplicada_de_id`; **la historia no se reescribe**. *Forecast ~300.*
 
+      **Hereda de T-1 un agujero que T-1 no cerró a propósito: la cadena de duplicación admite
+      ciclos.** La llave foránea de `duplicada_de_id` no impide que una cotización se declare
+      duplicada de sí misma, ni que dos se apunten entre sí. Medido en una sonda `sqlite3`, no
+      razonado: `INSERT … id='a', duplicada_de_id='a'` **entra** —SQLite valida la clave foránea
+      después de insertar la fila, que es justamente lo que hace posible el patrón
+      autorreferencial—, y `a → b → a` por dos `UPDATE` también **entra**.
+
+      No es un agujero de tenencia ni de dinero: es de recorrido. Cualquier pantalla que suba por
+      la cadena buscando el original —y T-5 va a tener una— gira para siempre. **La decisión de
+      cómo cerrarlo es de T-5**, porque depende de si la cadena se recorre entera o un solo salto:
+      un `CHECK (duplicada_de_id IS NOT id)` tapa el caso de uno, pero no el ciclo de dos, que
+      necesita un disparador o un tope de profundidad en el recorrido.
+
 - [ ] **T-6 · La salida imprimible.** HTML que se imprime desde el navegador, con hoja de
       impresión propia. Sin librería de PDF. DOCX queda para cuando alguien lo pida de verdad.
       *Forecast ~350.*
@@ -237,7 +250,7 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
 
 | Tarea | Commit | Checks observados | Revisión |
 |---|---|---|---|
-| T-1 · El esquema de la cotización | — | `typecheck` 0, `test` 0 (959), `lint` 0, `build` 0 | pendiente |
+| T-1 · El esquema de la cotización | `9383fc1` | `typecheck` 0, `test` 0 (959), `lint` 0, `build` 0 | aprobada, lineaje `review-a1dbf4335a5f0866`, riesgo medio, lente de fiabilidad, sin hallazgos bloqueantes |
 
 ### Lo que T-1 corrigió de este plan
 
