@@ -114,7 +114,15 @@ export type MotivoDeFalla =
   /** Un id de etapa que no pertenece a la plantilla que se está guardando. */
   | "etapa_desconocida"
   /* --- Procesos (T-7) --- */
-  /** Todo proceso está ligado a un cliente. Es I-2 (`docs/diseno.md` §5). */
+  /**
+   * Todo proceso está ligado a un cliente (I-2), y toda cotización también
+   * (I-1). `docs/diseno.md` §5.
+   *
+   * Lo comparten las dos entidades y por eso su frase en `src/mensajes.ts` no
+   * nombra a ninguna, igual que `texto_requerido` desde que la nota y el
+   * pendiente lo comparten: un «hay que elegir el cliente del proceso»
+   * debajo del formulario de una cotización habla de otra cosa.
+   */
   | "cliente_requerido"
   /** El `clienteId` no es una fila de `cliente` de ESTE tenant. */
   | "cliente_desconocido"
@@ -192,6 +200,28 @@ export type MotivoDeFalla =
    * alcanzar es peor que no tener vencimiento.
    */
   | "vencimiento_invalido"
+  /**
+   * Se intentó **poner** un vencimiento en un día que ya pasó (tajada 2).
+   *
+   * **No es una copia del `CHECK` de la base, y la distinción importa.** El
+   * `CHECK (vence_en >= fecha)` de `migrations/0004_cotizaciones.sql` es
+   * estructural y compara momentos: dice que una vigencia no termina antes
+   * de empezar. Éste es de negocio y compara el día que llegó por el cable
+   * contra hoy. En el alta coinciden por casualidad —`fecha` es ahora—; en
+   * la edición **no**, porque `fecha` es la de creación. Medido: un `PUT`
+   * que le pone `2022-01-01` a un borrador abierto en 2021 pasa el `CHECK`
+   * y guarda una cotización ya vencida sin que nada avise. El dominio no
+   * puede expresar la regla de la base aunque quisiera: no conoce `fecha`.
+   *
+   * Y es el mismo motivo por el que `cliente_requerido` existe teniendo
+   * `cliente_id NOT NULL` detrás: convertir un 500 que nadie puede leer en
+   * un 422 que dice qué arreglar.
+   *
+   * Solo se rechaza el vencimiento **nuevo**. Reenviar el que la cotización
+   * ya tenía no es ponerlo, y rechazarlo bloquearía la edición de un
+   * borrador viejo por un campo que la persona no tocó.
+   */
+  | "vencimiento_pasado"
   /**
    * Se intentó quitar del plan la etapa donde nació un pendiente.
    *
@@ -874,6 +904,118 @@ export interface PendienteYaCerrado {
 }
 
 /* ==========================================================================
+   La cotización en borrador (tajada 2, T-2)
+
+   Lo que viaja por el cable de `/api/cotizaciones`. El esquema entero vive
+   en `migrations/0004_cotizaciones.sql`, y **esta sección es deliberadamente
+   más angosta que esa tabla**: lo que la base guarda y lo que la API expone
+   no tienen por qué coincidir, y acá la diferencia es el diseño.
+
+   Lo que la tabla tiene y el cable no:
+
+    - **`snapshot`.** Es el documento congelado entero, y lo escribe T-4 al
+      emitir. No es un campo de una ficha: quien mira un listado no lo
+      necesita, y mandarlo en cada fila haría que el listado pesara lo que
+      pesan todos los documentos juntos. Que un borrador no lo tenga ya lo
+      dice `estado`, por el `CHECK` de coherencia de T-1.
+    - **`tenant_id`.** Nunca viaja, por lo mismo que en todo lo demás: el
+      bufete lo decide la puerta, no el cuerpo.
+
+   Y lo que el cable tiene y la tabla no: `clienteNombre` y `creadaPorNombre`,
+   resueltos **en lectura** igual que en `Cliente` (§6, «Autoría»).
+   ========================================================================== */
+
+/**
+ * El ciclo de vida de una cotización, cerrado en los cuatro valores que el
+ * `CHECK` de `cotizacion.estado` admite.
+ *
+ * T-2 escribe uno solo: un borrador nace `borrador` y se queda ahí. Los otros
+ * tres existen en el tipo porque una cotización **leída** puede estar en
+ * cualquiera de ellos, y porque el 409 de más abajo tiene que poder decir en
+ * cuál quedó.
+ */
+export type EstadoDeCotizacion = "borrador" | "emitida" | "ganada" | "perdida";
+
+/**
+ * Una cotización tal como la lee la pantalla.
+ *
+ * `fecha` y `venceEn` **no tienen la misma forma, y es a propósito**:
+ *
+ *  - `fecha` es un **momento** ISO 8601 UTC. Es cuándo se abrió el borrador,
+ *    lo pone el servidor y nadie lo elige.
+ *  - `venceEn` es un **día** `AAAA-MM-DD`, o nulo. Es lo único de los dos que
+ *    una persona elige, y lo que elige en un calendario es un día: «vale
+ *    hasta el 31». La hora la pone el repositorio al guardar —el final de ese
+ *    día— y la vuelve a quitar al leer, así que lo que se manda y lo que se
+ *    recibe son la misma cadena. Es la misma forma que `venceEn` de un
+ *    pendiente (T-9), que es el otro vencimiento que esta API tiene.
+ *
+ * `codigo` lo genera el servidor; no es un campo del formulario. Ver
+ * `worker/cotizaciones/repositorio.ts`.
+ */
+export interface Cotizacion {
+  id: string;
+  /** `COT-<año>-<correlativo>`, único dentro del bufete. Lo pone el servidor. */
+  codigo: string;
+  estado: EstadoDeCotizacion;
+  clienteId: string;
+  clienteNombre: string | null;
+  /** Momento ISO 8601 UTC: cuándo se abrió. */
+  fecha: string;
+  /** Día `AAAA-MM-DD`, o nulo. Una cotización puede no vencer. */
+  venceEn: string | null;
+  moneda: string;
+  /** De cuál nació, cuando nació duplicando otra (T-5). */
+  duplicadaDeId: string | null;
+  creadaPor: string;
+  creadaPorNombre: string | null;
+  creadaEn: string;
+}
+
+/**
+ * Lo que el formulario manda al crear o editar un borrador. Ya normalizado.
+ *
+ * Son **dos campos y no doce**, y la lista corta es el contenido de la
+ * decisión: de las doce columnas de `cotizacion`, las otras diez o las pone
+ * el servidor (`id`, `codigo`, `fecha`, `creadaPor`, `creadaEn`,
+ * `tenant_id`), las fija el esquema (`estado`, `moneda`), o son de otra tarea
+ * (`snapshot` es de T-4, `duplicadaDeId` es de T-5). Un campo de más acá
+ * sería un camino para imponer desde el cuerpo algo que la API decide.
+ */
+export interface DatosDeCotizacion {
+  clienteId: string;
+  /** Día `AAAA-MM-DD`, o nulo. */
+  venceEn: string | null;
+}
+
+export interface RespuestaDeCotizacion {
+  cotizacion: Cotizacion;
+}
+
+export interface RespuestaDeCotizaciones {
+  cotizaciones: Cotizacion[];
+}
+
+/**
+ * El 409 de editar una cotización que ya salió del borrador.
+ *
+ * Es 409 y no 422 por lo mismo que `pendiente_ya_cerrado` en T-9: la petición
+ * está bien formada y es el estado el que no la admite. Y no es 500: la base
+ * no tiene hoy ninguna guarda que lo impida —I-4 es de T-4— así que el
+ * `UPDATE` pasaría. Lo que lo frena es esta comprobación, que **cuenta** el
+ * estado antes de escribir; no atrapa ningún error de la base, porque no hay
+ * ninguno que atrapar.
+ *
+ * Lleva `estado` porque «ya no es borrador» sin decir en qué quedó obliga a
+ * recargar para enterarse, y lo que la persona necesita saber es si alguien
+ * la emitió o si ya se ganó.
+ */
+export interface CotizacionNoEsBorrador {
+  error: "cotizacion_no_es_borrador";
+  estado: EstadoDeCotizacion;
+}
+
+/* ==========================================================================
    Bitácora (T-10)
 
    Quién hizo qué, sobre qué, y cuándo. Es el otro registro del sistema, y
@@ -915,7 +1057,19 @@ export type EntidadRegistrada =
    * de su lista. Darles entidad sería partir en tres la respuesta a «¿qué
    * pasó con este proceso?».
    */
-  | "proceso";
+  | "proceso"
+  /**
+   * La cotización (tajada 2, T-2). Entidad propia y no un hecho del cliente,
+   * por la regla de «un hecho, una entidad» aplicada al revés que en las
+   * notas: una cotización **sí** tiene pantalla propia y se lee sola, así que
+   * su historia es suya. Colgarla del cliente haría que la ficha de un
+   * cliente con treinta cotizaciones contestara «¿quién tocó esta ficha?» con
+   * trescientos hechos que no son de la ficha.
+   *
+   * Sus módulos y sus líneas no tienen entidad propia, por lo mismo que las
+   * notas respecto del proceso: se leen dentro de ella.
+   */
+  | "cotizacion";
 
 /**
  * Qué pasó. El vocabulario cerrado de `accion`.

@@ -78,6 +78,20 @@
 -- **Esto caduca con el primer despliegue.** El día que el D1 real exista, las
 -- migraciones pasan a ser solo-agregar para siempre y este párrafo deja de
 -- autorizar nada.
+--
+-- La tajada 2 (T-2) lo usó por segunda vez, para agregar `cotizacion` al
+-- `CHECK` de `entidad`, y las dos condiciones se volvieron a verificar antes
+-- de tocar nada: `wrangler.jsonc` sigue con el marcador de ceros en
+-- `database_id`, así que no hay base remota donde esta migración haya
+-- corrido. La alternativa era una `0005` que reconstruyera `bitacora` por
+-- tercera vez para agregar una cadena a una lista, con la tabla ya vacía en
+-- toda base que exista. **Queda dicho que esta es la segunda vez, para que la
+-- tercera se note**: un archivo de migración editado dos veces es una
+-- excepción documentada; editado cinco, es que la regla no existe. El `CHECK`
+-- de `accion` **no se tocó** —la cotización registra su alta y su edición con
+-- los verbos que ya estaban, por el argumento que
+-- `worker/bitacora/vocabulario.ts` escribe entero—, así que la ampliación es
+-- de una sola de las dos listas.
 
 -- ---------------------------------------------------------------------------
 -- Reconstrucción con los dos vocabularios cerrados
@@ -95,7 +109,7 @@
 CREATE TABLE bitacora_nueva (
   id          TEXT PRIMARY KEY,
   tenant_id   TEXT NOT NULL REFERENCES tenant (id),
-  entidad     TEXT NOT NULL CHECK (entidad IN ('area', 'cliente', 'proceso', 'tipo_cliente', 'tipo_proceso')),
+  entidad     TEXT NOT NULL CHECK (entidad IN ('area', 'cliente', 'cotizacion', 'proceso', 'tipo_cliente', 'tipo_proceso')),
   entidad_id  TEXT NOT NULL,
   accion      TEXT NOT NULL CHECK (accion IN ('borrado', 'cerrado', 'creado', 'dado_de_baja', 'editado', 'etapa_alcanzada', 'nota_agregada', 'pendiente_abierto', 'pendiente_cerrado', 'plan_editado', 'plantilla_editada', 'plantilla_guardada', 'reabierto', 'reactivado')),
   usuario_id  TEXT NOT NULL REFERENCES usuario (id),

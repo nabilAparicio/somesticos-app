@@ -29,7 +29,11 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   etapa_desconocida:
     "Una de las etapas ya no existe o está repetida. Hay que volver a" +
     " cargar la plantilla.",
-  cliente_requerido: "Hay que elegir el cliente del proceso.",
+  /* Lo comparten el proceso (T-7, I-2) y la cotización (tajada 2, I-1), así
+     que la frase no puede nombrar a ninguno de los dos: es el mismo
+     argumento que llevó a `texto_requerido` a dejar de hablar de la nota
+     cuando el pendiente empezó a compartirlo. */
+  cliente_requerido: "Hay que elegir el cliente.",
   cliente_desconocido: "Ese cliente ya no existe.",
   tipo_proceso_requerido: "Hay que elegir el tipo de proceso.",
   tipo_proceso_desconocido: "Ese tipo de proceso ya no existe.",
@@ -67,6 +71,13 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   vencimiento_invalido:
     "Ese vencimiento no es una fecha del calendario. Va como día, mes y" +
     " año de un día que exista.",
+  /* Dice que hoy sirve, porque el borde es justo el que la persona va a
+     querer: una cotización que se manda y se responde el mismo día es el
+     caso corriente. Sin esa media frase, el rechazo se lee como «tiene que
+     ser mañana o después» y alguien pone un día de más por las dudas. */
+  vencimiento_pasado:
+    "Ese vencimiento ya pasó. Hay que poner un día de hoy en adelante, o" +
+    " dejarlo en blanco si la cotización no vence.",
   etapa_con_pendientes_no_se_quita:
     "En esa etapa nació un pendiente y no se puede quitar del plan: un" +
     " pendiente guarda dónde apareció, y eso no se cambia de lugar. Cerrarlo" +

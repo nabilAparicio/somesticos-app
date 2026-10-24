@@ -25,6 +25,11 @@ import {
   servicioSobreD1,
   type ServicioDeClientes,
 } from "./clientes/repositorio";
+import {
+  cotizacionesSobreD1,
+  type ServicioDeCotizaciones,
+} from "./cotizaciones/repositorio";
+import { rutasDeCotizaciones } from "./cotizaciones/rutas";
 import type {
   AccesoDenegado,
   HealthReport,
@@ -75,6 +80,9 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
 
   /** La bitácora (T-10). Solo se lee; escribirla es de `BaseDeDatos`. */
   bitacora?: ServicioDeBitacora;
+
+  /** Las cotizaciones en borrador (tajada 2, T-2). Idem. */
+  cotizaciones?: ServicioDeCotizaciones;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -177,6 +185,12 @@ export async function manejar(
   );
   if (clientes !== null) return clientes;
 
+  // Un solo servicio de cotizaciones para las dos rutas que lo necesitan:
+  // la suya y la de su bitácora, que comprueba por el mismo puerto que la
+  // fila existe en este bufete y no por una segunda copia de la consulta.
+  const servicioDeCotizaciones =
+    dependencias.cotizaciones ?? cotizacionesSobreD1(base);
+
   // Un solo servicio de catálogos para las dos rutas: desde T-11, guardar el
   // plan de un proceso como plantilla escribe por el mismo puerto que la
   // pantalla de catálogos, y no por una segunda copia.
@@ -195,8 +209,8 @@ export async function manejar(
   // segunda copia de la consulta.
   const servicioDeProcesos = dependencias.procesos ?? procesosSobreD1(base);
 
-  // La bitácora es subruta de **las cinco** colecciones que la exponen, y
-  // las cinco devuelven `null` para ella: `manejarPlano` corta en
+  // La bitácora es subruta de **las seis** colecciones que la exponen, y
+  // las seis devuelven `null` para ella: `manejarPlano` corta en
   // `segmentos.length !== 3`, `manejarTiposProceso` solo reconoce `etapas`
   // como cuarto segmento, y clientes y procesos ya lo hacían desde T-10.
   // Por eso el orden no cambia qué contesta cada una — pero deja el reparto
@@ -209,9 +223,23 @@ export async function manejar(
     servicioDeProcesos,
     servicioDeClientes,
     servicioDeCatalogos,
+    servicioDeCotizaciones,
     dependencias.bitacora ?? bitacoraSobreD1(base),
   );
   if (bitacora !== null) return bitacora;
+
+  // Las cotizaciones van **después** de la bitácora porque ésta es una
+  // subruta suya: `rutasDeCotizaciones` corta en `segmentos.length !== 3` y
+  // devuelve `null` para `/bitacora`, así que el orden no cambia qué
+  // contesta cada una, pero deja el reparto escrito.
+  const cotizaciones = await rutasDeCotizaciones(
+    request,
+    url,
+    acceso.valor,
+    TENANT_UNICO_ID,
+    servicioDeCotizaciones,
+  );
+  if (cotizaciones !== null) return cotizaciones;
 
   // Las notas van **antes** que los procesos porque son una subruta suya:
   // `rutasDeProcesos` devuelve `null` para `/notas`, así que el orden no

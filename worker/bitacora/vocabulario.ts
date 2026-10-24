@@ -99,6 +99,38 @@ export const ACCIONES_POR_ENTIDAD = {
     "pendiente_abierto",
     "pendiente_cerrado",
   ],
+
+  /* El alta y la edición del borrador (tajada 2, T-2). Emitir, ganar y
+     perder son de T-4 y traen sus propios verbos; los de los módulos de
+     prosa son de la unidad C de esta misma tarea. Ninguno entra antes de
+     tener su sitio que lo emita y su frase, que es lo que un verbo del
+     vocabulario significa.
+
+     ## Por qué `creado` y `editado`, y no `creada` y `editada`
+
+     La cotización es femenina y los catorce verbos existentes son
+     masculinos, así que la pregunta se plantea sola. La respuesta es que
+     **el género no está en juego**, y confundirlo rompería dos reglas que
+     este vocabulario ya tenía escritas:
+
+      - **Lo que se guarda es un verbo conjugado, no un adjetivo.** La frase
+        de `src/bitacora.ts` para `creado` es «dio de alta» y para `editado`
+        es «editó». Ninguna de las dos concuerda con nada: el sujeto es la
+        persona y el objeto viaja en `detalle`. «Itzel dio de alta
+        «COT-2026-0001»» ya está bien dicho, y `creada` tendría que mapear a
+        esa misma frase.
+      - **Dos acciones no se pueden leer igual.** El `Record` de frases lo
+        exige con todas las letras: «dos acciones que se leen igual son dos
+        acciones que no contestan ¿quién hizo esto?». `creada` junto a
+        `creado` serían exactamente eso.
+
+     Y hay un tercer motivo, el que decide: `AccionDeBitacora` es
+     deliberadamente **independiente de la entidad** —«son verbos y no pares
+     entidad+verbo porque la entidad ya viaja en su columna»—. Un verbo que
+     cambia de forma según a qué entidad se le cuelga es un par entidad+verbo
+     disfrazado, y por ese camino el vocabulario se multiplica por el número
+     de entidades para decir lo mismo. */
+  cotizacion: ["creado", "editado"],
 } as const satisfies Record<EntidadRegistrada, readonly AccionDeBitacora[]>;
 
 /**
