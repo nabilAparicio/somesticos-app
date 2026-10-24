@@ -531,14 +531,12 @@ describe("las notas son inmutables", () => {
 });
 
 describe("límites de la tajada 1", () => {
-  it("no crea ninguna tabla de la tajada 2", async () => {
-    const deLaTajadaDos = [
-      "cotizacion",
-      "cotizacion_modulo",
-      "cotizacion_linea",
-      "cuota",
-      "movimiento_gasto",
-    ];
+  // Las tres tablas de la cotización entraron en `0004` (T-1 de la tajada 2) y
+  // por eso salieron de esta lista. Las dos del dinero siguen sin existir:
+  // son de R5, y mientras no estén, esta prueba es la que avisa si alguien las
+  // adelanta sin sus disparadores de tenencia.
+  it("no crea todavía ninguna tabla del dinero", async () => {
+    const deLaTajadaDos = ["cuota", "movimiento_gasto"];
 
     const filas = await env.DB.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table'",

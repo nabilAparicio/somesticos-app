@@ -1,7 +1,8 @@
 # cotizaciones — Tajada 2: el generador de propuestas
 
 **Creado:** 24 de octubre de 2026
-**Estado:** sin empezar. La tajada 1 está construida y empujada; falta desplegarla (T-16 allá).
+**Estado:** R1 en curso, T-1 cerrada. La tajada 1 está construida y empujada; falta desplegarla
+(T-16 allá).
 **Diseño de referencia:** `docs/diseno.md` §8 (el generador), §6 (modelo de datos), §5 (invariantes)
 **Tajada anterior:** `odd/tasks/crm-procesos.md`
 
@@ -116,17 +117,21 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
 
 ### R1 · La cotización a mano
 
-- [ ] **T-1 · El esquema de la cotización.** Migración con `cotizacion`, `cotizacion_modulo` y
+- [x] **T-1 · El esquema de la cotización.** Migración con `cotizacion`, `cotizacion_modulo` y
       `cotizacion_linea`, con la misma disciplina que `0001`: `tenant_id` en todas, momentos
       con el `CHECK` de ida y vuelta por `strftime` usando `IS` y no `=`, vocabularios cerrados
       con `CHECK`, montos en centavos enteros. I-1 (`cliente_id NOT NULL`) va en la base.
 
       Los disparadores de coherencia de tenencia y de inmutabilidad de `tenant_id` de T-13 de la
-      tajada anterior **tienen que extenderse a las tres tablas nuevas**, y la verificación
-      previa de la sección M-0 también. No son opcionales: una tabla nueva sin su disparador es
-      exactamente el agujero que esa tarea cerró.
+      tajada anterior **tienen que extenderse a las tres tablas nuevas**. No son opcionales: una
+      tabla nueva sin su disparador es exactamente el agujero que esa tarea cerró. ~~Y la
+      verificación previa de la sección M-0 también.~~ — **esto era falso**, ver «Lo que T-1
+      corrigió de este plan» abajo.
 
       *Criterio: por cada restricción, una prueba que demuestre que la base rechaza. Forecast ~450.*
+      **Real: 530 líneas de migración y 1262 de pruebas, 118 pruebas nuevas.** El forecast se
+      quedó corto por un factor de cuatro, y lo que lo explica es la auditoría en dos dimensiones
+      del punto 2 de abajo: una prueba por cláusula y otra por operador, y son diez cláusulas.
 
 - [ ] **T-2 · Módulos de prosa.** El catálogo de tipos de módulo **como registro tipado en
       código**, no como configuración editable: agregar un tipo es un despliegue. Alta, edición,
@@ -232,7 +237,44 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
 
 | Tarea | Commit | Checks observados | Revisión |
 |---|---|---|---|
-| — | — | sin empezar | — |
+| T-1 · El esquema de la cotización | — | `typecheck` 0, `test` 0 (959), `lint` 0, `build` 0 | pendiente |
+
+### Lo que T-1 corrigió de este plan
+
+1. **La verificación previa M-0 no se extiende, y no es opcional omitirla.** El plan pedía
+   extenderla a las tablas nuevas. Es código muerto: M-0 existe en `0003` porque esa migración
+   puso disparadores sobre tablas nacidas en `0001`, que podían llegar ya con filas cruzadas.
+   En `0004` las tres tablas nacen en el mismo archivo transaccional que sus disparadores. Y hay
+   un segundo motivo que lo cierra: la verificación **ni siquiera se puede escribir**, porque
+   tendría que consultar una tabla que en ese punto del archivo todavía no existe.
+   **Regla para el próximo:** la verificación previa hace falta cuando la guarda cae sobre filas
+   que ya podían existir, nunca cuando la tabla y su guarda nacen juntas.
+
+2. **La cobertura de `IS NOT` se mide por arista, no por tabla.** Una mutación que cambia las dos
+   líneas de una arista y mata una prueba da por cubierto un operador que lo está en una arista
+   de once. Las once cláusulas de tenencia se auditaron en **dos dimensiones** —existe la
+   cláusula, y está cubierto su operador— y faltaban tres cláusulas y ocho operadores.
+
+3. **`INTEGER` en SQLite es afinidad, no tipo.** Un `1500.5` entra tal cual en una columna
+   `INTEGER`. La restricción de centavos enteros sólo es real con `typeof(monto) = 'integer'`.
+
+4. **La guarda `NEW.col IS NOT NULL` va también en las columnas `NOT NULL`**, y ahí está por el
+   segundo motivo: evitar que el disparador tape el error verdadero de la columna ausente, porque
+   `BEFORE INSERT` corre antes que `NOT NULL`. Lo que sobra en las `NOT NULL` es la guarda dentro
+   de la consulta de M-0, que sólo lee. Son dos cosas distintas y el plan las había confundido.
+
+### Deuda registrada, no cerrada
+
+**Los quince disparadores de inmutabilidad tienen su `IS NOT` sin cobertura** —los diez de `0003`
+(T-13) y los cinco de `0004`—. Mutar `IS NOT` → `<>` en cualquiera de ellos no mata ninguna
+prueba. **No es un agujero de integridad**, y se midió: el único camino que distingue los dos
+operadores es poner la columna en NULL, y ahí aborta `NOT NULL`; la fila queda intacta en las
+cuatro combinaciones. Lo único que cambia es cuál de los dos mensajes de error llega.
+
+Se decidió **no** escribir quince pruebas de mensaje y dejarlo documentado en la migración, con
+la distinción que de verdad importa: en los disparadores de **tenencia** el `IS NOT` **es** la
+guarda, y ahí sí está cubierto arista por arista; en los de **inmutabilidad** sólo elige el
+mensaje.
 
 ## Próximo paso
 
