@@ -853,6 +853,236 @@ describe("una cotización que ya no es borrador no acepta módulos", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Las dos carreras, provocadas a mano
+// ---------------------------------------------------------------------------
+
+/**
+ * Una `BaseDeDatos` que deja colar una escritura ajena **justo antes** de
+ * delegar en la real.
+ *
+ * Es el seam que vuelve determinista una carrera: el repositorio ya leyó
+ * —comprobó el estado, comprobó que el módulo existe, calculó el orden— y
+ * todavía no escribió. Es exactamente la ventana que otra petición
+ * aprovecha, y acá se abre a voluntad en vez de esperar a que la suerte la
+ * abra en producción.
+ */
+function baseConIntruso(
+  real: BaseDeDatos,
+  intruso: () => Promise<unknown>,
+): BaseDeDatos {
+  return {
+    lectura: real.lectura,
+    async mutar(evento, ...sentencias) {
+      await intruso();
+      return real.mutar(evento, ...sentencias);
+    },
+  };
+}
+
+/** Un servicio cuya escritura siempre llega tarde, por el intruso de turno. */
+function servicioConIntruso(intruso: () => Promise<unknown>) {
+  return cotizacionesSobreD1(
+    baseConIntruso(baseSobreD1(env.DB, TENANT_UNICO_ID, autorId), intruso),
+  );
+}
+
+function borrarModuloDirecto(moduloId: string): () => Promise<unknown> {
+  return () =>
+    env.DB.prepare("DELETE FROM cotizacion_modulo WHERE id = ?")
+      .bind(moduloId)
+      .run();
+}
+
+describe("una escritura que no tocó ninguna fila dice por qué de verdad", () => {
+  /*
+   * **Lo que se midió antes de arreglar nada**, con este mismo arnés, y que
+   * es el defecto que estas cuatro pruebas clavan:
+   *
+   *   editar con un quitar colado  → { estado: "no_es_borrador",
+   *                                    actual: "borrador" }
+   *   quitar con un quitar colado  → { estado: "no_es_borrador",
+   *                                    actual: "borrador" }
+   *   reordenar, se va el primero  → { estado: "no_es_borrador",
+   *                                    actual: "borrador" }
+   *                                  y los órdenes guardados eran [1, 2]
+   *
+   * Las tres se contradicen solas: la ruta contesta
+   * `409 cotizacion_no_es_borrador` con `estado: "borrador"`, o sea que el
+   * mensaje dice una cosa y el dato que lo acompaña dice la contraria. La
+   * tercera además **mintió habiendo escrito**: el `batch` se aplicó para
+   * los dos módulos que seguían vivos y la respuesta igual fue un rechazo.
+   *
+   * La causa era suponer que cero filas afectadas sólo puede venir de una
+   * emisión. Hay otro camino: el módulo que la sentencia apunta ya no está.
+   * Ahora **manda la relectura**, que es el único testigo de en qué quedó la
+   * cotización de verdad.
+   */
+
+  it("editar un módulo que se fue en el medio contesta 404 y no un 409", async () => {
+    const modulos = await agregarTres();
+    const victima = modulos[1];
+
+    const resultado = await servicioConIntruso(
+      borrarModuloDirecto(victima.id),
+    ).editarModulo(TENANT_UNICO_ID, cotizacionId, victima.id, {
+      tipo: "supuestos",
+      contenido: "Carrera.",
+    });
+
+    // 404 y no un motivo nuevo: la cotización sigue siendo un borrador y el
+    // módulo no está. Eso es exactamente lo que ya contesta pedir un módulo
+    // que no existe, y lo único que cambia es cuándo nos enteramos.
+    expect(resultado).toEqual({ estado: "no_encontrado" });
+  });
+
+  it("quitar un módulo que ya quitaron contesta 404 y no un 409", async () => {
+    const modulos = await agregarTres();
+    const victima = modulos[0];
+
+    const resultado = await servicioConIntruso(
+      borrarModuloDirecto(victima.id),
+    ).quitarModulo(TENANT_UNICO_ID, cotizacionId, victima.id);
+
+    expect(resultado).toEqual({ estado: "no_encontrado" });
+  });
+
+  it("reordenar con una lista que quedó vieja contesta 422 y no un 409", async () => {
+    // Acá no sirve el 404: la dirección es la de la colección, y la
+    // cotización sí existe. Lo que quedó viejo es la lista que mandó la
+    // pantalla, que es literalmente lo que `orden_incompleto` dice.
+    //
+    // Se van **los tres** para que ninguna sentencia escriba: ése es el caso
+    // en que la operación entera no ocurrió.
+    //
+    // Y el orden pedido tiene que ser distinto del que ya estaba, o el
+    // atajo del reordenamiento vacuo corta antes de `mutar` y el intruso no
+    // llega a colarse.
+    const modulos = await agregarTres();
+    const invertido = [modulos[2].id, modulos[1].id, modulos[0].id];
+
+    const resultado = await servicioConIntruso(async () => {
+      for (const modulo of modulos) {
+        await borrarModuloDirecto(modulo.id)();
+      }
+    }).reordenarModulos(TENANT_UNICO_ID, cotizacionId, invertido);
+
+    expect(resultado).toEqual({
+      estado: "invalido",
+      fallas: [{ campo: "orden", motivo: "orden_incompleto" }],
+    });
+  });
+
+  it("si al reordenamiento se le va uno solo, lo que sí se movió queda", async () => {
+    // El caso que la detección vieja contestaba peor: miraba sólo la primera
+    // sentencia, así que si el que desaparecía era el primero de la lista
+    // nueva devolvía un rechazo **habiendo escrito**. Ahora el rechazo exige
+    // que no haya escrito **ninguna**, y este caso es un guardado honesto:
+    // los que sobrevivieron se movieron, y la lista que vuelve lo dice.
+    const modulos = await agregarTres();
+    const nuevoOrden = [modulos[2].id, modulos[1].id, modulos[0].id];
+
+    const resultado = await servicioConIntruso(
+      borrarModuloDirecto(modulos[2].id),
+    ).reordenarModulos(TENANT_UNICO_ID, cotizacionId, nuevoOrden);
+
+    expect(resultado.estado).toBe("guardado");
+
+    // El hueco en `orden` es el que deja el módulo que se fue, y es el mismo
+    // hueco que deja un `quitar`: lo que vale es el orden relativo.
+    const releidos = await listar();
+    expect(releidos.map((modulo) => modulo.tipo)).toEqual([
+      "alcance",
+      "antecedentes",
+    ]);
+  });
+
+  it("una emisión colada sigue contestando 409 con el estado de verdad", async () => {
+    // El contrapeso de las cuatro de arriba: que la relectura mande no puede
+    // haber tapado la carrera que sí existía. Acá el intruso emite, la
+    // relectura ve `emitida`, y el 409 vuelve con el estado correcto.
+    const modulos = await agregarTres();
+
+    const resultado = await servicioConIntruso(() =>
+      env.DB.prepare(
+        "UPDATE cotizacion SET estado = 'emitida', snapshot = '{}'" +
+          " WHERE id = ?",
+      )
+        .bind(cotizacionId)
+        .run(),
+    ).editarModulo(TENANT_UNICO_ID, cotizacionId, modulos[0].id, {
+      tipo: "supuestos",
+      contenido: "Tarde.",
+    });
+
+    expect(resultado).toEqual({ estado: "no_es_borrador", actual: "emitida" });
+  });
+});
+
+describe("el orden del alta se decide dentro del batch", () => {
+  /*
+   * **Lo que se midió antes de arreglar nada:** con el `MAX(orden)` leído en
+   * una consulta aparte, un alta concurrente que toma ese mismo número hace
+   * que la segunda estalle con
+   *
+   *   Error: D1_ERROR: UNIQUE constraint failed:
+   *     cotizacion_modulo.cotizacion_id, cotizacion_modulo.orden
+   *
+   * o sea un 500 ilegible en una operación corriente. Y no hace falta que
+   * sean dos personas: alcanzan dos pestañas abiertas de la misma
+   * cotización.
+   *
+   * No se arregla atrapándolo —la guarda se cuenta y nunca se atrapa, y un
+   * `catch` con reintento escondería que el generador del orden tiene un
+   * defecto— sino moviendo el cálculo adentro de la sentencia, que es donde
+   * el reordenamiento ya lo tenía. Verificado contra D1 antes de escribirlo:
+   * un `INSERT … SELECT` con una subconsulta que lee la misma tabla se
+   * aplica y devuelve `changes: 1`.
+   */
+
+  it("dos altas que calculan la misma posición no chocan", async () => {
+    await agregar({ tipo: "antecedentes", contenido: "El que ya estaba." });
+
+    // El intruso toma la posición 1, que es la que el alta en curso habría
+    // calculado leyendo `MAX(orden)` por separado.
+    const resultado = await servicioConIntruso(() =>
+      env.DB.prepare(
+        "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
+          " tipo, orden, contenido) VALUES (?, ?, ?, 'clausulas', 1, ?)",
+      )
+        .bind(nuevoId(), TENANT_UNICO_ID, cotizacionId, "El intruso.")
+        .run(),
+    ).agregarModulo(TENANT_UNICO_ID, cotizacionId, {
+      tipo: "alcance",
+      contenido: "El que llega segundo.",
+    });
+
+    expect(resultado.estado, "no puede estallar el índice único").toBe(
+      "guardado",
+    );
+
+    const releidos = await listar();
+    expect(releidos.map((modulo) => modulo.orden)).toEqual([0, 1, 2]);
+    expect(
+      releidos.map((modulo) => modulo.contenido),
+      "el que llega segundo va último, detrás del intruso",
+    ).toEqual(["El que ya estaba.", "El intruso.", "El que llega segundo."]);
+  });
+
+  it("el alta sigue yendo al final cuando hay un hueco", async () => {
+    // El hueco que deja un `quitar` es justo donde `COUNT(*)` devolvería una
+    // posición ya tomada. `COALESCE(MAX(orden), -1) + 1` no.
+    const modulos = await agregarTres();
+    await comoAutor(
+      peticion(`${rutaDeModulos()}/${modulos[1].id}`, { method: "DELETE" }),
+    );
+
+    await agregar({ tipo: "clausulas", contenido: "Después del hueco." });
+
+    expect(await ordenesGuardados()).toEqual([0, 2, 3]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // La tenencia: I-8 en cada consulta nueva
 // ---------------------------------------------------------------------------
 

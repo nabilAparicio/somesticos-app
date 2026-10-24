@@ -408,27 +408,56 @@ export function cotizacionesSobreD1(
   /**
    * Qué contestar cuando la escritura no tocó ninguna fila.
    *
-   * Cero cambios con la cláusula `EXISTS` puesta quiere decir que perdimos
-   * la carrera contra una emisión. Se relee para decir la verdad sobre en
-   * qué quedó: contestar con el estado que se había leído antes sería
-   * repetir la foto vieja que acaba de quedar mal.
+   * **Cero filas tiene dos causas y no una**, y confundirlas era un defecto
+   * medido, no razonado. Con la cláusula `EXISTS` puesta, una sentencia no
+   * escribe si la cotización dejó de ser un borrador —la carrera contra una
+   * emisión de T-4— **o** si la fila que apunta ya no está, porque otra
+   * petición la quitó entre que este método comprobó que existía y escribió.
+   *
+   * Lo que se medía antes de distinguirlas, provocando la carrera a mano con
+   * el arnés de `test/modulos-api.spec.ts`:
+   *
+   *     editar con un quitar colado → { no_es_borrador, actual: "borrador" }
+   *
+   * Un 409 `cotizacion_no_es_borrador` acompañado del estado `borrador`: el
+   * mensaje dice una cosa y el dato que viaja con él dice la contraria. Es
+   * la misma clase de defecto que la unidad B sacó de una pantalla, acá en
+   * la respuesta.
+   *
+   * Por eso **manda la relectura** y no la suposición. Si la cotización ya
+   * no es un borrador, el 409 es verdad y lleva el estado de verdad. Si
+   * sigue siéndolo, lo que pasó es lo otro, y cada llamador dice qué
+   * contestar en ese caso con `siSigueSiendoBorrador`: no se decide acá
+   * porque no es la misma respuesta desde la dirección de un módulo que
+   * desde la de la colección.
+   *
+   * `siSigueSiendoBorrador` es una función y no un valor para que un
+   * llamador pueda **levantar** en vez de contestar. El alta la usa así:
+   * su sentencia no apunta a ninguna fila existente, así que para ella esa
+   * rama es un estado que el sistema no sabe producir, y fabricarle una
+   * respuesta amable sería esconder un defecto.
    *
    * **Lo que esto cuesta, dicho para que sea una decisión**, y es el mismo
    * residuo que la unidad A dejó anotado en `actualizar`: la entrada de
    * bitácora viajó en el mismo `batch` —así lo exige `mutar`, y es lo que
-   * impide escribir sin registrar—, así que en esta rama queda un
-   * «agregó el módulo» de algo que no se agregó. Un hecho de más en el
-   * registro contra un documento emitido corrompido en silencio: de los dos
-   * males, el menor.
+   * impide escribir sin registrar—, así que en estas ramas queda un
+   * «editó el módulo» de algo que no se editó. Un hecho de más en el
+   * registro contra una respuesta que se contradice: de los dos males, el
+   * menor.
    */
-  async function carreraPerdida(
+  async function escrituraSinEfecto(
     tenantId: string,
     cotizacionId: string,
+    siSigueSiendoBorrador: () => ResultadoDeModulos,
   ): Promise<ResultadoDeModulos> {
     const ahora = await obtener(tenantId, cotizacionId);
     if (ahora === null) return { estado: "no_encontrado" };
 
-    return { estado: "no_es_borrador", actual: ahora.estado };
+    if (ahora.estado !== "borrador") {
+      return { estado: "no_es_borrador", actual: ahora.estado };
+    }
+
+    return siSigueSiendoBorrador();
   }
 
   return {
@@ -582,24 +611,35 @@ export function cotizacionesSobreD1(
       const bloqueo = await borradorParaEscribir(tenantId, cotizacionId);
       if (bloqueo !== null) return bloqueo;
 
+      // **El `orden` se calcula dentro de la sentencia, no antes.** Leerlo
+      // en una consulta aparte y escribirlo en un `batch` posterior deja una
+      // ventana en la que otra alta calcula el mismo número, y la segunda
+      // choca contra `cotizacion_modulo_orden_unico`. Medido, provocando la
+      // carrera a mano:
+      //
+      //     D1_ERROR: UNIQUE constraint failed:
+      //       cotizacion_modulo.cotizacion_id, cotizacion_modulo.orden
+      //
+      // O sea un 500 ilegible en una operación corriente, y no hacen falta
+      // dos personas: alcanzan dos pestañas abiertas de la misma cotización.
+      // Adentro del `INSERT`, el máximo se evalúa mientras la transacción
+      // tiene el candado de escritura, así que dos altas se serializan y la
+      // segunda ve a la primera. Es la misma disciplina que el
+      // reordenamiento ya tenía —el `orden` se decide en el `batch`— y de la
+      // que el alta se había quedado afuera.
+      //
+      // No se arregla atrapando el error: la guarda se cuenta y nunca se
+      // atrapa, y un `catch` con reintento escondería para siempre que el
+      // generador del orden tiene un defecto.
+      //
+      // `COALESCE(MAX(orden), -1) + 1` y no `COUNT(*)`: quitar un módulo
+      // deja un hueco —no se recompacta, porque lo que vale es el orden
+      // relativo y no el número— y contar devolvería una posición que otra
+      // fila ya tiene. El `-1` es lo que hace que la primera nazca en 0.
+      //
       // Al final de la lista, siempre. Un módulo nuevo que apareciera en el
       // medio movería lo que la persona ya había ordenado, y el único lugar
       // donde el orden se decide es el reordenamiento.
-      //
-      // Es `MAX(orden) + 1` y no `COUNT(*)`: quitar un módulo deja un hueco
-      // —no se recompacta, porque lo que vale es el orden relativo y no el
-      // número— y contar devolvería una posición que otra fila ya tiene,
-      // que es un 500 del índice único.
-      const fila = await db
-        .prepare(
-          "SELECT MAX(orden) AS ultimo FROM cotizacion_modulo" +
-            " WHERE tenant_id = ? AND cotizacion_id = ?",
-        )
-        .bind(tenantId, cotizacionId)
-        .first<{ ultimo: number | null }>();
-
-      const orden = fila?.ultimo === null || fila === null ? 0 : fila.ultimo + 1;
-
       const [efecto] = await base.mutar(
         {
           entidad: "cotizacion",
@@ -612,13 +652,16 @@ export function cotizacionesSobreD1(
         },
         sentencia(
           "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
-            " tipo, orden, contenido) SELECT ?, ?, ?, ?, ?, ? WHERE" +
+            " tipo, orden, contenido) SELECT ?, ?, ?, ?," +
+            " (SELECT COALESCE(MAX(orden), -1) + 1 FROM cotizacion_modulo" +
+            " WHERE tenant_id = ? AND cotizacion_id = ?), ? WHERE" +
             SOBRE_UN_BORRADOR,
           nuevoId(),
           tenantId,
           cotizacionId,
           datos.tipo,
-          orden,
+          tenantId,
+          cotizacionId,
           datos.contenido,
           tenantId,
           cotizacionId,
@@ -626,7 +669,17 @@ export function cotizacionesSobreD1(
       );
 
       if (efecto.meta.changes === 0) {
-        return carreraPerdida(tenantId, cotizacionId);
+        // El `INSERT` no apunta a ninguna fila existente, así que su única
+        // causa de cero es la cláusula `EXISTS`. Que la relectura dijera
+        // «sigue siendo borrador» sería un estado que este sistema no sabe
+        // producir —no hay camino de vuelta de emitida a borrador—, y se
+        // levanta en vez de inventarle una respuesta amable, igual que el
+        // `crear` de la cotización con su relectura imposible.
+        return escrituraSinEfecto(tenantId, cotizacionId, () => {
+          throw new Error(
+            "el módulo no entró en una cotización que sigue siendo borrador",
+          );
+        });
       }
 
       return {
@@ -674,7 +727,16 @@ export function cotizacionesSobreD1(
       );
 
       if (efecto.meta.changes === 0) {
-        return carreraPerdida(tenantId, cotizacionId);
+        // Sigue siendo borrador quiere decir que el módulo se fue entre la
+        // comprobación de arriba y esta escritura. Es un 404 y no un motivo
+        // nuevo: «ese módulo no está» es exactamente lo que esta dirección
+        // ya contesta cuando no estaba desde el principio, y lo único que
+        // cambia es cuándo nos enteramos. Dos respuestas distintas para el
+        // mismo hecho, que además llevan a la misma acción —recargar—, son
+        // una de más.
+        return escrituraSinEfecto(tenantId, cotizacionId, () => ({
+          estado: "no_encontrado",
+        }));
       }
 
       return {
@@ -716,7 +778,16 @@ export function cotizacionesSobreD1(
       );
 
       if (efecto.meta.changes === 0) {
-        return carreraPerdida(tenantId, cotizacionId);
+        // Sigue siendo borrador quiere decir que el módulo se fue entre la
+        // comprobación de arriba y esta escritura. Es un 404 y no un motivo
+        // nuevo: «ese módulo no está» es exactamente lo que esta dirección
+        // ya contesta cuando no estaba desde el principio, y lo único que
+        // cambia es cuándo nos enteramos. Dos respuestas distintas para el
+        // mismo hecho, que además llevan a la misma acción —recargar—, son
+        // una de más.
+        return escrituraSinEfecto(tenantId, cotizacionId, () => ({
+          estado: "no_encontrado",
+        }));
       }
 
       return {
@@ -854,10 +925,41 @@ export function cotizacionesSobreD1(
         ...orden.map(asentar),
       );
 
-      if (resultados[0].meta.changes === 0) {
-        return carreraPerdida(tenantId, cotizacionId);
+      // **Ninguna y no la primera**, y la diferencia era un defecto medido.
+      // Mirando sólo `resultados[0]` —la sentencia del primer módulo de la
+      // lista nueva— bastaba con que ése desapareciera para que esto
+      // devolviera un rechazo **habiendo escrito**: el `batch` se había
+      // aplicado para los que seguían vivos. Se midió provocando la carrera
+      // a mano: la respuesta era `no_es_borrador` con `actual: "borrador"` y
+      // los órdenes guardados ya eran los nuevos.
+      //
+      // La guarda `EXISTS` es la misma en las `2n` sentencias, así que si la
+      // cotización dejó de ser un borrador **no escribe ninguna**. Que no
+      // haya escrito ninguna es entonces la condición exacta de «la
+      // operación entera no ocurrió», y es la única que habilita un rechazo.
+      const nadaSeMovio = resultados.every(
+        (resultado) => resultado.meta.changes === 0,
+      );
+
+      if (nadaSeMovio) {
+        // Acá no sirve el 404: la dirección es la de la colección y la
+        // cotización existe. Si sigue siendo un borrador, lo que quedó viejo
+        // es la lista que mandó la pantalla —nombra módulos que ya no
+        // están— y eso es literalmente lo que `orden_incompleto` dice, con
+        // la frase que ya manda a recargar. Un motivo nuevo sería una
+        // segunda forma de decir lo mismo.
+        return escrituraSinEfecto(tenantId, cotizacionId, () => ({
+          estado: "invalido",
+          fallas: [{ campo: "orden", motivo: "orden_incompleto" }],
+        }));
       }
 
+      // Si se movió algo pero a la lista se le fue un módulo en el camino,
+      // esto es un guardado honesto y no a medias: los que sobrevivieron
+      // quedaron en el orden pedido, y la lista que vuelve sale de releer la
+      // base, así que dice la verdad. El hueco que queda en `orden` es el
+      // mismo que deja un `quitar`, y vale el mismo argumento: lo que
+      // importa es el orden relativo, no el número.
       return {
         estado: "guardado",
         modulos: await leerModulos(tenantId, cotizacionId),
