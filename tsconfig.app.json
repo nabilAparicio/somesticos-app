@@ -26,5 +26,11 @@
   // `e2e` viaja con la app y no con Node porque sus pruebas corren código
   // dentro del navegador (`page.evaluate`) y necesitan los tipos del DOM,
   // que son justamente los que este proyecto trae y el de Node no.
-  "include": ["src", "e2e", "worker/contract.ts"]
+  // `worker/db/momentos.ts` viaja con la app por lo mismo que
+  // `worker/contract.ts`: es un módulo del Worker **sin dependencias**, y es
+  // donde vive la zona horaria del bufete, que las pantallas también
+  // necesitan. Listarlo es lo que permite que esté escrita una sola vez: el
+  // Worker no puede importar de `src/` sin dar vuelta la flecha, así que el
+  // único hogar común es un módulo de `worker/` que no arrastre servidor.
+  "include": ["src", "e2e", "worker/contract.ts", "worker/db/momentos.ts"]
 }

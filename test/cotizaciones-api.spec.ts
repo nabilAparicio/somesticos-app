@@ -33,11 +33,17 @@
 import { env } from "cloudflare:workers";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { normalizarCotizacion } from "../worker/cotizaciones/dominio";
 import {
   cotizacionesSobreD1,
   type ServicioDeCotizaciones,
 } from "../worker/cotizaciones/repositorio";
-import { baseSobreD1 } from "../worker/db/base";
+import { baseSobreD1, type BaseDeDatos } from "../worker/db/base";
+import {
+  diaEnPanama,
+  finDelDiaEnPanama,
+  hoyEnPanama,
+} from "../worker/db/momentos";
 import { TENANT_UNICO_ID, nuevoId } from "../worker/db/ids";
 import { manejar } from "../worker/index";
 
@@ -83,19 +89,51 @@ let clienteAjenoId: string;
 let cotizacionAjenaId: string;
 let autorAjenoId: string;
 
-/** El año en curso, que es el que el servidor va a escribir en el código. */
-function anio(): string {
+/**
+ * El año en curso, **solo para sembrar la cotización del vecino**.
+ *
+ * Las aserciones sobre el código no lo usan: sacan el año de la `fecha` que
+ * el servidor le puso a la misma fila (ver `esperarCodigo`). Acá hace falta
+ * un valor antes de que exista ninguna fila, y el único riesgo que queda es
+ * que una corrida cruce el año nuevo entre esta siembra y la petición; la
+ * prueba que depende de eso lo afirma en vez de darlo por hecho.
+ */
+function anioDeLaSiembra(): string {
   return new Date().toISOString().slice(0, 4);
 }
 
-/** Hoy, como día `AAAA-MM-DD`. */
-function hoy(): string {
-  return new Date().toISOString().slice(0, 10);
+/**
+ * Ayer **en Panamá**, que es el huso del bufete y el que usa el servidor.
+ *
+ * Los cinco de corrimiento son literales y no se importan de
+ * `worker/cotizaciones/dominio.ts` a propósito: una prueba que calcula su
+ * expectativa con la misma función que está probando pasa aunque las dos
+ * estén mal. Lo único que esta cuenta necesita garantizar es que el día
+ * resultante sea **estrictamente anterior** al de hoy en Panamá, y restar un
+ * día entero lo garantiza con cualquier reloj.
+ */
+function ayer(): string {
+  const PANAMA = 5 * 60 * 60 * 1000;
+  const UN_DIA = 24 * 60 * 60 * 1000;
+  return new Date(Date.now() - PANAMA - UN_DIA).toISOString().slice(0, 10);
 }
 
-/** Ayer. Se calcula y no se escribe fijo: una fecha fija caduca. */
-function ayer(): string {
-  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+/**
+ * Afirma el correlativo sin preguntarle la hora al proceso de pruebas.
+ *
+ * El año esperado sale de la `fecha` de **la misma fila**, que el servidor
+ * escribió con la misma lectura del reloj que usó para el código. Así una
+ * corrida que cruce la medianoche del 31 de diciembre no inventa una falla
+ * —y de paso la aserción pasa a cubrir algo real: que el año del código y
+ * el de la fecha no se pueden separar.
+ */
+function esperarCodigo(
+  cotizacion: CotizacionEnElCable,
+  correlativo: string,
+): void {
+  expect(cotizacion.codigo).toBe(
+    `COT-${cotizacion.fecha.slice(0, 4)}-${correlativo}`,
+  );
 }
 
 function entorno(ajustes: Partial<Env> = {}): Env {
@@ -264,7 +302,7 @@ beforeEach(async () => {
       cotizacionAjenaId,
       OTRO_TENANT_ID,
       clienteAjenoId,
-      `COT-${anio()}-0007`,
+      `COT-${anioDeLaSiembra()}-0007`,
       ahora,
       autorAjenoId,
       ahora,
@@ -371,13 +409,14 @@ describe("el alta rechaza lo que no es una cotización", () => {
     expect(await listar(), "no se guardó nada").toHaveLength(0);
   });
 
-  it("acepta un vencimiento de hoy: hoy no es pasado", async () => {
-    // El borde de la regla anterior, y el que de verdad importa: una
-    // cotización que se manda y se responde el mismo día es el caso
-    // corriente, no la excepción.
-    const creada = await crear({ clienteId, venceEn: hoy() });
+  it("acepta un vencimiento futuro", async () => {
+    // El borde —«hoy no es pasado»— **no se prueba acá**: dependería de que
+    // el reloj de la suite y el del servidor caigan en el mismo día, y una
+    // corrida que cruce la medianoche fallaría sin que nadie haya roto nada.
+    // Vive en las pruebas unitarias del dominio, con un día fijo.
+    const creada = await crear({ clienteId, venceEn: "2027-06-30" });
 
-    expect((await releer(creada.id)).venceEn).toBe(hoy());
+    expect((await releer(creada.id)).venceEn).toBe("2027-06-30");
   });
 
   it("rechaza un vencimiento que no es texto", async () => {
@@ -439,7 +478,7 @@ describe("el alta rechaza lo que no es una cotización", () => {
       duplicadaDeId: cotizacionAjenaId,
     });
 
-    expect(cotizacion.codigo).toBe(`COT-${anio()}-0001`);
+    esperarCodigo(cotizacion, "0001");
     expect(cotizacion.estado).toBe("borrador");
     expect(cotizacion.moneda).toBe("USD");
     expect(cotizacion.duplicadaDeId).toBeNull();
@@ -505,13 +544,20 @@ describe("el alta de un borrador", () => {
     expect((await releer(creada.id)).venceEn).toBe("2027-01-15");
   });
 
-  it("guarda el vencimiento al final del día, no al principio", async () => {
+  it("guarda el vencimiento al final del día **de Panamá**", async () => {
     // No es un detalle: `CHECK (vence_en >= fecha)` compara momentos, así que
     // un vencimiento guardado a medianoche haría que «vence hoy» —el caso más
     // corriente de una cotización que se manda y se responde el mismo día—
     // muriera contra la base.
-    const hoy = new Date().toISOString().slice(0, 10);
-    const creada = await crear({ clienteId, venceEn: hoy });
+    //
+    // Y el día es el **de Panamá**, que es UTC−5 todo el año. El final del 15
+    // de enero en Panamá son las 04:59:59.999Z del 16 en UTC. Con el final
+    // del día UTC, un vencimiento «de hoy» se moriría a las 18:59 hora local,
+    // con la oficina todavía abierta.
+    //
+    // La fecha va fija y no calculada del reloj: así la prueba no cambia de
+    // significado según a qué hora corra la suite.
+    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
 
     const fila = await env.DB.prepare(
       "SELECT vence_en FROM cotizacion WHERE id = ?",
@@ -519,7 +565,26 @@ describe("el alta de un borrador", () => {
       .bind(creada.id)
       .first<{ vence_en: string }>();
 
-    expect(fila?.vence_en).toBe(`${hoy}T23:59:59.999Z`);
+    expect(fila?.vence_en).toBe("2027-01-16T04:59:59.999Z");
+  });
+
+  it("el día vuelve a ser el mismo al releerlo", async () => {
+    // **La otra mitad de la simetría, y la que se rompe sola.** El
+    // repositorio convierte día → momento al escribir y momento → día al
+    // leer. Si la ida usa el huso de Panamá y la vuelta recorta el momento
+    // UTC con un `slice(0, 10)`, el detalle muestra **el día siguiente** al
+    // que la persona eligió. Las dos conversiones tienen que ser la misma
+    // función dada vuelta, y esto es lo que lo exige.
+    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
+
+    expect(creada.venceEn, "lo que contesta el alta").toBe("2027-01-15");
+    expect((await releer(creada.id)).venceEn, "lo que contesta el detalle").toBe(
+      "2027-01-15",
+    );
+    expect(
+      (await listar())[0].venceEn,
+      "lo que contesta el listado",
+    ).toBe("2027-01-15");
   });
 });
 
@@ -528,24 +593,35 @@ describe("el alta de un borrador", () => {
 // ---------------------------------------------------------------------------
 
 describe("el código de la cotización", () => {
-  it("empieza en 0001 y lleva el año en curso", async () => {
-    expect((await crear()).codigo).toBe(`COT-${anio()}-0001`);
+  it("empieza en 0001 y lleva el año de su propia fecha", async () => {
+    esperarCodigo(await crear(), "0001");
   });
 
   it("avanza de a uno", async () => {
-    expect((await crear()).codigo).toBe(`COT-${anio()}-0001`);
-    expect((await crear()).codigo).toBe(`COT-${anio()}-0002`);
-    expect((await crear()).codigo).toBe(`COT-${anio()}-0003`);
+    esperarCodigo(await crear(), "0001");
+    esperarCodigo(await crear(), "0002");
+    esperarCodigo(await crear(), "0003");
   });
 
   it("el correlativo es de este bufete y no del vecino", async () => {
     // El vecino ya tiene su 0007 (lo siembra el `beforeEach`). Si la consulta
     // que calcula el correlativo no filtrara por tenant, ésta nacería 0008.
-    expect((await crear()).codigo).toBe(`COT-${anio()}-0001`);
+    const nuestra = await crear();
+
+    // Que la siembra siga siendo una amenaza se afirma en vez de suponerse:
+    // si la corrida cruzó el año nuevo entre el `beforeEach` y esta
+    // petición, el 0007 del vecino quedó en otro año y la prueba pasaría sin
+    // probar nada. Preferimos que lo diga.
+    expect(
+      nuestra.fecha.slice(0, 4),
+      "la cotización del vecino quedó en otro año: la prueba no amenaza nada",
+    ).toBe(anioDeLaSiembra());
+
+    esperarCodigo(nuestra, "0001");
   });
 
   it("el correlativo se reinicia cada año", async () => {
-    const anioPasado = String(Number(anio()) - 1);
+    const anioPasado = String(Number(anioDeLaSiembra()) - 1);
     const momento = `${anioPasado}-11-30T10:00:00.000Z`;
 
     await env.DB.prepare(
@@ -564,7 +640,7 @@ describe("el código de la cotización", () => {
       )
       .run();
 
-    expect((await crear()).codigo).toBe(`COT-${anio()}-0001`);
+    esperarCodigo(await crear(), "0001");
   });
 
   it("no rellena un hueco del medio", async () => {
@@ -581,7 +657,7 @@ describe("el código de la cotización", () => {
       .bind(primera.id)
       .run();
 
-    expect((await crear()).codigo).toBe(`COT-${anio()}-0004`);
+    esperarCodigo(await crear(), "0004");
   });
 });
 
@@ -894,6 +970,52 @@ describe("una cotización que ya no es borrador", () => {
     expect((await releer(creada.id)).estado).toBe("emitida");
   });
 
+  it("no pisa una cotización emitida entre la lectura y la escritura", async () => {
+    // **La carrera, provocada a propósito.** `actualizar` lee la fila,
+    // comprueba que sigue siendo borrador y recién entonces escribe. Entre
+    // esas dos cosas hay una ventana, y con dos personas en el bufete es
+    // improbable pero no imposible: si alguien emite ahí, la edición pisaría
+    // `cliente_id` y `vence_en` de una emitida y su snapshot congelado
+    // quedaría diciendo otra cosa que sus columnas vivas. No hay vuelta
+    // atrás: el documento ya salió.
+    //
+    // Se reproduce envolviendo la `BaseDeDatos`: su `mutar` emite la
+    // cotización justo antes de delegar en la real, que es exactamente el
+    // instante de la ventana. Sin un `WHERE` que lleve la guarda, el
+    // `UPDATE` pisa la emitida y esta prueba lo ve.
+    const creada = await crear({ clienteId, venceEn: "2027-01-15" });
+    const real = baseSobreD1(env.DB, TENANT_UNICO_ID, autorId);
+
+    const conCarrera: BaseDeDatos = {
+      lectura: real.lectura,
+      async mutar(evento, ...sentencias) {
+        await env.DB.prepare(
+          "UPDATE cotizacion SET estado = 'emitida', snapshot = '{}'" +
+            " WHERE id = ?",
+        )
+          .bind(creada.id)
+          .run();
+
+        return real.mutar(evento, ...sentencias);
+      },
+    };
+
+    const resultado = await cotizacionesSobreD1(conCarrera).actualizar(
+      TENANT_UNICO_ID,
+      creada.id,
+      { clienteId: otroClienteId, venceEn: "2027-06-30" },
+    );
+
+    // El 409 dice el estado **releído**, no el que se había leído antes de
+    // la carrera: contestar «borrador» sería repetir la foto vieja que
+    // justamente acaba de quedar mal.
+    expect(resultado).toEqual({ estado: "no_es_borrador", actual: "emitida" });
+
+    const guardada = await releer(creada.id);
+    expect(guardada.clienteId, "no se pisó el cliente").toBe(clienteId);
+    expect(guardada.venceEn, "no se pisó el vencimiento").toBe("2027-01-15");
+  });
+
   it("el puerto se niega igual, sin pasar por la ruta", async () => {
     // La ruta también comprueba el estado, para poder contestar 409 antes
     // que 422. Sin esta prueba, la comprobación del puerto sería una copia
@@ -1055,5 +1177,125 @@ describe("la puerta va antes que el dominio", () => {
 
     expect(respuesta.status).toBe(403);
     expect(llamado, "el dominio se alcanzó sin identidad").toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// El dominio, sin reloj y sin servidor
+// ---------------------------------------------------------------------------
+
+/**
+ * Las reglas que dependen del calendario, con el día **fijo**.
+ *
+ * Existen aparte de las pruebas de la API por un motivo concreto: el borde
+ * de la regla es «hoy no es pasado», y afirmarlo contra el servidor obliga a
+ * que el reloj de la suite y el del Worker caigan en el mismo día. Una
+ * corrida que cruce la medianoche fallaría sin que nadie haya roto nada, y
+ * una prueba que pasa por suerte no es una prueba.
+ *
+ * `normalizarCotizacion` recibe `hoy` como parámetro justamente para que
+ * esto se pueda escribir. Acá el día es `2026-06-15` y no se mueve.
+ */
+describe("la regla del vencimiento, con un día fijo", () => {
+  const HOY = "2026-06-15";
+
+  function normalizar(venceEn: unknown, venceEnActual: string | null = null) {
+    return normalizarCotizacion(
+      { clienteId: "un-cliente", venceEn },
+      { hoy: HOY, venceEnActual },
+    );
+  }
+
+  function motivosDe(resultado: ReturnType<typeof normalizar>): string[] {
+    return resultado.ok ? [] : resultado.fallas.map((falla) => falla.motivo);
+  }
+
+  it("rechaza el día anterior a hoy", () => {
+    expect(motivosDe(normalizar("2026-06-14"))).toContain("vencimiento_pasado");
+  });
+
+  it("acepta hoy: hoy no es pasado", () => {
+    // El borde, y el que de verdad importa: una cotización que se manda y se
+    // responde el mismo día es el caso corriente, no la excepción.
+    const resultado = normalizar(HOY);
+
+    expect(resultado.ok).toBe(true);
+    expect(resultado.ok && resultado.datos.venceEn).toBe(HOY);
+  });
+
+  it("acepta el día siguiente", () => {
+    expect(normalizar("2026-06-16").ok).toBe(true);
+  });
+
+  it("acepta reenviar el vencimiento pasado que ya estaba", () => {
+    expect(normalizar("2026-01-01", "2026-01-01").ok).toBe(true);
+  });
+
+  it("rechaza un pasado distinto del que ya estaba", () => {
+    // La escapatoria es para **el mismo** valor, no para cualquier pasado
+    // cuando ya había uno: moverle el vencimiento vencido de enero a febrero
+    // sigue siendo ponerle uno que pasó.
+    expect(motivosDe(normalizar("2026-02-01", "2026-01-01"))).toContain(
+      "vencimiento_pasado",
+    );
+  });
+
+  it("no confunde un día inválido con uno pasado", () => {
+    // El orden de las dos guardas importa: `2026-02-31` no es ningún día, y
+    // decir «ya pasó» de una fecha que no existe manda a la persona a
+    // corregir lo que no está mal.
+    expect(motivosDe(normalizar("2026-02-31"))).toEqual([
+      "vencimiento_invalido",
+    ]);
+  });
+});
+
+/**
+ * La conversión de huso, en los dos sentidos.
+ *
+ * Panamá es UTC−5 todo el año. Lo que estas pruebas fijan no es la resta
+ * —eso es aritmética— sino que **las dos conversiones se compongan a la
+ * identidad**: el día que entra tiene que ser el día que sale. Si se arregla
+ * la ida y se olvida la vuelta, el detalle muestra el día siguiente al que
+ * la persona eligió, y eso compila y se lee bien.
+ */
+describe("el día de Panamá", () => {
+  it("a las 02:00Z todavía es el día anterior en Panamá", () => {
+    // Las 02:00 UTC del 25 son las 21:00 del 24 en la oficina. Es el caso
+    // que rompe todo lo que usa el día de UTC, y pasa todas las noches.
+    expect(hoyEnPanama(new Date("2026-10-25T02:00:00.000Z"))).toBe(
+      "2026-10-24",
+    );
+  });
+
+  it("a las 12:00Z es el mismo día", () => {
+    expect(hoyEnPanama(new Date("2026-10-25T12:00:00.000Z"))).toBe(
+      "2026-10-25",
+    );
+  });
+
+  it("el final del día cae en el día siguiente de UTC", () => {
+    expect(finDelDiaEnPanama("2027-01-15")).toBe("2027-01-16T04:59:59.999Z");
+  });
+
+  it("el día vuelve a ser el mismo: ida y vuelta", () => {
+    for (const dia of [
+      "2026-01-01",
+      "2026-02-28",
+      "2026-06-15",
+      "2026-12-31",
+      "2028-02-29",
+    ]) {
+      expect(diaEnPanama(finDelDiaEnPanama(dia)), `ida y vuelta de ${dia}`).toBe(
+        dia,
+      );
+    }
+  });
+
+  it("lee bien los momentos guardados antes del huso", () => {
+    // Las filas escritas con el final del día UTC siguen leyéndose como su
+    // propio día: `T23:59:59.999Z` menos cinco horas es `T18:59:59.999Z`,
+    // que es la misma fecha. No hace falta migrar datos.
+    expect(diaEnPanama("2022-01-01T23:59:59.999Z")).toBe("2022-01-01");
   });
 });

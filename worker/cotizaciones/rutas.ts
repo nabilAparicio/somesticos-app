@@ -43,7 +43,7 @@ import type {
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
 } from "../contract";
-import { ahoraIso } from "../db/momentos";
+import { ahoraIso, hoyEnPanama } from "../db/momentos";
 import { normalizarCotizacion } from "./dominio";
 import type {
   ResultadoDeEscritura,
@@ -127,15 +127,20 @@ function segmentosDe(pathname: string): string[] {
 }
 
 /**
- * Hoy, como día `AAAA-MM-DD`.
+ * Hoy **en Panamá**, como día `AAAA-MM-DD`.
  *
  * El reloj se lee acá y se le pasa al dominio, que es puro: una regla que
  * mira el calendario necesita saber qué día es, y una función que lo averigua
  * sola no se puede probar en el borde —«hoy no es pasado»— sin esperar a que
  * el día cambie.
+ *
+ * Y es el día de Panamá y no el de UTC. Con el de UTC, a partir de las 19:00
+ * hora local el servidor ya cree que es mañana, y un vencimiento elegido para
+ * hoy sale rechazado por pasado. El huso lo resuelve `hoyEnPanama`, en
+ * `../db/momentos`, que explica por qué vive ahí.
  */
 function hoy(): string {
-  return ahoraIso().slice(0, 10);
+  return hoyEnPanama(new Date(ahoraIso()));
 }
 
 function decodificar(segmento: string): string | null {

@@ -69,17 +69,19 @@ export const AVISO_PENDIENTE_NO_SE_REABRE =
 /**
  * El día de hoy en Panamá, como `AAAA-MM-DD`.
  *
- * Panamá es UTC−5 todo el año, sin horario de verano, así que la conversión
- * es una resta y no una tabla de husos. Importa: con la fecha de UTC, un
- * pendiente que vence hoy aparecería vencido a las siete de la tarde, que es
- * cuando todavía se puede resolver.
+ * **Ya no se define acá.** La tajada 2 necesitó el mismo huso en el Worker
+ * —el vencimiento de una cotización se compara contra hoy—, y dos copias de
+ * la zona horaria de un bufete que está en un solo lugar son una que se
+ * arregla y otra que no. La definición vive en `worker/db/momentos.ts`, que
+ * es un módulo sin dependencias y por eso lo pueden importar los dos lados;
+ * el Worker no podría importar éste sin dar vuelta la flecha del proyecto.
+ *
+ * Se **reexporta** en vez de mandar a cada llamador al archivo nuevo porque
+ * eso no cambiaría nada y tocaría pantallas que no tienen por qué enterarse
+ * de dónde vive una resta. Lo que importa es que la constante exista una
+ * sola vez, y ahora existe una sola vez.
  */
-const HORAS_DE_PANAMA = -5;
-
-export function hoyEnPanama(ahora: Date): string {
-  const corrido = new Date(ahora.getTime() + HORAS_DE_PANAMA * 3_600_000);
-  return corrido.toISOString().slice(0, 10);
-}
+export { hoyEnPanama } from "../../../worker/db/momentos";
 
 /**
  * ¿Se le pasó la fecha?

@@ -37,7 +37,11 @@ import type {
 import type { BaseDeDatos } from "../db/base";
 import { sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
-import { ahoraIso } from "../db/momentos";
+import {
+  ahoraIso,
+  diaEnPanama,
+  finDelDiaEnPanama,
+} from "../db/momentos";
 
 export type ResultadoDeEscritura =
   | { estado: "guardado"; cotizacion: Cotizacion }
@@ -114,25 +118,26 @@ function prefijoDelCodigo(momento: string): string {
 }
 
 /**
- * El vencimiento, de día a momento guardable.
+ * El vencimiento, de día a momento guardable, y de vuelta.
+ *
+ * Las dos son `worker/db/momentos.ts`, que argumenta el huso y la
+ * simetría. Acá solo se les agrega el nulo, que es la mitad que el
+ * repositorio conoce y el dominio no: una cotización puede no vencer.
  *
  * **Al final del día y no al principio**, y no es un detalle de gusto:
  * `CHECK (vence_en >= fecha)` compara momentos. Con medianoche, «vence hoy»
  * —el caso más corriente de una cotización que se manda y se responde el
  * mismo día— daría un vencimiento anterior a la fecha y la base abortaría la
- * escritura. Con el final del día, el único caso que la base rechaza es un
- * vencimiento en un día ya pasado, que es un error de verdad.
- *
- * Y además es lo que la frase significa: una cotización «válida hasta el 31»
- * vale el 31 entero.
+ * escritura. Y es lo que la frase significa: «válida hasta el 31» vale el 31
+ * entero, en la hora del bufete y no en la de Greenwich.
  */
-function finDelDia(dia: string): string {
-  return `${dia}T23:59:59.999Z`;
+function aMomento(dia: string | null): string | null {
+  return dia === null ? null : finDelDiaEnPanama(dia);
 }
 
-/** El vencimiento, de momento guardado a día. La vuelta de `finDelDia`. */
-function diaDe(momento: string | null): string | null {
-  return momento === null ? null : momento.slice(0, 10);
+/** La vuelta exacta de `aMomento`. */
+function aDia(momento: string | null): string | null {
+  return momento === null ? null : diaEnPanama(momento);
 }
 
 function aCotizacion(fila: FilaDeCotizacion): Cotizacion {
@@ -143,7 +148,7 @@ function aCotizacion(fila: FilaDeCotizacion): Cotizacion {
     clienteId: fila.cliente_id,
     clienteNombre: fila.cliente_nombre,
     fecha: fila.fecha,
-    venceEn: diaDe(fila.vence_en),
+    venceEn: aDia(fila.vence_en),
     moneda: fila.moneda,
     duplicadaDeId: fila.duplicada_de_id,
     creadaPor: fila.creada_por,
@@ -309,7 +314,7 @@ export function cotizacionesSobreD1(
           datos.clienteId,
           codigo,
           ahora,
-          datos.venceEn === null ? null : finDelDia(datos.venceEn),
+          aMomento(datos.venceEn),
           autorId,
           ahora,
         ),
@@ -352,7 +357,16 @@ export function cotizacionesSobreD1(
       // documento de cara al cliente; `fecha`, `creada_por` y `creada_en` son
       // hechos y editar un vencimiento no reescribe quién abrió el borrador
       // ni cuándo; `estado`, `snapshot` y `moneda` no son de esta ruta.
-      await base.mutar(
+      //
+      // **`AND estado = 'borrador'` repite en SQL la comprobación de arriba,
+      // y no es redundante.** Entre la lectura y esta escritura hay una
+      // ventana en la que otra petición puede emitir la cotización; sin la
+      // cláusula, este `UPDATE` pisaría `cliente_id` y `vence_en` de una
+      // emitida y su snapshot congelado quedaría diciendo otra cosa que sus
+      // columnas vivas. No hay vuelta atrás: el documento ya salió. La
+      // comprobación de arriba contesta bien el caso corriente; ésta es la
+      // que lo hace cierto.
+      const [efecto] = await base.mutar(
         {
           entidad: "cotizacion",
           entidadId: id,
@@ -361,13 +375,33 @@ export function cotizacionesSobreD1(
         },
         sentencia(
           "UPDATE cotizacion SET cliente_id = ?, vence_en = ?" +
-            " WHERE tenant_id = ? AND id = ?",
+            " WHERE tenant_id = ? AND id = ? AND estado = 'borrador'",
           datos.clienteId,
-          datos.venceEn === null ? null : finDelDia(datos.venceEn),
+          aMomento(datos.venceEn),
           tenantId,
           id,
         ),
       );
+
+      // Cero filas quiere decir que perdimos la carrera. Se relee para decir
+      // la verdad sobre en qué quedó: contestar con el estado que se había
+      // leído antes sería repetir la foto vieja que acaba de quedar mal.
+      //
+      // **Lo que esto cuesta, dicho para que sea una decisión.** La entrada
+      // de bitácora viajó en el mismo `batch` que el `UPDATE` —así lo exige
+      // `mutar`, y es lo que hace que no se pueda escribir sin registrar—,
+      // así que en esta rama queda un «editó» de una edición que no ocurrió.
+      // Es un hecho de más en el registro, contra un documento emitido
+      // corrompido en silencio: de los dos males es claramente el menor, y
+      // sólo aparece si dos personas escriben la misma cotización en el
+      // mismo instante. Cerrarlo del todo pide que `mutar` admita un
+      // registro condicional, que es `worker/db/base.ts` y otra tarea.
+      if (efecto.meta.changes === 0) {
+        const ahora = await obtener(tenantId, id);
+        if (ahora === null) return { estado: "no_encontrado" };
+
+        return { estado: "no_es_borrador", actual: ahora.estado };
+      }
 
       const cotizacion = await obtener(tenantId, id);
       if (cotizacion === null) return { estado: "no_encontrado" };

@@ -92,6 +92,43 @@
 -- los verbos que ya estaban, por el argumento que
 -- `worker/bitacora/vocabulario.ts` escribe entero—, así que la ampliación es
 -- de una sola de las dos listas.
+--
+-- ## Lo que esto le cuesta a quien ya corrió la aplicación en local
+--
+-- Que no haya D1 remoto es lo que hace legítimo editar este archivo. Lo que
+-- sí existe es el **D1 local persistido** de `wrangler dev`, y ahí esta
+-- edición no llega sola: D1 lleva la cuenta de lo aplicado en su tabla
+-- `d1_migrations`, y una migración ya registrada no se vuelve a correr
+-- aunque su archivo cambie.
+--
+-- Verificado sobre el estado local de esta máquina, no supuesto:
+--
+--     $ sqlite3 .wrangler/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite \
+--         "SELECT name FROM d1_migrations ORDER BY id"
+--     0001_esquema_inicial.sql
+--     0002_bitacora_inmutable.sql     <- registrada el 2026-10-23
+--     0003_tenencia_y_unicidad.sql
+--
+--     $ ... "SELECT sql FROM sqlite_master WHERE name='bitacora'"
+--     ... CHECK (entidad IN ('area','cliente','proceso','tipo_cliente','tipo_proceso'))
+--
+-- O sea: `0004` sí va a correr, porque es nueva, y van a aparecer las tablas
+-- de cotización; pero el `CHECK` de `entidad` se queda sin `'cotizacion'`.
+-- La consecuencia es un 500 en **toda** alta y edición de cotización, porque
+-- su entrada de bitácora viola el `CHECK` y viaja en el mismo `batch` que el
+-- efecto. Las pruebas no lo muestran: el runner levanta bases nuevas y
+-- aplica las cuatro migraciones desde cero en cada corrida.
+--
+-- **Quien ya haya corrido `pnpm dev` antes de esta tajada tiene que borrar
+-- el estado local antes de usar cotizaciones:**
+--
+--     rm -rf .wrangler/state/v3/d1
+--
+-- Se pierden los datos locales de prueba, que es justamente lo que son. El
+-- directorio está en `.gitignore`, así que no hay nada que commitear, y una
+-- instalación nueva no necesita hacer nada: aplica las cuatro migraciones de
+-- una. Esto desaparece con el primer despliegue, igual que el permiso para
+-- editar este archivo.
 
 -- ---------------------------------------------------------------------------
 -- Reconstrucción con los dos vocabularios cerrados
