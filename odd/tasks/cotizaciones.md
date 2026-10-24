@@ -1,7 +1,7 @@
 # cotizaciones — Tajada 2: el generador de propuestas
 
 **Creado:** 24 de octubre de 2026
-**Estado:** R1 en curso. T-1 cerrada, T-2 A cerrada. La tajada 1 está construida y empujada; falta desplegarla
+**Estado:** R1 en curso. T-1 cerrada, T-2 A y B cerradas. La tajada 1 está construida y empujada; falta desplegarla
 (T-16 allá).
 **Diseño de referencia:** `docs/diseno.md` §8 (el generador), §6 (modelo de datos), §5 (invariantes)
 **Tajada anterior:** `odd/tasks/crm-procesos.md`
@@ -148,7 +148,7 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
 
       - [x] **A · La API del borrador.** Alta, listado, detalle y edición, más el registro de
             `cotizacion` en el vocabulario de bitácora.
-      - [ ] **B · Las pantallas del borrador.**
+      - [x] **B · Las pantallas del borrador.**
       - [ ] **C · Los módulos de prosa**, las dos capas.
 
       **Lo que C hereda de T-1 y no puede ignorar:** el índice único sobre
@@ -277,6 +277,7 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
 |---|---|---|---|
 | T-1 · El esquema de la cotización | `9383fc1` | `typecheck` 0, `test` 0 (959), `lint` 0, `build` 0 | aprobada, lineaje `review-a1dbf4335a5f0866`, riesgo medio, lente de fiabilidad, sin hallazgos bloqueantes |
 | T-2 A · La API del borrador | `976525d`, `ba16c23`, `9470d3f` | `typecheck` 0, `test` 0 (1022), `lint` 0, `build` 0 | aprobada ×2, lineajes `review-0d20d7f0bd3bad1e` y `review-6dd79b52500aa28a`, sin bloqueantes; `9470d3f` quedó `under_budget` |
+| T-2 B · Las pantallas del borrador | `9cd32ef`, `89a71a4` | `typecheck` 0, `test` 0 (1079), `lint` 0, `build` 0, `test:e2e` 0 (186) | aprobada, lineaje `review-1e5f1e3ce2f54aa7`, sin bloqueantes; `89a71a4` quedó `under_budget` |
 
 ### Lo que T-1 corrigió de este plan
 
@@ -330,6 +331,26 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
    antes del 24 de octubre de 2026 tiene el `CHECK` de `entidad` viejo y recibe 500 en toda alta
    de cotización. Se arregla con `rm -rf .wrangler/state/v3/d1`. Caduca con el primer despliegue,
    igual que el permiso para editar esa migración.
+
+### Deuda que T-2 B encontró en la tajada 1
+
+1. **`e2e/procesos.spec.ts:1338` es inestable y además puede pasar sin probar nada.** Usa
+   `expect.poll` con el tope por defecto de 5 s para cubrir la cadena entera *clic en «Avanzar
+   a …» → `POST` de avance → respuesta → re-pedido de `/bitacora`*, sin sincronizar el paso del
+   medio; con seis trabajadores en paralelo la cadena no entra y falla con `Received: 0`. Y el
+   `page.on("request")` se registra **después** del `goto`, así que si el pedido inicial de
+   bitácora aterriza antes de engancharse el escucha, la prueba pasa **sin haber medido el
+   re-pedido**. Los dos modos de falla, en la misma prueba.
+
+2. **`esSeccionActiva` en `src/layout/Esqueleto.tsx` no tiene ninguna prueba.** Se vio al escribir
+   el invariante de navegación. No se movió el archivo para dárselas: probar la constante en vez
+   del menú dibujado habría sido más débil que la prueba de punta a punta que se escribió.
+
+3. **El `estado` que viaja en el 409 no llega a la pantalla.** `Resultado.conflicto` conserva
+   `motivo`, `bloqueo` y `duplicado`, y ninguno es ése, así que la frase genérica no puede nombrar
+   en qué quedó la cotización y manda a recargar igual. Mitigado donde sí se sabe: el formulario
+   de edición lee el estado antes de dibujarse. Cerrarlo pide un tercer campo en `Resultado`,
+   contra el comentario que explica por qué son dos.
 
 ### Deuda registrada, no cerrada
 
