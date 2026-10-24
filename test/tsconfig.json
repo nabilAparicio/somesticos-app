@@ -50,6 +50,14 @@
     "../src/pantallas/procesos/plantilla.ts",
     "../src/pantallas/procesos/presentacion.ts",
     "../src/pantallas/procesos/notas.ts",
-    "../src/pantallas/procesos/pendientes.ts"
+    "../src/pantallas/procesos/pendientes.ts",
+    "../src/pantallas/cotizaciones/formulario.ts",
+    "../src/pantallas/cotizaciones/presentacion.ts",
+    // `src/api/peticiones.ts` es el primero de esta lista que **no** es un
+    // módulo de pantalla: es el cliente HTTP. Entra porque su mapa de 409
+    // —`CONFLICTOS`— es lógica pura con una prueba propia, y compila acá sin
+    // DOM porque `fetch`, `Request` y `Response` los declaran los tipos del
+    // runtime de Workers, que este proyecto ya carga en `types`.
+    "../src/api/peticiones.ts"
   ]
 }

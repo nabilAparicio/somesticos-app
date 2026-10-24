@@ -35,6 +35,23 @@ export type Ruta =
    */
   | { nombre: "proceso-nuevo"; clienteId: string | null }
   | { nombre: "proceso"; id: string }
+  /**
+   * Las cuatro pantallas de la cotización (tajada 2, T-2).
+   *
+   * El alta **no** lleva `clienteId`, al revés que la del proceso. No es un
+   * olvido: ese parámetro existe allá porque el detalle del cliente tiene un
+   * botón que abre el alta con el cliente ya elegido, y acá ese botón
+   * todavía no está. Una ruta que nadie puede alcanzar es una rama de
+   * `enlaceDe` que nadie ejerce, y se desincroniza sin que nadie lo note.
+   *
+   * No hay ruta de emitir, de módulos ni de líneas: son de T-4 y de la
+   * unidad C. Lo que no existe tiene que caer en «desconocida» y no en una
+   * pantalla en blanco.
+   */
+  | { nombre: "cotizaciones" }
+  | { nombre: "cotizacion-nueva" }
+  | { nombre: "cotizacion"; id: string }
+  | { nombre: "cotizacion-edicion"; id: string }
   | { nombre: "desconocida"; ruta: string };
 
 /** El segmento literal del alta. No puede ser el identificador de nadie. */
@@ -47,6 +64,9 @@ const TIPOS_PROCESO = "tipos-proceso";
 
 /** La raíz de las pantallas de proceso (T-7). */
 const PROCESOS = "procesos";
+
+/** La raíz de las pantallas de cotización (tajada 2, T-2). */
+const COTIZACIONES = "cotizaciones";
 
 /**
  * Los segmentos de la ruta, sin la barra final.
@@ -109,6 +129,36 @@ function resolverProcesos(segmentos: string[], pathname: string): Ruta {
   return id === null ? desconocida : { nombre: "proceso", id };
 }
 
+/**
+ * Las cuatro pantallas de cotización. Aparte, por la misma razón que las de
+ * catálogo y las de proceso: un cuarto árbol dentro de `resolverRuta` es
+ * donde un `return` cae en la rama equivocada sin que se note.
+ *
+ * Es el árbol de clientes, con una diferencia: acá **no** hay una rama de
+ * cuatro segmentos. `/cotizaciones/{id}/modulos` y `/cotizaciones/{id}/
+ * emitir` tienen que caer en «desconocida» mientras no existan, que es lo
+ * contrario de resolver a una pantalla vacía.
+ */
+function resolverCotizaciones(segmentos: string[], pathname: string): Ruta {
+  const desconocida: Ruta = { nombre: "desconocida", ruta: pathname };
+
+  if (segmentos.length === 1) return { nombre: "cotizaciones" };
+
+  if (segmentos.length === 2) {
+    if (segmentos[1] === NUEVO) return { nombre: "cotizacion-nueva" };
+
+    const id = identificador(segmentos[1]);
+    return id === null ? desconocida : { nombre: "cotizacion", id };
+  }
+
+  if (segmentos.length === 3 && segmentos[2] === EDITAR) {
+    const id = identificador(segmentos[1]);
+    return id === null ? desconocida : { nombre: "cotizacion-edicion", id };
+  }
+
+  return desconocida;
+}
+
 export function resolverRuta(pathname: string): Ruta {
   const segmentos = segmentosDe(pathname);
   const desconocida: Ruta = { nombre: "desconocida", ruta: pathname };
@@ -120,6 +170,9 @@ export function resolverRuta(pathname: string): Ruta {
 
   if (segmentos[0] === CATALOGOS) return resolverCatalogos(segmentos, pathname);
   if (segmentos[0] === PROCESOS) return resolverProcesos(segmentos, pathname);
+  if (segmentos[0] === COTIZACIONES) {
+    return resolverCotizaciones(segmentos, pathname);
+  }
 
   if (segmentos[0] !== "clientes") return desconocida;
 
@@ -188,6 +241,14 @@ export function enlaceDe(ruta: Ruta): string {
         : `/clientes/${encodeURIComponent(ruta.clienteId)}/${PROCESOS}/${NUEVO}`;
     case "proceso":
       return `/${PROCESOS}/${encodeURIComponent(ruta.id)}`;
+    case "cotizaciones":
+      return `/${COTIZACIONES}`;
+    case "cotizacion-nueva":
+      return `/${COTIZACIONES}/${NUEVO}`;
+    case "cotizacion":
+      return `/${COTIZACIONES}/${encodeURIComponent(ruta.id)}`;
+    case "cotizacion-edicion":
+      return `/${COTIZACIONES}/${encodeURIComponent(ruta.id)}/${EDITAR}`;
     case "desconocida":
       return ruta.ruta;
   }

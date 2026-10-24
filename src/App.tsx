@@ -21,6 +21,9 @@ import { TiposDeProceso } from "./pantallas/catalogos/TiposDeProceso";
 import { DetalleDeCliente } from "./pantallas/clientes/DetalleDeCliente";
 import { FormularioDeCliente } from "./pantallas/clientes/FormularioDeCliente";
 import { ListaDeClientes } from "./pantallas/clientes/ListaDeClientes";
+import { DetalleDeCotizacion } from "./pantallas/cotizaciones/DetalleDeCotizacion";
+import { FormularioDeCotizacion } from "./pantallas/cotizaciones/FormularioDeCotizacion";
+import { ListaDeCotizaciones } from "./pantallas/cotizaciones/ListaDeCotizaciones";
 import { DetalleDeProceso } from "./pantallas/procesos/DetalleDeProceso";
 import { FormularioDeProceso } from "./pantallas/procesos/FormularioDeProceso";
 import { ListaDeProcesos } from "./pantallas/procesos/ListaDeProcesos";
@@ -68,6 +71,14 @@ function pantallaDe(ruta: Ruta) {
       );
     case "proceso":
       return <DetalleDeProceso key={ruta.id} id={ruta.id} />;
+    case "cotizaciones":
+      return <ListaDeCotizaciones />;
+    case "cotizacion-nueva":
+      return <FormularioDeCotizacion key="nueva" />;
+    case "cotizacion":
+      return <DetalleDeCotizacion key={ruta.id} id={ruta.id} />;
+    case "cotizacion-edicion":
+      return <FormularioDeCotizacion key={ruta.id} cotizacionId={ruta.id} />;
     case "desconocida":
       return (
         <section>

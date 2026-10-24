@@ -35,7 +35,9 @@ export type Resultado<T> =
    * chocó con dependientes (`tiene_dependientes`, T-6), el avance de un
    * proceso que ya no tiene etapas por delante (`sin_etapas_pendientes`,
    * T-7) y el nombre de catálogo ya tomado dentro del bufete
-   * (`nombre_duplicado` y `nombre_duplicado_de_baja`, T-12).
+   * (`nombre_duplicado` y `nombre_duplicado_de_baja`, T-12) y la edición de
+   * una cotización que ya salió del borrador (`cotizacion_no_es_borrador`,
+   * tajada 2).
    *
    * Los dos detalles son nulos salvo en el 409 que los trae. Son campos
    * distintos y no uno solo porque son formas distintas: unificarlos en un
@@ -162,6 +164,25 @@ export async function pedirVacio(
  * el borrado bloqueado de T-6, cuya frase necesita además el nombre de la
  * fila que la pantalla está mirando y por eso se compone allá; y el nombre
  * duplicado de T-12, que trae el suyo y se resuelve más abajo.
+ *
+ * ## Por qué sigue siendo `Record<string, string>` y no un `satisfies`
+ *
+ * Un `as const satisfies Record<MotivoDeConflicto, string>` —lo que
+ * `COLECCION_POR_ENTIDAD` hace en `worker/bitacora/rutas.ts`— lo volvería
+ * exhaustivo y un 409 nuevo no compilaría hasta tener texto, que es
+ * exactamente lo que faltó acá: `cotizacion_no_es_borrador` existía desde
+ * T-2 A y caía en el texto de reserva, que habla de un borrado que nadie
+ * pidió.
+ *
+ * **Lo que lo frena es que ese tipo no existe.** Los ocho `error` de
+ * `worker/contract.ts` no tienen hoy una unión que los junte, y el `Record`
+ * exhaustivo tendría que excluir además los tres que no se resuelven acá
+ * —`tiene_dependientes` y los dos de nombre duplicado— más los dos que la
+ * pantalla de procesos atiende en su propio mapa (`proceso_cerrado` y
+ * `proceso_abierto`). O sea: declarar un `MotivoDeConflicto` en el contrato
+ * del Worker y repartir de nuevo cinco motivos de la tajada 1 entre tres
+ * mapas. Es un cambio del contrato y de las pantallas de procesos, no de
+ * este archivo, y por eso queda anotado y no hecho.
  */
 const CONFLICTOS: Record<string, string> = {
   sin_etapas_pendientes: "Este proceso ya no tiene etapas por delante.",
@@ -169,6 +190,20 @@ const CONFLICTOS: Record<string, string> = {
     "Ese pendiente ya estaba cerrado, y un pendiente cerrado no se vuelve a" +
     " cerrar ni se reabre. Hay que volver a cargar el proceso para ver quién" +
     " lo cerró.",
+  /*
+   * La carrera perdida de la edición: alguien emitió, ganó o perdió esta
+   * cotización mientras el formulario estaba abierto. El estado en el que
+   * quedó **viaja en el cuerpo del 409** y no llega hasta acá —`Resultado`
+   * conserva el motivo y dos detalles, y éste no es ninguno de los dos—, así
+   * que la frase no lo puede nombrar y por eso manda a recargar. La pantalla
+   * que sí lo sabe es la de edición, que lee el estado antes de dibujar el
+   * formulario y lo dice con todas las letras (`avisoDeNoEsBorrador`); esto
+   * es la red de abajo, para el instante entre esa lectura y el envío.
+   */
+  cotizacion_no_es_borrador:
+    "Esta cotización ya no es un borrador, y lo que salió del borrador no se" +
+    " edita: su contenido es el registro de lo que se mandó. Hay que volver" +
+    " a cargarla para ver en qué estado quedó y quién la movió.",
 };
 
 /**
