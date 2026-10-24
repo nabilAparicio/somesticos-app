@@ -1,7 +1,7 @@
 # cotizaciones — Tajada 2: el generador de propuestas
 
 **Creado:** 24 de octubre de 2026
-**Estado:** R1 en curso, T-1 cerrada. La tajada 1 está construida y empujada; falta desplegarla
+**Estado:** R1 en curso. T-1 cerrada, T-2 A cerrada. La tajada 1 está construida y empujada; falta desplegarla
 (T-16 allá).
 **Diseño de referencia:** `docs/diseno.md` §8 (el generador), §6 (modelo de datos), §5 (invariantes)
 **Tajada anterior:** `odd/tasks/crm-procesos.md`
@@ -133,9 +133,34 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
       quedó corto por un factor de cuatro, y lo que lo explica es la auditoría en dos dimensiones
       del punto 2 de abajo: una prueba por cláusula y otra por operador, y son diez cláusulas.
 
-- [ ] **T-2 · Módulos de prosa.** El catálogo de tipos de módulo **como registro tipado en
-      código**, no como configuración editable: agregar un tipo es un despliegue. Alta, edición,
-      reordenamiento y borrado de módulos dentro de un borrador. *Forecast ~400.*
+- [ ] **T-2 · La cotización en borrador y sus módulos de prosa.** El catálogo de tipos de módulo
+      **como registro tipado en código**, no como configuración editable: agregar un tipo es un
+      despliegue. Alta, edición, reordenamiento y borrado de módulos dentro de un borrador.
+      *Forecast original ~400; real estimado ~1500.*
+
+      **El plan tenía un hueco y esta tarea lo cierra.** Las tres tareas de R1 hablaban de «un
+      borrador» y ninguna lo creaba: T-1 fue esquema puro, y no había una sola línea de API que
+      insertara en `cotizacion`. Tal como estaba escrito, R1 terminaba sin que se pudiera escribir
+      una cotización, que es el criterio 1 de aceptación de la tajada. El alta del borrador se
+      pliega acá en vez de inventar una tarea que no sirve sola.
+
+      Se parte en tres unidades de trabajo, una por commit:
+
+      - [x] **A · La API del borrador.** Alta, listado, detalle y edición, más el registro de
+            `cotizacion` en el vocabulario de bitácora.
+      - [ ] **B · Las pantallas del borrador.**
+      - [ ] **C · Los módulos de prosa**, las dos capas.
+
+      **Lo que C hereda de T-1 y no puede ignorar:** el índice único sobre
+      `(cotizacion_id, orden)` impide reordenar incrementando en su lugar. El reordenamiento de
+      etapas de la tajada 1 **no resuelve** ese problema, lo esquiva: `proceso_etapa.orden`
+      deliberadamente no lleva índice único. C tiene que reescribir el tramo en una sola
+      transacción —borrar e insertar, o pasar por un rango disjunto—. Está escrito en
+      `migrations/0004_cotizaciones.sql`.
+
+      **Y la otra mitad acoplada:** el `CHECK` del vocabulario de tipos de módulo en la migración
+      y el registro tipado en código de C tienen que moverse juntos. Si se separan, el sistema
+      rechaza un tipo que la pantalla ofrece.
 
 - [ ] **T-3 · Líneas de honorarios y gastos estimados.** La clase (`honorario|gasto_estimado`)
       separa las dos familias y la pantalla las muestra separadas y rotula el gasto como
@@ -251,6 +276,7 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
 | Tarea | Commit | Checks observados | Revisión |
 |---|---|---|---|
 | T-1 · El esquema de la cotización | `9383fc1` | `typecheck` 0, `test` 0 (959), `lint` 0, `build` 0 | aprobada, lineaje `review-a1dbf4335a5f0866`, riesgo medio, lente de fiabilidad, sin hallazgos bloqueantes |
+| T-2 A · La API del borrador | `976525d`, `ba16c23`, `9470d3f` | `typecheck` 0, `test` 0 (1022), `lint` 0, `build` 0 | aprobada ×2, lineajes `review-0d20d7f0bd3bad1e` y `review-6dd79b52500aa28a`, sin bloqueantes; `9470d3f` quedó `under_budget` |
 
 ### Lo que T-1 corrigió de este plan
 
@@ -275,6 +301,35 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
    segundo motivo: evitar que el disparador tape el error verdadero de la columna ausente, porque
    `BEFORE INSERT` corre antes que `NOT NULL`. Lo que sobra en las `NOT NULL` es la guarda dentro
    de la consulta de M-0, que sólo lee. Son dos cosas distintas y el plan las había confundido.
+
+### Lo que T-2 A dejó escrito, y le toca a quien siga
+
+1. **El bufete está en Panamá, UTC−5, y el servidor calculaba el día en UTC.** Desde las 19:00
+   locales el día UTC ya es mañana: elegir la fecha de hoy devolvía `422 vencimiento_pasado`.
+   `HORAS_DE_PANAMA` vive ahora **una sola vez**, en `worker/db/momentos.ts`, que es un módulo
+   del Worker **sin dependencias** y por eso puede cruzar la frontera: el Worker no puede
+   importar de `src/` sin dar vuelta la flecha del proyecto. Ese archivo tiene como regla
+   permanente **no importar nada**, porque un `import` ahí se lo lleva el bundle del navegador.
+   **La unidad B:** el `min` del `<input type="date">` se calcula con el día de Panamá, y tiene
+   que ser `min(hoy, vencimiento guardado)` — si no, un borrador viejo no puede mostrar su
+   propio valor en el control.
+
+2. **`src/api/peticiones.ts` tiene un `CONFLICTOS` que no es exhaustivo**, y
+   `cotizacion_no_es_borrador` no tiene entrada. Hoy caería en el texto de reserva, que habla de
+   un borrado que nadie pidió. No rompe nada porque ninguna pantalla llama todavía a esa ruta.
+   **Es de la unidad B.**
+
+3. **El residuo de la carrera perdida.** Cuando el `UPDATE` guardado pierde la carrera contra una
+   emisión, la entrada de bitácora viaja igual en el mismo `batch` —así lo exige `mutar`, y es lo
+   que impide escribir sin registrar—, así que queda un «editó» de una edición que no ocurrió.
+   Es un hecho de más en el registro contra un documento emitido corrompido en silencio: de los
+   dos males, el menor. Está probado que son exactamente dos filas. Cerrarlo del todo pide que
+   `mutar` admita un registro condicional, y eso es `worker/db/base.ts`.
+
+4. **Un D1 local ya migrado no re-aplica `0002`.** Quien haya corrido la aplicación en local
+   antes del 24 de octubre de 2026 tiene el `CHECK` de `entidad` viejo y recibe 500 en toda alta
+   de cotización. Se arregla con `rm -rf .wrangler/state/v3/d1`. Caduca con el primer despliegue,
+   igual que el permiso para editar esa migración.
 
 ### Deuda registrada, no cerrada
 
