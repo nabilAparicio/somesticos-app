@@ -91,19 +91,40 @@ export const CATALOGO_DE_MODULOS = [
  * El `satisfies` de arriba cierra una dirección: no se puede rotular un tipo
  * que no está en `TipoDeModulo`. Esto cierra la otra: si alguien agrega un
  * tipo a la unión y no lo pone en el catálogo, `Exclude<…>` deja de ser
- * `never` y la asignación de abajo **no compila**. Es el mismo mecanismo que
- * `AccionesSinDuenio` en `worker/bitacora/vocabulario.ts`.
+ * `never`, la restricción `T extends never` de `DebeSerVacio` no se
+ * satisface y **el `typecheck` se cae con TS2344** nombrando el tipo sin
+ * rótulo.
  *
  * Sin esto, un tipo nuevo compilaría, la base lo aceptaría —si alguien se
- * acordó del `CHECK`— y la pantalla lo dibujaría sin rótulo.
+ * acordó del `CHECK`— y la pantalla lo dibujaría sin rótulo: `rotuloDeTipo`
+ * devolvería `undefined` detrás de su `as string`.
+ *
+ * ## La forma que había acá no servía, y hay que no volver a escribirla
+ *
+ * Hasta T-8 la red era `export const TODOS_LOS_TIPOS_TIENEN_ROTULO:
+ * TiposSinRotulo[] = []`, y este comentario afirmaba que esa asignación no
+ * compilaba cuando la exclusión dejaba de ser `never`. **Era falso.** Un
+ * arreglo vacío es asignable a `T[]` para cualquier `T`, así que
+ * `const x: "resumen_ejecutivo"[] = []` compila igual que
+ * `const x: never[] = []`.
+ *
+ * Se midió con la mutación correcta —`"resumen_ejecutivo"` agregado a
+ * `TipoDeModulo` en `worker/contract.ts` y **ningún** otro cambio— y
+ * `pnpm typecheck` salió 0. Y este catálogo es el caso **más** descubierto de
+ * los tres, porque no hay ningún `Record<TipoDeModulo, …>` vecino que lo
+ * tape de rebote: el rótulo sale de un `Map` construido en ejecución, y
+ * `test/modulos-api.spec.ts` compara el catálogo contra el `CHECK` de la
+ * base, que es una lista derivada del catálogo y por lo tanto no nota que a
+ * la unión le sobre un miembro.
+ *
+ * La misma corrección está en `lineas.ts` y en
+ * `worker/bitacora/vocabulario.ts`, que tenían la misma forma inútil.
  */
-export type TiposSinRotulo = Exclude<
-  TipoDeModulo,
-  (typeof CATALOGO_DE_MODULOS)[number]["tipo"]
->;
+type DebeSerVacio<T extends never> = T;
 
-/** El uso que hace valer la red de arriba. Tiene que poder ser `never`. */
-export const TODOS_LOS_TIPOS_TIENEN_ROTULO: TiposSinRotulo[] = [];
+export type TiposSinRotulo = DebeSerVacio<
+  Exclude<TipoDeModulo, (typeof CATALOGO_DE_MODULOS)[number]["tipo"]>
+>;
 
 /**
  * Sólo los identificadores, en el mismo orden.
@@ -125,8 +146,8 @@ const ROTULOS = new Map<string, string>(
  *
  * Es total sobre la unión —el `Map` se construye del mismo catálogo que la
  * red de arriba vigila— así que no hay rama de reserva: una que devolviera
- * el identificador crudo escondería justamente el caso que
- * `TODOS_LOS_TIPOS_TIENEN_ROTULO` existe para romper en el `typecheck`.
+ * el identificador crudo escondería justamente el caso que `TiposSinRotulo`
+ * existe para romper en el `typecheck`.
  */
 export function rotuloDeTipo(tipo: TipoDeModulo): string {
   return ROTULOS.get(tipo) as string;

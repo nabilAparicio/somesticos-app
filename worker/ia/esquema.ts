@@ -160,23 +160,20 @@ export const CLAVES_DE_LINEA = [
 ] as const satisfies readonly (keyof DatosDeLinea)[];
 
 /**
- * La red, y **por qué no es la que usan `modulos.ts` y `lineas.ts`**.
+ * La red: la exclusión **bajo una restricción**.
  *
- * Aquellos declaran `export const TODOS_LOS_TIPOS_TIENEN_ROTULO:
- * TiposSinRotulo[] = []` y dicen que si la exclusión deja de ser `never` «la
- * asignación de abajo no compila». **Se midió y es falso**: un arreglo vacío
- * es asignable a `T[]` para cualquier `T`, así que `const x: "nota_cliente"[]
- * = []` compila igual de bien que `const x: never[] = []`. Se comprobó sobre
- * el archivo real quitando `nota_cliente` del catálogo: `pnpm typecheck`
- * salió 0. Esas tres declaraciones —las dos de cotizaciones y
- * `AccionesSinDuenio` en `worker/bitacora/vocabulario.ts`— no sostienen hoy
- * lo que su comentario promete. Está anotado para quien pueda tocarlas;
- * quedan fuera de la superficie de T-8.
- *
- * La forma que sí falla es poner la exclusión **bajo una restricción**: si
- * `Exclude<…>` no es `never`, `T extends never` no se satisface y el
- * `typecheck` se cae con TS2344 sin necesidad de ningún valor en tiempo de
+ * Si `Exclude<…>` no es `never`, `T extends never` no se satisface y el
+ * `typecheck` se cae con TS2344, sin necesidad de ningún valor en tiempo de
  * ejecución. Verificado quitando `"contenido"` de `CLAVES_DE_MODULO`.
+ *
+ * **No es la forma que el proyecto usaba**, y la diferencia costó medirla.
+ * `TiposSinRotulo`, `ClasesSinRotulo` y `AccionesSinDuenio` se escribían como
+ * `export const X: Exclusion[] = []`, con el comentario de que esa asignación
+ * no compila cuando la exclusión deja de ser `never`. Era falso: un arreglo
+ * vacío es asignable a `T[]` para cualquier `T`. Las tres se corrigieron a
+ * esta forma en T-8 y cada una quedó demostrada con su mutación; sus
+ * comentarios cuentan ahora cuál es el camino que cada una cubre y cuál es la
+ * mutación equivocada que mata el `typecheck` por otro lado.
  */
 type DebeSerVacio<T extends never> = T;
 

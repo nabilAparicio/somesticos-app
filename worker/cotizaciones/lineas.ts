@@ -98,21 +98,42 @@ export const CATALOGO_DE_CLASES = [
  * El `satisfies` de arriba cierra una dirección: no se puede rotular una
  * clase que no está en `ClaseDeLinea`. Esto cierra la otra: si alguien agrega
  * una clase a la unión y no la pone en el catálogo, `Exclude<…>` deja de ser
- * `never` y la asignación de abajo **no compila**. Es el mismo mecanismo que
- * `TiposSinRotulo` y que `AccionesSinDuenio`.
+ * `never`, la restricción `T extends never` de `DebeSerVacio` no se satisface
+ * y **el `typecheck` se cae con TS2344** nombrando la clase sin rótulo.
  *
  * Sin esto, una clase nueva compilaría, la base la aceptaría —si alguien se
  * acordó del `CHECK`— y la pantalla la dibujaría sin rótulo, que en una
  * pantalla que separa las dos familias quiere decir una sección sin título
  * encima de una columna de dinero.
+ *
+ * ## La forma que había acá no servía, y hay que no volver a escribirla
+ *
+ * Hasta T-8 la red era `export const TODAS_LAS_CLASES_TIENEN_ROTULO:
+ * ClasesSinRotulo[] = []`, y este comentario afirmaba que esa asignación no
+ * compilaba. **Era falso**: un arreglo vacío es asignable a `T[]` para
+ * cualquier `T`, así que `const x: "itbms"[] = []` compila igual que
+ * `const x: never[] = []`.
+ *
+ * ## Y acá la mutación equivocada es muy fácil de hacer
+ *
+ * Agregar `"itbms"` a `ClaseDeLinea` **a secas** sí rompe el `typecheck`,
+ * pero por otra cosa: hay dos `Record<ClaseDeLinea, …>` multilínea en las
+ * pantallas —`COMO_SE_IMPRIME` en
+ * `src/pantallas/cotizaciones/impresion.ts` y `COMO_SE_MUESTRA` en
+ * `src/pantallas/cotizaciones/lineas.ts`— que exigen una entrada por clase.
+ * Esa muerte no prueba esta red.
+ *
+ * El camino que esta red cubre, y que nadie más cubre, es **clase con sus
+ * dos entradas de pantalla y sin entrada en `CATALOGO_DE_CLASES`**. Se midió
+ * así con la forma vieja y `pnpm typecheck` salió 0; con la forma de abajo
+ * sale TS2344. Es el gemelo exacto de «frase sí, dueño no» en
+ * `worker/bitacora/vocabulario.ts`.
  */
-export type ClasesSinRotulo = Exclude<
-  ClaseDeLinea,
-  (typeof CATALOGO_DE_CLASES)[number]["clase"]
->;
+type DebeSerVacio<T extends never> = T;
 
-/** El uso que hace valer la red de arriba. Tiene que poder ser `never`. */
-export const TODAS_LAS_CLASES_TIENEN_ROTULO: ClasesSinRotulo[] = [];
+export type ClasesSinRotulo = DebeSerVacio<
+  Exclude<ClaseDeLinea, (typeof CATALOGO_DE_CLASES)[number]["clase"]>
+>;
 
 /**
  * Sólo los identificadores, en el mismo orden.
@@ -135,8 +156,8 @@ const ROTULOS = new Map<string, string>(
  *
  * Total sobre la unión —el `Map` se construye del mismo catálogo que la red
  * de arriba vigila— así que no hay rama de reserva: una que devolviera el
- * identificador crudo escondería justamente el caso que
- * `TODAS_LAS_CLASES_TIENEN_ROTULO` existe para romper en el `typecheck`.
+ * identificador crudo escondería justamente el caso que `ClasesSinRotulo`
+ * existe para romper en el `typecheck`.
  */
 export function rotuloDeClase(clase: ClaseDeLinea): string {
   return ROTULOS.get(clase) as string;

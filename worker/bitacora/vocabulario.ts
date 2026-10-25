@@ -174,7 +174,13 @@ export const ACCIONES_POR_ENTIDAD = {
      Lo que sí exige una entrada por verbo es el `Record` de frases de
      `src/bitacora.ts`, y los cuatro la tienen. Si la red hubiera sido «todo
      verbo tiene emisor», esto no se podía y había que reconstruir la tabla
-     una vez por tarea; se verificó antes de aceptarlo.
+     una vez por tarea.
+
+     Esto se dio por verificado en T-4 y **no lo estaba**: la red de entonces
+     no comprobaba nada (ver su comentario, reescrito en T-8). Lo que de
+     hecho sostenía a los cuatro verbos era el `Record` de frases, que sí es
+     real. Desde T-8 la red funciona, y se comprobó que los veintiséis verbos
+     tienen dueño: no apareció ningún huérfano al encenderla.
 
      Van **pelados** y no `cotizacion_emitida`, por la regla que separa a
      `creado` y `cerrado` de `nota_agregada`: la entidad ya viaja en su
@@ -246,23 +252,45 @@ export const ACCIONES_DE_BITACORA: readonly AccionDeBitacora[] = [
  * La red que impide que una acción del vocabulario quede sin dueño.
  *
  * Si alguien agrega un verbo a `AccionDeBitacora` y no se lo atribuye a
- * ninguna entidad, `Exclude<…>` deja de ser `never` y esto **no compila**.
- * Es el mismo mecanismo que el `Record<MotivoDeFalla, string>` de
- * `src/mensajes.ts`, aplicado en la otra dirección: allá se exige el texto,
- * acá se exige el dueño.
- */
-export type AccionesSinDuenio = Exclude<
-  AccionDeBitacora,
-  (typeof ACCIONES_POR_ENTIDAD)[EntidadRegistrada][number]
->;
-
-/**
- * El uso que hace valer la red de arriba.
+ * ninguna entidad, `Exclude<…>` deja de ser `never`, la restricción
+ * `T extends never` de `DebeSerVacio` no se satisface y **el `typecheck` se
+ * cae con TS2344 nombrando el verbo huérfano**.
  *
- * `AccionesSinDuenio` tiene que ser `never`; si deja de serlo, esta
- * asignación no compila y el `pnpm typecheck` señala la acción huérfana.
+ * ## La forma que había acá no servía, y hay que no volver a escribirla
+ *
+ * Hasta T-8 esto eran dos declaraciones:
+ *
+ * ```ts
+ * export type AccionesSinDuenio = Exclude<…>;
+ * export const TODAS_LAS_ACCIONES_TIENEN_DUENIO: AccionesSinDuenio[] = [];
+ * ```
+ *
+ * y el comentario afirmaba que la asignación no compilaba si la exclusión
+ * dejaba de ser `never`. **Era falso.** `const x: T[] = []` compila para
+ * **cualquier** `T`, porque un arreglo vacío es asignable a todo tipo de
+ * arreglo: `const x: "verbo_huerfano"[] = []` es tan válido como
+ * `const x: never[] = []`. La declaración no comprobaba nada y llevaba tres
+ * rebanadas sin comprobarlo.
+ *
+ * Se midió con la mutación correcta —un verbo en `AccionDeBitacora`, **con**
+ * su frase en `src/bitacora.ts` y **sin** entrada en `ACCIONES_POR_ENTIDAD`—
+ * y `pnpm typecheck` salió 0. La mutación importa: quitar un verbo de
+ * `ACCIONES_POR_ENTIDAD` mata el `typecheck` por el `satisfies` de arriba, y
+ * agregarlo a la unión sin frase lo mata por el `Record` de
+ * `src/bitacora.ts`. Ninguna de esas dos prueba esta red. El único camino
+ * que esta red cubre —y que nadie más cubre— es **frase sí, dueño no**.
+ *
+ * La forma de abajo sí falla, y no necesita ningún valor en tiempo de
+ * ejecución: la comprobación vive entera en el tipo.
  */
-export const TODAS_LAS_ACCIONES_TIENEN_DUENIO: AccionesSinDuenio[] = [];
+type DebeSerVacio<T extends never> = T;
+
+export type AccionesSinDuenio = DebeSerVacio<
+  Exclude<
+    AccionDeBitacora,
+    (typeof ACCIONES_POR_ENTIDAD)[EntidadRegistrada][number]
+  >
+>;
 
 /**
  * Qué acción nombra una edición de catálogo.
