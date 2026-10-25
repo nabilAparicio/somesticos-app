@@ -12,6 +12,7 @@
 import {
   MOTIVOS_DE_FALLA_DEL_MODELO,
   type MotivoDeFalla,
+  type MotivoDeFallaDelComprobante,
   type MotivoDeFallaDelModelo,
   type MotivoDeNombreDuplicado,
   type NombreDuplicado,
@@ -130,6 +131,34 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   descripcion_requerida:
     "Sin una descripción del encargo no hay nada que generar. Con dos" +
     " renglones alcanza: de qué se trata, y lo que el cliente pidió.",
+  /* El tipo sale de un control que la pantalla dibuja del mismo registro
+     contra el que el servidor valida, así que la frase sirve igual para «no
+     elegiste ninguno» y para «ese no existe». Nombra las dos palabras del
+     vocabulario porque son las dos cosas que la persona tiene que distinguir:
+     plata que salió y plata que entró. */
+  tipo_de_movimiento_desconocido:
+    "Hay que decir si es un gasto que pagó el bufete o un anticipo que puso" +
+    " el cliente.",
+  fecha_invalida:
+    "Esa fecha no es un día del calendario. Va el día en que la plata se" +
+    " movió, con día, mes y año de un día que exista.",
+  /* No dice «la fecha no puede ser futura» sino por qué: lo que la persona
+     está por cargar todavía no ocurrió, y el sitio de lo que va a ocurrir es
+     la cotización. */
+  fecha_futura:
+    "Esa fecha todavía no llegó. Acá va lo que ya se movió; lo que se" +
+    " espera gastar va como gasto estimado en la cotización.",
+  /* Una sola frase para el archivo vacío y para el que no es ni PDF ni
+     imagen: desde donde está la persona las dos son lo mismo y se arreglan
+     eligiendo otro archivo. */
+  comprobante_no_admitido:
+    "Eso no se puede guardar como comprobante. Va el PDF de la factura o" +
+    " una foto del recibo, en JPG o PNG.",
+  /* Dice el tope porque un rechazo que no lo dice obliga a adivinarlo
+     subiendo, y dice qué hacer con el archivo que ya se tiene. */
+  comprobante_demasiado_grande:
+    "Ese archivo pasa de 10 MB. Conviene volver a escanearlo con menos" +
+    " resolución, o sacar la foto de nuevo.",
 };
 
 /**
@@ -330,3 +359,47 @@ export function mensajeDeFallaDelModelo(
  */
 export const TEXTOS_DE_FALLA_DEL_MODELO: readonly string[] =
   MOTIVOS_DE_FALLA_DEL_MODELO.map(mensajeDeFallaDelModelo);
+
+/* ==========================================================================
+   El comprobante que no se pudo guardar ni traer (T-10)
+
+   La mitad del almacén de objetos que llega hasta la persona. Vive acá por lo
+   mismo que los dos `Record` de arriba, y es exhaustivo igual: el día que la
+   costura con el almacén agregue un motivo, este archivo deja de compilar
+   hasta que alguien escriba qué decirle a quien está mirando.
+
+   Las dos frases terminan en algo que hacer y ninguna nombra un binding, una
+   variable de entorno ni un bucket. Quien lee esto es un abogado: lo que
+   necesita saber es si el movimiento se guardó —se guardó, y es lo primero
+   que dicen las dos— y si vale la pena volver a intentar.
+   ========================================================================== */
+
+const FALLAS_DEL_COMPROBANTE: Record<MotivoDeFallaDelComprobante, string> = {
+  /* El despliegue sin almacén. Dice «configurar» porque es lo único que lo
+     arregla, y dice que el movimiento quedó guardado para que nadie lo
+     vuelva a cargar creyendo que se perdió. */
+  almacen_no_configurado:
+    "El movimiento quedó guardado, pero este despliegue todavía no tiene" +
+    " dónde archivar los comprobantes, así que el papel no se subió. Hay que" +
+    " configurarlo antes de que esto funcione; mientras tanto, el" +
+    " comprobante se guarda donde se guarda hoy.",
+  /* El almacén caído. Es el único que conviene reintentar enseguida. */
+  almacen_no_disponible:
+    "El movimiento quedó guardado y el comprobante no se pudo archivar." +
+    " Suele ser pasajero: conviene volver a subir el papel en un minuto.",
+};
+
+/**
+ * Por qué no se pudo con el comprobante, dicho para quien mira la pantalla.
+ *
+ * Es total sobre la unión —el `Record` es exhaustivo y el compilador lo
+ * exige— así que no hay rama de reserva: una que devolviera «no se pudo»
+ * aplastaría la distinción entre lo que hay que configurar y lo que hay que
+ * reintentar, que es justamente la que evita que alguien reintente veinte
+ * veces una tarde entera.
+ */
+export function mensajeDeFallaDelComprobante(
+  motivo: MotivoDeFallaDelComprobante,
+): string {
+  return FALLAS_DEL_COMPROBANTE[motivo];
+}

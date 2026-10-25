@@ -98,6 +98,24 @@ export const ACCIONES_POR_ENTIDAD = {
     "nota_agregada",
     "pendiente_abierto",
     "pendiente_cerrado",
+    /* Los cinco del gasto real (tajada 2, T-10). Cuelgan del proceso igual
+       que las notas y los pendientes: `movimiento_gasto.proceso_id`, y es lo
+       que hace que «¿qué pasó con este proceso?» siga contestándose con una
+       sola consulta.
+
+       **Son del proceso y no de la cotización**, aunque el gasto estimado
+       viva allá: son las dos vidas del gasto de §6, y la del dinero que de
+       verdad se movió es la del proceso.
+
+       Y son cinco y no dos porque las cinco preguntas son distintas, que es
+       para lo que existe el vocabulario cerrado. El detalle de por qué el
+       gasto y el anticipo no comparten verbo está en `worker/contract.ts`,
+       al lado de cada uno. */
+    "gasto_registrado",
+    "anticipo_registrado",
+    "gasto_quitado",
+    "anticipo_quitado",
+    "comprobante_adjuntado",
   ],
 
   /* El alta y la edición del borrador (tajada 2, T-2). Emitir, ganar y

@@ -360,7 +360,72 @@ export type MotivoDeFalla =
    * Se comprueba sobre el recorte, por lo mismo que el contenido de un
    * módulo: tres saltos de línea no describen ningún encargo.
    */
-  | "descripcion_requerida";
+  | "descripcion_requerida"
+  /* --- Gastos reales y comprobantes (tajada 2, T-10) --- */
+  /**
+   * El `tipo` no es ninguno del vocabulario cerrado de `TipoDeMovimiento`.
+   *
+   * **Cubre también el tipo ausente**, por el mismo argumento que escriben
+   * `tipo_de_modulo_desconocido` y `clase_de_linea_desconocida`: sale de un
+   * control que la pantalla dibuja **del mismo registro** contra el que el
+   * servidor valida, así que «no mandaste ninguno» y «mandaste uno inventado»
+   * son el mismo defecto y se arreglan con la misma frase.
+   *
+   * Es motivo propio y no `clase_de_linea_desconocida` aunque las dos
+   * separen dos familias de dinero: una decide cómo **se cobra** un renglón
+   * de la propuesta y la otra de qué lado del saldo cae una plata que ya se
+   * movió. Compartir el motivo haría que la frase tuviera que nombrar las
+   * cuatro palabras para no mentir en ninguno de los dos sitios.
+   */
+  | "tipo_de_movimiento_desconocido"
+  /**
+   * La fecha del movimiento no es un día del calendario.
+   *
+   * Es motivo propio y no `vencimiento_invalido`, aunque la comprobación sea
+   * la misma: aquél habla de hasta cuándo vale una propuesta y éste del día
+   * en que la plata se movió. La frase de uno debajo del otro campo manda a
+   * corregir algo que nadie tocó.
+   */
+  | "fecha_invalida"
+  /**
+   * La fecha del movimiento está en el futuro.
+   *
+   * Se separa de `fecha_invalida` por el mismo criterio que separa
+   * `vencimiento_pasado` de `vencimiento_invalido`: **la corrección es
+   * distinta**. Una pide escribir un día que exista; ésta pide decir cuándo
+   * pasó de verdad. Un gasto que todavía no ocurrió no es un gasto: es un
+   * presupuesto, y para eso está la línea de clase `gasto_estimado`.
+   *
+   * El día se mide **en Panamá** y no en UTC, por lo que
+   * `worker/db/momentos.ts` explica: desde las 19:00 locales el día UTC ya es
+   * el siguiente, así que cargar un gasto de hoy a las ocho de la noche daría
+   * este rechazo por un gasto que acaba de ocurrir.
+   */
+  | "fecha_futura"
+  /**
+   * Lo que se subió como comprobante no es un PDF ni una imagen, o está
+   * vacío.
+   *
+   * **Es un solo motivo para las dos situaciones**, por el mismo criterio que
+   * `monto_invalido` usa para cuatro: desde donde está la persona las dos son
+   * «eso no es un comprobante» y la corrección es la misma, elegir otro
+   * archivo. Partirlo daría dos frases que mandan a hacer lo mismo.
+   *
+   * Es un **422 y no un 502**: esto lo hizo mal quien subió y lo puede
+   * arreglar. Los dos motivos de `MotivoDeFallaDelComprobante` son del
+   * almacén, no del usuario, y por eso viven en otra unión.
+   */
+  | "comprobante_no_admitido"
+  /**
+   * El comprobante pasa del tope.
+   *
+   * Se separa del anterior porque **la corrección es distinta**, que es el
+   * mismo criterio que separa `fecha_futura` de `fecha_invalida`: ahí hay que
+   * elegir otro archivo, acá hay que achicar el que se tiene. La frase dice
+   * cuál es el tope, porque un rechazo que no lo dice obliga a adivinarlo
+   * subiendo.
+   */
+  | "comprobante_demasiado_grande";
 
 export interface FallaDeValidacion {
   campo: string;
@@ -1704,6 +1769,177 @@ export interface GeneracionFallida {
 }
 
 /* ==========================================================================
+   Gastos reales y comprobantes (tajada 2, T-10)
+
+   La otra de las dos vidas del gasto (`docs/diseno.md` §6, «Gastos»): el
+   **estimado** vive congelado en la cotización como una línea de clase
+   `gasto_estimado`, y el **real**, con su comprobante, aparece meses después
+   y vive en el proceso. Separados sale gratis el dato que más vale: cuánto se
+   desvía lo que el bufete estima de lo que termina costando.
+
+   Las dos cosas que esta sección hace visibles en el cable, y que son las dos
+   decisiones de la tarea:
+
+    - **El saldo viaja derivado y nunca almacenado** (I-7). `SaldoDeGastos` es
+      lo que sale de `saldoDe` en ese mismo momento, no una columna leída. No
+      hay forma de mandarlo: no está en `DatosDeMovimiento`.
+    - **La llave del comprobante no viaja.** El cable lleva
+      `tieneComprobante`, un booleano. Quien sube no elige dónde se guarda, y
+      quien mira no necesita saberlo: ver `llaveDeComprobante` en
+      `worker/gastos/dominio.ts`.
+   ========================================================================== */
+
+/**
+ * De qué lado del saldo cae un movimiento.
+ *
+ * Dos valores y no tres, y de ellos salen **las dos mecánicas de cobro del
+ * bufete sin una sola rama** (`docs/diseno.md` §6): el reembolso contra
+ * factura es el proceso que sólo tiene filas `gasto`, y el anticipo con
+ * sobrante a favor es el que tiene de los dos. La mecánica no es un dato: es
+ * qué filas existen.
+ *
+ * El vocabulario está cerrado por los dos lados, igual que el de la bitácora:
+ * `TIPOS_DE_MOVIMIENTO` en `worker/gastos/dominio.ts` cierra lo que la API
+ * acepta, y el `CHECK` de `migrations/0009_gastos_y_comprobantes.sql` cierra
+ * lo que la base acepta, que es lo único que sobrevive a un script de
+ * importación (§5).
+ */
+export type TipoDeMovimiento = "gasto" | "anticipo";
+
+/**
+ * Un movimiento tal como lo lee la pantalla.
+ *
+ * `fecha` es el **día en que la plata se movió**, en `AAAA-MM-DD` y en el
+ * calendario de Panamá; `registradoEn` es el momento en que se escribió la
+ * fila. Son dos cosas distintas a propósito: la factura de la mensajería es
+ * del mes pasado y se carga hoy, y con una sola columna o el saldo se ordena
+ * por el día en que alguien tuvo tiempo, o se pierde cuándo entró el dato.
+ *
+ * `monto` son **centavos enteros y siempre positivos**: el signo lo lleva
+ * `tipo`, nunca el número. Un `gasto` de −500 y un `anticipo` de 500 dirían
+ * lo mismo de dos maneras.
+ *
+ * `usuarioNombre` se resuelve **en lectura**, igual que en todo lo demás: lo
+ * que se guarda es la llave (§6, «Autoría»). Puede venir nulo si la fila de
+ * `usuario` cruzara la frontera del tenant.
+ *
+ * `tieneComprobante` y no la llave: ver el encabezado de la sección.
+ */
+export interface MovimientoDeGasto {
+  id: string;
+  /** El día en que la plata se movió, `AAAA-MM-DD` en Panamá. */
+  fecha: string;
+  concepto: string;
+  /** Centavos enteros, siempre positivos. El signo lo lleva `tipo`. */
+  monto: number;
+  tipo: TipoDeMovimiento;
+  /** Si hay un papel subido. La dirección del objeto no sale del servidor. */
+  tieneComprobante: boolean;
+  usuarioId: string;
+  usuarioNombre: string | null;
+  registradoEn: string;
+}
+
+/**
+ * La cuenta del proceso, **derivada en el momento de leerla** (I-7).
+ *
+ * `docs/diseno.md` §5: «El saldo de gastos nunca se almacena. Siempre se
+ * deriva.» No hay columna de saldo en ninguna tabla de esta base, y esta
+ * forma es lo que sale de `saldoDe` sobre los movimientos que se acaban de
+ * leer. Los tres números son centavos enteros.
+ *
+ * `anticipos` y `gastos` viajan además del `saldo` porque sin ellos el número
+ * no se puede auditar desde la pantalla: un saldo de −20 000 no dice si es un
+ * reembolso de veinte mil o un anticipo de ochenta mil contra cien mil de
+ * gastos, y esas dos situaciones se conversan distinto con el cliente.
+ *
+ * **Es informativo, no verdad contable**, y está en el alcance autorizado de
+ * la tajada con todas las letras: facturación, conciliación bancaria, cuentas
+ * por cobrar y estado de cuenta formal quedan fuera (§2).
+ */
+export interface SaldoDeGastos {
+  /** `Σ` de los movimientos de tipo `anticipo`. */
+  anticipos: number;
+  /** `Σ` de los movimientos de tipo `gasto`. */
+  gastos: number;
+  /**
+   * `anticipos − gastos`. Negativo es lo que el cliente debe; positivo, lo
+   * que le sobra a favor.
+   */
+  saldo: number;
+}
+
+/**
+ * La cuenta entera de un proceso: sus movimientos y lo que suman.
+ *
+ * Los dos viajan juntos y en la misma respuesta, no en dos rutas, porque son
+ * el mismo hecho mirado de dos maneras: el saldo **es** la suma de esos
+ * movimientos y de ningunos otros. Pedirlos por separado abriría la ventana
+ * en la que la pantalla muestra una lista y un total que no le corresponde.
+ */
+export interface RespuestaDeGastos {
+  /** Del movimiento más viejo al más nuevo: una cuenta se lee hacia adelante. */
+  movimientos: MovimientoDeGasto[];
+  saldo: SaldoDeGastos;
+}
+
+/** Lo que el alta de un movimiento acepta. No hay saldo, y no puede haberlo. */
+export interface DatosDeMovimiento {
+  tipo: TipoDeMovimiento;
+  concepto: string;
+  /** Centavos enteros, de cero en adelante. */
+  monto: number;
+  /** El día en que la plata se movió, `AAAA-MM-DD`. */
+  fecha: string;
+}
+
+/**
+ * Por qué no se pudo guardar o traer el comprobante.
+ *
+ * Es una unión propia y no `MotivoDeFallaDelModelo`: son dos sistemas de
+ * arriba distintos, y una unión compartida obligaría a que la pantalla del
+ * generador tuviera texto para un almacén de objetos que no usa.
+ *
+ * **Los dos son del almacén y ninguno es del usuario.** Lo que el usuario
+ * puede hacer mal —un archivo que no es un comprobante, uno demasiado
+ * grande— es un 422 con su `MotivoDeFalla`, igual que cualquier otro cuerpo
+ * que no se acepta.
+ */
+export type MotivoDeFallaDelComprobante =
+  /**
+   * No hay binding de almacén en este despliegue. Falla cerrada **antes de
+   * tocar nada**, que es el equivalente exacto de `modelo_no_configurado` en
+   * la costura con el modelo y de `acceso_no_configurado` en la puerta: un
+   * despliegue sin almacén sigue sirviendo todo lo demás, incluido registrar
+   * gastos y leer el saldo. Lo único que no se puede es adjuntar el papel.
+   */
+  | "almacen_no_configurado"
+  /** El almacén está configurado y la operación no se pudo completar. */
+  | "almacen_no_disponible";
+
+/**
+ * El 502 del comprobante.
+ *
+ * **502 y no 500**, por lo mismo que `GeneracionFallida`: no es un defecto
+ * nuestro, lo que no entregó es un sistema de arriba. Y **no 503**, que ya
+ * está tomado por la puerta de Access y que `src/api/peticiones.ts` mapea a
+ * `sin_acceso`: un 503 acá se leería como «la sesión no se reconoció», que es
+ * falso y manda a hacer algo que no arregla nada.
+ *
+ * **Deuda declarada para la unidad B:** `src/api/peticiones.ts` ya trata el
+ * 502, pero sólo reconoce los motivos del modelo; un
+ * `comprobante_no_disponible` cae hoy en su texto de reserva —«respuesta
+ * inesperada: HTTP 502»—. No rompe nada porque ninguna pantalla llama todavía
+ * a estas rutas, y cerrarlo pide tocar ese archivo, que está fuera de la
+ * superficie de esta unidad. Es el mismo tipo de deuda que T-2 A dejó escrita
+ * con el `CONFLICTOS` no exhaustivo.
+ */
+export interface ComprobanteNoDisponible {
+  error: "comprobante_no_disponible";
+  motivo: MotivoDeFallaDelComprobante;
+}
+
+/* ==========================================================================
    Bitácora (T-10)
 
    Quién hizo qué, sobre qué, y cuándo. Es el otro registro del sistema, y
@@ -1925,7 +2161,50 @@ export type AccionDeBitacora =
    * `duplicada_de_id`. La historia no se reescribe: el hecho es de la
    * cotización que se copió.
    */
-  | "duplicado";
+  | "duplicado"
+  /* --- Los cinco del gasto real (tajada 2, T-10) ---
+   *
+   * Son hechos **del proceso**: un movimiento se lee dentro de la cuenta de
+   * su proceso, igual que una nota dentro de su línea de tiempo, así que van
+   * **con prefijo** por la regla de siempre —pelados los hechos propios de la
+   * entidad, prefijados los de algo que cuelga de ella—.
+   *
+   * **El gasto y el anticipo llevan verbos distintos aunque compartan
+   * tabla.** Lo que sale sin ramas de la misma tabla es la aritmética, no la
+   * historia: un `movimiento_registrado` que a veces significa plata que sale
+   * y a veces plata que entra convertiría «¿quién metió este anticipo?» en
+   * una pregunta que hay que contestar leyendo el `detalle` y adivinando de
+   * qué lado está. Es la misma decisión con la que las líneas no reusaron los
+   * verbos de módulo, y acá pesa más: los dos mueven el saldo en direcciones
+   * opuestas.
+   *
+   * `detalle` lleva el **concepto** del movimiento, recortado, y nunca el
+   * monto: `detalle` es el nombre de cara al usuario de lo que el hecho
+   * señala, no una segunda copia del dato. El monto vive en su columna, y
+   * copiarlo acá sería guardar un diff disfrazado de pista en la única tabla
+   * que no se puede corregir. */
+  /** Se cargó un desembolso del bufete por cuenta del cliente. */
+  | "gasto_registrado"
+  /** Entró plata del cliente a cuenta de gastos futuros. */
+  | "anticipo_registrado"
+  /** Salió un desembolso de la cuenta del proceso. */
+  | "gasto_quitado"
+  /** Salió un ingreso de la cuenta del proceso. */
+  | "anticipo_quitado"
+  /**
+   * Se subió el papel de un movimiento. `detalle` lleva su concepto.
+   *
+   * **Sirve también para el reemplazo, y no hay un verbo aparte**: desde
+   * donde está la persona, volver a subir el papel es adjuntarlo, y la llave
+   * del objeto es la misma —se deriva de la fila—, así que no hay un segundo
+   * comprobante del que hablar. Lo que sí queda es una segunda entrada en la
+   * historia, que es lo que contesta «¿cuándo cambió el papel?».
+   *
+   * **Y no hay verbo de comprobante quitado**: el comprobante no se saca
+   * solo, se va con el movimiento, y ese hecho ya lo cuentan `gasto_quitado`
+   * y `anticipo_quitado`.
+   */
+  | "comprobante_adjuntado";
 
 /**
  * Una entrada tal como la lee la pantalla.

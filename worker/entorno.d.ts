@@ -25,6 +25,21 @@
  *   llama a la red — devuelve `modelo_no_configurado`, que es el equivalente
  *   de `acceso_no_configurado` en la puerta. Un despliegue sin clave sigue
  *   sirviendo todo lo demás.
+ * - `COMPROBANTES`: el bucket de R2 donde viven los papeles de los gastos
+ *   reales (T-10). **No es una variable, es un binding**, y está acá por un
+ *   motivo distinto de los de arriba: `wrangler.jsonc` todavía no lo declara,
+ *   porque crear el bucket es una operación sobre la cuenta de Cloudflare y
+ *   esa decisión es del usuario, no de una tarea. El nombre propuesto es
+ *   `COMPROBANTES`, y el día que entre en `r2_buckets` esta declaración se
+ *   borra: `wrangler types` la va a generar sola, y dejarla duplicada sería
+ *   el segundo lugar donde decir lo mismo.
+ *
+ *   **Es opcional, y eso es la decisión de qué pasa cuando falta**: sin el
+ *   binding, `almacenSobreR2` devuelve un almacén que falla cerrado con
+ *   `almacen_no_configurado` en cuanto se lo usa —el equivalente exacto de
+ *   `modelo_no_configurado` y de `acceso_no_configurado`—, y todo lo demás
+ *   sigue funcionando: se registran gastos y anticipos, y se lee el saldo. Lo
+ *   único que no se puede en un despliegue así es adjuntar el papel.
  */
 
 interface ImportMeta {
@@ -43,6 +58,8 @@ interface Env {
   IA_MODELO?: string;
   /** Sin esto, `PROVEEDOR_POR_DEFECTO` de `worker/ia/modelo.ts`. */
   IA_PROVEEDOR?: string;
+  /** Sin esto, `almacen_no_configurado`. Ver arriba. */
+  COMPROBANTES?: R2Bucket;
 }
 
 declare namespace Cloudflare {
@@ -51,5 +68,6 @@ declare namespace Cloudflare {
     IA_API_KEY?: string;
     IA_MODELO?: string;
     IA_PROVEEDOR?: string;
+    COMPROBANTES?: R2Bucket;
   }
 }

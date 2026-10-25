@@ -531,21 +531,38 @@ describe("las notas son inmutables", () => {
 });
 
 describe("límites de la tajada 1", () => {
-  // Las tres tablas de la cotización entraron en `0004` (T-1 de la tajada 2) y
-  // por eso salieron de esta lista. Las dos del dinero siguen sin existir:
-  // son de R5, y mientras no estén, esta prueba es la que avisa si alguien las
-  // adelanta sin sus disparadores de tenencia.
-  it("no crea todavía ninguna tabla del dinero", async () => {
-    const deLaTajadaDos = ["cuota", "movimiento_gasto"];
+  // **Esta prueba cambió de alcance el 25 de octubre de 2026, y no es una
+  // prueba nueva.** Hasta `migrations/0009_gastos_y_comprobantes.sql` exigía
+  // que **ninguna** de las dos tablas del dinero existiera. T-10 trae
+  // `movimiento_gasto`, así que el mojón se corre a la que sigue sin existir
+  // en vez de borrarse: `cuota` es de T-11 y sigue **bloqueada por la
+  // decisión de a quién pertenece el plan de pagos** (`docs/diseno.md` §11,
+  // punto 3). Mientras esa decisión no esté tomada, adelantar la tabla es
+  // comprometer el modelo de datos con una de las tres opciones, y eso cuesta
+  // una migración. Esta prueba es la que avisa si alguien lo hace.
+  //
+  // Lo que `movimiento_gasto` tiene que cumplir —tenencia, inmutabilidad,
+  // centavos enteros, la llave del comprobante y la ausencia de saldo— se
+  // verifica entero en `test/gastos-api.spec.ts`, que es donde están los
+  // datos de prueba para construirla.
+  it("no crea todavía la tabla del plan de pagos", async () => {
+    const bloqueadasPorUnaDecisionAbierta = ["cuota"];
 
     const filas = await env.DB.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table'",
     ).all<{ name: string }>();
     const existentes = filas.results.map((fila) => fila.name);
 
-    expect(existentes.filter((nombre) => deLaTajadaDos.includes(nombre))).toEqual(
-      [],
-    );
+    expect(
+      existentes.filter((nombre) =>
+        bloqueadasPorUnaDecisionAbierta.includes(nombre),
+      ),
+    ).toEqual([]);
+
+    // La aserción de presencia al lado de la de ausencia: sin ella, esta
+    // prueba pasaría igual si `0009` no se hubiera aplicado nunca, y entonces
+    // no estaría midiendo el límite sino la nada.
+    expect(existentes).toContain("movimiento_gasto");
   });
 
   it("le pone a proceso la FK que 0001 difirió, y apunta a cotizacion_linea", async () => {

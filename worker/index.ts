@@ -30,6 +30,13 @@ import {
   type ServicioDeCotizaciones,
 } from "./cotizaciones/repositorio";
 import { rutasDeCotizaciones } from "./cotizaciones/rutas";
+import {
+  almacenSobreR2,
+  gastosSobreD1,
+  type AlmacenDeComprobantes,
+  type ServicioDeGastos,
+} from "./gastos/repositorio";
+import { rutasDeGastos } from "./gastos/rutas";
 import { modeloDesdeEntorno, type ModeloDeLenguaje } from "./ia/modelo";
 import type {
   AccesoDenegado,
@@ -102,6 +109,25 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
    * declaración que nadie lee no hace nada. Esta es la línea que la enchufa.
    */
   modelo?: ModeloDeLenguaje;
+
+  /** Los gastos reales de un proceso y su saldo (tajada 2, T-10). Idem. */
+  gastos?: ServicioDeGastos;
+
+  /**
+   * El almacén de los comprobantes (tajada 2, T-10).
+   *
+   * **Es el mismo camino que usa producción**, igual que `modelo`: abajo se
+   * resuelve con `dependencias.comprobantes ?? almacenSobreR2(env)`, así que
+   * lo único que cambia entre una corrida de prueba y una desplegada es quién
+   * construyó el objeto.
+   *
+   * Sin esto, la única forma de probar los comprobantes sería escribir en un
+   * R2 real desde el suite, que es exactamente lo que una prueba no puede
+   * hacer: cuesta plata, no es determinista y no corre sin credenciales. Y
+   * las ramas que más importan —el almacén sin configurar y el que no
+   * contesta— no se podrían ejercer de ninguna otra manera.
+   */
+  comprobantes?: AlmacenDeComprobantes;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -283,6 +309,23 @@ export async function manejar(
     dependencias.notas ?? notasSobreD1(base),
   );
   if (notas !== null) return notas;
+
+  // Los gastos reales, por lo mismo que las notas: son una subruta del
+  // proceso y comprueban su existencia por el mismo puerto. El almacén se
+  // construye siempre y no cuesta nada —`almacenSobreR2` no toca la red, sólo
+  // mira si el binding está—, y un despliegue sin bucket produce un almacén
+  // que falla con `almacen_no_configurado` en cuanto se lo usa: la misma
+  // precedencia que eligieron `autenticar` y `modeloDesdeEntorno`.
+  const gastos = await rutasDeGastos(
+    request,
+    url,
+    acceso.valor,
+    TENANT_UNICO_ID,
+    servicioDeProcesos,
+    dependencias.gastos ?? gastosSobreD1(base),
+    dependencias.comprobantes ?? almacenSobreR2(env),
+  );
+  if (gastos !== null) return gastos;
 
   // Los pendientes, por lo mismo que las notas: son una subruta del proceso
   // y comprueban su existencia por el mismo puerto.

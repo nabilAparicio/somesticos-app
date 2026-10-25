@@ -92,6 +92,22 @@ export const VERBOS_DE_BITACORA: Record<AccionDeBitacora, string> = {
   ganado: "ganó",
   perdido: "perdió",
   duplicado: "duplicó",
+  /* Los cinco del gasto real (tajada 2, T-10). `detalle` lleva el **concepto**
+     del movimiento y nunca el monto, por lo mismo que las líneas llevan su
+     concepto: en una cuenta hay seis desembolsos y lo único que los distingue
+     es lo que dice cada uno.
+
+     Los cinco se leen distinto entre sí y distinto de los veintiséis que ya
+     estaban, que es lo que este `Record` existe para exigir. Y los dos pares
+     se distinguen **entre sí**: «registró el gasto» no es «registró el
+     anticipo», y esa distinción es la que decide de qué lado del saldo cayó
+     la plata. Aplastarlos en un «registró el movimiento» haría ilegible la
+     única historia que explica un saldo que nadie guardó. */
+  gasto_registrado: "registró el gasto",
+  anticipo_registrado: "registró el anticipo",
+  gasto_quitado: "quitó el gasto",
+  anticipo_quitado: "quitó el anticipo",
+  comprobante_adjuntado: "adjuntó el comprobante de",
 };
 
 /**
