@@ -212,6 +212,149 @@ const MODULOS_DE_LA_EMITIDA = [
   },
 ];
 
+/* --- Las líneas de importe (T-3, unidad B) ------------------------------ */
+
+const LINEA_UNO = "8b1f0c11-1111-4111-8111-000000000001";
+const LINEA_DOS = "8b1f0c11-2222-4222-8222-000000000002";
+const LINEA_TRES = "8b1f0c11-3333-4333-8333-000000000003";
+
+const TRAMITE_VISA = "5e2a0d11-1111-4111-8111-000000000001";
+const TRAMITE_BAJA = "5e2a0d11-2222-4222-8222-000000000002";
+
+const TIPOS_DE_PROCESO = [
+  {
+    id: TRAMITE_VISA,
+    areaId: "5e2a0d11-9999-4999-8999-000000000009",
+    areaNombre: "Migración",
+    nombre: "Visa de trabajo",
+    descripcion: null,
+    activo: true,
+  },
+  {
+    id: TRAMITE_BAJA,
+    areaId: "5e2a0d11-9999-4999-8999-000000000009",
+    areaNombre: "Migración",
+    nombre: "Permiso que ya no se tramita",
+    descripcion: null,
+    activo: false,
+  },
+];
+
+const CONCEPTO_UNO = "Gestión de la visa de trabajo";
+const CONCEPTO_DOS = "Tasa del Servicio Nacional de Migración";
+const CONCEPTO_TRES = "Revisión de antecedentes";
+
+/**
+ * Las dos familias **entrelazadas** en el `orden` global: honorario, gasto,
+ * honorario. Entrelazadas a propósito, porque es lo único que distingue un
+ * reordenamiento que respeta la familia de uno que intercambia con el vecino
+ * del arreglo — con cada familia en bloque, los dos movimientos darían la
+ * misma lista.
+ */
+const LINEAS_DEL_BORRADOR = [
+  {
+    id: LINEA_UNO,
+    clase: "honorario",
+    concepto: CONCEPTO_UNO,
+    monto: 150_000,
+    tipoProcesoId: TRAMITE_VISA,
+    tipoProcesoNombre: "Visa de trabajo",
+    orden: 0,
+  },
+  {
+    id: LINEA_DOS,
+    clase: "gasto_estimado",
+    concepto: CONCEPTO_DOS,
+    monto: 25_000,
+    tipoProcesoId: null,
+    tipoProcesoNombre: null,
+    orden: 1,
+  },
+  {
+    id: LINEA_TRES,
+    clase: "honorario",
+    concepto: CONCEPTO_TRES,
+    monto: 80_000,
+    tipoProcesoId: null,
+    tipoProcesoNombre: null,
+    orden: 2,
+  },
+];
+
+/**
+ * **Los totales del borrador no son la suma de sus líneas, y eso es el
+ * punto.**
+ *
+ * Sumadas darían 230.000 de honorarios, 25.000 de gastos y 255.000 de total.
+ * Estos números no se parecen a ninguno de los tres. Es la misma precaución
+ * que `TEXTO_SEGUN_EL_SERVIDOR` toma con la prosa, aplicada al dinero: un
+ * doble de servidor que devuelve lo que la pantalla podría calcular sola no
+ * distingue una pantalla que muestra lo que llegó de una que suma por su
+ * cuenta. Con estos, la que sume muestra otra cosa y muere.
+ *
+ * La aritmética de verdad vive en `totalesDe`, del lado del Worker, y está
+ * probada en `test/lineas-api.spec.ts` contra una base real.
+ */
+const TOTALES_DEL_BORRADOR = {
+  honorarios: 777_777,
+  gastosEstimados: 111_111,
+  total: 888_888,
+};
+
+/**
+ * El concepto hostil de la emitida: un token pegado de cincuenta letras, sin
+ * espacios ni guiones.
+ *
+ * Es el único contenido de la sección de líneas que llega al layout sin un
+ * control que lo contenga, y vive dentro de una `Fila`. Sin él, las nueve
+ * medidas de §9 sobre el detalle de la emitida pasarían por encima de un
+ * concepto corriente, que no puede empujar nada: medirían el detalle y no la
+ * línea. Es la lección de T-4 y la de T-2 C2, por tercera vez.
+ */
+const CONCEPTO_HOSTIL =
+  "Ref TRAMITACIONDEPERMISODERESIDENCIAPERMANENTEANTEMIGRACIONPANAMA.";
+
+const LINEAS_DE_LA_EMITIDA = [
+  {
+    id: "8b1f0c11-4444-4444-8444-000000000004",
+    clase: "honorario",
+    concepto: CONCEPTO_HOSTIL,
+    monto: 320_050,
+    tipoProcesoId: TRAMITE_VISA,
+    tipoProcesoNombre: "Visa de trabajo",
+    orden: 0,
+  },
+];
+
+/**
+ * La emitida **no tiene ninguna línea de gasto**, y por eso sirve para la
+ * otra mitad de la regla: su familia vacía no se dibuja, y el aviso de que
+ * el total lleva una cifra aproximada adentro tampoco.
+ */
+const TOTALES_DE_LA_EMITIDA = {
+  honorarios: 320_050,
+  gastosEstimados: 0,
+  total: 320_050,
+};
+
+const LINEAS_POR_COTIZACION: Record<
+  string,
+  { lineas: Record<string, unknown>[]; totales: Record<string, number> }
+> = {
+  [BORRADOR_ID]: {
+    lineas: LINEAS_DEL_BORRADOR,
+    totales: TOTALES_DEL_BORRADOR,
+  },
+  [EMITIDA_ID]: {
+    lineas: LINEAS_DE_LA_EMITIDA,
+    totales: TOTALES_DE_LA_EMITIDA,
+  },
+  [BORRADOR_VIEJO_ID]: {
+    lineas: [],
+    totales: { honorarios: 0, gastosEstimados: 0, total: 0 },
+  },
+};
+
 const MODULOS_POR_COTIZACION: Record<string, Record<string, unknown>[]> = {
   [BORRADOR_ID]: MODULOS_DEL_BORRADOR,
   [EMITIDA_ID]: MODULOS_DE_LA_EMITIDA,
@@ -243,6 +386,21 @@ function cuerpoDe(pathname: string): Record<string, unknown> | null {
   if (deModulos !== null) {
     return { modulos: MODULOS_POR_COTIZACION[deModulos[1]] ?? [] };
   }
+
+  const deLineas = /^\/api\/cotizaciones\/([^/]+)\/lineas$/.exec(pathname);
+  if (deLineas !== null) {
+    return (
+      LINEAS_POR_COTIZACION[deLineas[1]] ?? {
+        lineas: [],
+        totales: { honorarios: 0, gastosEstimados: 0, total: 0 },
+      }
+    );
+  }
+
+  // El catálogo de trámites, que el editor de líneas pide para su
+  // desplegable. Es una lectura aparte y opcional: si fallara, las líneas se
+  // dibujan igual.
+  if (pathname === "/api/tipos-proceso") return { tipos: TIPOS_DE_PROCESO };
 
   if (pathname === "/api/cotizaciones") return { cotizaciones: COTIZACIONES };
   if (pathname === "/api/clientes") return { clientes: CLIENTES };
@@ -357,22 +515,16 @@ test.describe("las cotizaciones del bufete", () => {
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "Editar" })).toBeVisible();
 
-    // Emitir, ganar, perder y duplicar son de T-4 y T-5; las líneas, de
-    // T-3. Ni como botón ni como texto apagado: un control deshabilitado
-    // promete una pantalla que no existe.
+    // Emitir, ganar, perder y duplicar son de T-4 y T-5. Ni como botón ni
+    // como texto apagado: un control deshabilitado promete una pantalla que
+    // no existe.
     //
-    // «Módulos» salió de esta lista en la unidad C2, que es la que los
-    // trajo. Lo que ocupó su lugar no es nada: la lista se achicó, porque
-    // una palabra que ya se dibuja a propósito no puede seguir prohibida
-    // acá sin convertir esta prueba en una que falla por tener razón.
-    for (const palabra of [
-      "Emitir",
-      "Duplicar",
-      "Ganada",
-      "Perdida",
-      "Líneas",
-      "Total",
-    ]) {
+    // «Módulos» salió de esta lista en la unidad C2, y «Líneas» y «Total»
+    // en T-3 B, cada uno en la tarea que lo trajo. Lo que ocupó su lugar no
+    // es nada: la lista se achica, porque una palabra que ya se dibuja a
+    // propósito no puede seguir prohibida acá sin convertir esta prueba en
+    // una que falla por tener razón.
+    for (const palabra of ["Emitir", "Duplicar", "Ganada", "Perdida"]) {
       await expect(
         page.getByText(palabra, { exact: false }),
         `«${palabra}» no es de esta tarea y no puede estar dibujado`,
@@ -622,8 +774,13 @@ test.describe("las cotizaciones del bufete", () => {
     ).toBeVisible();
     await expect(page.getByText(TEXTO_HOSTIL_DE_LA_EMITIDA)).toBeVisible();
 
-    // Nada de controles apagados: el aviso ocupa su lugar.
-    await expect(page.getByText("se pueden leer pero no cambiar")).toBeVisible();
+    // Nada de controles apagados: el aviso ocupa su lugar. El texto se
+    // nombra entero porque desde T-3 B hay dos avisos de congelado en esta
+    // página —uno por editor— y «se pueden leer pero no cambiar» los
+    // encuentra a los dos.
+    await expect(
+      page.getByText("Los módulos de esta cotización se pueden leer"),
+    ).toBeVisible();
     await expect(page.locator(".modulo textarea")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^Quitar/ })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Agregar" })).toHaveCount(0);
@@ -770,8 +927,16 @@ test.describe("las cotizaciones del bufete", () => {
       .getByRole("button", { name: "Subir el módulo 2: Alcance" })
       .click();
 
+    /*
+     * **Esta expectativa estaba rota desde `cde7871`, y no por T-3 B.** El
+     * motivo `orden_incompleto` lo comparten los módulos de prosa y las
+     * líneas, así que T-3 A le sacó el «de los módulos» a la frase de
+     * `src/mensajes.ts` —no puede nombrar a uno de los dos— y no corrigió
+     * esta prueba, que seguía afirmando el texto viejo. Se arregla acá
+     * porque es el archivo donde vive el defecto.
+     */
     await expect(page.getByRole("alert")).toContainText(
-      "La lista no coincide con los módulos de esta cotización",
+      "La lista no coincide con lo que tiene esta cotización",
     );
 
     // Lo que importa no es el mensaje sino esto: la pantalla dejó de
@@ -1232,6 +1397,526 @@ test.describe("las cotizaciones del bufete", () => {
     expect(metodo).toBe("DELETE");
   });
 
+  /* --- El editor de líneas de importe (T-3, unidad B) -------------------- */
+
+  /** La dirección de la colección, que casi todas estas pruebas interceptan. */
+  function coleccionDeLineas(url: URL): boolean {
+    return url.pathname === `/api/cotizaciones/${BORRADOR_ID}/lineas`;
+  }
+
+  test("las dos familias se muestran separadas, cada una con su subtotal", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    // La espera va primero: `toHaveText` reintenta, pero sólo después de que
+    // el elemento exista, y leer apenas vuelve el `goto` mide lo que React
+    // alcanzó a montar.
+    const renglones = page.locator(".renglon");
+    await expect(renglones).toHaveCount(3);
+
+    await expect(
+      page.getByRole("heading", { name: "Honorarios" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Gastos estimados" }),
+    ).toBeVisible();
+
+    /*
+     * Lo que de verdad separa las familias no es que haya dos encabezados
+     * sino **cuál línea quedó debajo de cuál**. Las tres vienen entrelazadas
+     * en el orden global —honorario, gasto, honorario—, así que una pantalla
+     * que las dibujara en una sola lista daría otro orden que éste.
+     */
+    const honorarios = page
+      .locator(".familia", { has: page.getByRole("heading", { name: "Honorarios" }) })
+      .locator(".renglon__concepto, .campo--crecer input");
+    await expect(honorarios).toHaveCount(2);
+    await expect(honorarios.nth(0)).toHaveValue(CONCEPTO_UNO);
+    await expect(honorarios.nth(1)).toHaveValue(CONCEPTO_TRES);
+  });
+
+  /**
+   * **La barandilla de la tajada, medida en el navegador.**
+   *
+   * Los totales que el doble devuelve no son la suma de las líneas: sumadas
+   * darían 2.300,00 / 250,00 / 2.550,00. Lo que tiene que estar en pantalla
+   * son los números que llegaron, porque quien suma es el servidor. Una
+   * pantalla que sumara por su cuenta muestra los otros tres y muere acá.
+   */
+  test("los subtotales y el total son los del servidor, no la suma de las líneas", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    const sumas = page.locator(".suma__importe");
+    await expect(sumas).toHaveCount(3);
+
+    // 777777, 111111 y 888888 centavos, escritos a mano y no derivados de
+    // `montoLegible`, que es la función que los produce (restricción 6).
+    await expect(sumas.nth(0)).toHaveText("USD 7,777.77");
+    await expect(sumas.nth(1)).toHaveText("USD 1,111.11");
+    await expect(sumas.nth(2)).toHaveText("USD 8,888.88");
+  });
+
+  test("el subtotal del gasto se rotula como aproximado y el del honorario no", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    const rotulos = page.locator(".suma__rotulo");
+    await expect(rotulos).toHaveCount(3);
+
+    await expect(rotulos.nth(0)).toHaveText("Subtotal");
+    await expect(rotulos.nth(1)).toHaveText("Subtotal aproximado");
+    await expect(rotulos.nth(2)).toHaveText("Total");
+  });
+
+  test("el gasto estimado dice que es aproximado, y no en letra chica", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    const aviso = page.locator(".familia .aviso");
+    await expect(aviso).toBeVisible();
+    await expect(aviso).toContainText("aproximada y va a cambiar");
+
+    /*
+     * «Visible, no en letra chica» se mide y no se declara, y se mide
+     * contra **la letra chica que esta pantalla ya tiene**: el
+     * `.campo__ayuda` del campo de importe, que es `--texto-xs`. Sin esto,
+     * mover el aviso a un `.campo__ayuda` o a un `.texto-apagado` lo
+     * convertiría en la nota al pie que esta tarea prohíbe, y ninguna
+     * aserción de texto lo notaría.
+     *
+     * **No se compara contra el cuerpo del documento, y está medido por
+     * qué**: `.aviso` es `--texto-s` en todo el proyecto, 14px contra los
+     * 16px del cuerpo. Exigirle a éste el tamaño del cuerpo sería pedirle
+     * a un aviso algo que ningún otro aviso de la aplicación cumple, y la
+     * forma de cumplirlo —una regla propia sólo para este— rompería la
+     * uniformidad por una medida que no es la que importa. Lo que importa
+     * es que esté en una caja destacada y por encima de la letra chica.
+     *
+     * Se espera a que el elemento exista antes de leer: `evaluate` es una
+     * foto del instante y no reintenta.
+     */
+    const letraChica = page.locator(".campo__ayuda").first();
+    await expect(letraChica).toBeVisible();
+
+    const tamanios = {
+      delAviso: await aviso.evaluate((nodo) =>
+        Number.parseFloat(getComputedStyle(nodo).fontSize),
+      ),
+      deLaLetraChica: await letraChica.evaluate((nodo) =>
+        Number.parseFloat(getComputedStyle(nodo).fontSize),
+      ),
+    };
+
+    expect(tamanios.delAviso).toBeGreaterThan(tamanios.deLaLetraChica);
+  });
+
+  test("el total avisa que lleva una cifra aproximada adentro", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    await expect(page.locator(".suma--total")).toBeVisible();
+    await expect(
+      page.getByText("El total incluye los gastos estimados"),
+    ).toBeVisible();
+  });
+
+  test("sin gastos, ni la familia vacía ni el aviso del total aparecen", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${EMITIDA_ID}`);
+
+    await expect(page.locator(".renglon")).toHaveCount(1);
+
+    await expect(
+      page.getByRole("heading", { name: "Gastos estimados" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("El total incluye los gastos estimados"),
+    ).toHaveCount(0);
+  });
+
+  test("el desplegable ofrece las dos clases del catálogo y ninguna más", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    const clase = page.getByLabel("Clase", { exact: true });
+    await expect(clase).toBeVisible();
+
+    /*
+     * Los dos rótulos están escritos a mano y **no** importados de
+     * `worker/cotizaciones/lineas.ts`, que es de donde el desplegable los
+     * saca: una expectativa calculada con la misma fuente que se prueba pasa
+     * aunque las dos estén mal (restricción 6).
+     */
+    await expect(clase.locator("option")).toHaveText([
+      "Elegir clase…",
+      "Honorarios",
+      "Gastos estimados",
+    ]);
+  });
+
+  test("el desplegable de trámites no ofrece los dados de baja", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    /*
+     * El nombre accesible del rótulo incluye su marca —«opcional»— porque
+     * esa marca es parte del rótulo visible y no una decoración: el trámite
+     * de verdad se puede dejar en blanco.
+     */
+    const tramite = page.getByLabel("Trámite opcional", { exact: true });
+    await expect(tramite).toBeVisible();
+
+    await expect(tramite.locator("option")).toHaveText([
+      "Ninguno",
+      "Visa de trabajo",
+    ]);
+  });
+
+  test("agregar manda el importe en centavos enteros", async ({ page }) => {
+    await conCotizacionesCargadas(page);
+
+    let enviado: string | null = null;
+    await page.route(coleccionDeLineas, async (ruta) => {
+      if (ruta.request().method() !== "POST") {
+        await ruta.fallback();
+        return;
+      }
+      enviado = ruta.request().postData();
+      await ruta.fulfill({
+        status: 201,
+        json: {
+          lineas: LINEAS_DEL_BORRADOR,
+          totales: TOTALES_DEL_BORRADOR,
+        },
+      });
+    });
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".renglon")).toHaveCount(3);
+
+    await page.getByLabel("Concepto", { exact: true }).fill("  Apostilla  ");
+    await page
+      .getByLabel("Clase", { exact: true })
+      .selectOption("gasto_estimado");
+    // Con separador de miles y dos decimales: la conversión de la pantalla
+    // es lo único que puede convertir esto en 123456 centavos.
+    await page.getByLabel("Importe USD", { exact: true }).fill("1,234.56");
+    await page
+      .getByLabel("Trámite opcional", { exact: true })
+      .selectOption(TRAMITE_VISA);
+
+    await page.getByRole("button", { name: "Añadir la línea" }).click();
+
+    await expect
+      .poll(() => enviado, { message: "el alta no mandó nada" })
+      .not.toBeNull();
+
+    expect(JSON.parse(enviado ?? "null")).toEqual({
+      clase: "gasto_estimado",
+      concepto: "Apostilla",
+      monto: 123_456,
+      tipoProcesoId: TRAMITE_VISA,
+    });
+  });
+
+  test("un importe con el centavo partido se avisa antes de mandar nada", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let huboAlta = false;
+    await page.route(coleccionDeLineas, async (ruta) => {
+      if (ruta.request().method() === "POST") huboAlta = true;
+      await ruta.fallback();
+    });
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".renglon")).toHaveCount(3);
+
+    await page.getByLabel("Concepto", { exact: true }).fill("Apostilla");
+    await page.getByLabel("Clase", { exact: true }).selectOption("honorario");
+    await page.getByLabel("Importe USD", { exact: true }).fill("12.345");
+
+    await page.getByRole("button", { name: "Añadir la línea" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "sin centavos partidos",
+    );
+
+    /*
+     * `.count()` y no `toHaveCount(0)` sobre el espía: lo que se afirma es
+     * un **nunca**, y una aserción que reintenta tolera justamente la
+     * ventana transitoria que se quiere prohibir. Acá se lee el instante
+     * posterior a un punto de sincronización positivo —el aviso ya está en
+     * pantalla—, que es cuando la petición ya habría salido.
+     */
+    expect(huboAlta, "no se manda un importe que ya se sabe inválido").toBe(
+      false,
+    );
+  });
+
+  test("subir un honorario saltea el gasto y manda la lista global entera", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let enviado: string | null = null;
+    await page.route(coleccionDeLineas, async (ruta) => {
+      if (ruta.request().method() !== "PUT") {
+        await ruta.fallback();
+        return;
+      }
+      enviado = ruta.request().postData();
+      await ruta.fulfill({
+        status: 200,
+        json: {
+          lineas: [
+            { ...LINEAS_DEL_BORRADOR[2], orden: 0 },
+            LINEAS_DEL_BORRADOR[1],
+            { ...LINEAS_DEL_BORRADOR[0], orden: 2 },
+          ],
+          totales: TOTALES_DEL_BORRADOR,
+        },
+      });
+    });
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".renglon")).toHaveCount(3);
+
+    await page
+      .getByRole("button", { name: "Subir la línea 2 de Honorarios" })
+      .click();
+
+    await expect
+      .poll(() => enviado, { message: "no se mandó el reordenamiento" })
+      .not.toBeNull();
+
+    /*
+     * El orden esperado está escrito a mano. Lo que demuestra es la regla
+     * de familia: el segundo honorario se intercambia con el **primer
+     * honorario**, saltándose el gasto que tiene encima. Un intercambio con
+     * el vecino del arreglo habría mandado `[UNO, TRES, DOS]`, que mueve el
+     * gasto de un botón que decía mover un honorario.
+     */
+    expect(JSON.parse(enviado ?? "null")).toEqual({
+      orden: [LINEA_TRES, LINEA_DOS, LINEA_UNO],
+    });
+  });
+
+  test("los bordes de cada familia no ofrecen moverse hacia afuera", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".renglon")).toHaveCount(3);
+
+    await expect(
+      page.getByRole("button", { name: "Subir la línea 1 de Honorarios" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Bajar la línea 2 de Honorarios" }),
+    ).toBeDisabled();
+
+    /*
+     * El gasto es el único de su familia, así que las dos flechas están
+     * apagadas — **aunque en el orden global tenga una línea encima y otra
+     * debajo**. Es el borde que una lista sola no tendría, y el que
+     * distingue las dos implementaciones posibles del movimiento.
+     */
+    await expect(
+      page.getByRole("button", {
+        name: "Subir la línea 1 de Gastos estimados",
+      }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("button", {
+        name: "Bajar la línea 1 de Gastos estimados",
+      }),
+    ).toBeDisabled();
+
+    // Y las que sí se pueden mover, se pueden: sin esto la prueba pasaría
+    // con todos los botones apagados.
+    await expect(
+      page.getByRole("button", { name: "Subir la línea 2 de Honorarios" }),
+    ).toBeEnabled();
+  });
+
+  test("editar una línea dibuja lo que devolvió el servidor", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let enviado: string | null = null;
+    await page.route(
+      (url) =>
+        url.pathname ===
+        `/api/cotizaciones/${BORRADOR_ID}/lineas/${LINEA_UNO}`,
+      async (ruta) => {
+        enviado = ruta.request().postData();
+        /*
+         * La respuesta es **distinta de lo que se tecleó**, a propósito: si
+         * repitiera lo enviado, una pantalla que redibuja lo que vino y una
+         * que conserva lo que quedó en el campo se verían exactamente
+         * igual. Es la misma precaución que `TEXTO_SEGUN_EL_SERVIDOR`.
+         */
+        await ruta.fulfill({
+          status: 200,
+          json: {
+            lineas: [
+              {
+                ...LINEAS_DEL_BORRADOR[0],
+                concepto: "Gestión, con el carné incluido",
+                monto: 175_025,
+              },
+              LINEAS_DEL_BORRADOR[1],
+              LINEAS_DEL_BORRADOR[2],
+            ],
+            totales: TOTALES_DEL_BORRADOR,
+          },
+        });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".renglon")).toHaveCount(3);
+
+    const importe = page.getByLabel(
+      "Importe de la línea 1 de Honorarios, en USD",
+    );
+    await importe.fill("1600");
+    await page
+      .getByRole("button", { name: "Guardar la línea 1 de Honorarios" })
+      .click();
+
+    await expect
+      .poll(() => enviado, { message: "no se mandó la edición" })
+      .not.toBeNull();
+
+    expect(JSON.parse(enviado ?? "null")).toEqual({
+      clase: "honorario",
+      concepto: CONCEPTO_UNO,
+      monto: 160_000,
+      tipoProcesoId: TRAMITE_VISA,
+    });
+
+    // Y lo que queda en el campo son los 175025 centavos del servidor, no
+    // los 160000 que se teclearon.
+    await expect(importe).toHaveValue("1750.25");
+    await expect(
+      page.getByLabel("Concepto de la línea 1 de Honorarios"),
+    ).toHaveValue("Gestión, con el carné incluido");
+  });
+
+  test("escribir el mismo importe de otra forma no ofrece guardar", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".renglon")).toHaveCount(3);
+
+    const importe = page.getByLabel(
+      "Importe de la línea 1 de Honorarios, en USD",
+    );
+    await expect(importe).toHaveValue("1500.00");
+
+    // «1,500» son los mismos 150000 centavos, así que no hay nada que
+    // guardar: el botón se compara en centavos y no en texto.
+    await importe.fill("1,500");
+    await expect(
+      page.getByRole("button", { name: "Guardar la línea 1 de Honorarios" }),
+    ).toHaveCount(0);
+
+    // Y un centavo de diferencia sí lo enciende, para que la prueba no pase
+    // con un botón que nunca aparece.
+    await importe.fill("1500.01");
+    await expect(
+      page.getByRole("button", { name: "Guardar la línea 1 de Honorarios" }),
+    ).toBeVisible();
+  });
+
+  test("quitar una línea la saca y deja los totales que mandó el servidor", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let metodo: string | null = null;
+    await page.route(
+      (url) =>
+        url.pathname ===
+        `/api/cotizaciones/${BORRADOR_ID}/lineas/${LINEA_DOS}`,
+      async (ruta) => {
+        metodo = ruta.request().method();
+        await ruta.fulfill({
+          status: 200,
+          json: {
+            lineas: [LINEAS_DEL_BORRADOR[0], LINEAS_DEL_BORRADOR[2]],
+            totales: { honorarios: 555_555, gastosEstimados: 0, total: 555_555 },
+          },
+        });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".renglon")).toHaveCount(3);
+
+    await page
+      .getByRole("button", { name: "Quitar la línea 1 de Gastos estimados" })
+      .click();
+
+    await expect(page.locator(".renglon")).toHaveCount(2);
+    // 200 con la lista y los totales, no 204: un `pedirVacio` acá tiraría la
+    // respuesta y dejaría el total viejo debajo de una lista nueva.
+    expect(metodo).toBe("DELETE");
+
+    const sumas = page.locator(".suma__importe");
+    await expect(sumas.nth(2)).toHaveText("USD 5,555.55");
+  });
+
+  test("sobre lo que ya se emitió las líneas se leen y no se tocan", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${EMITIDA_ID}`);
+
+    await expect(page.getByText(CONCEPTO_HOSTIL)).toBeVisible();
+    // 320050 centavos, escritos a mano.
+    await expect(page.locator(".renglon__importe")).toHaveText("3,200.50");
+    // El trámite de la línea sigue a la vista: es lo que T-7 va a abrir.
+    await expect(page.locator(".renglon__tramite")).toHaveText(
+      "Visa de trabajo",
+    );
+
+    // Nada de controles apagados: el aviso ocupa su lugar.
+    await expect(
+      page.getByText("Las líneas de esta cotización se pueden leer"),
+    ).toBeVisible();
+    await expect(page.locator(".renglon input")).toHaveCount(0);
+    await expect(page.locator(".renglon select")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /^Quitar la línea/ }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "Añadir una línea" }),
+    ).toHaveCount(0);
+  });
+
   /* --- El criterio responsivo de §9 -------------------------------------- */
 
   for (const ancho of ANCHOS) {
@@ -1266,6 +1951,13 @@ test.describe("las cotizaciones del bufete", () => {
       // contenga. Sin esta espera, la medida es la del detalle solo.
       await expect(page.locator(".modulo__texto")).toHaveCount(2);
 
+      // Y el concepto de la línea, que es el **otro** contenido crudo de
+      // esta pantalla y el único que vive dentro de una `Fila`: ahí el
+      // `break-word` heredado de `body` no alcanza, porque no achica el
+      // tamaño mínimo-contenido del ítem flex. Sin esta espera, las nueve
+      // medidas vuelven a ser las del detalle sin líneas.
+      await expect(page.locator(".renglon__concepto")).toHaveCount(1);
+
       const desborde = await medirDesborde(page);
       expect(
         desborde.scrollWidth,
@@ -1298,6 +1990,37 @@ test.describe("las cotizaciones del bufete", () => {
        * eso la medida es la del detalle sin módulos.
        */
       await expect(page.locator(".modulo textarea")).toHaveCount(3);
+
+      const desborde = await medirDesborde(page);
+      expect(
+        desborde.scrollWidth,
+        porQueSeSale(ancho, desborde),
+      ).toBeLessThanOrEqual(desborde.clientWidth);
+    });
+  }
+
+  for (const ancho of ANCHOS) {
+    test(`a ${String(ancho)}px de ancho, sobre el editor de líneas`, async ({
+      page,
+    }) => {
+      await conCotizacionesCargadas(page);
+      await page.setViewportSize({ width: ancho, height: 900 });
+      await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+      /*
+       * Lo que esta medida cubre es **la fila de controles y la rejilla de
+       * abajo**: el concepto conviviendo con las tres flechas en una `Fila`
+       * que tiene que envolver sola en 320px, y los tres campos —clase,
+       * importe y trámite— en una `Rejilla` que tiene que apilarse.
+       *
+       * Lo que **no** cubre, y conviene decirlo para que nadie le pida más
+       * de lo que da: ninguno de esos controles puede empujar nada, porque
+       * `.campo__control` ya los fija en `inline-size: 100%` con
+       * `min-inline-size: 0`. El concepto crudo —el que sí podría empujar—
+       * se dibuja sólo en el camino de lectura, y a ése lo miden las nueve
+       * medidas sobre el detalle de la emitida.
+       */
+      await expect(page.locator(".renglon")).toHaveCount(3);
 
       const desborde = await medirDesborde(page);
       expect(

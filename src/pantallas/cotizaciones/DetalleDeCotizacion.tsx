@@ -9,18 +9,23 @@
  * cliente: son dos lecturas independientes, y un fallo del registro no puede
  * dejar la ficha en blanco.
  *
- * Y cuelga el editor de módulos de prosa, que es una tercera lectura por el
- * mismo motivo: `/modulos` tiene su propia dirección, y un fallo suyo no
- * puede dejar la ficha en blanco.
+ * Y cuelga dos editores —el de módulos de prosa y el de líneas de importe—,
+ * que son dos lecturas más por el mismo motivo: `/modulos` y `/lineas`
+ * tienen cada uno su propia dirección, y un fallo de cualquiera de los dos
+ * no puede dejar la ficha en blanco.
+ *
+ * **El total no se arma acá.** Viene con las líneas, en el mismo cuerpo que
+ * ellas, porque la aritmética es del sistema y no de la pantalla: por eso
+ * este componente no lee un total ni se lo pasa a nadie. Lo único que le da
+ * al editor de líneas es la **moneda**, para que ningún importe quede sin
+ * unidad.
  *
  * ## Lo que esta pantalla todavía no muestra, y por qué no lo insinúa
  *
- * No hay líneas —son de T-3—, no hay total —no hay nada que sumar todavía,
- * y cuando lo haya la aritmética es del sistema y no de la pantalla— y no
- * hay emitir, ganar, perder ni duplicar, que son de T-4 y T-5. Nada de eso
- * aparece apagado ni anunciado: un botón deshabilitado promete una pantalla
- * que no existe, y el criterio de este proyecto es no dibujar puertas donde
- * no hay puerta.
+ * No hay emitir, ganar, perder ni duplicar, que son de T-4 y T-5. Nada de
+ * eso aparece apagado ni anunciado: un botón deshabilitado promete una
+ * pantalla que no existe, y el criterio de este proyecto es no dibujar
+ * puertas donde no hay puerta.
  *
  * «Editar» aparece **solo sobre un borrador**, que es lo único que la API
  * deja editar. El aviso de por qué no está vive en `avisoDeNoEsBorrador` y
@@ -43,6 +48,7 @@ import {
   cargarCotizacion,
   textoDeProblema,
 } from "./api";
+import { EditorDeLineas } from "./EditorDeLineas";
 import { EditorDeModulos } from "./EditorDeModulos";
 import {
   VACIO,
@@ -186,6 +192,18 @@ export function DetalleDeCotizacion({ id }: Props) {
         de que esto ya no se edita sería la peor de las dos pantallas.
       */}
       <EditorDeModulos cotizacionId={cotizacion.id} editable={bloqueo === null} />
+
+      {/*
+        Las líneas van **después** de la prosa y antes de la bitácora, que
+        es el orden del documento: primero qué se va a hacer y después
+        cuánto cuesta. El mismo `bloqueo` manda en los dos editores, así que
+        no pueden contradecirse.
+      */}
+      <EditorDeLineas
+        cotizacionId={cotizacion.id}
+        moneda={cotizacion.moneda}
+        editable={bloqueo === null}
+      />
 
       <Bitacora estado={bitacora} id="bitacora-de-la-cotizacion" />
     </Pila>

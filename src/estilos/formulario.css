@@ -592,3 +592,161 @@
   margin: 0;
   white-space: pre-wrap;
 }
+
+/* ======================================================================
+   Las líneas de honorarios y gastos estimados (T-3, unidad B)
+   ====================================================================== */
+
+/*
+ * Las dos familias del documento, separadas. No llevan borde ni fondo
+ * propio: lo que las separa es el encabezado y el aire, y encerrar cada una
+ * en una caja dentro de la caja del editor es la anidación que en 320px se
+ * come el ancho con puro borde.
+ */
+.familia + .familia {
+  margin-block-start: var(--espacio-l);
+}
+
+.familia__rotulo {
+  margin: 0;
+  font-size: var(--texto-m);
+}
+
+/*
+ * Un `<ol>` de verdad, igual que los módulos: el orden **es** el dato, así
+ * que el número lo pone el navegador. Se le quita la sangría que en 320px le
+ * roba espacio al concepto.
+ */
+.renglones {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-s);
+  margin: 0;
+  padding-inline-start: var(--espacio-m);
+}
+
+.renglon {
+  padding: var(--espacio-xs) var(--espacio-s);
+  border-inline-start: 3px solid var(--color-borde);
+  border-radius: var(--radio-s);
+  background: var(--color-superficie);
+}
+
+/*
+ * **La declaración que carga peso de este bloque, y es una sola porque las
+ * cuatro combinaciones se midieron.**
+ *
+ * El concepto en modo lectura es el único contenido de esta pantalla que
+ * llega al layout sin un control que lo contenga —todo lo demás vive dentro
+ * de `.campo__control`, que ya declara `inline-size: 100%` y
+ * `min-inline-size: 0`— y además vive **dentro de una `Fila`**, o sea como
+ * ítem de un contenedor flex en fila, donde el eje principal es el
+ * horizontal. Ahí el `break-word` que `body` hereda no alcanza solo: deja
+ * intacto el tamaño mínimo-contenido del ítem, que es lo que empuja.
+ *
+ * La primera versión de este bloque llevaba **dos** declaraciones,
+ * `min-inline-size: 0` y `overflow-wrap: anywhere`, con el argumento de que
+ * cada una desarma una mitad distinta del problema. Medido con un concepto
+ * de un token pegado de cincuenta letras, sobre las nueve medidas de §9 del
+ * detalle de la emitida:
+ *
+ *  - con las dos: pasan las nueve;
+ *  - sólo con `min-inline-size: 0`: pasan las nueve;
+ *  - sólo con `overflow-wrap: anywhere`: pasan las nueve;
+ *  - sin ninguna: **caen cuatro** —320, 360, 414 y 768px— y el culpable que
+ *    reporta la medición es `span.renglon__concepto`.
+ *
+ * O sea que cada una **sola** alcanza, y tenerlas juntas hace que ninguna
+ * sea verificable: quitar cualquiera de las dos no mata una sola prueba, y
+ * la próxima persona que la borre no se entera. Es el mismo defecto que T-2
+ * C2 encontró al revés —cuatro declaraciones que no hacían nada— con la
+ * piel de dos que hacen lo mismo.
+ *
+ * Queda `overflow-wrap: anywhere`, y no la otra, porque es la que se basta
+ * sola: achica el mínimo-contenido **y** permite el corte. Con
+ * `min-inline-size: 0` a secas el corte lo haría el `break-word` heredado
+ * de `body`, así que la contención de este bloque dependería de una regla
+ * escrita en otro archivo.
+ *
+ * Nota para quien pase por `.plan__nombre`: lleva las dos, y nadie midió si
+ * le hace falta. No se tocó porque es de la tajada 1 y está fuera de esta
+ * tarea.
+ */
+.renglon__concepto {
+  flex: 1 1 12ch;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * El trámite que la línea abriría, debajo del concepto y apagado: es
+ * información de segundo orden —el cliente lee el concepto y el importe—
+ * pero no se puede esconder, porque es lo que T-7 va a convertir en un
+ * proceso.
+ */
+.renglon__tramite {
+  display: block;
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+}
+
+/*
+ * `tabular-nums` para que una columna de importes alinee sus cifras, que es
+ * lo único que hace comparables dos renglones de dinero de un vistazo. Es lo
+ * mismo que hacen `.numerico` y `.bitacora__momento`.
+ *
+ * `flex: 0 0 auto` y no un ancho: el importe mide lo que mide su texto, y
+ * fijarlo sería el ancho duro que §9 prohíbe — y además partiría un importe
+ * largo en dos renglones, que en una cifra de dinero se lee como dos cifras.
+ */
+.renglon__importe {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Un subtotal o el total. Es un `<p>` con dos tramos y no una tabla porque
+ * son dos datos y no una matriz; `space-between` los separa y el envoltorio
+ * de `.fila` no aplica acá porque esto no es una `Fila`: lleva su propio
+ * flex para poder declarar el borde superior, que es lo que lo despega de
+ * la lista.
+ */
+.suma {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--espacio-xs) var(--espacio-s);
+  margin: 0;
+  padding-block-start: var(--espacio-xs);
+  border-block-start: var(--borde-fino);
+}
+
+.suma__rotulo {
+  font-weight: var(--peso-medio);
+}
+
+.suma__importe {
+  font-variant-numeric: tabular-nums;
+}
+
+/* El total pesa más que un subtotal, y se ve. */
+.suma--total {
+  padding-block-start: var(--espacio-s);
+  border-block-start: 2px solid var(--color-borde-fuerte);
+  font-size: var(--texto-l);
+}
+
+.suma--total .suma__rotulo,
+.suma--total .suma__importe {
+  font-weight: var(--peso-fuerte);
+}
+
+/*
+ * El campo de importe alinea sus cifras igual que la columna que va a
+ * producir. **Sin ancho propio**: hereda el `inline-size: 100%` de
+ * `.campo__control`, y la pista de la `Rejilla` es la que decide cuánto
+ * mide — que es lo que hace que en 320px se apile sola.
+ */
+.campo__control--importe {
+  font-variant-numeric: tabular-nums;
+}

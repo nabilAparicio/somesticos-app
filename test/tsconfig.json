@@ -54,6 +54,7 @@
     "../src/pantallas/cotizaciones/formulario.ts",
     "../src/pantallas/cotizaciones/presentacion.ts",
     "../src/pantallas/cotizaciones/modulos.ts",
+    "../src/pantallas/cotizaciones/lineas.ts",
     // `src/api/peticiones.ts` es el primero de esta lista que **no** es un
     // módulo de pantalla: es el cliente HTTP. Entra porque su mapa de 409
     // —`CONFLICTOS`— es lógica pura con una prueba propia, y compila acá sin

@@ -5,10 +5,10 @@
  * problema— vive en `src/api/peticiones.ts`. Acá quedan solo las rutas de
  * cotizaciones y el sujeto con el que se nombra un 404.
  *
- * **Son cuatro rutas de la cotización, una quinta de lectura y las cinco de
- * los módulos, y nada más.** No hay emitir, ni ganar, ni perder, ni duplicar
- * —son de T-4 y T-5 y todavía no existen del lado del Worker—, ni líneas,
- * que son de T-3. Una función acá que pida una ruta que no existe es un 404
+ * **Son cuatro rutas de la cotización, una quinta de lectura, las cinco de
+ * los módulos y las cinco de las líneas, y nada más.** No hay emitir, ni
+ * ganar, ni perder, ni duplicar: son de T-4 y T-5 y todavía no existen del
+ * lado del Worker. Una función acá que pida una ruta que no existe es un 404
  * que la pantalla explicaría como «no es de este bufete».
  *
  * El listado de clientes para el desplegable del formulario **no se declara
@@ -32,11 +32,13 @@ import { LIMITE_DE_BITACORA_POR_DEFECTO } from "../../../worker/contract";
 import type {
   Cotizacion,
   DatosDeCotizacion,
+  DatosDeLinea,
   DatosDeModulo,
   ModuloDeCotizacion,
   RespuestaDeBitacora,
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
+  RespuestaDeLineas,
   RespuestaDeModulos,
 } from "../../../worker/contract";
 
@@ -211,6 +213,99 @@ function conLaLista(
   return resultado.estado === "ok"
     ? { estado: "ok", valor: resultado.valor.modulos }
     : resultado;
+}
+
+/* ==========================================================================
+   Las líneas de honorarios y gastos estimados (T-3)
+
+   Las otras cinco rutas de `worker/cotizaciones/rutas.ts`, copia exacta en
+   forma de las cinco de módulos, con **una diferencia que importa**: lo que
+   devuelven no es la lista sino `RespuestaDeLineas`, que es la lista **y sus
+   totales**.
+
+   Por eso estas cinco no desenvuelven nada y las de módulos sí. El cuerpo
+   entero es lo que la pantalla necesita, y sacarle la lista para dejar los
+   totales afuera obligaría a la pantalla a conseguirlos por otro lado — que
+   es el camino corto hacia sumarlos ella misma, que es lo único que esta
+   tajada prohíbe de plano. `cuerpoDeLineas` del Worker los deriva de la
+   misma lista que viaja con ellos, en la misma línea de código, así que
+   mientras viajen juntos no pueden discrepar.
+   ========================================================================== */
+
+function direccionDeLineas(cotizacionId: string): string {
+  return `/api/cotizaciones/${encodeURIComponent(cotizacionId)}/lineas`;
+}
+
+/**
+ * `signal` es opcional por lo mismo que en `cargarModulos`: ésta también se
+ * pide **a mano**, cuando el servidor contesta que la lista en pantalla
+ * quedó vieja, y esa relectura la dispara una persona que acaba de apretar
+ * algo y no el montaje de un componente.
+ */
+export function cargarLineas(
+  cotizacionId: string,
+  signal?: AbortSignal,
+): Promise<Resultado<RespuestaDeLineas>> {
+  return pedir<RespuestaDeLineas>(direccionDeLineas(cotizacionId), { signal });
+}
+
+export function agregarLinea(
+  cotizacionId: string,
+  datos: DatosDeLinea,
+): Promise<Resultado<RespuestaDeLineas>> {
+  return pedir<RespuestaDeLineas>(direccionDeLineas(cotizacionId), {
+    method: "POST",
+    ...ESCRITURA,
+    body: JSON.stringify(datos),
+  });
+}
+
+export function editarLinea(
+  cotizacionId: string,
+  lineaId: string,
+  datos: DatosDeLinea,
+): Promise<Resultado<RespuestaDeLineas>> {
+  return pedir<RespuestaDeLineas>(
+    `${direccionDeLineas(cotizacionId)}/${encodeURIComponent(lineaId)}`,
+    { method: "PUT", ...ESCRITURA, body: JSON.stringify(datos) },
+  );
+}
+
+/**
+ * `pedir` y no `pedirVacio`, por lo mismo que el borrado de un módulo: este
+ * `DELETE` contesta **200 con la lista y los totales**, no 204 sin cuerpo.
+ * Leerlo con `pedirVacio` tiraría la respuesta y dejaría la pantalla
+ * mostrando la línea que se acaba de quitar **y el total de antes**, que es
+ * el peor de los dos restos.
+ */
+export function quitarLinea(
+  cotizacionId: string,
+  lineaId: string,
+): Promise<Resultado<RespuestaDeLineas>> {
+  return pedir<RespuestaDeLineas>(
+    `${direccionDeLineas(cotizacionId)}/${encodeURIComponent(lineaId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * El reordenamiento: **la lista ordenada entera**, y el servidor asigna el
+ * `orden` como posición del arreglo.
+ *
+ * La lista que viaja son las líneas de las **dos** familias en un solo
+ * orden, porque el índice único de `0004` es sobre `(cotizacion_id, orden)`
+ * y no sabe nada de clases. Quien la arma es `ordenDeLineas`, después de que
+ * `moverLinea` haya hecho el intercambio dentro de una familia.
+ */
+export function reordenarLineas(
+  cotizacionId: string,
+  orden: readonly string[],
+): Promise<Resultado<RespuestaDeLineas>> {
+  return pedir<RespuestaDeLineas>(direccionDeLineas(cotizacionId), {
+    method: "PUT",
+    ...ESCRITURA,
+    body: JSON.stringify({ orden }),
+  });
 }
 
 /**

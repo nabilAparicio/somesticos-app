@@ -32,16 +32,20 @@
   // necesitan. Listarlo es lo que permite que esté escrita una sola vez: el
   // Worker no puede importar de `src/` sin dar vuelta la flecha, así que el
   // único hogar común es un módulo de `worker/` que no arrastre servidor.
-  // `worker/cotizaciones/modulos.ts` entra por lo mismo y cumple la misma
-  // condición: lo único que importa son tipos de `worker/contract.ts`, que
-  // se borran al compilar, así que el bundle del navegador no se lleva ni
-  // D1 ni HTTP. Es la mitad acoplada del `CHECK` de la migración, y copiarlo
-  // a `src/` sería una tercera copia del mismo catálogo.
+  // `worker/cotizaciones/modulos.ts` y `worker/cotizaciones/lineas.ts`
+  // entran por lo mismo y cumplen la misma condición, que **no es «no tener
+  // dependencias» sino no tener ninguna importación en tiempo de ejecución**:
+  // lo único que importan son tipos de `worker/contract.ts`, que se borran al
+  // compilar, así que el bundle del navegador no se lleva ni D1 ni HTTP. Cada
+  // uno es la mitad acoplada de un `CHECK` de `0004` —los tipos de módulo y
+  // las clases de línea—, y copiarlos a `src/` sería una tercera copia del
+  // mismo catálogo.
   "include": [
     "src",
     "e2e",
     "worker/contract.ts",
     "worker/db/momentos.ts",
-    "worker/cotizaciones/modulos.ts"
+    "worker/cotizaciones/modulos.ts",
+    "worker/cotizaciones/lineas.ts"
   ]
 }
