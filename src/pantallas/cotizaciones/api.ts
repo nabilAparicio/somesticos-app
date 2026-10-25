@@ -6,8 +6,8 @@
  * cotizaciones y el sujeto con el que se nombra un 404.
  *
  * **Son cuatro rutas de la cotización, una quinta de lectura, las cuatro del
- * ciclo de vida, las cinco de los módulos y las cinco de las líneas, y nada
- * más.** Lo que sigue sin existir es la salida imprimible (T-6) y la apertura
+ * ciclo de vida, las cinco de los módulos, las cinco de las líneas y la del
+ * documento congelado, y nada más.** Lo que sigue sin existir es la apertura
  * de procesos (T-7): una función acá que pida una ruta que no existe es un
  * 404 que la pantalla explicaría como «no es de este bufete».
  *
@@ -34,10 +34,12 @@ import type {
   DatosDeCotizacion,
   DatosDeLinea,
   DatosDeModulo,
+  DocumentoCongelado,
   ModuloDeCotizacion,
   RespuestaDeBitacora,
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
+  RespuestaDeDocumento,
   RespuestaDeLineas,
   RespuestaDeModulos,
 } from "../../../worker/contract";
@@ -183,6 +185,45 @@ export function duplicarCotizacion(
   cotizacionId: string,
 ): Promise<Resultado<Cotizacion>> {
   return pedirVerbo(cotizacionId, "duplicar");
+}
+
+/* ==========================================================================
+   El documento congelado (T-6)
+   ========================================================================== */
+
+/**
+ * El documento tal como se congeló al emitir: lo que la hoja imprimible
+ * dibuja.
+ *
+ * **Es la única lectura de este archivo que no mira las tablas vivas**, y
+ * por eso es la única que puede contestar «¿qué decía el papel?». Las otras
+ * contestan «¿cómo está esto hoy?», que es otra pregunta: entre las dos
+ * puede haber meses y un cliente que se cambió el nombre.
+ *
+ * Los dos rechazos que importan no se resuelven acá sino en `impresion.ts`,
+ * y están separados a propósito:
+ *
+ *  - **404** es «no existe esa cotización, o no es de este bufete», que el
+ *    texto compartido ya dice bien.
+ *  - **409 `cotizacion_sin_documento`** es «todavía es un borrador», y ése
+ *    **no** puede pasar por `textoDeProblema`: no está en el mapa
+ *    `CONFLICTOS` de `src/api/peticiones.ts` y caería en el texto de
+ *    reserva, que habla de un borrado que nadie pidió. Le pasó tres veces
+ *    seguidas a esta tajada; `textoDeProblemaDeLaHoja` existe para que no
+ *    pase la cuarta.
+ */
+export async function cargarDocumento(
+  id: string,
+  signal: AbortSignal,
+): Promise<Resultado<DocumentoCongelado>> {
+  const resultado = await pedir<RespuestaDeDocumento>(
+    `/api/cotizaciones/${encodeURIComponent(id)}/documento`,
+    { signal },
+  );
+
+  return resultado.estado === "ok"
+    ? { estado: "ok", valor: resultado.valor.documento }
+    : resultado;
 }
 
 /* ==========================================================================

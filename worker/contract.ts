@@ -1338,6 +1338,168 @@ export interface RespuestaDeLineas {
 }
 
 /* ==========================================================================
+   El documento congelado, en el cable (tajada 2, T-6)
+
+   Lo que `cotizacion.snapshot` guarda, dicho en el contrato para que la
+   pantalla que lo imprime pueda nombrarlo.
+
+   ## Por qué existe una dirección aparte y no un campo más
+
+   La sección de arriba dice que `snapshot` **no viaja** en `Cotizacion`, y
+   eso no cambia: el listado seguiría pesando lo que pesan todos los
+   documentos juntos, y una ficha de trabajo no lo necesita. Lo que T-6
+   agrega no es ese campo sino **otra pregunta**: no «¿cómo está esta
+   cotización?» sino «¿qué dice el papel que se mandó?». Son dos lecturas
+   con dos tamaños y dos frecuencias, y por eso son dos direcciones.
+
+   Que `GET /api/cotizaciones/{id}` y `GET /api/cotizaciones/{id}/documento`
+   puedan contestar cosas distintas sobre la misma cotización **no es una
+   incoherencia: es el punto entero de T-4**. La primera lee las tablas
+   vivas, donde el nombre del cliente es el de hoy; la segunda lee lo que se
+   congeló, donde es el del día que se emitió. Si coincidieran siempre, el
+   snapshot no estaría congelando nada.
+
+   ## Estas interfaces son la misma forma que `worker/cotizaciones/snapshot.ts`
+
+   Y son una segunda declaración, que es justo lo que este proyecto evita.
+   Está así porque el cable necesita nombrarlas y `snapshot.ts` no puede
+   entrar en el programa del navegador: importa `totalesDe` y los dos
+   `rotuloDe…` **como valores**, así que listarlo en `tsconfig.app.json`
+   arrastraría `congelar()` y su aritmética al bundle — la puerta de atrás
+   hacia sumar en el cliente, que es lo único que esta tajada prohíbe de
+   plano.
+
+   **Las dos copias no pueden separarse en silencio**, y no por disciplina:
+   `EL_DOCUMENTO_DEL_CABLE_ES_EL_SNAPSHOT`, en
+   `worker/cotizaciones/repositorio.ts`, es una afirmación de
+   asignabilidad en los dos sentidos que deja de compilar si una de las dos
+   gana, pierde o renombra un campo. El día que `snapshot.ts` pueda importar
+   de acá —basta con que sus dos ayudantes de rótulo se separen de
+   `totalesDe`— estas interfaces se borran de allá y la guarda sobra.
+   ========================================================================== */
+
+/**
+ * El cliente, tal como figuraba en la propuesta.
+ *
+ * `tipo` es el **nombre** del tipo de cliente y no su identificador: es un
+ * catálogo que se edita y se da de baja, así que la llave no contesta nada
+ * dentro de seis años. Casi todo es nullable porque casi todo lo es en
+ * `cliente`: el alta pide lo mínimo para que se le pueda cotizar a un
+ * prospecto.
+ */
+export interface ClienteCongelado {
+  id: string;
+  nombre: string;
+  tipo: string | null;
+  documentoTipo: string | null;
+  documentoNumero: string | null;
+  representanteLegal: string | null;
+  email: string | null;
+  telefono: string | null;
+}
+
+/**
+ * Un módulo de prosa congelado.
+ *
+ * Lleva `tipo` **y** `rotulo` porque no son lo mismo: `tipo` es la cadena
+ * del catálogo cerrado, que un lector automático compara; `rotulo` es el
+ * encabezado que la persona leyó, y el catálogo vive en código y se puede
+ * renombrar en cualquier despliegue.
+ */
+export interface ModuloCongelado {
+  tipo: TipoDeModulo;
+  rotulo: string;
+  contenido: string;
+}
+
+/**
+ * Una línea congelada. `monto` en **centavos enteros**, igual que en todas
+ * partes: el documento no cambia de unidad a mitad de camino.
+ */
+export interface LineaCongelada {
+  clase: ClaseDeLinea;
+  rotulo: string;
+  concepto: string;
+  monto: number;
+  tipoProcesoId: string | null;
+  tipoProceso: string | null;
+}
+
+/** Quién la emitió. El nombre puede faltar; el identificador no. */
+export interface EmisorCongelado {
+  id: string;
+  nombre: string | null;
+}
+
+/**
+ * El documento congelado entero: lo que se le mandó al cliente.
+ *
+ * **Los `totales` que trae son un hecho histórico y no se recalculan.** Es
+ * la única parte de este contrato donde una suma viaja guardada, y la
+ * barandilla de la tajada no tiene una excepción acá: esa regla habla de
+ * las tablas vivas, donde un total guardado es un total que algún día no
+ * coincide con sus líneas. Acá las líneas que lo produjeron están
+ * congeladas en el mismo objeto, así que no pueden separarse nunca — y
+ * recalcular desde ellas el día que la aritmética cambie daría un número
+ * que nadie le prometió a nadie.
+ */
+export interface DocumentoCongelado {
+  version: number;
+  /** Momento ISO 8601 UTC en que dejó de ser editable. */
+  emitidaEn: string;
+  emitidaPor: EmisorCongelado;
+  cotizacion: {
+    id: string;
+    codigo: string;
+    /** Momento ISO 8601 UTC: cuándo se abrió el borrador. */
+    fecha: string;
+    /** Día `AAAA-MM-DD`, o nulo. */
+    venceEn: string | null;
+    moneda: string;
+  };
+  cliente: ClienteCongelado;
+  modulos: ModuloCongelado[];
+  lineas: LineaCongelada[];
+  totales: TotalesDeCotizacion;
+}
+
+export interface RespuestaDeDocumento {
+  documento: DocumentoCongelado;
+}
+
+/**
+ * El 409 de pedirle el documento a una cotización que todavía no lo tiene.
+ *
+ * ## Por qué 409 y no 404
+ *
+ * Porque un 404 contesta la pregunta equivocada. `textoDeProblema` lo dice
+ * así: «No existe esa cotización, o no es de este bufete» — y las dos
+ * mitades de esa frase son falsas sobre un borrador propio que se está
+ * mirando. Quien lo lea va a buscar un problema de datos que no existe. Lo
+ * que pasa es otra cosa, y es una que se arregla sola: todavía no se
+ * emitió.
+ *
+ * ## Por qué no lleva el estado adentro
+ *
+ * Al revés que `CotizacionNoEsBorrador` y `CotizacionNoEsEmitida`, que sí
+ * lo llevan. Ahí hace falta porque las dos cubren varios estados y «ya no
+ * es borrador» sin decir en cuál quedó obliga a recargar. Acá no hay nada
+ * que decir: el `CHECK` `el_borrador_no_tiene_snapshot_y_la_emitida_si` de
+ * `migrations/0004_cotizaciones.sql` ata las dos columnas en las dos
+ * direcciones, así que **sin documento es exactamente borrador** y un campo
+ * `estado` sería un segundo lugar diciendo lo que el nombre del error ya
+ * dice.
+ *
+ * Es además el motivo por el que no se reusa `cotizacion_no_es_emitida`:
+ * una ganada y una perdida **no** están emitidas y sin embargo tienen su
+ * documento y se imprimen. La condición no es el estado sino la ausencia
+ * del documento, y el nombre la dice.
+ */
+export interface CotizacionSinDocumento {
+  error: "cotizacion_sin_documento";
+}
+
+/* ==========================================================================
    Bitácora (T-10)
 
    Quién hizo qué, sobre qué, y cuándo. Es el otro registro del sistema, y

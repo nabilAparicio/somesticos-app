@@ -20,13 +20,22 @@
  *   POST   /api/cotizaciones/{id}/ganar           el cliente aceptó
  *   POST   /api/cotizaciones/{id}/perder          el cliente no aceptó
  *   POST   /api/cotizaciones/{id}/duplicar        nace un borrador nuevo
+ *   GET    /api/cotizaciones/{id}/documento       el documento congelado
  *
- * **Y nada más.** La salida imprimible es T-6 y la apertura de procesos
- * desde una ganada es T-7; las dos siguen cayendo en el 404 general. La
- * cuarta parte de la dirección `/api/cotizaciones/{id}/bitacora` la atiende
- * `worker/bitacora/rutas.ts`, que corre antes y para la que este archivo
- * devuelve `null`: acá sólo se reconocen `modulos`, `lineas` y los cuatro
- * verbos del ciclo de vida en esa posición.
+ * **Y nada más.** La apertura de procesos desde una ganada es T-7 y sigue
+ * cayendo en el 404 general. La cuarta parte de la dirección
+ * `/api/cotizaciones/{id}/bitacora` la atiende `worker/bitacora/rutas.ts`,
+ * que corre antes y para la que este archivo devuelve `null`: acá sólo se
+ * reconocen `modulos`, `lineas`, `documento` y los cuatro verbos del ciclo
+ * de vida en esa posición.
+ *
+ * ## `documento` es la única lectura de esta tabla que no pasa por `SELECCION`
+ *
+ * Y contesta **otra pregunta** que `GET /api/cotizaciones/{id}`: aquélla lee
+ * las tablas vivas —el nombre del cliente es el de hoy—, ésta lee lo que se
+ * congeló al emitir. Que puedan diferir sobre la misma cotización es el
+ * punto entero de T-4, no una incoherencia: si coincidieran siempre, el
+ * snapshot no estaría congelando nada.
  *
  * ## Cuatro verbos y no un `PUT` con el estado en el cuerpo
  *
@@ -112,11 +121,13 @@ import type { Identidad } from "../acceso/identidad";
 import type {
   CotizacionNoEsBorrador,
   CotizacionNoEsEmitida,
+  CotizacionSinDocumento,
   DatosInvalidos,
   FallaDeValidacion,
   LineaDeCotizacion,
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
+  RespuestaDeDocumento,
   RespuestaDeLineas,
   RespuestaDeModulos,
 } from "../contract";
@@ -130,6 +141,7 @@ import {
 import { normalizarModulo, normalizarOrdenDeModulos } from "./modulos";
 import type {
   ResultadoDeCierre,
+  ResultadoDeDocumento,
   ResultadoDeDuplicacion,
   ResultadoDeEmision,
   ResultadoDeEscritura,
@@ -328,6 +340,37 @@ function respuestaDeCierre(resultado: ResultadoDeCierre): Response {
  * hacer después de duplicar es abrir la copia para editarla; devolver la
  * original la obligaría a sacar el identificador del `location`.
  */
+/**
+ * El documento congelado, o por qué todavía no hay uno (T-6).
+ *
+ * **La rama `sin_documento` no se aplasta contra el 404**, y es lo único
+ * que este ayudante decide. Un borrador propio contestado con 404 haría
+ * decir a la pantalla «no existe esa cotización, o no es de este bufete»
+ * —`textoDeProblema`, palabra por palabra— y las dos mitades de esa frase
+ * son falsas sobre algo que se está mirando. Lo que pasa es otra cosa y se
+ * arregla sola: emitiéndola.
+ *
+ * El 409 no lleva el estado adentro, al revés que los otros dos de esta
+ * API. Acá no hay nada que agregar: el `CHECK`
+ * `el_borrador_no_tiene_snapshot_y_la_emitida_si` ata las dos columnas en
+ * las dos direcciones, así que sin documento **es** borrador y un campo
+ * `estado` sería un segundo lugar diciendo lo que el nombre del error ya
+ * dice.
+ */
+function respuestaDeDocumento(resultado: ResultadoDeDocumento): Response {
+  if (resultado.estado === "no_encontrado") return noEncontrado();
+
+  if (resultado.estado === "sin_documento") {
+    const cuerpo: CotizacionSinDocumento = {
+      error: "cotizacion_sin_documento",
+    };
+    return json(cuerpo, { status: 409 });
+  }
+
+  const cuerpo: RespuestaDeDocumento = { documento: resultado.documento };
+  return json(cuerpo);
+}
+
 function respuestaDeDuplicacion(resultado: ResultadoDeDuplicacion): Response {
   if (resultado.estado === "no_encontrado") return noEncontrado();
 
@@ -652,6 +695,12 @@ export async function rutasDeCotizaciones(
   const coleccionDeLineas = segmentos.length === 4 && esDeLineas;
   const unaLinea = segmentos.length === 5 && esDeLineas;
 
+  // El documento congelado no es una colección: no tiene forma de cinco
+  // segmentos. `/documento/{algo}` cae en el 404 general, igual que
+  // `/emitir/{algo}`, y por eso la longitud se comprueba acá y no adentro
+  // de la rama.
+  const esDocumento = segmentos.length === 4 && segmentos[3] === "documento";
+
   // Los cuatro verbos del ciclo de vida son los cuartos segmentos que no
   // nombran una colección: no hay `/emitir/{algo}` ni `/ganar/{algo}`, así
   // que cinco segmentos con cualquiera de ellos en el cuarto caen en el 404
@@ -691,6 +740,21 @@ export async function rutasDeCotizaciones(
       cotizacionId,
       servicio,
       unaLinea,
+    );
+  }
+
+  if (esDocumento) {
+    // El 405 va **antes** de mirar si la cotización existe, igual que en
+    // las demás subrutas: un método que esta dirección no admite no es una
+    // pregunta sobre ninguna cotización, así que contestarlo no dice si
+    // existe.
+    if (request.method !== "GET") return metodoNoPermitido("GET");
+
+    const cotizacionId = decodificar(segmentos[2]);
+    if (cotizacionId === null) return noEncontrado();
+
+    return respuestaDeDocumento(
+      await servicio.obtenerDocumento(tenantId, cotizacionId),
     );
   }
 

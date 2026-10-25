@@ -6,3 +6,6 @@
 @import "./base.css";
 @import "./layout.css";
 @import "./formulario.css";
+/* La hoja imprimible va última: su bloque `@media print` corrige cosas que
+   los anteriores pusieron, y en CSS plano eso es cuestión de orden. */
+@import "./impresion.css";

@@ -52,11 +52,29 @@ export type Ruta =
   | { nombre: "cotizacion-nueva" }
   | { nombre: "cotizacion"; id: string }
   | { nombre: "cotizacion-edicion"; id: string }
+  /**
+   * La salida imprimible (T-6): el documento congelado de una cotización,
+   * sin controles y con su propia hoja de impresión.
+   *
+   * Lleva identificador y no es una pantalla aparte del detalle porque es
+   * **otra cosa**: el detalle es la ficha de trabajo y lee las tablas
+   * vivas; esto es el papel que se le mandó al cliente y lee el snapshot.
+   * Con una sola dirección habría que elegir cuál de las dos muestra, y la
+   * elegida sería la equivocada la mitad de las veces.
+   */
+  | { nombre: "cotizacion-hoja"; id: string }
   | { nombre: "desconocida"; ruta: string };
 
 /** El segmento literal del alta. No puede ser el identificador de nadie. */
 const NUEVO = "nuevo";
 const EDITAR = "editar";
+
+/**
+ * El segmento de la salida imprimible (T-6). Va al lado de `EDITAR` porque
+ * es el otro tercer segmento que una cotización tiene, y no puede ser el
+ * identificador de nadie por lo mismo que aquél.
+ */
+const HOJA = "hoja";
 
 /** La raíz de las pantallas de catálogo (T-6) y su única subsección. */
 const CATALOGOS = "catalogos";
@@ -151,9 +169,12 @@ function resolverCotizaciones(segmentos: string[], pathname: string): Ruta {
     return id === null ? desconocida : { nombre: "cotizacion", id };
   }
 
-  if (segmentos.length === 3 && segmentos[2] === EDITAR) {
+  if (segmentos.length === 3) {
     const id = identificador(segmentos[1]);
-    return id === null ? desconocida : { nombre: "cotizacion-edicion", id };
+    if (id === null) return desconocida;
+
+    if (segmentos[2] === EDITAR) return { nombre: "cotizacion-edicion", id };
+    if (segmentos[2] === HOJA) return { nombre: "cotizacion-hoja", id };
   }
 
   return desconocida;
@@ -249,6 +270,8 @@ export function enlaceDe(ruta: Ruta): string {
       return `/${COTIZACIONES}/${encodeURIComponent(ruta.id)}`;
     case "cotizacion-edicion":
       return `/${COTIZACIONES}/${encodeURIComponent(ruta.id)}/${EDITAR}`;
+    case "cotizacion-hoja":
+      return `/${COTIZACIONES}/${encodeURIComponent(ruta.id)}/${HOJA}`;
     case "desconocida":
       return ruta.ruta;
   }

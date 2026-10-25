@@ -34,6 +34,7 @@ import type {
   DatosDeCotizacion,
   DatosDeLinea,
   DatosDeModulo,
+  DocumentoCongelado,
   EstadoDeCotizacion,
   FallaDeValidacion,
   LineaDeCotizacion,
@@ -53,6 +54,7 @@ import {
   congelar,
   type ClienteCongelado,
   type EmisorCongelado,
+  type SnapshotDeCotizacion,
 } from "./snapshot";
 
 export type ResultadoDeEscritura =
@@ -117,6 +119,63 @@ export type ResultadoDeCierre =
 export type ResultadoDeDuplicacion =
   | { estado: "duplicada"; cotizacion: Cotizacion }
   | { estado: "no_encontrado" };
+
+/**
+ * Lo que devuelve pedir el documento congelado (T-6).
+ *
+ * **Son tres ramas y las tres son distintas**, y separarlas es lo único que
+ * esta lectura decide:
+ *
+ *  - `no_encontrado` es «esa cotización no existe, o no es de este bufete»
+ *    (I-8). El vecino y el identificador inventado se contestan igual, que
+ *    es lo que impide usar la ruta para saber qué filas hay del otro lado.
+ *  - `sin_documento` es «existe, es tuya, y todavía no se emitió». Es la
+ *    que **no** puede aplastarse contra la anterior: mandaría a buscar un
+ *    problema de datos donde lo que hay es un borrador.
+ *  - `documento` es el papel.
+ *
+ * No hay rama `invalido`: es un `GET` sin cuerpo, así que no hay formulario
+ * que corregir — el mismo argumento por el que no la tienen emitir, ganar
+ * ni perder.
+ */
+export type ResultadoDeDocumento =
+  | { estado: "documento"; documento: DocumentoCongelado }
+  | { estado: "sin_documento" }
+  | { estado: "no_encontrado" };
+
+/**
+ * Las dos declaraciones del documento congelado no se pueden separar.
+ *
+ * `SnapshotDeCotizacion` es la forma que `congelar` escribe en la columna;
+ * `DocumentoCongelado` es la que `worker/contract.ts` publica para que la
+ * pantalla que imprime pueda nombrarla. Son la misma forma escrita dos
+ * veces, y la segunda existe por una razón concreta y no por descuido:
+ * `snapshot.ts` importa `totalesDe` y los dos `rotuloDe…` **como valores**,
+ * así que meterlo en el programa del navegador arrastraría `congelar()` y
+ * su aritmética al bundle.
+ *
+ * Esta constante es lo que impide que se separen en silencio. La condición
+ * exige asignabilidad **en los dos sentidos**, y no en uno: con uno solo, el
+ * lado ancho podría ganar un campo que el angosto nunca declara, y el cable
+ * publicaría un documento con un agujero que nadie nota hasta leerlo en
+ * 2032. Si una de las dos gana, pierde o renombra un campo, el tipo de la
+ * derecha pasa a ser `false`, `false` no es asignable a `true` y
+ * `pnpm typecheck` se cae acá con el nombre de esta constante encima.
+ *
+ * Es la misma mecánica que `TODOS_LOS_TIPOS_TIENEN_ROTULO` en
+ * `./modulos.ts`: una afirmación que el compilador ejerce, no un comentario
+ * pidiendo cuidado.
+ *
+ * **Se borra el día que `snapshot.ts` pueda importar del contrato**, que es
+ * el día que sus ayudantes de rótulo se separen de `totalesDe`. Entonces las
+ * interfaces viven en un solo lado y no hay nada que atar.
+ */
+type MismaForma<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+export const EL_DOCUMENTO_DEL_CABLE_ES_EL_SNAPSHOT: MismaForma<
+  SnapshotDeCotizacion,
+  DocumentoCongelado
+> = true;
 
 /**
  * Las tres formas en que una escritura dentro de una cotización no ocurre.
@@ -306,6 +365,30 @@ export interface ServicioDeCotizaciones {
     autorId: string,
     id: string,
   ): Promise<ResultadoDeDuplicacion>;
+
+  /* --- La salida imprimible (T-6) --- */
+
+  /**
+   * El documento congelado de una cotización, tal como se emitió.
+   *
+   * **No pasa por `SELECCION` y eso es la decisión**, no una optimización
+   * suelta: el comentario de esa constante tiene razón en que el listado y
+   * la ficha no pueden arrastrar el documento entero en cada lectura, y
+   * agregarle la columna para servir a una pantalla haría que las otras dos
+   * la paguen siempre. Ésta es una consulta propia, angosta y acotada al
+   * tenant, que se paga sólo cuando alguien va a imprimir.
+   *
+   * Lo que devuelve sale **de la columna y de ninguna otra parte**. No se
+   * unen `cliente`, `cotizacion_modulo` ni `cotizacion_linea`, y no es una
+   * omisión: unirlas sería leer las tablas vivas, que es exactamente lo que
+   * el snapshot existe para no hacer. Una cotización emitida en marzo tiene
+   * que imprimirse igual en septiembre aunque el cliente se haya cambiado
+   * el nombre.
+   */
+  obtenerDocumento(
+    tenantId: string,
+    id: string,
+  ): Promise<ResultadoDeDocumento>;
 }
 
 interface FilaDeCotizacion {
@@ -2029,6 +2112,44 @@ export function cotizacionesSobreD1(
       }
 
       return { estado: "duplicada", cotizacion };
+    },
+
+    async obtenerDocumento(tenantId, id) {
+      // Las dos columnas en una sola lectura, y `estado` **no** es
+      // decoración para el mensaje: es lo que separa «no existe» de
+      // «existe y todavía no se emitió», que son las dos respuestas que la
+      // pantalla tiene que poder distinguir. Con sólo `snapshot` las dos
+      // llegarían como `null` y serían la misma.
+      const fila = await db
+        .prepare(
+          "SELECT estado, snapshot FROM cotizacion" +
+            " WHERE tenant_id = ? AND id = ?",
+        )
+        .bind(tenantId, id)
+        .first<{ estado: EstadoDeCotizacion; snapshot: string | null }>();
+
+      if (fila === null) return { estado: "no_encontrado" };
+      if (fila.snapshot === null) return { estado: "sin_documento" };
+
+      /*
+       * `JSON.parse` sin volver a validar la forma, y es deliberado.
+       *
+       * Lo que hay en esa columna lo escribió `congelar` en la misma
+       * escritura que movió el estado, y `cotizacion_snapshot_se_escribe_una_sola_vez`
+       * (M-3 de `0006`) garantiza que nadie lo tocó después. Validarlo acá
+       * sería un segundo esquema del documento —el tercero, contando el del
+       * contrato— y el día que los tres difieran el que manda sería el que
+       * se escribió último, que es el peor de los tres criterios.
+       *
+       * Lo que sí puede pasar es que una fila vieja tenga una `version`
+       * anterior. Para eso está ese campo, y leerlo es de quien lo
+       * necesite: hoy hay una sola versión y rechazar acá las que todavía
+       * no existen sería escribir la migración antes que el problema.
+       */
+      return {
+        estado: "documento",
+        documento: JSON.parse(fila.snapshot) as DocumentoCongelado,
+      };
     },
   };
 }

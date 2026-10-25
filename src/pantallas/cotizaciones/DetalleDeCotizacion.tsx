@@ -43,10 +43,14 @@
  *
  * ## Lo que esta pantalla sigue sin hacer
  *
- * No imprime (T-6), no abre procesos (T-7) y **no muestra el snapshot**: lo
- * que se dibuja acá sale de las tablas vivas, igual que antes de T-4. El
- * snapshot es la prueba de qué se le mandó al cliente y se lee en la salida
- * imprimible, no en la ficha de trabajo.
+ * No abre procesos (T-7) y **no muestra el snapshot**: lo que se dibuja acá
+ * sale de las tablas vivas, igual que antes de T-4. El snapshot es la
+ * prueba de qué se le mandó al cliente y se lee en la hoja imprimible, que
+ * es otra pantalla y otra lectura.
+ *
+ * Lo que esta pantalla sí hace desde T-6 es **ofrecer esa hoja**, y sólo
+ * sobre lo que tiene documento: un enlace a imprimir un borrador lleva a un
+ * aviso, y un control que existe es una promesa.
  *
  * «Editar» aparece **solo sobre un borrador**, que es lo único que la API
  * deja editar. El aviso de por qué no está vive en `avisoDeNoEsBorrador` y
@@ -375,6 +379,42 @@ export function DetalleDeCotizacion({ id }: Props) {
                   className="boton"
                 >
                   Editar
+                </Enlace>
+              )}
+              {/*
+                La hoja imprimible, **sólo sobre lo que tiene documento**, y
+                colgada del mismo `bloqueo` que decide «Editar».
+
+                Hubo acá un predicado propio —`tieneDocumento`, en
+                `impresion.ts`— con el argumento de que son dos preguntas
+                distintas: `bloqueo` dice si esto se edita (I-4) y aquél
+                decía si hay papel congelado (el `CHECK` de coherencia de
+                `0004`). **Se midió y el argumento no se sostenía**: con el
+                predicado borrado y esta condición en su lugar, el
+                `typecheck`, las 1575 unitarias y las 290 de punta a punta
+                quedaron en verde. O sea que su único asesino eran sus dos
+                pruebas propias, y las dos pruebas de punta a punta que
+                miran este enlace —que el borrador no lo ofrezca y que la
+                emitida sí— pasan con cualquiera de las dos guardas.
+
+                Es la cuarta lección de prueba de esta tajada tal cual:
+                **dos guardas que resuelven lo mismo por caminos distintos
+                se anulan como garantía**, porque quitar cualquiera no mata
+                nada. Se midieron las combinaciones y queda una, y queda
+                ésta porque es la que ya decidía otras tres cosas en esta
+                pantalla y tiene asesinos propios. El día que un estado
+                pueda editarse teniendo documento, la que se parte en dos es
+                ésta, con su prueba.
+              */}
+              {bloqueo !== null && (
+                <Enlace
+                  href={enlaceDe({
+                    nombre: "cotizacion-hoja",
+                    id: cotizacion.id,
+                  })}
+                  className="boton"
+                >
+                  Ver la hoja
                 </Enlace>
               )}
               {accionesDe(cotizacion).map((accion) => (

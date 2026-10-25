@@ -1,0 +1,342 @@
+/**
+ * La hoja imprimible y su hoja de impresión (T-6).
+ *
+ * Dos mitades que se leen juntas:
+ *
+ *  1. **En pantalla**, el documento se dibuja como un papel: una columna de
+ *     prosa con tope, sobre fondo de superficie, para que quien lo revisa
+ *     antes de mandarlo vea más o menos lo que va a salir.
+ *  2. **En `@media print`**, se va todo lo que no es documento y se corrige
+ *     lo que la pantalla puede permitirse y el papel no.
+ *
+ * ## Lo que el papel no perdona, y esta hoja corrige
+ *
+ *  - **El color.** Una impresora corriente, o no imprime los fondos, o los
+ *    convierte a un gris que se come el texto. Nada de este documento
+ *    distingue nada por color: las dos familias se separan por su rótulo y
+ *    lo aproximado lo dice una frase, no un tono. Los fondos se van y los
+ *    bordes pasan a negro.
+ *  - **El corte.** Una fila de importe partida al medio deja el concepto en
+ *    una hoja y la cifra en la siguiente, que sobre un documento de dinero
+ *    es la peor forma de romperse. `break-inside: avoid` en cada fila, y
+ *    también en cada módulo de prosa corto y en el bloque del total.
+ *  - **El ancho.** La medida del papel no es la del monitor. En pantalla la
+ *    columna tiene tope en `rem`; en el papel el tope se saca, porque el
+ *    ancho ya lo pone `@page` y un tope de más deja media hoja en blanco.
+ *  - **Los enlaces.** No hay ninguno adentro del documento, así que no hace
+ *    falta imprimir el `href` entre paréntesis — eso es para páginas con
+ *    enlaces, y acá los únicos están en la franja que no se imprime.
+ *
+ * ## Lo que esta hoja NO hace
+ *
+ * No declara `@page { size: … }`. El tamaño lo decide quien imprime, en su
+ * diálogo, y en Panamá conviven carta y A4 en la misma oficina: fijarlo
+ * desde acá obligaría a una de las dos a escalar. Lo que sí se declara es
+ * el margen, que es lo que evita que el texto quede pegado al borde.
+ */
+
+/* ==========================================================================
+   El papel, en pantalla
+   ========================================================================== */
+
+.hoja {
+  /* Tope en caracteres y no en píxeles: una columna de prosa se mide por
+     cuántos caracteres entran en un renglón, que es lo que decide si se
+     puede leer. Es el mismo criterio de `--prosa-tope`, con más aire
+     porque acá además hay una tabla de importes. */
+  max-inline-size: 80ch;
+  padding: var(--espacio-xl);
+  border: var(--borde-fino);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+}
+
+.hoja__encabezado {
+  padding-block-end: var(--espacio-m);
+  border-block-end: 2px solid var(--color-tinta);
+}
+
+.hoja__titulo {
+  margin-block-end: var(--espacio-s);
+  font-size: var(--texto-xl);
+}
+
+.hoja__seccion {
+  margin-block-end: var(--espacio-xs);
+  font-size: var(--texto-m);
+  /* Versalitas y no un tamaño mayor: los encabezados de sección de un
+     documento tienen que separarse del texto sin competir con el título. */
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-tinta-apagada);
+}
+
+.hoja__cliente,
+.hoja__modulo,
+.hoja__familia,
+.hoja__total-bloque {
+  margin-block-start: var(--espacio-l);
+}
+
+.hoja__cliente-nombre {
+  font-size: var(--texto-l);
+  font-weight: var(--peso-fuerte);
+}
+
+/* ---------- Las fichas de datos ---------- */
+
+/*
+ * `auto-fit` con un mínimo y sin un número de columnas: a 320px es una
+ * columna y en escritorio son las que entren, sin un breakpoint escrito a
+ * mano (§9). El mínimo es chico porque estas filas son cortas —«Teléfono:
+ * +507 6000-0000»— y uno grande dejaría una sola columna hasta muy ancho.
+ */
+.hoja__datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--espacio-2xs) var(--espacio-m);
+  margin-block-start: var(--espacio-xs);
+}
+
+.hoja__dato {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-3xs) var(--espacio-xs);
+}
+
+.hoja__dato-rotulo {
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-s);
+}
+
+.hoja__dato-rotulo::after {
+  content: ":";
+}
+
+.hoja__dato-valor {
+  font-size: var(--texto-s);
+  font-weight: var(--peso-medio);
+}
+
+/* ---------- La prosa ---------- */
+
+/*
+ * `pre-wrap` y no `normal`: lo que el abogado escribió puede tener renglones
+ * en blanco entre párrafos, y el documento congelado los guardó tal cual.
+ * Aplastarlos acá sería imprimir algo distinto de lo que se mandó.
+ */
+.hoja__prosa {
+  white-space: pre-wrap;
+}
+
+/* ---------- Las líneas de importe ---------- */
+
+.hoja__tabla {
+  inline-size: 100%;
+  margin-block-start: var(--espacio-xs);
+  border-collapse: collapse;
+}
+
+/*
+ * El `<caption>` existe y no se ve: una tabla sin nombre accesible obliga a
+ * quien la escucha a deducir de qué es por su primera celda. No se usa
+ * `display: none` —eso la saca del árbol de accesibilidad, que es
+ * exactamente lo contrario de lo que se busca— sino el recorte de un píxel
+ * de siempre.
+ */
+.hoja__caption {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.hoja__linea > * {
+  padding-block: var(--espacio-2xs);
+  border-block-end: var(--borde-fino);
+  vertical-align: baseline;
+  text-align: start;
+  font-weight: var(--peso-normal);
+}
+
+.hoja__concepto {
+  /* Sin ancho: la columna del importe mide lo que mide su cifra y ésta se
+     queda con el resto, que es lo que hace que un concepto largo envuelva
+     en vez de empujar la tabla. */
+  inline-size: 100%;
+}
+
+.hoja__tramite {
+  display: block;
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+}
+
+.hoja__importe {
+  /* La cifra no se parte en dos renglones: «USD 1,698.» arriba y «95» abajo
+     no es un importe, es un susto. */
+  white-space: nowrap;
+  padding-inline-start: var(--espacio-m);
+}
+
+.hoja__subtotal > *,
+.hoja__total > * {
+  border-block-end: none;
+  font-weight: var(--peso-fuerte);
+}
+
+.hoja__total > * {
+  border-block-start: 2px solid var(--color-tinta);
+  padding-block-start: var(--espacio-xs);
+  font-size: var(--texto-l);
+}
+
+.hoja__aviso {
+  margin-block-start: var(--espacio-xs);
+  max-inline-size: var(--prosa-tope);
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-s);
+}
+
+.hoja__pie {
+  margin-block-start: var(--espacio-xl);
+  padding-block-start: var(--espacio-s);
+  border-block-start: var(--borde-fino);
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-s);
+}
+
+/* ==========================================================================
+   El papel, en papel
+   ========================================================================== */
+
+@media print {
+  /*
+   * El margen de la hoja. Dos centímetros es el margen de carta de una
+   * oficina y entra igual en A4; el tamaño en sí no se fija, porque en
+   * Panamá conviven los dos y elegir uno obligaría al otro a escalar.
+   */
+  @page {
+    margin: 2cm;
+  }
+
+  /*
+   * Lo que no es documento.
+   *
+   * La navegación y el encabezado del armazón se van desde acá y no con una
+   * variante del armazón, y es deliberado: `src/layout/Esqueleto.tsx` no
+   * sabe nada de esta pantalla ni tiene por qué, y una propiedad
+   * `sinNavegacion` que viajara desde la ruta sería una rama en el armazón
+   * por cada pantalla rara que aparezca.
+   */
+  .esqueleto__encabezado,
+  .esqueleto__navegacion,
+  .solo-pantalla {
+    display: none;
+  }
+
+  /*
+   * El armazón deja de ser una rejilla con lateral: sin la navegación, una
+   * rejilla de dos columnas deja la primera vacía y el documento impreso
+   * empieza a la mitad de la hoja.
+   */
+  .esqueleto {
+    display: block;
+  }
+
+  .esqueleto__contenido {
+    padding: 0;
+    margin: 0;
+    max-inline-size: none;
+  }
+
+  /*
+   * El fondo de papel de la aplicación es papel en la pantalla y tinta en
+   * la impresora: imprimirlo gasta tóner y vuelve gris el documento entero.
+   * El texto pasa a negro puro por la misma razón al revés — el gris de
+   * pantalla, impreso, se lee lavado.
+   */
+  body {
+    background: #fff;
+    color: #000;
+    font-size: 11pt;
+  }
+
+  /*
+   * El documento pierde su caja: en pantalla el borde y el fondo lo hacen
+   * parecer una hoja, y en la hoja de verdad son una caja dibujada alrededor
+   * del texto. El tope de ancho también se va: lo pone `@page`, y dejarlo
+   * en `ch` desperdiciaría el margen derecho.
+   */
+  .hoja {
+    max-inline-size: none;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  /*
+   * Lo que no se parte entre dos páginas.
+   *
+   * La fila de importe es la que importa de verdad —el concepto en una hoja
+   * y la cifra en la otra—, pero las tres restantes tienen el mismo
+   * problema en menor grado: un encabezado de sección solo al pie de una
+   * página, o un subtotal separado de su familia.
+   */
+  .hoja__linea,
+  .hoja__dato,
+  .hoja__total-bloque {
+    break-inside: avoid;
+  }
+
+  /*
+   * Un encabezado nunca queda último en la página, y un párrafo no deja un
+   * renglón suelto cruzando el corte. Son las dos reglas de viudas y
+   * huérfanas que un documento legal necesita y una pantalla no.
+   */
+  .hoja__seccion,
+  .hoja__titulo,
+  .hoja__cliente-nombre {
+    break-after: avoid;
+  }
+
+  .hoja__prosa {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /*
+   * Las líneas de la tabla pasan a negro: el borde beige de la aplicación,
+   * impreso, o desaparece o sale como una sombra. Y el ancho sube a lo
+   * mínimo que una impresora láser dibuja completo.
+   */
+  .hoja__linea > * {
+    border-color: #000;
+  }
+
+  .hoja__total > * {
+    border-block-start-color: #000;
+  }
+
+  .hoja__encabezado {
+    border-block-end-color: #000;
+  }
+
+  /*
+   * Los dos textos apagados vuelven a ser tinta. En pantalla el gris los
+   * manda al segundo plano; en el papel los manda a ser ilegibles, y el pie
+   * es justamente donde dice quién emitió el documento.
+   */
+  .hoja__dato-rotulo,
+  .hoja__tramite,
+  .hoja__aviso,
+  .hoja__pie,
+  .hoja__seccion {
+    color: #000;
+  }
+}

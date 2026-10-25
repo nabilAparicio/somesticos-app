@@ -109,6 +109,19 @@ const PANTALLAS: Record<Ruta["nombre"], Destino> = {
     ruta: { nombre: "cotizacion-edicion", id: "x" },
     bajo: "/cotizaciones",
   },
+  /*
+   * La hoja imprimible (T-6). **No está exenta**, y vale la pena decir por
+   * qué no lo está: es una pantalla sin menú, sin controles y pensada para
+   * salir por la impresora, así que parece candidata. No lo es, porque este
+   * invariante compara la **raíz de sección** y no la dirección entera: la
+   * hoja vive bajo `/cotizaciones`, que el menú ya ofrece, y se llega a ella
+   * desde el detalle de la cotización. Una exención acá habría sido declarar
+   * inalcanzable algo que sí se alcanza.
+   */
+  "cotizacion-hoja": {
+    ruta: { nombre: "cotizacion-hoja", id: "x" },
+    bajo: "/cotizaciones",
+  },
 
   desconocida: {
     ruta: { nombre: "desconocida", ruta: "/lo-que-sea" },
