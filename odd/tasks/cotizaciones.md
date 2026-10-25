@@ -88,6 +88,42 @@ bloquea el arranque**, y cada uno está anclado a la tarea que no puede empezar 
 El del plan de pagos es el único que es **modelo de datos**, así que equivocarse cuesta una
 migración. Los otros dos se pueden ir aclarando mientras se construye.
 
+### El ITBMS, investigado el 25 de octubre de 2026 — supuesto, no verdad fiscal
+
+Se investigó para destrabar T-12. **Esto no es asesoría tributaria y tiene que validarlo la
+contadora del bufete antes de que una cotización salga con un impuesto calculado.**
+
+Lo que se encontró:
+
+1. **La tarifa general es 7%**, vigente desde el 1 de julio de 2010 por el artículo 76 de la Ley
+   8 de 2010. Confirmado contra la [DGI](https://dgi.mef.gob.pa/itbms/Generalidades), que es
+   fuente primaria.
+2. **Los servicios profesionales —asesoría legal, contabilidad, ingeniería— están gravados al
+   7%.** Fuentes secundarias coincidentes; la página de generalidades de la DGI **no** los nombra
+   explícitamente, así que este punto está apoyado en terceros y no en fuente primaria.
+3. **El reembolso de gastos no se grava.** También fuente secundaria. Es el punto que más
+   necesita validación, porque es el que decide la aritmética.
+
+**La aritmética que se deriva de eso, si la contadora lo confirma:**
+
+```
+total = Σ honorarios  +  ITBMS(Σ honorarios)  +  Σ gastos estimados
+```
+
+El ITBMS cae **sólo sobre los honorarios**. Los gastos estimados son plata de terceros que el
+bufete adelanta y le cobra al cliente, y pasan sin impuesto.
+
+**Y acá hay una confirmación que vale la pena anotar:** esa regla cae exactamente sobre la
+separación que T-3 ya construyó. La clase `honorario|gasto_estimado` no se eligió pensando en
+impuestos —se eligió porque el cliente lee las dos familias distinto— y resulta ser la misma
+línea que divide lo gravado de lo que no. Cuando dos razones independientes piden el mismo corte,
+el corte suele estar bien puesto.
+
+**Lo que T-12 no puede hacer todavía:** ninguna cotización emitida puede llevar un total con
+impuesto hasta que esto esté validado. Si se construye antes, que sea detrás de un interruptor
+apagado, y que el snapshot de una emitida sin ITBMS siga siendo correcto para siempre — es un
+hecho histórico y no se recalcula.
+
 ### El plan de pagos, planteado para decidirlo
 
 El boceto de §6 pone `cuota.proceso_id`. §11 dice que falta decidir. Las opciones reales:
