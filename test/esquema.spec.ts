@@ -548,15 +548,36 @@ describe("límites de la tajada 1", () => {
     );
   });
 
-  it("no le pone a proceso una FK hacia una tabla que no existe", async () => {
-    // `cotizacion_linea_id` entra en la tajada 2, con la tabla a la que apunta.
-    const filas = await env.DB.prepare(
+  it("le pone a proceso la FK que 0001 difirió, y apunta a cotizacion_linea", async () => {
+    // **Esta prueba cambió de pregunta el 25 de octubre de 2026, y no es
+    // una prueba nueva.** Hasta `migrations/0008_procesos_desde_cotizacion.sql`
+    // afirmaba lo contrario: que `proceso` **no** tuviera
+    // `cotizacion_linea_id`, porque `0001` difirió esa columna a la tajada 2
+    // explícitamente —apuntaría a `cotizacion_linea`, que entonces no
+    // existía—. T-7 de la tajada 2 es la tarea que la trae, así que el
+    // límite que el mojón vigilaba se cruzó.
+    //
+    // No se borra, se da vuelta: lo que hay que vigilar ahora es más fuerte
+    // que lo que vigilaba antes. Que la columna exista es la mitad fácil;
+    // la que importa es **adónde apunta**, porque una llave foránea hacia
+    // la tabla equivocada compila, migra y no se nota hasta que alguien
+    // sigue el enlace. Borrar el mojón dejaría ese hecho sin dueño.
+    const columnas = await env.DB.prepare(
       "SELECT name FROM pragma_table_info('proceso')",
     ).all<{ name: string }>();
 
-    expect(filas.results.map((fila) => fila.name)).not.toContain(
+    expect(columnas.results.map((fila) => fila.name)).toContain(
       "cotizacion_linea_id",
     );
+
+    const llaves = await env.DB.prepare(
+      "SELECT \"table\" AS destino, \"from\" AS origen" +
+        " FROM pragma_foreign_key_list('proceso')",
+    ).all<{ destino: string; origen: string }>();
+
+    expect(
+      llaves.results.find((llave) => llave.origen === "cotizacion_linea_id"),
+    ).toEqual({ destino: "cotizacion_linea", origen: "cotizacion_linea_id" });
   });
 });
 

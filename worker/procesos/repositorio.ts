@@ -108,10 +108,211 @@ import type {
   OrigenDeProceso,
   Proceso,
 } from "../contract";
-import type { BaseDeDatos } from "../db/base";
+import type {
+  BaseDeDatos,
+  LecturaD1,
+  Sentencia,
+  Vinculable,
+} from "../db/base";
 import { sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 import { ahoraIso } from "../db/momentos";
+
+/* ==========================================================================
+   Cómo nace un proceso, en un solo lugar (T-7 de la tajada 2)
+
+   Hasta T-7 el alta a mano era la única puerta hacia `proceso` y esta lógica
+   vivía adentro de `crear`. Desde que una cotización ganada abre procesos,
+   son dos puertas, y un segundo `INSERT INTO proceso` en otro archivo sería
+   el mismo problema que `worker/procesos/plantilla.ts` describe para la
+   escritura de plantillas: dos sitios que saben cómo se escribe lo mismo, y
+   el día que uno aprenda algo —una columna, una regla de siembra— el otro no
+   se entera.
+
+   Por eso esto se extrae **como constructor de sentencias y no como método
+   del puerto**. Quien abre procesos desde una cotización necesita ponerlos
+   en **su** `batch`, junto al `UPDATE` que marca la cotización ganada: si
+   fueran dos escrituras separadas existiría una ganada sin sus procesos y
+   nadie se enteraría hasta que alguien la busque. Un método del servicio
+   escribiría por su cuenta y esa atomicidad no sería expresable.
+   ========================================================================== */
+
+/**
+ * Lo que hace falta para abrir un proceso, venga de donde venga.
+ *
+ * **No lleva `origen`**, y la ausencia es la decisión: se deriva de
+ * `cotizacionLineaId` más abajo. Recibirlo abriría la posibilidad de escribir
+ * `'directo'` sobre una fila que trae línea, que es exactamente la fila que
+ * miente y que `el_origen_y_la_linea_dicen_lo_mismo` rechaza en la base. Es
+ * el mismo criterio con el que `cerrar`, en el repositorio de cotizaciones,
+ * deriva el verbo de bitácora del destino en vez de recibirlo.
+ */
+export interface AperturaDeProceso {
+  readonly clienteId: string;
+  readonly tipoProcesoId: string;
+  readonly titulo: string;
+  readonly responsableId: string | null;
+  /** La línea que lo abrió, o nulo si lo abrió una persona. */
+  readonly cotizacionLineaId: string | null;
+}
+
+/** Un proceso por nacer: su identificador y las sentencias que lo escriben. */
+export interface ProcesoPorNacer {
+  readonly id: string;
+  readonly sentencias: readonly Sentencia[];
+}
+
+/**
+ * La condición bajo la cual la apertura entra, evaluada **en el momento de
+ * escribir** y no antes.
+ *
+ * Existe por la carrera de T-7. Quien abre procesos dentro de la misma
+ * transacción que otra escritura necesita que las aperturas compartan su
+ * precondición: si la otra petición ganó la carrera en el medio, acá no
+ * tiene que entrar nada. Una comprobación hecha antes del `batch` no sirve,
+ * porque la ventana está justo ahí.
+ *
+ * `sql` es el cuerpo de un `EXISTS`: un `SELECT` que devuelve al menos una
+ * fila cuando la apertura corresponde.
+ */
+export interface CondicionDeApertura {
+  readonly sql: string;
+  readonly parametros: readonly Vinculable[];
+}
+
+/**
+ * Las sentencias que abren uno o varios procesos, con su plan ya sembrado.
+ *
+ * ## La siembra: la plantilla siembra, el proceso manda
+ *
+ * Las etapas se **copian** de `etapa_plantilla` a `proceso_etapa` y no queda
+ * ninguna referencia a la plantilla: ni una columna, ni el id de origen.
+ * Desde ese momento el proceso es dueño de su plan y editar el molde no lo
+ * toca (`docs/diseno.md` §6, «Etapas»). Es la propiedad más importante del
+ * modelo y la razón por la que acá se copia en vez de apuntar.
+ *
+ * ## Una sola lectura para todos los tipos
+ *
+ * Una cotización con seis líneas de trámite no tiene por qué costar seis
+ * viajes, que es el mismo criterio con el que `guardarLoAnotado` cuenta las
+ * notas de todas las etapas en un `GROUP BY`. Los tipos se deduplican antes
+ * de preguntar, porque dos líneas del mismo tipo comparten plantilla.
+ *
+ * El filtro de tenencia va puesto como en todo este archivo (I-8): la
+ * plantilla de otro bufete no siembra nada acá.
+ *
+ * `alcanzada_en` queda nulo en todas: un proceso recién abierto no tiene
+ * nada cumplido, ni siquiera su primer paso.
+ *
+ * ## Por qué las sentencias son `INSERT … SELECT` y no `INSERT … VALUES`
+ *
+ * Para que `soloSi` pueda existir. `VALUES` no admite `WHERE`, así que una
+ * apertura condicionada obligaría a dos formas de la misma sentencia, y dos
+ * formas son dos sitios donde arreglar el mismo defecto. `SELECT ?, ?, …`
+ * sin `WHERE` es exactamente equivalente a `VALUES (?, ?, …)` —medido—, así
+ * que la forma es una sola y la condición se le agrega o no.
+ *
+ * La condición va en **todas** las sentencias y no sólo en la del proceso.
+ * Si fuera sólo en la primera, al no entrar el proceso las etapas quedarían
+ * colgando de un padre inexistente y la llave foránea abortaría la
+ * transacción entera: quien perdió la carrera recibiría un 500 en vez de la
+ * respuesta que le corresponde.
+ */
+export async function aperturasDeProcesos(
+  lectura: LecturaD1,
+  tenantId: string,
+  aperturas: readonly AperturaDeProceso[],
+  soloSi?: CondicionDeApertura,
+): Promise<ProcesoPorNacer[]> {
+  if (aperturas.length === 0) return [];
+
+  const tipos = [...new Set(aperturas.map((cada) => cada.tipoProcesoId))];
+
+  const { results: plantilla } = await lectura
+    .prepare(
+      "SELECT tipo_proceso_id, nombre FROM etapa_plantilla" +
+        ` WHERE tenant_id = ? AND tipo_proceso_id IN (${tipos
+          .map(() => "?")
+          .join(", ")})` +
+        " ORDER BY tipo_proceso_id, orden, nombre COLLATE NOCASE",
+    )
+    .bind(tenantId, ...tipos)
+    .all<{ tipo_proceso_id: string; nombre: string }>();
+
+  const porTipo = new Map<string, string[]>();
+  for (const etapa of plantilla) {
+    const nombres = porTipo.get(etapa.tipo_proceso_id) ?? [];
+    nombres.push(etapa.nombre);
+    porTipo.set(etapa.tipo_proceso_id, nombres);
+  }
+
+  const abierto = ahoraIso();
+
+  /** `INSERT INTO tabla (cols) SELECT ?, … [WHERE EXISTS (…)]`. */
+  function entra(
+    tabla: string,
+    columnas: readonly string[],
+    valores: readonly Vinculable[],
+  ): Sentencia {
+    const seleccion =
+      `INSERT INTO ${tabla} (${columnas.join(", ")})` +
+      ` SELECT ${columnas.map(() => "?").join(", ")}`;
+
+    return soloSi === undefined
+      ? { sql: seleccion, parametros: valores }
+      : {
+          sql: `${seleccion} WHERE EXISTS (${soloSi.sql})`,
+          parametros: [...valores, ...soloSi.parametros],
+        };
+  }
+
+  return aperturas.map((apertura) => {
+    const id = nuevoId();
+    // Un tipo sin plantilla abre el proceso igual, con el plan vacío: la
+    // plantilla es un atajo y no un requisito.
+    const etapas = porTipo.get(apertura.tipoProcesoId) ?? [];
+
+    return {
+      id,
+      sentencias: [
+        entra(
+          "proceso",
+          [
+            "id",
+            "tenant_id",
+            "cliente_id",
+            "tipo_proceso_id",
+            "origen",
+            "titulo",
+            "estado",
+            "responsable_id",
+            "abierto_en",
+            "cotizacion_linea_id",
+          ],
+          [
+            id,
+            tenantId,
+            apertura.clienteId,
+            apertura.tipoProcesoId,
+            apertura.cotizacionLineaId === null ? "directo" : "cotizacion",
+            apertura.titulo,
+            "abierto",
+            apertura.responsableId,
+            abierto,
+            apertura.cotizacionLineaId,
+          ],
+        ),
+        ...etapas.map((nombre, orden) =>
+          entra(
+            "proceso_etapa",
+            ["id", "tenant_id", "proceso_id", "nombre", "orden"],
+            [nuevoId(), tenantId, id, nombre, orden],
+          ),
+        ),
+      ],
+    };
+  });
+}
 
 /**
  * El resultado del alta.
@@ -613,18 +814,22 @@ export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
       const fallas = await validarLlaves(tenantId, datos);
       if (fallas.length > 0) return { estado: "invalido", fallas };
 
-      // La siembra: las etapas de la plantilla, en su orden, leídas con el
-      // filtro de tenencia puesto igual que todo lo demás.
-      const { results: plantilla } = await db
-        .prepare(
-          "SELECT nombre FROM etapa_plantilla" +
-            " WHERE tenant_id = ? AND tipo_proceso_id = ?" +
-            " ORDER BY orden, nombre COLLATE NOCASE",
-        )
-        .bind(tenantId, datos.tipoProcesoId)
-        .all<{ nombre: string }>();
+      // El alta a mano es una apertura **sin línea**, y por eso nace
+      // `'directo'`: el origen lo deriva `aperturasDeProcesos`, que es la
+      // única que sabe escribir esa fila desde T-7. Antes la siembra estaba
+      // acá; se movió para que la apertura desde una cotización ganada no
+      // fuera una segunda copia de la misma escritura.
+      const [abierto] = await aperturasDeProcesos(db, tenantId, [
+        {
+          clienteId: datos.clienteId,
+          tipoProcesoId: datos.tipoProcesoId,
+          titulo: datos.titulo,
+          responsableId: datos.responsableId,
+          cotizacionLineaId: null,
+        },
+      ]);
 
-      const id = nuevoId();
+      const id = abierto.id;
 
       // Todo en un `batch`: un proceso guardado sin su plan es peor que
       // ninguno, porque se ve bien y está vacío. La entrada de bitácora
@@ -636,31 +841,7 @@ export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
           accion: "creado",
           detalle: datos.titulo,
         },
-        sentencia(
-          "INSERT INTO proceso (id, tenant_id, cliente_id," +
-            " tipo_proceso_id, origen, titulo, estado, responsable_id," +
-            " abierto_en) VALUES (?, ?, ?, ?, 'directo', ?, 'abierto', ?, ?)",
-          id,
-          tenantId,
-          datos.clienteId,
-          datos.tipoProcesoId,
-          datos.titulo,
-          datos.responsableId,
-          ahoraIso(),
-        ),
-        // `alcanzada_en` queda nulo: un proceso recién abierto no tiene nada
-        // cumplido, ni siquiera su primer paso.
-        ...plantilla.map((etapa, orden) =>
-          sentencia(
-            "INSERT INTO proceso_etapa (id, tenant_id, proceso_id," +
-              " nombre, orden) VALUES (?, ?, ?, ?, ?)",
-            nuevoId(),
-            tenantId,
-            id,
-            etapa.nombre,
-            orden,
-          ),
-        ),
+        ...abierto.sentencias,
       );
 
       return {

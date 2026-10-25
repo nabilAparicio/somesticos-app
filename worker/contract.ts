@@ -564,9 +564,17 @@ export interface RespuestaDeEtapas {
 /**
  * De dónde nació el proceso.
  *
- * `cotizacion` existe en el `CHECK` de la tabla pero **no está implementado**
- * en esta tajada: apuntaría a `cotizacion_linea`, que es de la tajada 2. Todo
- * lo que se crea hoy nace `directo`.
+ * Los dos valores están implementados desde T-7 de la tajada 2: `directo` es
+ * el alta a mano y `cotizacion` es el que abrió una cotización ganada. **No
+ * es una etiqueta suelta**: desde `migrations/0008_procesos_desde_cotizacion.sql`
+ * la base exige que diga lo mismo que `proceso.cotizacion_linea_id`, así que
+ * un `cotizacion` sin línea —o un `directo` con ella— es una fila que no se
+ * puede escribir.
+ *
+ * `cotizacion_linea_id` **no viaja en este contrato**, y la ausencia es
+ * deliberada: T-7 hace el fondo y la pantalla va aparte. El día que haya una
+ * que quiera enlazar el proceso con la cotización que lo abrió, el campo que
+ * le falta es ése.
  */
 export type OrigenDeProceso = "cotizacion" | "directo";
 
@@ -1102,6 +1110,36 @@ export interface RespuestaDeCotizacion {
 
 export interface RespuestaDeCotizaciones {
   cotizaciones: Cotizacion[];
+}
+
+/**
+ * La respuesta de ganar y de perder (T-5, ampliada por T-7).
+ *
+ * Es `RespuestaDeCotizacion` con un dato más, y es un tipo propio en vez de
+ * un campo opcional en aquél porque el dato no es opcional acá: siempre
+ * viaja, incluso cuando vale cero.
+ *
+ * ## Por qué el cero se dice y no se calla
+ *
+ * Una cotización ganada donde **ninguna** línea lleva tipo de proceso no
+ * abre ningún trámite, y eso es legítimo y corriente: una consulta, un
+ * timbre y una gestión de mensajería son cobros que no abren expediente.
+ * Pero «no abrió ninguno» y «no sé cuántos abrió» se ven igual desde una
+ * pantalla si el campo falta, y la primera es información y la segunda es
+ * un hueco. Con el número siempre presente, la confirmación puede decir «se
+ * abrieron dos procesos» o «no se abrió ningún proceso» sin adivinar.
+ *
+ * ## Y por qué viaja también en perder
+ *
+ * Porque vale cero **por construcción** y no por casualidad: perder no es
+ * una puerta hacia `proceso`. Un tipo distinto para cada verbo obligaría a
+ * la ruta a repetir la misma rama con otro nombre, que es el mismo
+ * argumento por el que `cerrar` es una función y no dos.
+ */
+export interface RespuestaDeCierre {
+  cotizacion: Cotizacion;
+  /** Cuántos procesos abrió este desenlace. Cero es una respuesta. */
+  procesosAbiertos: number;
 }
 
 /**

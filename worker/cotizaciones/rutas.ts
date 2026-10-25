@@ -125,6 +125,7 @@ import type {
   DatosInvalidos,
   FallaDeValidacion,
   LineaDeCotizacion,
+  RespuestaDeCierre,
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
   RespuestaDeDocumento,
@@ -317,6 +318,18 @@ function noEsEmitida(estado: CotizacionNoEsEmitida["estado"]): Response {
  * **200 y no 201**, por lo mismo que emitir: no nace ningún recurso con
  * dirección propia. Lo que cambió es la cotización que ya existía, y es la
  * que vuelve, con su estado nuevo adentro.
+ *
+ * ## Y sigue siendo 200 aunque ganar abra procesos (T-7)
+ *
+ * Es la pregunta que esta tarea obligó a contestar: ganar **sí** crea filas
+ * nuevas, y un 201 llevaría `location`. No corresponde, por dos razones. La
+ * primera es que `location` es una dirección y acá no hay una sino N, que
+ * es cero en el caso corriente de una cotización de puras consultas. La
+ * segunda es la que decide: lo que la petición pidió fue cerrar un
+ * desenlace, y los procesos son su consecuencia, no lo pedido. El recurso
+ * que la respuesta describe es la cotización.
+ *
+ * Cuántos se abrieron viaja en el cuerpo, siempre, incluso en cero.
  */
 function respuestaDeCierre(resultado: ResultadoDeCierre): Response {
   if (resultado.estado === "no_encontrado") return noEncontrado();
@@ -324,7 +337,10 @@ function respuestaDeCierre(resultado: ResultadoDeCierre): Response {
     return noEsEmitida(resultado.actual);
   }
 
-  const cuerpo: RespuestaDeCotizacion = { cotizacion: resultado.cotizacion };
+  const cuerpo: RespuestaDeCierre = {
+    cotizacion: resultado.cotizacion,
+    procesosAbiertos: resultado.procesosAbiertos,
+  };
   return json(cuerpo);
 }
 

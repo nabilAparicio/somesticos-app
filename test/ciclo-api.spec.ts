@@ -896,6 +896,46 @@ describe("perder la carrera contra el otro desenlace", () => {
     expect((await filaDe(cotizacion.id))?.estado).toBe("perdida");
   });
 
+  it("la que pierde la carrera tampoco abre los procesos (T-7)", async () => {
+    // **Una premisa del plan de T-7 resultó falsa, y ésta es la prueba que
+    // la corrige.** El plan decía que T-7 no necesitaba idempotencia propia
+    // porque «la transición ya la garantiza». La transición garantiza que
+    // el **estado** se escribe una sola vez —lo prueba la hermana de
+    // arriba—, pero las aperturas no colgaban de ella: un `UPDATE` que
+    // cambia cero filas no es un error, así que la petición perdedora
+    // escribía sus procesos igual y la cotización terminaba con los
+    // trámites abiertos dos veces.
+    //
+    // Lo que lo cierra es que cada `INSERT` de apertura lleve la misma
+    // precondición que el `UPDATE` —`estado = 'emitida'`— evaluada dentro
+    // de la transacción, y que las aperturas vayan **antes** del `UPDATE`,
+    // porque después la condición ya sería cierta por obra nuestra.
+    //
+    // Medido quitando la condición: esta prueba muere con un proceso
+    // abierto de más. No es una guarda que ninguna prueba pueda matar.
+    const cotizacion = await emitirUnaCompleta();
+
+    const resultado = await servicioConIntruso(() =>
+      env.DB.prepare("UPDATE cotizacion SET estado = 'ganada' WHERE id = ?")
+        .bind(cotizacion.id)
+        .run(),
+    ).ganar(TENANT_UNICO_ID, cotizacion.id);
+
+    expect(resultado).toEqual({ estado: "no_es_emitida", actual: "ganada" });
+
+    // El desenlace que quedó es el del intruso, y los procesos que quedaron
+    // son los suyos: ninguno, porque el intruso escribió el estado a mano.
+    const abiertos = await env.DB.prepare(
+      "SELECT count(*) AS n FROM proceso p" +
+        " JOIN cotizacion_linea l ON l.id = p.cotizacion_linea_id" +
+        " WHERE l.cotizacion_id = ?",
+    )
+      .bind(cotizacion.id)
+      .first<{ n: number }>();
+
+    expect(abiertos?.n).toBe(0);
+  });
+
   it("el puerto se niega igual sin pasar por la ruta", async () => {
     // La comprobación de estado vive en el puerto y no sólo en el ruteo, y
     // esto es lo que la mantiene viva: sin esta prueba, borrar las tres
