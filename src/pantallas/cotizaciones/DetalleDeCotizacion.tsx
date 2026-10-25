@@ -90,6 +90,7 @@ import {
 } from "./ciclo";
 import { EditorDeLineas } from "./EditorDeLineas";
 import { EditorDeModulos } from "./EditorDeModulos";
+import { PlanDePagos } from "./PlanDePagos";
 import { mensajeDeExcepcion } from "./modulos";
 import {
   VACIO,
@@ -552,6 +553,28 @@ export function DetalleDeCotizacion({ id }: Props) {
         moneda={cotizacion.moneda}
         editable={bloqueo === null}
       />
+
+      {/*
+        El plan de pagos va **después** de las líneas, que es el orden del
+        documento: primero qué se va a hacer, después cuánto cuesta, y recién
+        entonces cómo se paga. Leerlo antes de saber el total no serviría de
+        nada, porque el cotejo del plan es justamente contra ese total.
+
+        **No recibe `editable`, y es deliberado.** Los dos editores de arriba
+        sí, porque I-4 e I-5 congelan el documento al emitirlo; las cuotas no
+        entran al snapshot, así que agregar una no toca lo que quedó
+        congelado — y es justo cuando una cotización se gana que el plan se
+        termina de acomodar. Está argumentado en `PlanDePagos.tsx` y en
+        `migrations/0010_plan_de_pagos.sql`.
+
+        Tampoco recibe la moneda, al revés que el editor de líneas, y
+        tampoco es un olvido: el plan no escribe ningún importe sin unidad
+        porque los dos que escribe —la suma y la base— salen del mismo
+        cuerpo que el servidor derivó de esas líneas, y el documento ya dijo
+        su moneda más arriba. Pasársela sería repetir la unidad en la misma
+        pantalla dos veces.
+      */}
+      <PlanDePagos cotizacionId={cotizacion.id} />
 
       <Bitacora estado={bitacora} id="bitacora-de-la-cotizacion" />
     </Pila>

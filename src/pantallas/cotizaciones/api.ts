@@ -32,11 +32,13 @@ import { LIMITE_DE_BITACORA_POR_DEFECTO } from "../../../worker/contract";
 import type {
   Cotizacion,
   DatosDeCotizacion,
+  DatosDeCuota,
   DatosDeGeneracion,
   DatosDeLinea,
   DatosDeModulo,
   DocumentoCongelado,
   ModuloDeCotizacion,
+  PlanDePagos,
   RespuestaDeBitacora,
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
@@ -461,6 +463,89 @@ export function reordenarLineas(
     ...ESCRITURA,
     body: JSON.stringify({ orden }),
   });
+}
+
+/* ==========================================================================
+   El plan de pagos (tajada 2, T-11)
+
+   Tres rutas y **ninguna que lea el total por separado**: las tres devuelven
+   el plan entero —cuotas, total y base— en el mismo cuerpo, porque son el
+   mismo hecho mirado de dos maneras. Pedirlos por separado abriría la
+   ventana en la que la pantalla muestra un cronograma y un total que no le
+   corresponde, que es lo mismo que las líneas y los gastos ya evitan.
+
+   La pantalla **no suma y no aplica porcentajes**: lo que estas funciones
+   traen es lo que se dibuja. La aritmética vive en
+   `worker/cuotas/dominio.ts` y corre en el servidor (I-7).
+   ========================================================================== */
+
+/**
+ * La dirección del plan de una cotización.
+ *
+ * Hay una hermana del lado del proceso —`/api/procesos/{id}/cuotas`— que
+ * esta pantalla no usa y que **no se declara acá**: la decisión (c) pone las
+ * dos direcciones, y la del proceso es de la pantalla del proceso. Una
+ * función de más en este archivo sería una ruta que esta pantalla no pide.
+ */
+function direccionDelPlan(cotizacionId: string): string {
+  return `/api/cotizaciones/${encodeURIComponent(cotizacionId)}/cuotas`;
+}
+
+/**
+ * El plan de la cotización: sus cuotas, lo que suman y contra qué.
+ *
+ * Es una petición aparte del detalle, por lo mismo que los módulos, las
+ * líneas y la bitácora: un fallo acá no puede dejar la ficha en blanco.
+ */
+export function cargarPlan(
+  cotizacionId: string,
+  signal?: AbortSignal,
+): Promise<Resultado<PlanDePagos>> {
+  return pedir<PlanDePagos>(direccionDelPlan(cotizacionId), { signal });
+}
+
+/**
+ * Agrega una cuota al plan.
+ *
+ * **De qué cuelga la cuota no viaja en el cuerpo**: lo dice la dirección, y
+ * por eso `DatosDeCuota` no tiene `cotizacionId`. Es lo que vuelve imposible
+ * que el cliente viole la exclusividad de la decisión (c) ni intentándolo.
+ *
+ * El total tampoco viaja, y no hay dónde ponerlo: `DatosDeCuota` no lo
+ * tiene.
+ */
+export function agregarCuota(
+  cotizacionId: string,
+  datos: DatosDeCuota,
+): Promise<Resultado<PlanDePagos>> {
+  return pedir<PlanDePagos>(direccionDelPlan(cotizacionId), {
+    method: "POST",
+    ...ESCRITURA,
+    body: JSON.stringify(datos),
+  });
+}
+
+/**
+ * Saca una cuota del plan.
+ *
+ * **No hay `editarCuota`, y no es un olvido**: la ruta no existe (decisión
+ * de la unidad A). Corregir un importe es sacarla y volver a ponerla, que
+ * para un plan de tres renglones es la misma operación con un clic más.
+ *
+ * `pedir` y no `pedirVacio`, por lo mismo que el borrado de una línea: este
+ * `DELETE` contesta **200 con el plan entero**, no 204 sin cuerpo. Leerlo
+ * con `pedirVacio` tiraría la respuesta y dejaría la pantalla mostrando el
+ * cronograma sin la cuota **y el total de antes**, que es el peor de los dos
+ * restos.
+ */
+export function quitarCuota(
+  cotizacionId: string,
+  cuotaId: string,
+): Promise<Resultado<PlanDePagos>> {
+  return pedir<PlanDePagos>(
+    `${direccionDelPlan(cotizacionId)}/${encodeURIComponent(cuotaId)}`,
+    { method: "DELETE" },
+  );
 }
 
 /**

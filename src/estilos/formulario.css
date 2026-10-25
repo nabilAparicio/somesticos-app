@@ -894,3 +894,178 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* ======================================================================
+   El plan de pagos de una cotización (T-11, unidad B)
+
+   ## Por qué este bloque **no** reusa `.renglon` ni `.suma`, y eso costó
+   ## una medición
+
+   La primera versión reusaba las dos familias enteras, con el argumento de
+   que un cronograma de cuotas es la misma forma que una lista de líneas
+   —concepto, importe y una fila de botones— y que una segunda hoja para lo
+   mismo serían dos definiciones de «un renglón de importe».
+
+   **El argumento era bueno y el resultado fue malo**, y lo que lo decidió no
+   es estético: el plan vive en **la misma página** que el editor de líneas,
+   y aquél tiene nueve pruebas de punta a punta que cuentan
+   `page.locator(".renglon")`, `.suma__importe` y `.suma--total` **sobre el
+   documento entero**. Medido: con las clases compartidas, `.suma__importe`
+   pasó de 3 a 5 y `.suma--total` dejó de resolver a un solo elemento; seis
+   pruebas de `e2e/cotizaciones.spec.ts` se pusieron rojas sin que nada
+   funcional hubiera cambiado.
+
+   La diferencia con `../procesos/PanelDeGastos`, que sí las reusa, es
+   exactamente ésa: **aquél vive en otra página**. Una clase compartida entre
+   dos secciones de la misma pantalla deja de poder contarse, y contar es la
+   única forma que tiene una prueba de punta a punta de decir «hay tres
+   líneas y ninguna más».
+
+   Lo que queda, entonces: el plan tiene sus propias clases, y la
+   duplicación de declaraciones es el precio de que las dos secciones se
+   puedan medir por separado. El día que aparezca una tercera lista de
+   importes **en otra página**, lo que corresponde es extraer la forma con su
+   propio nombre, no volver a compartir `.renglon`.
+
+   **Nada acá distingue nada por color.** En cuál de los cuatro estados quedó
+   el plan lo dice el titular en palabras, por el mismo motivo que el saldo
+   de T-10: un verde y un rojo no sobreviven ni a la impresora del bufete
+   —que no imprime fondos— ni a una fotocopia ni a un lector de pantalla.
+   ====================================================================== */
+
+/*
+ * El cronograma es un `<ol>` de verdad, igual que las líneas y los módulos:
+ * el orden **es** el dato —es el orden en que el abogado dictó el plan— así
+ * que el número lo pone el navegador. Se le quita la sangría que en 320px le
+ * roba espacio al concepto.
+ */
+.cuotas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-s);
+  margin: 0;
+  padding-inline-start: var(--espacio-m);
+}
+
+.cuota {
+  padding: var(--espacio-xs) var(--espacio-s);
+  border-inline-start: 3px solid var(--color-borde);
+  border-radius: var(--radio-s);
+  background: var(--color-superficie);
+}
+
+/*
+ * `overflow-wrap: anywhere` y **una sola declaración**, por lo que
+ * `.renglon__concepto` midió: cada una de las dos candidatas —ésta y
+ * `min-inline-size: 0`— se basta sola, y tenerlas juntas haría que ninguna
+ * fuera verificable. Queda la que achica el mínimo-contenido **y** permite
+ * el corte, para no depender del `break-word` heredado de `body`.
+ *
+ * Las nueve medidas de §9 de `e2e/plan.spec.ts` corren con un concepto de un
+ * token pegado de sesenta y nueve letras, que es lo que sale de pegar la
+ * referencia de un acuerdo dentro del concepto de una cuota.
+ */
+.cuota__concepto {
+  flex: 1 1 12ch;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * `tabular-nums` para que una columna de importes alinee sus cifras, que es
+ * lo único que hace comparables dos renglones de dinero de un vistazo.
+ *
+ * `flex: 0 0 auto` y no un ancho: el importe mide lo que mide su texto, y
+ * fijarlo sería el ancho duro que §9 prohíbe — y además partiría un importe
+ * largo en dos renglones, que en una cifra de dinero se lee como dos cifras.
+ */
+.cuota__importe {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Cómo se cobra y cuándo, debajo del concepto y apagado: es información de
+ * segundo orden —lo que se lee de un vistazo es el concepto y el importe—
+ * pero no se puede esconder, porque «33.33 % del total» y «USD 333.30» no
+ * significan lo mismo el día que las líneas cambien.
+ */
+.cuota__detalle {
+  display: block;
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+}
+
+/*
+ * El cotejo, en su propia caja.
+ *
+ * El borde y el fondo lo separan del cronograma, igual que el bloque del
+ * saldo se separa de las dos listas de gastos y por la misma razón: es lo
+ * que alguien mira para saber si el plan cierra, y un párrafo más entre
+ * otros doce lo salta el ojo.
+ */
+.cotejo {
+  min-width: 0;
+  padding: var(--espacio-s);
+  border: 1px solid var(--color-borde);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+}
+
+.cotejo__titulo {
+  margin: 0;
+  font-size: var(--texto-m);
+}
+
+/*
+ * Las dos cifras del cotejo, una debajo de la otra.
+ *
+ * **No son un subtotal y un total**, aunque se parezcan: son dos números
+ * independientes que se comparan, y la pantalla no resta uno del otro —ver
+ * `cotejoDelPlan`—. Por eso no llevan el borde superior de `.suma`, que
+ * separa una suma de la lista que la produjo: acá no hay nada arriba que
+ * estas cifras sumen.
+ */
+.cotejo__cifra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--espacio-xs) var(--espacio-s);
+  margin: 0;
+}
+
+.cotejo__rotulo {
+  font-weight: var(--peso-medio);
+}
+
+.cotejo__importe {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Lo que el plan suma pesa más que aquello contra lo que se compara. */
+.cotejo__cifra--suma {
+  font-size: var(--texto-l);
+}
+
+.cotejo__cifra--suma .cotejo__rotulo,
+.cotejo__cifra--suma .cotejo__importe {
+  font-weight: var(--peso-fuerte);
+}
+
+/*
+ * La ayuda de cada opción, dentro de su propia etiqueta.
+ *
+ * Va **pegada a la opción y no al conjunto**, que es toda la decisión: lo
+ * que hay que distinguir es «un importe fijo» de «un porcentaje del total»,
+ * y una ayuda común debajo del grupo obliga a leer las dos descripciones
+ * para saber cuál es cuál. Con una por opción, la consecuencia de elegir se
+ * lee sin elegir.
+ *
+ * `display: block` para que baje debajo del rótulo de su opción; el ancho lo
+ * da `.campo__casilla`, que ya es flex con `min-width: 0`.
+ */
+.opcion__ayuda {
+  display: block;
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+}

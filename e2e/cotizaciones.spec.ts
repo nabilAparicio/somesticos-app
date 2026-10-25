@@ -468,6 +468,20 @@ function cuerpoDe(pathname: string): Record<string, unknown> | null {
     return { modulos: MODULOS_POR_COTIZACION[deModulos[1]] ?? [] };
   }
 
+  // El plan de pagos entra vacío. Estas pruebas hablan de módulos y de
+  // líneas, no del plan — pero el detalle dibuja su sección igual, y una
+  // sección que no pudo cargar se anuncia con `role="alert"`, como hace
+  // `PanelDeGastos`. Sin esta rama el banco contestaría 404, aparecería una
+  // segunda alerta en la página, y los seis `getByRole("alert")` sin acotar
+  // que hay más abajo dejarían de resolver a un solo elemento.
+  //
+  // El arreglo va acá y no bajándole el `role` a la sección: una sección que
+  // falló tiene que decirlo, y doblar el diseño para que entre en un banco de
+  // pruebas es exactamente al revés.
+  if (/^\/api\/cotizaciones\/[^/]+\/cuotas$/.test(pathname)) {
+    return { cuotas: [], total: 0, base: 0 };
+  }
+
   const deLineas = /^\/api\/cotizaciones\/([^/]+)\/lineas$/.exec(pathname);
   if (deLineas !== null) {
     return (
