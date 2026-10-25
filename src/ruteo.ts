@@ -50,6 +50,22 @@ export type Ruta =
    */
   | { nombre: "cotizaciones" }
   | { nombre: "cotizacion-nueva" }
+  /**
+   * El generador (T-9): el abogado describe el encargo en prosa y sale un
+   * borrador.
+   *
+   * Es una pantalla aparte del alta a mano y no una pestaña suya, y la
+   * razón es lo que pasa después de apretar: el alta devuelve en un
+   * instante y el generador tarda, puede fallar de siete maneras y lo que
+   * se tecleó tiene que sobrevivir a eso. Dos comportamientos tan distintos
+   * en un solo componente son dos ramas que hay que recordar en cada
+   * cambio.
+   *
+   * No lleva `clienteId`, por lo mismo que el alta: el botón que lo abriría
+   * con el cliente ya elegido no existe, y una ruta que nadie puede
+   * alcanzar es una rama de `enlaceDe` que nadie ejerce.
+   */
+  | { nombre: "cotizacion-generar" }
   | { nombre: "cotizacion"; id: string }
   | { nombre: "cotizacion-edicion"; id: string }
   /**
@@ -87,6 +103,13 @@ const PROCESOS = "procesos";
 const COTIZACIONES = "cotizaciones";
 
 /**
+ * El segmento del generador (T-9). Va al lado de `NUEVO` porque ocupa su
+ * misma posición y por el mismo motivo: no puede ser el identificador de
+ * nadie. Es el mismo literal que reconoce `worker/cotizaciones/rutas.ts`.
+ */
+const GENERAR = "generar";
+
+/**
  * Los segmentos de la ruta, sin la barra final.
  *
  * Los vacíos **no** se filtran: `/clientes//editar` tiene que ser una ruta
@@ -99,7 +122,13 @@ function segmentosDe(pathname: string): string[] {
 }
 
 function identificador(segmento: string): string | null {
-  if (segmento === "" || segmento === NUEVO) return null;
+  // `generar` está acá por lo mismo que `nuevo`: es un literal que ocupa la
+  // posición del identificador, así que `/cotizaciones/generar/editar` tiene
+  // que caer en «desconocida» y no en «la edición de la cotización llamada
+  // generar».
+  if (segmento === "" || segmento === NUEVO || segmento === GENERAR) {
+    return null;
+  }
   try {
     const valor = decodeURIComponent(segmento);
     return valor === "" ? null : valor;
@@ -164,6 +193,7 @@ function resolverCotizaciones(segmentos: string[], pathname: string): Ruta {
 
   if (segmentos.length === 2) {
     if (segmentos[1] === NUEVO) return { nombre: "cotizacion-nueva" };
+    if (segmentos[1] === GENERAR) return { nombre: "cotizacion-generar" };
 
     const id = identificador(segmentos[1]);
     return id === null ? desconocida : { nombre: "cotizacion", id };
@@ -266,6 +296,8 @@ export function enlaceDe(ruta: Ruta): string {
       return `/${COTIZACIONES}`;
     case "cotizacion-nueva":
       return `/${COTIZACIONES}/${NUEVO}`;
+    case "cotizacion-generar":
+      return `/${COTIZACIONES}/${GENERAR}`;
     case "cotizacion":
       return `/${COTIZACIONES}/${encodeURIComponent(ruta.id)}`;
     case "cotizacion-edicion":

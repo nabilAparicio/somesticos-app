@@ -49,6 +49,7 @@
  * contra un corpus que nadie definió es una interfaz que se tira.
  */
 
+import type { MotivoDeFallaDelModelo } from "../contract";
 import type { PropuestaDelModelo, RechazoDeSalida } from "./esquema";
 import { proveedorAnthropic } from "./anthropic";
 
@@ -87,30 +88,25 @@ export interface PeticionDeCompletado {
    Lo que sale cuando algo no se pudo
    ========================================================================== */
 
-export type MotivoDeFallaDelModelo =
-  /**
-   * No hay `IA_API_KEY`. **Falla cerrada antes de tocar la red**, por lo mismo
-   * que `acceso_no_configurado`: un despliegue a medias tiene que
-   * distinguirse de un proveedor caído, y el operador tiene que poder leer
-   * cuál de los dos le pasó.
-   */
-  | "modelo_no_configurado"
-  /** `IA_PROVEEDOR` nombra algo que no está implementado. */
-  | "proveedor_desconocido"
-  /**
-   * El proveedor no contestó, o contestó con un estado que no es 2xx. **No es
-   * una guarda nuestra**: es un sistema externo informando que no está. Ver
-   * el comentario del `try` en `worker/ia/anthropic.ts`.
-   */
-  | "proveedor_no_disponible"
-  /** Contestó 200 con un cuerpo del que no se puede sacar ni un texto. */
-  | "respuesta_ininteligible"
-  /** Se cortó por `max_tokens`: no terminó, no se equivocó. */
-  | "respuesta_truncada"
-  /** El proveedor declinó la petición. */
-  | "respuesta_rechazada_por_el_proveedor"
-  /** **Contestó, y lo que contestó no pasa el esquema.** La barandilla. */
-  | "salida_rechazada";
+/**
+ * Por qué no se pudo. **Vive en `worker/contract.ts` desde T-9**, y se
+ * reexporta acá para que la costura siga siendo el único archivo que el
+ * resto del Worker mira.
+ *
+ * Se mudó porque dejó de ser interno: T-9 lo hace **viajar por el cable** en
+ * el cuerpo de un 502, y lo que viaja por el cable vive en el contrato — es
+ * la misma frontera por la que `MotivoDeFalla` nunca estuvo acá. Dejar la
+ * unión en este archivo habría obligado a declarar una paralela del otro
+ * lado, y dos uniones paralelas son dos vocabularios que un día dicen cosas
+ * distintas; o a listar `worker/ia/modelo.ts` en `tsconfig.app.json`, que se
+ * llevaría `anthropic.ts` al bundle del navegador por una importación en
+ * tiempo de ejecución.
+ *
+ * Los siete siguen significando lo mismo y cada uno conserva su comentario
+ * allá, al lado de la decisión que esta separación existe para sostener:
+ * **que la distinción llegue hasta quien la necesita**.
+ */
+export type { MotivoDeFallaDelModelo } from "../contract";
 
 export interface FallaDelModelo {
   motivo: MotivoDeFallaDelModelo;

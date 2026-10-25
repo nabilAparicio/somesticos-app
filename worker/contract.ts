@@ -345,7 +345,22 @@ export type MotivoDeFalla =
    * misma fila. Las dos son la misma causa —la pantalla tiene una copia
    * vieja— y se arreglan igual.
    */
-  | "orden_incompleto";
+  | "orden_incompleto"
+  /* --- El generador (tajada 2, T-9) --- */
+  /**
+   * El encargo llegó sin descripción en prosa, o con puros espacios.
+   *
+   * Es motivo propio y no `texto_requerido`, aunque los dos digan «escribí
+   * algo», por el mismo argumento con el que `concepto_requerido` no es
+   * `contenido_requerido`: lo que falta es otra cosa y la frase útil es
+   * otra. Sin texto en una nota no hay nada que guardar; sin descripción del
+   * encargo no hay nada que **generar**, y lo que la persona tiene que
+   * entender es que el modelo no adivina de qué se trata el caso.
+   *
+   * Se comprueba sobre el recorte, por lo mismo que el contenido de un
+   * módulo: tres saltos de línea no describen ningún encargo.
+   */
+  | "descripcion_requerida";
 
 export interface FallaDeValidacion {
   campo: string;
@@ -1535,6 +1550,157 @@ export interface RespuestaDeDocumento {
  */
 export interface CotizacionSinDocumento {
   error: "cotizacion_sin_documento";
+}
+
+/* ==========================================================================
+   El generador asistido por IA, en el cable (tajada 2, T-9)
+
+   `docs/diseno.md` §8 «La entrada»: el abogado describe el encargo en prosa
+   y sale un borrador con sus módulos y sus líneas, que después se edita a
+   mano.
+
+   **Lo que viaja hacia el servidor es prosa y un cliente, y nada más.** No
+   hay un campo para el modelo, ni para la temperatura, ni para el número de
+   módulos: cualquiera de los tres sería una decisión del despliegue puesta
+   en manos del navegador. El proveedor se resuelve por configuración (§8,
+   «La costura») y nada de lo que la pantalla manda lo puede cambiar.
+
+   **Lo que viaja de vuelta es la cotización, y nunca la propuesta cruda.**
+   `PropuestaDelModelo` no sale de `worker/ia/`: lo que la pantalla recibe es
+   un borrador ya guardado, con su código de servidor y sus filas. Devolver
+   la propuesta abriría el camino a una pantalla que la dibuja sin que exista
+   en la base, y entonces lo que se ve y lo que se guardó serían dos cosas.
+   ========================================================================== */
+
+/**
+ * Lo que la pantalla del generador manda. Ya normalizado.
+ *
+ * Son los dos campos del alta a mano **más la prosa**: generar un borrador
+ * es crear uno, no una operación aparte, así que el cliente sigue siendo
+ * obligatorio (I-1) y el vencimiento sigue siendo opcional.
+ */
+export interface DatosDeGeneracion {
+  clienteId: string;
+  /** Día `AAAA-MM-DD`, o nulo. */
+  venceEn: string | null;
+  /** El encargo en prosa, ya recortado y no vacío. */
+  descripcion: string;
+}
+
+/**
+ * Por qué no se pudo generar. **Siete motivos y no uno**, y la lista es el
+ * contenido de la decisión.
+ *
+ * T-8 los separó en `worker/ia/modelo.ts` y vivían ahí; se mudaron acá en
+ * T-9 porque dejaron de ser internos: **viajan por el cable**. Una pantalla
+ * que dijera «error» para los siete tiraría el trabajo de separarlos, y lo
+ * que se pierde es concreto — las cosas que hay que hacer son distintas:
+ *
+ *  - el proveedor caído se **reintenta** en un minuto;
+ *  - la respuesta truncada pide un encargo **más corto**, porque lo que
+ *    falló es el techo de tokens y no el modelo;
+ *  - la petición declinada pide **reescribir** la descripción;
+ *  - la salida que no pasó el esquema no la arregla quien mira la pantalla:
+ *    se carga el borrador **a mano**, que es el camino que siempre estuvo;
+ *  - los dos de configuración no los arregla nadie del bufete, y decirlo es
+ *    lo que evita que alguien reintente veinte veces.
+ *
+ * `worker/ia/modelo.ts` lo reexporta para que la costura siga siendo el
+ * único archivo que el resto del Worker mira, y para no tener dos uniones
+ * paralelas que mañana digan cosas distintas.
+ */
+export type MotivoDeFallaDelModelo =
+  /** No hay `IA_API_KEY`. Falla cerrada **antes de tocar la red**. */
+  | "modelo_no_configurado"
+  /** `IA_PROVEEDOR` nombra algo que no está implementado. */
+  | "proveedor_desconocido"
+  /** El proveedor no contestó, o contestó con un estado que no es 2xx. */
+  | "proveedor_no_disponible"
+  /** Contestó 200 con un cuerpo del que no se puede sacar ni un texto. */
+  | "respuesta_ininteligible"
+  /** Se cortó por `max_tokens`: no terminó, no se equivocó. */
+  | "respuesta_truncada"
+  /** El proveedor declinó la petición. */
+  | "respuesta_rechazada_por_el_proveedor"
+  /** **Contestó, y lo que contestó no pasa el esquema.** La barandilla. */
+  | "salida_rechazada";
+
+/**
+ * Los siete, en ejecución, para poder recorrerlos.
+ *
+ * Hace falta porque una unión de TypeScript no existe en ejecución y hay dos
+ * sitios que necesitan recorrerla: el `Record` exhaustivo de textos de
+ * `src/mensajes.ts` ya lo cierra el compilador, pero el **guardián** de
+ * abajo necesita una lista de verdad — lo que llega por el cable es una
+ * cadena cualquiera hasta que alguien la comprueba.
+ */
+export const MOTIVOS_DE_FALLA_DEL_MODELO = [
+  "modelo_no_configurado",
+  "proveedor_desconocido",
+  "proveedor_no_disponible",
+  "respuesta_ininteligible",
+  "respuesta_truncada",
+  "respuesta_rechazada_por_el_proveedor",
+  "salida_rechazada",
+] as const satisfies readonly MotivoDeFallaDelModelo[];
+
+/**
+ * La red que impide que un motivo de la unión se quede fuera de la lista.
+ *
+ * El `satisfies` de arriba cierra una dirección: no se puede listar un
+ * motivo que la unión no tiene. Esto cierra la otra: si alguien agrega un
+ * motivo y no lo pone acá, `Exclude<…>` deja de ser `never`, la restricción
+ * `T extends never` no se satisface y **el `typecheck` se cae con TS2344**
+ * nombrando el motivo que falta.
+ *
+ * Es la forma que T-8 dejó medida en `worker/ia/esquema.ts`, y **no** la que
+ * había antes en el proyecto: `export const X: Exclusion[] = []` compila
+ * para cualquier `T`, porque un arreglo vacío es asignable a todo.
+ *
+ * Sin esta red, un motivo nuevo tendría su texto —el `Record` de
+ * `src/mensajes.ts` lo exige— y sin embargo `esMotivoDeFallaDelModelo`
+ * contestaría `false` sobre él: la pantalla caería en el camino de reserva
+ * para un motivo que sí conoce, y nadie se enteraría.
+ */
+type DebeSerVacio<T extends never> = T;
+
+export type MotivosDelModeloSinListar = DebeSerVacio<
+  Exclude<MotivoDeFallaDelModelo, (typeof MOTIVOS_DE_FALLA_DEL_MODELO)[number]>
+>;
+
+const MOTIVOS: ReadonlySet<string> = new Set(MOTIVOS_DE_FALLA_DEL_MODELO);
+
+/**
+ * Si lo que llegó por el cable es uno de los motivos que esta versión
+ * conoce.
+ *
+ * Existe porque el cuerpo de un 502 es `unknown` hasta que alguien lo mire:
+ * un servidor más nuevo que la pantalla —o un proxy que inventa un cuerpo—
+ * mandaría una cadena que no está en la unión, y convertirla con un `as`
+ * daría un `undefined` detrás de un tipo que promete un texto.
+ */
+export function esMotivoDeFallaDelModelo(
+  valor: unknown,
+): valor is MotivoDeFallaDelModelo {
+  return typeof valor === "string" && MOTIVOS.has(valor);
+}
+
+/**
+ * El 502 del generador.
+ *
+ * **502 y no 500**, porque no es un defecto nuestro: lo que no entregó es un
+ * sistema de arriba. Y **no 503**, que ya está tomado por la puerta de
+ * Access (`AccesoDenegado`) y que `src/api/peticiones.ts` mapea a
+ * `sin_acceso`: un 503 acá se leería como «la sesión no se reconoció», que
+ * es falso y manda a hacer algo que no arregla nada.
+ *
+ * `motivo` viaja y `detalle` **no**. El detalle de `FallaDelModelo` es para
+ * el operador —puede nombrar `IA_API_KEY` o el estado HTTP que devolvió el
+ * proveedor— y quien mira la pantalla no tiene nada que hacer con eso.
+ */
+export interface GeneracionFallida {
+  error: "generacion_fallida";
+  motivo: MotivoDeFallaDelModelo;
 }
 
 /* ==========================================================================

@@ -9,10 +9,12 @@
  * texto y descubrirlo en producción como un mensaje en blanco.
  */
 
-import type {
-  MotivoDeFalla,
-  MotivoDeNombreDuplicado,
-  NombreDuplicado,
+import {
+  MOTIVOS_DE_FALLA_DEL_MODELO,
+  type MotivoDeFalla,
+  type MotivoDeFallaDelModelo,
+  type MotivoDeNombreDuplicado,
+  type NombreDuplicado,
 } from "../worker/contract";
 
 const MENSAJES: Record<MotivoDeFalla, string> = {
@@ -122,6 +124,12 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   linea_desconocida:
     "Una de las líneas ya no es de esta cotización. Hay que volver a" +
     " cargarla.",
+  /* No dice «la descripción es obligatoria» sino qué pasa sin ella: el
+     modelo no adivina de qué se trata el encargo, y lo que la persona
+     tiene que hacer es contarlo. */
+  descripcion_requerida:
+    "Sin una descripción del encargo no hay nada que generar. Con dos" +
+    " renglones alcanza: de qué se trata, y lo que el cliente pidió.",
 };
 
 /**
@@ -217,3 +225,108 @@ export function mensajeDeNombreDuplicado(duplicado: NombreDuplicado): string {
     `${CATALOGOS[duplicado.entidad]} «${duplicado.nombre}»`,
   );
 }
+
+/* ==========================================================================
+   El generador que no pudo (T-9)
+
+   La mitad de T-8 que llega hasta la persona. Aquella tarea separó siete
+   motivos de falla **con nombre** y dejó dicho que la distinción tenía que
+   llegar hasta quien la necesita: una pantalla que dice «error» para los
+   siete tira ese trabajo entero.
+
+   Lo que se pierde al aplastarlos es concreto, y es la razón por la que
+   cada frase de abajo termina en algo que hacer:
+
+    - el proveedor caído se **reintenta** en un minuto y sale bien;
+    - la respuesta truncada pide un encargo **más corto**, porque lo que se
+      acabó fue el techo de tokens y no la capacidad del modelo;
+    - la petición declinada pide **reescribir** la descripción;
+    - la salida que no pasó el esquema no la arregla nadie desde la
+      pantalla: se carga el borrador **a mano**, que es el camino que
+      siempre estuvo y que sigue estando;
+    - los dos de configuración no los arregla nadie del bufete, y decirlo es
+      lo que evita que alguien reintente veinte veces una tarde entera.
+
+   El `Record` es **exhaustivo sobre la unión**, igual que el de arriba: el
+   día que la costura agregue un motivo, este archivo deja de compilar hasta
+   que alguien escriba qué decirle a la persona. Esa es toda la gracia — que
+   no se pueda agregar un motivo sin texto y descubrirlo en producción como
+   un aviso en blanco.
+
+   Ninguna frase nombra al proveedor, ni al modelo, ni a una variable de
+   entorno. Quien lee esto es un abogado: lo que necesita saber es si lo
+   suyo se salvó, qué hacer ahora y si vale la pena volver a intentar.
+   ========================================================================== */
+
+const FALLAS_DEL_MODELO: Record<MotivoDeFallaDelModelo, string> = {
+  /* Los dos de configuración. Dicen «configurar» porque es lo único que los
+     arregla, y dicen que no es culpa de quien está mirando para que no se
+     quede reintentando. */
+  modelo_no_configurado:
+    "El generador todavía no está configurado en este despliegue, así que" +
+    " no hay a quién preguntarle. Hay que configurar la clave del asistente" +
+    " antes de que esto funcione; mientras tanto, la cotización se carga a" +
+    " mano desde «Nueva cotización».",
+  proveedor_desconocido:
+    "El generador está configurado con un asistente que este sistema no" +
+    " sabe usar. Hay que configurar uno de los que conoce; mientras tanto," +
+    " la cotización se carga a mano desde «Nueva cotización».",
+  /* El caído. Es el único que de verdad conviene reintentar enseguida. */
+  proveedor_no_disponible:
+    "El asistente no contestó. Suele ser pasajero: conviene volver a" +
+    " intentar en un minuto, y lo que escribiste sigue acá.",
+  /* El cuerpo sin texto. Desde la pantalla se ve igual que el anterior, y
+     la acción es la misma; se separan porque al operador le dicen cosas
+     distintas y porque la frase no puede mentir sobre qué pasó. */
+  respuesta_ininteligible:
+    "El asistente contestó algo que no se entendió. Conviene volver a" +
+    " intentar; si pasa dos veces seguidas, la cotización se carga a mano.",
+  /* El techo de tokens. Es el único cuya salida es cambiar lo que se
+     escribió, y por eso es el que más caro sale aplastar con los otros. */
+  respuesta_truncada:
+    "La respuesta se cortó antes de terminar: el encargo dio para más de lo" +
+    " que entra en una sola corrida. Conviene probar con una descripción" +
+    " más corta, o partir el encargo en dos cotizaciones.",
+  /* La declinada. La salida es reescribir, y no reintentar: el mismo texto
+     vuelve a ser declinado. */
+  respuesta_rechazada_por_el_proveedor:
+    "El asistente declinó este encargo y no lo va a procesar tal como está." +
+    " Reintentar con el mismo texto va a dar lo mismo: hay que reescribir la" +
+    " descripción, o cargar la cotización a mano.",
+  /* La barandilla, vista desde la pantalla. No dice «el esquema rechazó la
+     salida»: dice que lo que el asistente propuso no se puede usar y que el
+     camino de siempre sigue abierto. Y dice por qué se descartó entero, que
+     es lo que evita la pregunta «¿y no podían usar la mitad?». */
+  salida_rechazada:
+    "El asistente propuso algo que este sistema no puede usar: se salió de" +
+    " los módulos y las líneas que una cotización admite, y una propuesta" +
+    " así se descarta entera en vez de guardarse a medias. Conviene volver a" +
+    " intentar, o cargar la cotización a mano desde «Nueva cotización».",
+};
+
+/**
+ * Por qué no se pudo generar, dicho para quien está mirando la pantalla.
+ *
+ * Es total sobre la unión —el `Record` es exhaustivo y el compilador lo
+ * exige— así que no hay rama de reserva: una que devolviera «no se pudo
+ * generar» escondería justamente el motivo que T-8 separó para que se
+ * pudiera decir.
+ */
+export function mensajeDeFallaDelModelo(
+  motivo: MotivoDeFallaDelModelo,
+): string {
+  return FALLAS_DEL_MODELO[motivo];
+}
+
+/**
+ * Los siete textos, para poder compararlos entre sí.
+ *
+ * Existe porque hay una cosa que el `Record` exhaustivo **no** puede exigir:
+ * que dos motivos no digan lo mismo. Un `Record` con la misma frase repetida
+ * compila perfecto, y el resultado es la pantalla que T-8 quería evitar —la
+ * que aplasta la distinción— con la apariencia de tenerla resuelta.
+ * `test/generar-ui.spec.ts` compara el conjunto contra la lista y falla si
+ * dos coinciden.
+ */
+export const TEXTOS_DE_FALLA_DEL_MODELO: readonly string[] =
+  MOTIVOS_DE_FALLA_DEL_MODELO.map(mensajeDeFallaDelModelo);

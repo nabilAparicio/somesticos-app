@@ -52,6 +52,7 @@
     "../src/pantallas/procesos/notas.ts",
     "../src/pantallas/procesos/pendientes.ts",
     "../src/pantallas/cotizaciones/formulario.ts",
+    "../src/pantallas/cotizaciones/generar.ts",
     "../src/pantallas/cotizaciones/presentacion.ts",
     "../src/pantallas/cotizaciones/ciclo.ts",
     "../src/pantallas/cotizaciones/modulos.ts",

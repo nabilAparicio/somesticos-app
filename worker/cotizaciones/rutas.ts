@@ -4,6 +4,7 @@
  *
  *   GET    /api/cotizaciones                      listado
  *   POST   /api/cotizaciones                      alta de un borrador
+ *   POST   /api/cotizaciones/generar              un borrador desde prosa
  *   GET    /api/cotizaciones/{id}                 detalle
  *   PUT    /api/cotizaciones/{id}                 edición de un borrador
  *   GET    /api/cotizaciones/{id}/modulos         los módulos, en su orden
@@ -124,14 +125,24 @@ import type {
   CotizacionSinDocumento,
   DatosInvalidos,
   FallaDeValidacion,
+  GeneracionFallida,
   LineaDeCotizacion,
+  MotivoDeFallaDelModelo,
   RespuestaDeCierre,
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
   RespuestaDeDocumento,
   RespuestaDeLineas,
   RespuestaDeModulos,
+  TipoProceso,
 } from "../contract";
+import type { ServicioDeCatalogos } from "../catalogos/repositorio";
+import {
+  generarPropuesta,
+  normalizarDescripcion,
+} from "../ia/generador";
+import type { ModeloDeLenguaje } from "../ia/modelo";
+import type { TramiteOfrecido } from "../ia/prompt";
 import { ahoraIso, hoyEnPanama } from "../db/momentos";
 import { normalizarCotizacion } from "./dominio";
 import {
@@ -400,6 +411,151 @@ function respuestaDeDuplicacion(resultado: ResultadoDeDuplicacion): Response {
   });
 }
 
+/* ==========================================================================
+   El generador (T-9)
+   ========================================================================== */
+
+/** El segmento literal del generador. No puede ser el identificador de nadie. */
+const GENERAR = "generar";
+
+/**
+ * El 502 de una generación que no se pudo.
+ *
+ * **502 y no 500**: lo que no entregó es un sistema de arriba, y un 500
+ * diría que el defecto es nuestro. **Y no 503**, que es el de la puerta de
+ * Access y que `src/api/peticiones.ts` mapea a `sin_acceso`: un 503 acá se
+ * leería como «la sesión no se reconoció» y mandaría a hacer algo que no
+ * arregla nada.
+ *
+ * **El motivo viaja entero y el detalle no.** Los siete motivos de T-8
+ * existen porque lo que hay que hacer con cada uno es distinto —reintentar,
+ * acortar, reescribir, cargar a mano, avisarle a quien configuró el
+ * despliegue— y aplastarlos en un «error» tiraría ese trabajo. El `detalle`,
+ * en cambio, es para el operador: puede nombrar `IA_API_KEY` o el estado que
+ * devolvió el proveedor, y quien mira la pantalla no tiene nada que hacer
+ * con eso.
+ */
+function generacionFallida(motivo: MotivoDeFallaDelModelo): Response {
+  const cuerpo: GeneracionFallida = { error: "generacion_fallida", motivo };
+  return json(cuerpo, { status: 502 });
+}
+
+/**
+ * Los trámites que el prompt le va a ofrecer al modelo.
+ *
+ * **Sólo los vigentes.** Un tipo de proceso dado de baja es uno que el
+ * bufete dejó de tramitar, así que ofrecérselo al modelo es pedirle que
+ * cotice algo que no se hace. Es la dirección contraria a
+ * `clientesSeleccionables` del formulario, y no se contradicen: allá se
+ * ofrece lo que la cotización **ya tiene** aunque esté fuera del catálogo,
+ * porque esconderlo sería mentir sobre lo que hay; acá se está eligiendo
+ * desde cero.
+ *
+ * Se mapea a `TramiteOfrecido` y no se pasa `TipoProceso` entero por lo
+ * mismo que `LineaSumable` no es `LineaDeCotizacion`: el prompt necesita
+ * tres campos, y una prueba que arme el caso con tres en vez de con seis es
+ * una prueba que se lee.
+ */
+function tramitesOfrecidos(
+  tipos: readonly TipoProceso[],
+): TramiteOfrecido[] {
+  return tipos
+    .filter((tipo) => tipo.activo)
+    .map((tipo) => ({
+      id: tipo.id,
+      nombre: tipo.nombre,
+      area: tipo.areaNombre,
+    }));
+}
+
+/**
+ * `POST /api/cotizaciones/generar`: de una descripción en prosa a un
+ * borrador.
+ *
+ * ## Por qué un literal en la posición del identificador
+ *
+ * Es el mismo recurso que `nuevo` en `src/ruteo.ts`, y la ambigüedad que
+ * parece abrir no existe: los identificadores de cotización son UUID, así
+ * que `generar` no puede ser ninguno. Las dos alternativas y por qué no:
+ *
+ *  - **`POST /api/cotizaciones` con `descripcion` en el cuerpo.** Haría que
+ *    el alta a mano y la generación fueran la misma dirección con dos
+ *    comportamientos según qué campo viaje, y uno de los dos tarda treinta
+ *    segundos y puede contestar 502. Dos hechos distintos en un `POST` es lo
+ *    mismo que este archivo ya evitó con los cuatro verbos del ciclo.
+ *  - **`POST /api/cotizaciones/{id}/generar`.** No hay `{id}` todavía: lo
+ *    que esta dirección hace es **crear** la cotización, no llenar una que
+ *    exista. Una dirección que pide un identificador que no existe es una
+ *    dirección que obliga a crear un borrador vacío primero, y entonces una
+ *    generación fallida deja un borrador en blanco que nadie pidió.
+ *
+ * El verbo cuelga de la colección y no de una fila, que es exactamente lo
+ * que es: nace una cotización nueva, y por eso contesta **201 con
+ * `location`**, igual que el alta a mano y que duplicar.
+ *
+ * ## El orden de los tres rechazos
+ *
+ *  1. **422 antes que nada.** Un cuerpo sin descripción no se le manda al
+ *     modelo: falla cerrada antes de gastar una corrida, por la misma
+ *     precedencia con la que `modelo_no_configurado` no viaja a la red.
+ *  2. **502 si el modelo no entregó.** No se escribe nada: ver el comentario
+ *     de `crearDesdePropuesta` sobre por qué la llamada queda afuera de la
+ *     transacción.
+ *  3. **422 otra vez si el cliente no es de este bufete**, y acá sí después
+ *     del modelo. Es una corrida desperdiciada en el caso en que alguien
+ *     borró el cliente entre que la pantalla cargó el desplegable y que se
+ *     apretó el botón; la alternativa es una consulta más en **todas** las
+ *     generaciones para ahorrarla en casi ninguna.
+ */
+async function rutaDeGeneracion(
+  request: Request,
+  identidad: Identidad,
+  tenantId: string,
+  servicio: ServicioDeCotizaciones,
+  catalogos: ServicioDeCatalogos,
+  modelo: ModeloDeLenguaje,
+): Promise<Response> {
+  if (request.method !== "POST") return metodoNoPermitido("POST");
+
+  const leido = await leerCuerpo(request);
+  if (!leido.ok) return leido.respuesta;
+
+  // En el alta no hay vencimiento previo que reenviar, igual que en el alta
+  // a mano: cualquier día pasado es uno que se está poniendo ahora.
+  const encabezado = normalizarCotizacion(leido.valor, {
+    hoy: hoy(),
+    venceEnActual: null,
+  });
+  const prosa = normalizarDescripcion(leido.valor);
+
+  // Las fallas de los dos juntas, y no las del primero que falle: un
+  // formulario que corrige de a un error por envío es el formulario que
+  // nadie usa, y acá hay dos campos que se pueden omitir a la vez.
+  if (!encabezado.ok || !prosa.ok) {
+    return invalido([
+      ...(encabezado.ok ? [] : encabezado.fallas),
+      ...(prosa.ok ? [] : prosa.fallas),
+    ]);
+  }
+
+  const propuesta = await generarPropuesta(modelo, {
+    descripcion: prosa.descripcion,
+    tramites: tramitesOfrecidos(await catalogos.listarTiposProceso(tenantId)),
+  });
+
+  if (!propuesta.ok) return generacionFallida(propuesta.falla.motivo);
+
+  return respuestaDeEscritura(
+    await servicio.crearDesdePropuesta(
+      tenantId,
+      identidad.usuarioId,
+      encabezado.datos,
+      propuesta.valor,
+    ),
+    201,
+  );
+}
+
 /**
  * Los segmentos de la ruta, sin la barra final y sin decodificar.
  *
@@ -666,6 +822,15 @@ export async function rutasDeCotizaciones(
   identidad: Identidad,
   tenantId: string,
   servicio: ServicioDeCotizaciones,
+  /**
+   * Los catálogos del bufete. Se usan para **una sola cosa**: saber qué
+   * trámites ofrecerle al modelo. Llega el servicio y no la lista ya leída
+   * porque la lectura sólo hace falta en una de las diecinueve direcciones
+   * de este archivo, y pedirla siempre sería una consulta en cada petición
+   * de cotizaciones para servir a la que genera.
+   */
+  catalogos: ServicioDeCatalogos,
+  modelo: ModeloDeLenguaje,
 ): Promise<Response | null> {
   const segmentos = segmentosDe(url.pathname);
   if (segmentos[0] !== "api") return null;
@@ -695,6 +860,21 @@ export async function rutasDeCotizaciones(
     return respuestaDeEscritura(
       await servicio.crear(tenantId, identidad.usuarioId, normalizado.datos),
       201,
+    );
+  }
+
+  // **El generador va antes que el detalle**, y es el único literal que
+  // este archivo reconoce en la posición del identificador. No hay
+  // ambigüedad —los identificadores son UUID— y el orden la hace además
+  // imposible de confundir al leer: `generar` nunca llega a `decodificar`.
+  if (segmentos.length === 3 && segmentos[2] === GENERAR) {
+    return rutaDeGeneracion(
+      request,
+      identidad,
+      tenantId,
+      servicio,
+      catalogos,
+      modelo,
     );
   }
 

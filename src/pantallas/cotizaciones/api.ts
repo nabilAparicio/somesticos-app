@@ -5,11 +5,11 @@
  * problema— vive en `src/api/peticiones.ts`. Acá quedan solo las rutas de
  * cotizaciones y el sujeto con el que se nombra un 404.
  *
- * **Son cuatro rutas de la cotización, una quinta de lectura, las cuatro del
- * ciclo de vida, las cinco de los módulos, las cinco de las líneas y la del
- * documento congelado, y nada más.** Lo que sigue sin existir es la apertura
- * de procesos (T-7): una función acá que pida una ruta que no existe es un
- * 404 que la pantalla explicaría como «no es de este bufete».
+ * **Son cuatro rutas de la cotización, una quinta de lectura, la del
+ * generador, las cuatro del ciclo de vida, las cinco de los módulos, las
+ * cinco de las líneas y la del documento congelado, y nada más.** Una
+ * función acá que pida una ruta que no existe es un 404 que la pantalla
+ * explicaría como «no es de este bufete».
  *
  * El listado de clientes para el desplegable del formulario **no se declara
  * de nuevo acá**: se importa de `../clientes/api`, que es donde vive. Una
@@ -32,6 +32,7 @@ import { LIMITE_DE_BITACORA_POR_DEFECTO } from "../../../worker/contract";
 import type {
   Cotizacion,
   DatosDeCotizacion,
+  DatosDeGeneracion,
   DatosDeLinea,
   DatosDeModulo,
   DocumentoCongelado,
@@ -101,6 +102,40 @@ export async function actualizarCotizacion(
   const resultado = await pedir<RespuestaDeCotizacion>(
     `/api/cotizaciones/${encodeURIComponent(id)}`,
     { method: "PUT", ...ESCRITURA, body: JSON.stringify(datos) },
+  );
+
+  return resultado.estado === "ok"
+    ? { estado: "ok", valor: resultado.valor.cotizacion }
+    : resultado;
+}
+
+/* ==========================================================================
+   El generador (T-9)
+   ========================================================================== */
+
+/**
+ * De una descripción en prosa a un borrador ya guardado.
+ *
+ * **Lo que vuelve es la cotización y no la propuesta**, igual que el alta a
+ * mano: lo que el generador produce es un borrador de verdad, con su código
+ * y sus filas, que después se edita como cualquier otro. Una respuesta con
+ * la propuesta cruda abriría el camino a una pantalla que la dibuja sin que
+ * exista en la base, y entonces lo que se ve y lo que se guardó serían dos
+ * cosas.
+ *
+ * El 502 —el modelo que no pudo— **no se resuelve acá**: lo desarma
+ * `src/api/peticiones.ts` en un `Resultado` de estado `modelo` con su motivo
+ * tipado, y `textoDeProblema` le pone la frase. Es la lección que esta
+ * tajada pagó tres veces: un código de estado nuevo tratado dentro de una
+ * pantalla es el que la cuarta pantalla trata distinto, o no trata y cae en
+ * el texto de reserva que habla de un borrado que nadie pidió.
+ */
+export async function generarCotizacion(
+  datos: DatosDeGeneracion,
+): Promise<Resultado<Cotizacion>> {
+  const resultado = await pedir<RespuestaDeCotizacion>(
+    "/api/cotizaciones/generar",
+    { method: "POST", ...ESCRITURA, body: JSON.stringify(datos) },
   );
 
   return resultado.estado === "ok"

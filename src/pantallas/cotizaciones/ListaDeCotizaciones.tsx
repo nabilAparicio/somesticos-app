@@ -86,12 +86,29 @@ export function ListaDeCotizaciones() {
       <header>
         <Fila alinear="entre">
           <h1>Cotizaciones</h1>
-          <Enlace
-            href={enlaceDe({ nombre: "cotizacion-nueva" })}
-            className="boton boton--primario"
-          >
-            Nueva cotización
-          </Enlace>
+          {/*
+            Los dos caminos de alta, juntos y con la jerarquía dicha por el
+            estilo: **el primario sigue siendo el de la mano**. El generador
+            es el que el bufete va a usar todos los días, y aun así no es el
+            botón destacado, por una razón concreta: tarda, cuesta y puede
+            fallar de siete maneras, mientras que el alta a mano siempre
+            funciona. El camino que nunca falla es el que tiene que estar a
+            la vista cuando el otro no esté.
+          */}
+          <Fila>
+            <Enlace
+              href={enlaceDe({ nombre: "cotizacion-generar" })}
+              className="boton boton--tenue"
+            >
+              Generar desde una descripción
+            </Enlace>
+            <Enlace
+              href={enlaceDe({ nombre: "cotizacion-nueva" })}
+              className="boton boton--primario"
+            >
+              Nueva cotización
+            </Enlace>
+          </Fila>
         </Fila>
       </header>
 

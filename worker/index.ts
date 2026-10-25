@@ -30,6 +30,7 @@ import {
   type ServicioDeCotizaciones,
 } from "./cotizaciones/repositorio";
 import { rutasDeCotizaciones } from "./cotizaciones/rutas";
+import { modeloDesdeEntorno, type ModeloDeLenguaje } from "./ia/modelo";
 import type {
   AccesoDenegado,
   HealthReport,
@@ -83,6 +84,24 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
 
   /** Las cotizaciones en borrador (tajada 2, T-2). Idem. */
   cotizaciones?: ServicioDeCotizaciones;
+
+  /**
+   * El modelo de lenguaje del generador (tajada 2, T-9).
+   *
+   * **Es el mismo camino que usa producción**, y por eso vale como costura:
+   * abajo se resuelve con `dependencias.modelo ?? modeloDesdeEntorno(env)`,
+   * así que lo único que cambia entre una corrida de prueba y una desplegada
+   * es quién construyó el objeto. La validación de esquema de T-8 está por
+   * encima de los dos y corre igual con un modelo falso que con uno real.
+   *
+   * Sin esto, la única forma de probar el generador sería llamar a Anthropic
+   * de verdad desde el suite, que es exactamente lo que una prueba no puede
+   * hacer: cuesta plata, no es determinista y no corre sin la clave.
+   *
+   * T-8 declaró la interfaz y **no la cableó**, a conciencia: una
+   * declaración que nadie lee no hace nada. Esta es la línea que la enchufa.
+   */
+  modelo?: ModeloDeLenguaje;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -238,6 +257,17 @@ export async function manejar(
     acceso.valor,
     TENANT_UNICO_ID,
     servicioDeCotizaciones,
+    // El mismo servicio de catálogos que las demás rutas, no una segunda
+    // copia: el generador le ofrece al modelo los trámites que la pantalla
+    // de catálogos administra, leídos por el mismo puerto.
+    servicioDeCatalogos,
+    // **Se construye siempre y no cuesta nada**: `modeloDesdeEntorno` no
+    // toca la red ni lee la clave, sólo resuelve el proveedor. Un
+    // proveedor mal configurado produce un modelo que falla con
+    // `proveedor_desconocido` en cuanto se lo usa, que es la misma
+    // precedencia que eligió `autenticar`: la guarda de configuración vive
+    // dentro de la operación.
+    dependencias.modelo ?? modeloDesdeEntorno(env),
   );
   if (cotizaciones !== null) return cotizaciones;
 

@@ -101,6 +101,17 @@ const PANTALLAS: Record<Ruta["nombre"], Destino> = {
     ruta: { nombre: "cotizacion-nueva" },
     bajo: "/cotizaciones",
   },
+  /*
+   * El generador (T-9). **No está exenta**: vive bajo `/cotizaciones`, que
+   * el menú ya ofrece, y se llega a ella desde el listado con un enlace
+   * propio al lado de «Nueva cotización». Una pantalla a la que sólo se
+   * llega escribiendo la URL no está entregada, y es el invariante que esta
+   * suite existe para sostener.
+   */
+  "cotizacion-generar": {
+    ruta: { nombre: "cotizacion-generar" },
+    bajo: "/cotizaciones",
+  },
   cotizacion: {
     ruta: { nombre: "cotizacion", id: "x" },
     bajo: "/cotizaciones",

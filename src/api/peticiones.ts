@@ -16,14 +16,17 @@
  * saber que dice `sin_token` evita media hora de búsqueda.
  */
 
-import type {
-  AccesoDenegado,
-  BorradoBloqueado,
-  DatosInvalidos,
-  FallaDeValidacion,
-  NombreDuplicado,
+import {
+  esMotivoDeFallaDelModelo,
+  type AccesoDenegado,
+  type BorradoBloqueado,
+  type DatosInvalidos,
+  type FallaDeValidacion,
+  type GeneracionFallida,
+  type MotivoDeFallaDelModelo,
+  type NombreDuplicado,
 } from "../../worker/contract";
-import { mensajeDeNombreDuplicado } from "../mensajes";
+import { mensajeDeFallaDelModelo, mensajeDeNombreDuplicado } from "../mensajes";
 
 export type Resultado<T> =
   | { estado: "ok"; valor: T }
@@ -53,6 +56,25 @@ export type Resultado<T> =
     }
   | { estado: "no_encontrado" }
   | { estado: "sin_acceso"; motivo: string }
+  /**
+   * 502: el generador de T-9 no pudo, y **no por culpa nuestra ni de quien
+   * pidió**: lo que no entregó es el modelo, que es un sistema de arriba.
+   *
+   * Es una variante propia y no un `falla` con otro mensaje, y la diferencia
+   * es exactamente la que T-8 pagó por construir: hay **siete** motivos con
+   * nombre, y lo que hay que hacer con cada uno es distinto —reintentar,
+   * acortar el encargo, reescribirlo, cargar a mano, avisarle a quien
+   * configuró el despliegue—. Caer en `falla` los aplastaría en «respuesta
+   * inesperada: HTTP 502», que es la frase que no sirve para ninguno de los
+   * siete.
+   *
+   * El motivo llega **tipado** y no como cadena: lo valida
+   * `esMotivoDeFallaDelModelo` contra el vocabulario del contrato, porque
+   * un cuerpo de 502 es `unknown` hasta que alguien lo mire y un `as`
+   * dejaría un `undefined` detrás de un tipo que promete un texto. Un motivo
+   * que esta versión no conoce cae en `falla`, que es donde tiene que caer.
+   */
+  | { estado: "modelo"; motivo: MotivoDeFallaDelModelo }
   | { estado: "falla"; mensaje: string };
 
 type Problema = Exclude<Resultado<never>, { estado: "ok" }>;
@@ -95,6 +117,22 @@ async function problemaDe(respuesta: Response): Promise<Problema | null> {
         motivo === "nombre_duplicado" || motivo === "nombre_duplicado_de_baja"
           ? (cuerpo as NombreDuplicado)
           : null,
+    };
+  }
+
+  // El 502 del generador (T-9). Va **antes** del `!respuesta.ok` genérico,
+  // que es el que lo convertiría en «respuesta inesperada: HTTP 502».
+  if (respuesta.status === 502) {
+    const cuerpo = (await cuerpoJson(respuesta)) as GeneracionFallida | null;
+    const motivo: unknown = cuerpo?.motivo;
+
+    if (esMotivoDeFallaDelModelo(motivo)) return { estado: "modelo", motivo };
+
+    // Un 502 que no es el nuestro: un proxy delante del Worker, o un
+    // servidor más nuevo que esta pantalla. No se inventa un motivo.
+    return {
+      estado: "falla",
+      mensaje: "respuesta inesperada: HTTP 502",
     };
   }
 
@@ -274,6 +312,11 @@ export function textoDeProblema(
         CONFLICTOS[resultado.motivo] ??
         "No se pudo borrar: hay datos que dependen de esto."
       );
+    case "modelo":
+      // El motivo entero, que es lo que T-8 separó para que se pudiera
+      // decir. No se compone con `sujeto`: lo que falló no es encontrar una
+      // cotización sino generarla, y la frase no habla de ninguna fila.
+      return mensajeDeFallaDelModelo(resultado.motivo);
     case "falla":
       return `No se pudo consultar: ${resultado.mensaje}`;
   }

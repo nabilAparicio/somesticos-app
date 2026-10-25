@@ -23,6 +23,7 @@ import { FormularioDeCliente } from "./pantallas/clientes/FormularioDeCliente";
 import { ListaDeClientes } from "./pantallas/clientes/ListaDeClientes";
 import { DetalleDeCotizacion } from "./pantallas/cotizaciones/DetalleDeCotizacion";
 import { FormularioDeCotizacion } from "./pantallas/cotizaciones/FormularioDeCotizacion";
+import { GenerarCotizacion } from "./pantallas/cotizaciones/GenerarCotizacion";
 import { HojaDeCotizacion } from "./pantallas/cotizaciones/HojaDeCotizacion";
 import { ListaDeCotizaciones } from "./pantallas/cotizaciones/ListaDeCotizaciones";
 import { DetalleDeProceso } from "./pantallas/procesos/DetalleDeProceso";
@@ -76,6 +77,8 @@ function pantallaDe(ruta: Ruta) {
       return <ListaDeCotizaciones />;
     case "cotizacion-nueva":
       return <FormularioDeCotizacion key="nueva" />;
+    case "cotizacion-generar":
+      return <GenerarCotizacion key="generar" />;
     case "cotizacion":
       return <DetalleDeCotizacion key={ruta.id} id={ruta.id} />;
     case "cotizacion-edicion":

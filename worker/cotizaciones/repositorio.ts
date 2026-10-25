@@ -42,6 +42,13 @@ import type {
   TipoDeModulo,
 } from "../contract";
 import type { BaseDeDatos, Sentencia } from "../db/base";
+/**
+ * T-9: lo que el generador produce. Es un tipo y nada más —se borra al
+ * compilar—, así que este archivo sigue sin saber que existe un LLM: lo
+ * que recibe son los mismos `DatosDeModulo[]` y `DatosDeLinea[]` que
+ * produce un formulario, agrupados.
+ */
+import type { PropuestaDelModelo } from "../ia/esquema";
 import { recorte, sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 /**
@@ -251,6 +258,43 @@ export interface ServicioDeCotizaciones {
     tenantId: string,
     id: string,
     datos: DatosDeCotizacion,
+  ): Promise<ResultadoDeEscritura>;
+
+  /* --- El generador (T-9) --- */
+
+  /**
+   * Un borrador con sus módulos y sus líneas, **en una sola escritura**.
+   *
+   * Es `crear` con contenido colgado, y nace exactamente igual: estado
+   * `borrador`, código generado por el servidor, autor de la puerta de
+   * Access (I-6). Después se edita a mano como cualquier otro — no hay
+   * ninguna marca de «esto lo escribió el modelo», y es deliberado: lo que
+   * el bufete emite lo firma el bufete, y una cotización que avisa de dónde
+   * salió su prosa es una cotización que se lee distinto sin motivo.
+   *
+   * ## Por qué un método y no tres llamadas desde la ruta
+   *
+   * Porque las tres juntas son el hecho. `crear` seguido de N
+   * `agregarModulo` y M `agregarLinea` son `1 + N + M` transacciones, y
+   * entre cualquiera de ellas se puede caer la petición: lo que queda es un
+   * borrador a medio llenar que nadie pidió y que el abogado tiene que
+   * mirar para darse cuenta de qué le falta. Es el criterio de T-7 —si
+   * pueden separarse, existe el estado intermedio donde una quedó sin la
+   * otra— aplicado donde sí corresponde.
+   *
+   * **La llamada al modelo, en cambio, queda afuera y antes**, y eso no
+   * contradice lo anterior: ver el comentario de la implementación.
+   *
+   * `propuesta` llega **ya validada** por `worker/ia/esquema.ts`. Este
+   * método no la vuelve a mirar y no podría: `DatosDeModulo` y `DatosDeLinea`
+   * son los mismos tipos que produce el camino a mano, así que lo que entra
+   * por acá no se distingue de lo que entra por un formulario.
+   */
+  crearDesdePropuesta(
+    tenantId: string,
+    autorId: string,
+    datos: DatosDeCotizacion,
+    propuesta: PropuestaDelModelo,
   ): Promise<ResultadoDeEscritura>;
 
   /* --- Los módulos de prosa (T-2 C) --- */
@@ -1179,6 +1223,160 @@ export function cotizacionesSobreD1(
         // Inalcanzable salvo que el `INSERT` no haya escrito: si pasa, es un
         // defecto y no un 404 de negocio.
         throw new Error("la cotización recién creada no se pudo releer");
+      }
+
+      return { estado: "guardado", cotizacion };
+    },
+
+    /**
+     * El alta del borrador generado: la cotización, sus módulos y sus
+     * líneas, **en un solo `batch`**.
+     *
+     * ## La transacción, y dónde se decidió que termina
+     *
+     * El criterio de T-7 es que si dos escrituras se pueden separar, existe
+     * el estado intermedio donde una quedó sin la otra. Acá hay **tres**
+     * cosas que podrían ir por separado, y la decisión no es la misma para
+     * las tres:
+     *
+     *  - **La cotización, sus módulos y sus líneas van juntas.** Son filas
+     *    de la misma base y el estado intermedio es real: un borrador con
+     *    la mitad de sus líneas es peor que ninguno, porque se ve completo.
+     *    Un solo `batch`, que en D1 es una transacción, y si una línea no
+     *    entra no queda nada.
+     *  - **La llamada al modelo queda afuera, y antes.** El argumento del
+     *    estado intermedio **no aplica**: una llamada al modelo no escribe
+     *    nada, así que si falla no hay ninguna mitad que haya quedado. El
+     *    estado intermedio que T-7 cierra es el de dos escrituras; acá hay
+     *    una sola. Y meterla adentro no es gratis: tarda decenas de
+     *    segundos, y una transacción de escritura abierta todo ese tiempo
+     *    tiene el candado de la base tomado mientras un sistema externo
+     *    piensa — con dos personas en el bufete alcanza para que la otra se
+     *    quede esperando a que Anthropic conteste para poder editar un
+     *    cliente. Ni siquiera es posible con la forma de `mutar`, y la forma
+     *    tiene razón: lo que recibe son sentencias, no una continuación.
+     *
+     * O sea: **no hay estado intermedio que cerrar**, y la separación es lo
+     * que mantiene corta la transacción. Lo que sí hay que sostener es que
+     * una generación fallida no escriba nada, y eso lo sostiene el orden —el
+     * modelo primero, la base después— y lo prueba
+     * `test/generador-api.spec.ts` releyendo el listado en cada motivo.
+     *
+     * ## El `orden` lo asigna el servidor, y es la posición del arreglo
+     *
+     * Ni los módulos ni las líneas pueden traerlo: `DatosDeModulo` y
+     * `DatosDeLinea` no tienen el campo, por la misma decisión que impide
+     * que un formulario lo imponga. Acá es el índice del arreglo, que es el
+     * orden en que el modelo propuso leer la propuesta.
+     *
+     * Y no hace falta el `COALESCE(MAX(orden), -1) + 1` que usan
+     * `agregarModulo` y `agregarLinea`: aquél existe porque dos altas
+     * concurrentes sobre una cotización **que ya existe** calculan el mismo
+     * número y la segunda choca contra el índice único. Acá la cotización
+     * nace en este mismo `batch`, así que no hay ninguna otra petición que
+     * pueda estar insertando en ella: la tabla no tiene una sola fila suya
+     * y nadie más conoce todavía su identificador.
+     *
+     * ## Por qué no se revalida el trámite
+     *
+     * Porque ya está cerrado, y una segunda guarda sobre lo mismo se anula
+     * con la primera. `tipoProcesoId` sólo puede ser uno de los que el
+     * prompt declaró haber ofrecido —`worker/ia/esquema.ts` lo rechaza si
+     * no—, y esos salieron de `tipo_proceso` de este tenant en esta misma
+     * petición. Lo que queda es la ventana entre aquella lectura y esta
+     * escritura, y ahí el que manda es el disparador de tenencia de
+     * `migrations/0004_cotizaciones.sql`: salta, y sale. No se atrapa, por
+     * la restricción 2 de la tajada, y además **es la guarda que hace cierta
+     * la atomicidad** — es la que esa prueba usa para provocar que una línea
+     * no entre.
+     *
+     * Es la misma frontera de siempre: se cuenta lo que una persona puede
+     * equivocar —el cliente, que sale de un desplegable— y se deja saltar lo
+     * que sólo un defecto produce.
+     */
+    async crearDesdePropuesta(tenantId, autorId, datos, propuesta) {
+      const fallas = await validarCliente(tenantId, datos);
+      if (fallas.length > 0) return { estado: "invalido", fallas };
+
+      const id = nuevoId();
+      const ahora = ahoraIso();
+      const codigo = await proximoCodigo(tenantId, ahora);
+
+      const alta = sentencia(
+        "INSERT INTO cotizacion (id, tenant_id, cliente_id, codigo," +
+          " estado, fecha, vence_en, creada_por, creada_en)" +
+          " VALUES (?, ?, ?, ?, 'borrador', ?, ?, ?, ?)",
+        id,
+        tenantId,
+        datos.clienteId,
+        codigo,
+        ahora,
+        aMomento(datos.venceEn),
+        autorId,
+        ahora,
+      );
+
+      const modulos = propuesta.modulos.map((modulo, posicion) =>
+        sentencia(
+          "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
+            " tipo, orden, contenido) VALUES (?, ?, ?, ?, ?, ?)",
+          nuevoId(),
+          tenantId,
+          id,
+          modulo.tipo,
+          posicion,
+          modulo.contenido,
+        ),
+      );
+
+      const lineas = propuesta.lineas.map((linea, posicion) =>
+        sentencia(
+          "INSERT INTO cotizacion_linea (id, tenant_id, cotizacion_id," +
+            " clase, concepto, monto, tipo_proceso_id, orden)" +
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          nuevoId(),
+          tenantId,
+          id,
+          linea.clase,
+          linea.concepto,
+          // Tal cual, sin pasar por ninguna conversión: el esquema de T-8 ya
+          // garantizó que es un entero seguro de cero en adelante, y
+          // cualquier aritmética acá lo volvería un flotante que el `CHECK`
+          // de `0004` rechazaría con un 500. **Y no se suma nada**: el total
+          // no existe como columna, y esta función no lo calcula ni lo
+          // podría guardar.
+          linea.monto,
+          linea.tipoProcesoId,
+          posicion,
+        ),
+      );
+
+      // **Un solo hecho, y es `creado`.** No hay un verbo «generado» en el
+      // vocabulario de la bitácora y agregarlo costaría reconstruir la tabla
+      // `bitacora` entera —el `CHECK` de `accion` es una de sus tres mitades
+      // acopladas—, que es una migración y no es de esta tarea. Tampoco
+      // serían varios hechos: los módulos y las líneas no se **agregaron** a
+      // una cotización que ya existía, nacieron con ella, y `mutar` recibe
+      // un evento por transacción justamente porque una transacción es un
+      // hecho.
+      //
+      // Lo que la entrada dice —«dio de alta COT-2026-0042»— es cierto, y es
+      // lo que va a buscar quien lea la bitácora.
+      await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: id,
+          accion: "creado",
+          detalle: codigo,
+        },
+        alta,
+        ...modulos,
+        ...lineas,
+      );
+
+      const cotizacion = await obtener(tenantId, id);
+      if (cotizacion === null) {
+        throw new Error("la cotización recién generada no se pudo releer");
       }
 
       return { estado: "guardado", cotizacion };
