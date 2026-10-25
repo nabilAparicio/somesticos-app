@@ -1,7 +1,7 @@
 # cotizaciones — Tajada 2: el generador de propuestas
 
 **Creado:** 24 de octubre de 2026
-**Estado:** **R1 cerrada** (T-1, T-2, T-3). R2 en marcha con T-4. Revisiones RDD **desactivadas** la noche del 24 de octubre a pedido del usuario, para avanzar sin frenar en cada puerta de consentimiento; se reactivan y se revisa la rama entera. La tajada 1 está construida y empujada; falta desplegarla
+**Estado:** **R1 cerrada** (T-1, T-2, T-3). R2 en marcha: el fondo de T-4 y T-5 está hecho; falta su pantalla y T-6. Revisiones RDD **desactivadas** la noche del 24 de octubre a pedido del usuario, para avanzar sin frenar en cada puerta de consentimiento; se reactivan y se revisa la rama entera. La tajada 1 está construida y empujada; falta desplegarla
 (T-16 allá).
 **Diseño de referencia:** `docs/diseno.md` §8 (el generador), §6 (modelo de datos), §5 (invariantes)
 **Tajada anterior:** `odd/tasks/crm-procesos.md`
@@ -176,18 +176,11 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
 - [ ] **T-5 · Ganada, perdida, duplicada.** El resto del ciclo. Duplicar nace un borrador atado
       por `duplicada_de_id`; **la historia no se reescribe**. *Forecast ~300.*
 
-      **Hereda de T-1 un agujero que T-1 no cerró a propósito: la cadena de duplicación admite
-      ciclos.** La llave foránea de `duplicada_de_id` no impide que una cotización se declare
-      duplicada de sí misma, ni que dos se apunten entre sí. Medido en una sonda `sqlite3`, no
-      razonado: `INSERT … id='a', duplicada_de_id='a'` **entra** —SQLite valida la clave foránea
-      después de insertar la fila, que es justamente lo que hace posible el patrón
-      autorreferencial—, y `a → b → a` por dos `UPDATE` también **entra**.
-
-      No es un agujero de tenencia ni de dinero: es de recorrido. Cualquier pantalla que suba por
-      la cadena buscando el original —y T-5 va a tener una— gira para siempre. **La decisión de
-      cómo cerrarlo es de T-5**, porque depende de si la cadena se recorre entera o un solo salto:
-      un `CHECK (duplicada_de_id IS NOT id)` tapa el caso de uno, pero no el ciclo de dos, que
-      necesita un disparador o un tope de profundidad en el recorrido.
+      **La deuda que T-1 le dejó resultó estar medida mal, y T-5 la cerró mejor.** El ciclo
+      de duplicación no era alcanzable por `INSERT` —lo frena el disparador de tenencia de
+      `0004`, no la clave foránea— sino sólo por `UPDATE`. La guarda es la **inmutabilidad** de
+      `duplicada_de_id`, que cierra ciclos de cualquier longitud. Ver «Una medición de este plan
+      resultó falsa» abajo.
 
 - [ ] **T-6 · La salida imprimible.** HTML que se imprime desde el navegador, con hoja de
       impresión propia. Sin librería de PDF. DOCX queda para cuando alguien lo pida de verdad.
@@ -282,6 +275,8 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
 | T-2 C2 · El editor de módulos | `af086c7`, `b84be59` | `typecheck` 0, `test` 0 (1169), `lint` 0, `build` 0, `test:e2e` 0 (212) | aprobada, lineaje `review-ae94e1f1c8ca1465`, sin bloqueantes |
 | T-3 A · La API de las líneas | `cde7871` | `typecheck` 0, `test` 0 (1248), `lint` 0, `build` 0 | RDD apagada; **dejó `test:e2e` en rojo**, ver abajo |
 | T-3 B · La pantalla de las líneas | `3ec3fd1` | `typecheck` 0, `test` 0 (1358), `lint` 0, `build` 0, `test:e2e` 0 (237) | RDD apagada |
+| T-4 A · Emitir y congelar | `5d12016` | `typecheck` 0, `test` 0 (1427), `lint` 0, `build` 0, `test:e2e` 0 (237) | RDD apagada |
+| T-5 A · Ganar, perder, duplicar | `91b234d` | `typecheck` 0, `test` 0 (1504), `lint` 0, `build` 0, `test:e2e` 0 (237) | RDD apagada |
 
 ### Lo que T-1 corrigió de este plan
 
@@ -384,6 +379,26 @@ faltaba era el quinto, y faltaba porque alguien decidió que no aplicaba.
 Y una de método: **una mutación sobreviviente obliga a revisar primero si la mutación fue la
 correcta**, no a concluir que falta cobertura. Mover una llamada en vez de borrarla puede no
 cambiar el comportamiento.
+
+### Una medición de este plan resultó falsa, y la lección vale más que la corrección
+
+El plan decía, **como hecho medido**, que la cadena de duplicación admite ciclos: que
+`INSERT … id='a', duplicada_de_id='a'` entra porque SQLite valida la clave foránea después de
+insertar la fila.
+
+**No entra.** Esa sonda corrió sobre una tabla de dos columnas con sólo la clave foránea. El
+esquema real tiene delante `cotizacion_tenencia_coherente_al_insertar`, de `0004`: en
+`BEFORE INSERT` la fila todavía no existe, la subconsulta de tenant devuelve `NULL`, y
+`NULL IS NOT 't1'` aborta. Verificado también con `PRAGMA foreign_keys = OFF`.
+
+> **Una sonda sobre una reproducción simplificada mide la reproducción, no el sistema.**
+
+La corrección mejoró el resultado. Generalizado: **por `INSERT` no se puede cerrar un ciclo de
+ninguna longitud**, porque la fila apuntada tiene que existir ya y el padre es siempre más viejo
+que el hijo. El agujero era entero del `UPDATE`, así que la guarda correcta no es un `CHECK`
+—redundante de un lado, insuficiente del otro— sino la **inmutabilidad** de `duplicada_de_id`.
+Un grafo que sólo crece por las hojas y nunca se reescribe es un bosque: recorrerlo termina
+siempre, y no hace falta tope de profundidad ni detección de ciclos.
 
 ### Deuda registrada, no cerrada
 
