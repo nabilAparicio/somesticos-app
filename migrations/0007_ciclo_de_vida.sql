@@ -1,0 +1,269 @@
+-- El resto del ciclo de vida: qué transiciones son legales y por qué la
+-- cadena de duplicación no puede dar vueltas (T-5, unidad A, de
+-- `odd/tasks/cotizaciones.md`).
+--
+-- Fuente de verdad: `docs/diseno.md` §8 («El ciclo de vida»), cuyo dibujo es
+-- literalmente lo que el primer disparador de acá escribe en SQL.
+--
+-- `0001` a `0006` ya corrieron y **no se tocan**. Esta migración trae dos
+-- disparadores y nada más: ninguna tabla, ningún índice, ninguna columna, y
+-- **ninguna reconstrucción de `bitacora`**. Los tres verbos que T-5 necesita
+-- —`ganado`, `perdido` y `duplicado`— ya están en el `CHECK` de `accion`
+-- desde `0006`, que se los llevó a propósito para que esta tarea no pagara
+-- una tercera copia de esa tabla en tres commits seguidos. Verificado contra
+-- la migración, no supuesto.
+--
+-- ## Qué medía la base antes de este archivo
+--
+-- Se midió con una sonda `sqlite3` sobre las seis migraciones aplicadas, y
+-- la respuesta es la que justifica el primer disparador: el `CHECK`
+-- `el_estado_de_la_cotizacion_es_del_ciclo_de_vida` de `0004` admite los
+-- cuatro valores y **no dice una palabra sobre el orden**. De las dieciséis
+-- combinaciones origen→destino, las únicas cerradas eran las tres que
+-- vuelven a `borrador`, y las cerraba `0006` sin escribir una guarda de
+-- transición. Todas las demás pasaban:
+--
+-- | Medida                  | Antes de este archivo | Qué significaba          |
+-- |-------------------------|-----------------------|--------------------------|
+-- | `borrador → ganada`     | **pasaba**            | se gana lo que nunca salió |
+-- | `ganada → perdida`      | **pasaba**            | el final no era final    |
+-- | `perdida → ganada`      | **pasaba**            | el final no era final    |
+-- | `ganada → emitida`      | **pasaba**            | se desanda un desenlace  |
+--
+-- La primera es la peor y conviene decir por qué: `borrador → ganada` sólo
+-- entra si la misma sentencia escribe un `snapshot`, porque el `CHECK` de
+-- coherencia de `0004` lo exige. O sea que el camino que la base dejaba
+-- abierto no era «ganar un borrador»: era **fabricar un documento
+-- congelado sin pasar por `emitir`**, con el contenido que el que escribe
+-- quiera, saltándose `worker/cotizaciones/snapshot.ts` entero. El snapshot
+-- es la prueba de qué se le prometió al cliente, y era falsificable con un
+-- `UPDATE`.
+--
+-- ## Lo que esta migración NO trae, y por qué
+--
+--   * **Una guarda sobre el `INSERT` de `estado`.** Una fila puede seguir
+--     naciendo `ganada` o `perdida` —con su snapshot, que el `CHECK` de
+--     `0004` exige—. No es un agujero que esta tarea pueda cerrar sin
+--     cerrar otra cosa: por la API no hay camino, porque `crear` escribe el
+--     literal `'borrador'`, y el día que haya una importación de las
+--     cotizaciones viejas del bufete va a tener que insertar desenlaces ya
+--     consumados. Lo que la regla gobierna es el **movimiento**, que es
+--     donde este sistema escribe.
+--   * **`CHECK (duplicada_de_id IS NOT id)`.** Se midió y es redundante por
+--     los dos lados a la vez; la sección M-2 lo argumenta con el número.
+--   * **Un disparador recursivo que recorra la cadena de duplicación.** La
+--     sección M-2 explica por qué el recorrido no hace falta cuando el
+--     grafo ya no puede crecer hacia atrás.
+--   * **Nada de T-6 ni de T-7.** La salida imprimible y la apertura de
+--     procesos desde una ganada son las dos tareas que siguen.
+
+-- ===========================================================================
+-- M-1 · El estado sigue el ciclo de vida, y ganar y perder son el final
+-- ===========================================================================
+--
+-- `docs/diseno.md` §8 dibuja el ciclo entero en tres flechas:
+--
+--     borrador  ──editable──>  emitida  ──>  ganada | perdida
+--
+-- Y eso es exactamente lo que dice el `WHEN`, **en positivo**: se enumeran
+-- las transiciones legales y se aborta todo lo demás. Escribirlo al revés
+-- —enumerar las prohibidas— obliga a mantener doce renglones que crecen al
+-- cuadrado con cada estado nuevo, y deja el agujero por omisión: la que
+-- nadie escribió queda permitida sin que nadie lo haya decidido.
+--
+-- ## Ganar y perder son terminales, y es una decisión de negocio
+--
+-- No sale del dibujo solamente: sale de qué significa cada cosa. Una
+-- cotización que el cliente aceptó y que después se cae **no es una
+-- cotización perdida**: es un encargo que se cerró, y un encargo vive en
+-- `proceso`, que es la mitad del sistema que la tajada 1 construyó para eso.
+-- Dejar `ganada → perdida` abierto haría que la pregunta «¿cuánto ganamos
+-- este trimestre?» se contestara con una columna que alguien puede ir a
+-- cambiar después, y la respuesta de marzo dejaría de coincidir con la de
+-- abril sin que nada quede registrado más que un verbo de bitácora que
+-- habla de otra cosa.
+--
+-- Y si de verdad hiciera falta volver a cotizar, el camino existe y es el
+-- que §8 ya nombra: **duplicar**. Nace un borrador nuevo, atado al original
+-- por `duplicada_de_id`, y la historia no se reescribe. Un ciclo de vida
+-- sin vuelta atrás y una duplicación barata son la misma decisión vista de
+-- los dos lados.
+--
+-- ## Por qué el `WHEN` excluye `NEW.estado IS 'borrador'`
+--
+-- **Léase antes de «completar» la enumeración.** Volver a `borrador` desde
+-- cualquiera de los otros tres ya está cerrado, y lo cierran dos guardas
+-- que `0006` argumentó, escribió y probó por rechazo:
+--
+--   * `UPDATE … SET estado = 'borrador'` a secas muere en el `CHECK`
+--     `el_borrador_no_tiene_snapshot_y_la_emitida_si` de `0004`.
+--   * `UPDATE … SET estado = 'borrador', snapshot = NULL` muere en
+--     `cotizacion_snapshot_se_escribe_una_sola_vez`, y es justo el caso que
+--     hace load-bearing a su `IS NOT`.
+--
+-- Se midió la matriz entera con la sonda, **con este disparador puesto**, y
+-- las seis celdas que van a `borrador` —desde `emitida`, desde `ganada` y
+-- desde `perdida`, por los dos caminos— siguen contestando con el mensaje
+-- de aquellas dos guardas y no con el de ésta. Si la enumeración no las
+-- excluyera, este disparador sería la **tercera** guarda del mismo hecho y
+-- las tres dejarían de ser verificables: neutralizar cualquiera de ellas no
+-- pondría roja ninguna prueba. Es la misma cuenta que `0006` hizo para
+-- decidir no escribir ninguna guarda de transición, y la que `0004` hizo con
+-- `tenant_id`.
+--
+-- Dicho al revés, que es como conviene leerlo: esta guarda **no** dice «el
+-- ciclo de vida completo»; dice «de las transiciones que todavía no tenían
+-- dueño, éstas tres son las legales». El resto del ciclo lo sostiene quien
+-- ya lo sostenía.
+--
+-- ## `NEW.estado IS NOT NULL`, y acá sí hace falta
+--
+-- Es el segundo motivo de `0004`, en su versión de `UPDATE`: un
+-- `BEFORE UPDATE` corre **antes** que `NOT NULL`, así que
+-- `UPDATE … SET estado = NULL` llega acá con `NEW.estado` en nulo. Sin esta
+-- cláusula, `NEW.estado IS NOT OLD.estado` da verdadero, los tres pares del
+-- `NOT (…)` dan falso y el disparador aborta hablando del ciclo de vida
+-- cuando el defecto real es una columna que se quedó sin valor.
+--
+-- **Medido, no razonado**, en las dos formas: con la cláusula llega
+-- `NOT NULL constraint failed: cotizacion.estado`; sin ella llega el mensaje
+-- de este disparador. Por eso tiene su prueba, al revés de lo que pasa con
+-- las guardas de nulo que `0003` y `0004` se sacaron de encima por no poder
+-- evaluarse nunca.
+--
+-- ## `IS` y nunca `=`, en las seis comparaciones
+--
+-- Con la guarda de nulo puesta, `OLD.estado` y `NEW.estado` son los dos no
+-- nulos y los dos operadores se comportarían igual. Se escribe `IS` por el
+-- mismo argumento de consistencia que `0004` dejó escrito para sus quince y
+-- `0006` repitió para `OLD.estado`: la regla del proyecto es una sola, y
+-- escribirla de dos formas según la línea es peor que cualquiera de las dos.
+
+CREATE TRIGGER cotizacion_el_estado_sigue_el_ciclo_de_vida
+BEFORE UPDATE ON cotizacion
+WHEN NEW.estado IS NOT NULL
+ AND NEW.estado IS NOT OLD.estado
+ AND NEW.estado IS NOT 'borrador'
+ AND NOT ((OLD.estado IS 'borrador' AND NEW.estado IS 'emitida')
+       OR (OLD.estado IS 'emitida'  AND NEW.estado IS 'ganada')
+       OR (OLD.estado IS 'emitida'  AND NEW.estado IS 'perdida'))
+BEGIN
+  SELECT RAISE(ABORT, 'ciclo de vida: un borrador se emite, y una emitida se gana o se pierde; ganada y perdida son el final, y para volver a cotizar se duplica');
+END;
+
+-- ===========================================================================
+-- M-2 · La procedencia se fija al nacer: la cadena de duplicación no gira
+-- ===========================================================================
+--
+-- `0004` dejó `duplicada_de_id` con su llave foránea y su disparador de
+-- tenencia, y dejó dicho que **cerrar el ciclo es de T-5**, porque cómo
+-- cerrarlo depende de si la cadena se recorre entera o un solo salto. Esta
+-- es esa decisión, y lo que la define es una medición que corrige el plan.
+--
+-- ## Lo que el plan daba por medido, y no es así
+--
+-- `odd/tasks/cotizaciones.md` dice, en T-5: «`INSERT … id='a',
+-- duplicada_de_id='a'` **entra** —SQLite valida la clave foránea después de
+-- insertar la fila—». **La primera mitad es falsa sobre el esquema real.**
+-- La segunda es cierta —la llave foránea no lo frena— pero hay otra guarda
+-- delante que sí, y no es la que el plan miró:
+-- `cotizacion_tenencia_coherente_al_insertar`, de `0004`. En un
+-- `BEFORE INSERT` la fila todavía no existe, así que
+-- `(SELECT tenant_id FROM cotizacion WHERE id = NEW.duplicada_de_id)`
+-- devuelve NULL, `NULL IS NOT NEW.tenant_id` da verdadero y aborta con
+-- «tenencia cruzada». Medido con la sonda, y medido también con
+-- `PRAGMA foreign_keys = OFF`, donde aborta igual: **no depende de la llave
+-- foránea en absoluto**.
+--
+-- Eso cambia el cálculo entero, y conviene decirlo generalizado porque es el
+-- argumento que sostiene todo lo demás:
+--
+-- > **Por `INSERT` no se puede cerrar un ciclo de ninguna longitud.** Para
+-- > que una fila entre apuntando a otra, la apuntada tiene que existir ya y
+-- > con el mismo `tenant_id`. Entonces el padre siempre es más viejo que el
+-- > hijo, el grafo está ordenado por el momento del alta, y un orden
+-- > estricto no tiene ciclos. No hace falta recorrer nada para saberlo.
+--
+-- El agujero que el plan describe es **entero del `UPDATE`**, y ahí sí se
+-- midió tal cual: `UPDATE … SET duplicada_de_id = id` sobre un borrador
+-- entra; `a → b → a` por dos `UPDATE` entra; y un ciclo de tres por tres
+-- `UPDATE` también entra. Ésas son las tres que este disparador cierra, de
+-- una vez y sin importar la longitud.
+--
+-- ## Por eso la guarda es la inmutabilidad y no un `CHECK`
+--
+-- El plan ofrecía `CHECK (duplicada_de_id IS NOT id)` y anotaba que tapa el
+-- ciclo de uno y no el de dos. Con la medición de arriba es peor que
+-- incompleto: es **redundante por los dos lados**.
+--
+--   * Sobre el `INSERT` sería la segunda guarda del mismo hecho, detrás del
+--     disparador de tenencia, que ya lo cierra. Las dos dejarían de ser
+--     verificables.
+--   * Sobre el `UPDATE` no haría falta, porque este disparador no deja
+--     cambiar la columna en absoluto — ni a sí misma, ni a otra, ni a nulo.
+--
+-- Y por eso tampoco hace falta un disparador recursivo ni un tope de
+-- profundidad en el recorrido: **un grafo que sólo crece por las hojas y
+-- nunca se reescribe es un bosque**. La pantalla que suba por la cadena
+-- buscando el original —T-5 unidad B, T-6— llega a una raíz, siempre.
+--
+-- ## El recorte a `OLD.estado IS 'borrador'`, que es lo que la hace medible
+--
+-- `cotizacion_emitida_no_se_edita`, de `0006`, ya vigila `duplicada_de_id`
+-- entre sus nueve columnas congeladas, y lo hace cuando
+-- `OLD.estado IS NOT 'borrador'`. Sin este recorte, las dos guardas se
+-- solaparían en los tres estados congelados y ninguna de las dos sería
+-- verificable: borrar la línea `duplicada_de_id` del `WHEN` de aquélla no
+-- pondría roja ninguna prueba, porque ésta la atraparía igual.
+--
+-- Con el recorte la partición es **exacta y exhaustiva**: `estado` es
+-- `NOT NULL`, así que `OLD.estado` es o `'borrador'` —y entonces habla ésta—
+-- o no lo es —y entonces habla aquélla—, nunca las dos y nunca ninguna.
+-- Cada una tiene su caso exclusivo y las dos mutaciones matan pruebas
+-- distintas.
+--
+-- ## Lo que la inmutabilidad cuesta, dicho para que sea una decisión
+--
+-- Un borrador que nació duplicando no puede dejar de serlo, ni cambiar de
+-- quién nació, ni siquiera corrigiendo un error. Es lo mismo que la
+-- bitácora decidió en `0002` y el proyecto repite desde entonces: **la
+-- procedencia es un hecho**. Si la fila está mal, lo que hay es un borrador
+-- de más, y un borrador se descarta; lo que no se hace es reescribir de
+-- dónde vino un documento. El día que eso haga falta de verdad, cuesta otra
+-- migración, y esa migración es la conversación de si el bufete quiere un
+-- archivo editable.
+--
+-- ## Lo que esta guarda deja sin camino, y es correcto que lo deje
+--
+-- `cotizacion_tenencia_coherente_al_actualizar`, de `0004`, vigila tres
+-- aristas y una de ellas es `duplicada_de_id`. **Esa cláusula deja de poder
+-- evaluarse desde hoy**: sobre un borrador aborta antes este disparador, y
+-- sobre los otros tres estados abortaba ya `cotizacion_emitida_no_se_edita`
+-- de `0006`. Las dos pruebas que la medían por `UPDATE` pasaron a afirmar
+-- quién contesta ahora, que es lo que de verdad importa: la escritura no
+-- ocurre y la fila queda como estaba.
+--
+-- No es coverage perdida por descuido, es una guarda subsumida por otra más
+-- fuerte: la de tenencia prohibía apuntar al bufete de al lado, ésta prohíbe
+-- apuntar a cualquier lado. Y la arista sigue cubierta donde todavía se
+-- escribe, que es el **alta**: `cotizacion_tenencia_coherente_al_insertar`
+-- tiene sus dos pruebas vivas —el padre del vecino y el padre inexistente—,
+-- y es la segunda la que cubre su operador. No se toca `0004` para sacar la
+-- cláusula muerta: esa migración no se edita, y el costo de dejarla es una
+-- línea que no corre, contra el de reescribir un archivo ya aplicado.
+--
+-- No lleva guarda de nulo: `duplicada_de_id` **es** nullable —una cotización
+-- que no nació duplicando no tiene de dónde—, así que `IS NOT` es acá la
+-- guarda y no el mensaje, exactamente como las dos columnas nullable de
+-- `0006`. Con `<>`, `UPDATE … SET duplicada_de_id = NULL` sobre un borrador
+-- que sí la tenía daría una comparación NULL, el `WHEN` daría falso y la
+-- escritura **pasaría**: se borraría de dónde vino la cotización. Tiene su
+-- prueba de rechazo.
+
+CREATE TRIGGER cotizacion_duplicada_de_inmutable
+BEFORE UPDATE ON cotizacion
+WHEN OLD.estado IS 'borrador'
+ AND NEW.duplicada_de_id IS NOT OLD.duplicada_de_id
+BEGIN
+  SELECT RAISE(ABORT, 'columna inmutable: cotizacion.duplicada_de_id se fija al nacer; de dónde vino una cotización no se reescribe');
+END;

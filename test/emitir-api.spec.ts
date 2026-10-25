@@ -360,7 +360,9 @@ describe("emitir deja la cotización congelada", () => {
   it("una ganada tampoco se puede emitir", async () => {
     // El 409 lleva el estado de verdad y no la etiqueta «emitida» pegada:
     // lo que la persona necesita saber es si alguien la emitió o si ya se
-    // ganó. El salto a `ganada` se hace por SQL porque su ruta es de T-5.
+    // ganó. El salto a `ganada` se hace por SQL y no por la ruta de T-5, que
+    // ya existe: esta suite prueba emitir, y hacerla depender de otra ruta
+    // la rompería el día que aquélla cambie por un motivo que no es éste.
     const borrador = await crearBorrador();
     await emitir(borrador.id);
     await env.DB.prepare("UPDATE cotizacion SET estado = 'ganada' WHERE id = ?")
@@ -618,8 +620,10 @@ describe("qué guarda el snapshot", () => {
 
   it("el snapshot es idéntico después de ganar la cotización", async () => {
     // Criterio 3 de aceptación de la tajada —«el snapshot de una emitida es
-    // idéntico seis meses después»— en lo que esta tarea puede probar hoy:
-    // la transición que T-5 va a escribir no lo toca ni una coma.
+    // idéntico seis meses después»— medido sobre la transición desnuda. La
+    // misma afirmación sobre la **ruta** de ganar la hace
+    // `test/ciclo-api.spec.ts`, que es su dueña; acá queda la del `UPDATE`
+    // pelado, que es la que sigue valiendo si mañana esa ruta cambia.
     const borrador = await emitirUnaCompleta();
     const antes = await snapshotDe(borrador.id);
 

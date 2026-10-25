@@ -1124,6 +1124,34 @@ export interface CotizacionNoEsBorrador {
 }
 
 /**
+ * El 409 de ganar o perder algo que no está emitido (T-5).
+ *
+ * Es el espejo del de arriba y son **dos tipos y no uno con el estado
+ * esperado adentro**, por la misma razón por la que las rutas de emitir,
+ * ganar y perder son tres y no un `PUT` con el estado en el cuerpo: lo que
+ * la pantalla tiene que poder decir es «esto todavía no salió» o «esto ya se
+ * cerró», y un motivo genérico la obligaría a reconstruir cuál de las dos
+ * cosas pasó comparando estados.
+ *
+ * Cubre las tres formas de no estar emitida, y las tres son casos de
+ * negocio reales con dos personas en el bufete:
+ *
+ *  - `borrador`: alguien todavía no la mandó. **Un borrador no se gana**:
+ *    el desenlace es de un documento que salió, y ganar uno que nadie vio
+ *    fabricaría un snapshot que nadie leyó. Lo cierra también la base
+ *    (`migrations/0007_ciclo_de_vida.sql`, M-1).
+ *  - `ganada` o `perdida`: ya se cerró, y el ciclo de vida de
+ *    `docs/diseno.md` §8 no tiene vuelta. Para volver a cotizar se duplica.
+ *
+ * Lleva `estado` por lo mismo que su espejo: «no está emitida» sin decir en
+ * qué quedó obliga a recargar para enterarse.
+ */
+export interface CotizacionNoEsEmitida {
+  error: "cotizacion_no_es_emitida";
+  estado: EstadoDeCotizacion;
+}
+
+/**
  * Los seis tipos de módulo de prosa (T-2 C, `docs/diseno.md` §8).
  *
  * Es la familia de **prosa** de la tabla de §8: la que el modelo escribe

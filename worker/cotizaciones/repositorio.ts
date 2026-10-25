@@ -84,6 +84,41 @@ export type ResultadoDeEmision =
   | { estado: "no_encontrado" };
 
 /**
+ * Lo que devuelven ganar y perder (T-5).
+ *
+ * Es la forma de `ResultadoDeEmision` con la precondición invertida: lo que
+ * hace falta ahora es que la cotización **esté emitida**, porque un desenlace
+ * es de un documento que salió. Las dos ramas de bloqueo no se unifican con
+ * las de emitir en un solo tipo: «todavía es borrador» y «ya se cerró» son
+ * preguntas distintas y producen mensajes distintos, y un tipo común
+ * obligaría a cada llamador a volver a distinguirlas mirando el estado.
+ *
+ * **No tiene rama `invalido`**, por lo mismo que emitir: ganar y perder no
+ * llevan cuerpo, así que no hay formulario que corregir.
+ */
+export type ResultadoDeCierre =
+  | { estado: "guardado"; cotizacion: Cotizacion }
+  | { estado: "no_es_emitida"; actual: EstadoDeCotizacion }
+  | { estado: "no_encontrado" };
+
+/**
+ * Lo que devuelve duplicar (T-5).
+ *
+ * **Tiene dos ramas y no cuatro, y la lista corta es la decisión.** No hay
+ * `no_es_borrador` ni `no_es_emitida` porque duplicar no tiene precondición
+ * de estado: se duplica un borrador, una emitida, una ganada y una perdida,
+ * y el caso de §8 —«si hay que cambiar algo después de emitida, se
+ * duplica»— es el más corriente pero no el único. Y no hay `invalido`
+ * porque tampoco lleva cuerpo.
+ *
+ * `cotizacion` es la **copia nueva**, no la original: es la que la pantalla
+ * va a abrir para editar, y la que tiene dirección propia.
+ */
+export type ResultadoDeDuplicacion =
+  | { estado: "duplicada"; cotizacion: Cotizacion }
+  | { estado: "no_encontrado" };
+
+/**
  * Las tres formas en que una escritura dentro de una cotización no ocurre.
  *
  * Están en un tipo propio porque son **las mismas tres** para los módulos de
@@ -232,6 +267,45 @@ export interface ServicioDeCotizaciones {
     emisorId: string,
     id: string,
   ): Promise<ResultadoDeEmision>;
+
+  /* --- Ganar, perder y duplicar (T-5 A) --- */
+
+  /**
+   * `emitida → ganada`. El cliente aceptó la propuesta.
+   *
+   * **Es terminal**, y lo sostiene la base
+   * (`migrations/0007_ciclo_de_vida.sql`, M-1): de una ganada no se sale ni
+   * a `perdida`, ni de vuelta a `emitida`, ni a `borrador`. Un encargo que
+   * se acepta y después se cae no es una cotización perdida: es un proceso
+   * que se cierra, y eso vive en la otra mitad del sistema.
+   *
+   * No recibe quién la gana: el autor del hecho lo pone `mutar` desde la
+   * identidad de la petición (I-6), y acá no se congela nada —a diferencia
+   * de emitir, donde el emisor entra **adentro** del snapshot—.
+   */
+  ganar(tenantId: string, id: string): Promise<ResultadoDeCierre>;
+
+  /** `emitida → perdida`. El espejo de `ganar`, y tan terminal como ella. */
+  perder(tenantId: string, id: string): Promise<ResultadoDeCierre>;
+
+  /**
+   * Nace un borrador nuevo atado al original por `duplicada_de_id`, con
+   * copia de sus módulos y de sus líneas.
+   *
+   * **La historia no se reescribe** (`docs/diseno.md` §8): la original no se
+   * toca ni una columna. Es lo que hace que una emitida pueda ser inmutable
+   * sin que el bufete quede atrapado — el camino para cambiar algo existe,
+   * y es éste.
+   *
+   * El código lo genera el servidor, igual que en el alta, y `autorId` sale
+   * de la puerta de Access: quien duplica es quien abre el borrador nuevo,
+   * no quien escribió el original.
+   */
+  duplicar(
+    tenantId: string,
+    autorId: string,
+    id: string,
+  ): Promise<ResultadoDeDuplicacion>;
 }
 
 interface FilaDeCotizacion {
@@ -753,6 +827,85 @@ export function cotizacionesSobreD1(
       .first<{ nombre: string }>();
 
     return { id: emisorId, nombre: fila?.nombre ?? null };
+  }
+
+  /**
+   * Ganar y perder, que son la misma escritura con dos destinos (T-5).
+   *
+   * Están en una sola función y no copiadas dos veces porque lo único que
+   * las distingue es el valor que se escribe y el verbo que se registra: el
+   * orden de los rechazos, la cláusula de carrera y la relectura son
+   * idénticos, y dos copias serían dos sitios donde arreglar el mismo
+   * defecto. Es el criterio opuesto al de `rutasDeModulos` y
+   * `rutasDeLineas`, que sí están separadas, y la diferencia es el tamaño de
+   * lo que comparten: allá era un preámbulo, acá es la función entera.
+   *
+   * ## El verbo sale del destino y no se recibe
+   *
+   * `destino` es el único parámetro que varía, y el verbo de bitácora se
+   * deriva de él en la misma línea. Recibir los dos por separado abriría la
+   * posibilidad de registrar «ganó» sobre un `UPDATE` que escribe
+   * `'perdida'`, que es exactamente la clase de desajuste que la bitácora
+   * existe para no tener.
+   *
+   * ## `AND estado = 'emitida'` en el SQL, y la guarda se cuenta
+   *
+   * La comprobación de arriba contesta bien el caso corriente; esta
+   * cláusula es la que lo hace cierto, porque entre leer y escribir hay una
+   * ventana en la que otra petición puede ganar la misma cotización. Y es
+   * la que distingue las dos formas de negarse: desde `0007` la base
+   * también rechaza —`cotizacion_el_estado_sigue_el_ciclo_de_vida`—, pero
+   * lo hace abortando, o sea un 500. Esto **cuenta** el estado para
+   * contestar un 409 que dice en qué quedó. No se atrapa nada.
+   */
+  async function cerrar(
+    tenantId: string,
+    id: string,
+    destino: "ganada" | "perdida",
+  ): Promise<ResultadoDeCierre> {
+    // La existencia se comprueba **dentro del tenant**: una cotización de
+    // otro bufete es, desde acá, una cotización que no existe.
+    const actual = await obtener(tenantId, id);
+    if (actual === null) return { estado: "no_encontrado" };
+
+    if (actual.estado !== "emitida") {
+      return { estado: "no_es_emitida", actual: actual.estado };
+    }
+
+    const [efecto] = await base.mutar(
+      {
+        entidad: "cotizacion",
+        entidadId: id,
+        accion: destino === "ganada" ? "ganado" : "perdido",
+        // El código, igual que en el alta, la edición y la emisión: es lo
+        // que identifica a la cotización de cara a una persona.
+        detalle: actual.codigo,
+      },
+      sentencia(
+        "UPDATE cotizacion SET estado = ?" +
+          " WHERE tenant_id = ? AND id = ? AND estado = 'emitida'",
+        destino,
+        tenantId,
+        id,
+      ),
+    );
+
+    if (efecto.meta.changes === 0) {
+      // Perdimos la carrera. Se relee para decir la verdad sobre en qué
+      // quedó, igual que en `actualizar` y en `emitir`, y con el mismo
+      // residuo conocido: la entrada de bitácora ya viajó en el mismo
+      // `batch`, así que queda un «ganó» de algo que no se ganó. Es el mal
+      // menor, y acá el desenlace verdadero lo escribió la otra petición.
+      const ahora = await obtener(tenantId, id);
+      if (ahora === null) return { estado: "no_encontrado" };
+
+      return { estado: "no_es_emitida", actual: ahora.estado };
+    }
+
+    const cotizacion = await obtener(tenantId, id);
+    if (cotizacion === null) return { estado: "no_encontrado" };
+
+    return { estado: "guardado", cotizacion };
   }
 
   return {
@@ -1698,6 +1851,184 @@ export function cotizacionesSobreD1(
       if (cotizacion === null) return { estado: "no_encontrado" };
 
       return { estado: "emitida", cotizacion };
+    },
+
+    ganar(tenantId, id) {
+      return cerrar(tenantId, id, "ganada");
+    },
+
+    perder(tenantId, id) {
+      return cerrar(tenantId, id, "perdida");
+    },
+
+    /**
+     * Duplicar: nace un borrador nuevo con el contenido del original
+     * (T-5, `docs/diseno.md` §8).
+     *
+     * ## La original no se toca, y por eso no hay un solo `UPDATE` acá
+     *
+     * Es la mitad que hace tolerable a I-4. Una emitida inmutable sin un
+     * camino de duplicación sería un sistema en el que corregir una coma
+     * obliga a abrir un documento en blanco; una duplicación que
+     * «actualizara» el original sería I-4 con otro nombre. Las cuatro
+     * sentencias de abajo son todas `INSERT`, y eso no es casualidad: es la
+     * regla.
+     *
+     * ## Todo en un solo `batch`, que en D1 es una transacción
+     *
+     * La cabecera, los módulos y las líneas entran o no entra nada. Partirlo
+     * dejaría la posibilidad de un borrador a medio copiar —con los módulos
+     * y sin las líneas— que para quien lo mire es una cotización a la que le
+     * falta el dinero. Y la entrada de bitácora viaja en el mismo `batch`,
+     * así que tampoco hay una copia sin su hecho.
+     *
+     * ## El hecho se registra contra la **copia** y no contra la original
+     *
+     * Es la decisión que cuesta explicar y la que `docs/diseno.md` §8 pide:
+     * «la historia no se reescribe». Una entrada contra la original sería
+     * una fila nueva en el registro de un documento que ya salió, y aunque
+     * `bitacora` es de solo-agregar y eso no viola nada, abre la pregunta de
+     * qué más se le puede seguir anotando a una emitida.
+     *
+     * Contra la copia, en cambio, el hecho **es** su nacimiento: su registro
+     * abre con «duplicó COT-2026-0001», que dice las dos cosas a la vez —que
+     * nació y de dónde—. Por eso no se escribe además un `creado`: serían
+     * dos hechos para el mismo nacimiento, y el segundo no agregaría nada
+     * que el primero no diga. De la original a la copia se llega por
+     * `duplicada_de_id`, que es una columna y no un renglón de bitácora.
+     *
+     * ## Qué se copia y qué no
+     *
+     * Se copia el **contenido**: el cliente, los módulos con su orden y su
+     * texto, y las líneas con su clase, su concepto, su monto y su trámite.
+     *
+     * No se copian las cinco que son identidad o historia del documento
+     * original —`id`, `codigo`, `estado`, `snapshot`, `creada_por`— ni las
+     * dos que son su momento —`fecha`, `creada_en`—, y eso casi no hace
+     * falta argumentarlo. La que sí: **`vence_en` no se copia**, y no es un
+     * olvido. El vencimiento es la ventana de validez de *esa* oferta,
+     * atada a *esa* fecha; la copia nace hoy. Y hay un motivo que lo decide
+     * sin opinión: `CHECK (vence_en IS NULL OR vence_en >= fecha)` de
+     * `0004`. Con el vencimiento copiado, duplicar una cotización vencida
+     * —que es el caso más corriente de todos, porque se duplica lo viejo—
+     * abortaría la escritura entera. La copia nace sin vencimiento y quien
+     * la edite le pone el suyo.
+     *
+     * `duplicada_de_id` **no** se copia tampoco, y acá hay que decirlo
+     * aparte: la copia apunta a la **original**, no al abuelo. La cadena es
+     * de un salto por fila, y como `0007` la volvió inmutable después del
+     * alta, el grafo entero es un bosque y recorrerlo hacia arriba termina
+     * siempre.
+     *
+     * ## La ventana que queda, dicha para que sea una decisión
+     *
+     * Entre leer los módulos y las líneas y escribir el `batch` hay un
+     * instante en el que otra petición puede agregarle una línea a la
+     * original, si todavía es borrador. Si pasa, esa línea no entra en la
+     * copia. Es la misma ventana que `emitir` ya acepta y con el mismo
+     * argumento —dos personas en el bufete—, y acá el costo es menor: lo que
+     * queda es una copia editable a la que le falta una línea, no un
+     * documento congelado que dice menos de lo que se mandó. Cerrarla del
+     * todo pide que la lectura y la escritura compartan transacción, y eso
+     * es `worker/db/base.ts`.
+     */
+    async duplicar(tenantId, autorId, id) {
+      // La existencia se comprueba **dentro del tenant**: una cotización de
+      // otro bufete es, desde acá, una cotización que no existe.
+      const original = await obtener(tenantId, id);
+      if (original === null) return { estado: "no_encontrado" };
+
+      // Las mismas dos funciones que sirven el `GET` y que alimentan el
+      // snapshot, con su `ORDER BY orden`. Un segundo criterio de lectura
+      // acá haría que la copia se leyera distinto que el original.
+      const modulos = await leerModulos(tenantId, id);
+      const lineas = await leerLineas(tenantId, id);
+
+      const copiaId = nuevoId();
+      const ahora = ahoraIso();
+      const codigo = await proximoCodigo(tenantId, ahora);
+
+      // `estado` va literal: una copia nace borrador, siempre, venga de
+      // donde venga. `moneda` no se menciona, igual que en el alta: la
+      // columna tiene `DEFAULT 'USD'` y el `CHECK` la cierra a ese valor.
+      // `vence_en` va en NULL **explícito** para que la decisión se lea en
+      // la sentencia y no sólo en el comentario de arriba.
+      const alta = sentencia(
+        "INSERT INTO cotizacion (id, tenant_id, cliente_id, codigo, estado," +
+          " fecha, vence_en, duplicada_de_id, creada_por, creada_en)" +
+          " VALUES (?, ?, ?, ?, 'borrador', ?, NULL, ?, ?, ?)",
+        copiaId,
+        tenantId,
+        original.clienteId,
+        codigo,
+        ahora,
+        id,
+        autorId,
+        ahora,
+      );
+
+      // El `orden` se copia tal cual y **no se recalcula**: lo que vale es
+      // el orden relativo, el índice único es por cotización, y quitar un
+      // módulo del original pudo dejar un hueco que renumerar silenciaría.
+      // La copia tiene que leerse igual que el original, huecos incluidos.
+      const copiaDeModulos = modulos.map((modulo) =>
+        sentencia(
+          "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
+            " tipo, orden, contenido) VALUES (?, ?, ?, ?, ?, ?)",
+          nuevoId(),
+          tenantId,
+          copiaId,
+          modulo.tipo,
+          modulo.orden,
+          modulo.contenido,
+        ),
+      );
+
+      // `tipoProcesoId` se copia y el **nombre** no: el nombre se resuelve
+      // en lectura y guardarlo sería una segunda copia que mañana dice otra
+      // cosa. Eso es al revés de lo que hace el snapshot, y la diferencia es
+      // la que justifica a los dos: el snapshot congela lo que el cliente
+      // leyó, y esto es una cotización viva.
+      const copiaDeLineas = lineas.map((linea) =>
+        sentencia(
+          "INSERT INTO cotizacion_linea (id, tenant_id, cotizacion_id," +
+            " tipo_proceso_id, clase, concepto, monto, orden)" +
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          nuevoId(),
+          tenantId,
+          copiaId,
+          linea.tipoProcesoId,
+          linea.clase,
+          linea.concepto,
+          linea.monto,
+          linea.orden,
+        ),
+      );
+
+      await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: copiaId,
+          accion: "duplicado",
+          // El código **del original**, que es de lo que el hecho informa:
+          // el de la copia ya está en `entidad_id`, y repetirlo diría dos
+          // veces lo mismo y ninguna vez de dónde vino.
+          detalle: original.codigo,
+        },
+        alta,
+        ...copiaDeModulos,
+        ...copiaDeLineas,
+      );
+
+      const cotizacion = await obtener(tenantId, copiaId);
+      if (cotizacion === null) {
+        // Inalcanzable salvo que el `INSERT` no haya escrito: si pasa, es un
+        // defecto y no un 404 de negocio. Es la misma relectura imposible
+        // que `crear`.
+        throw new Error("la cotización recién duplicada no se pudo releer");
+      }
+
+      return { estado: "duplicada", cotizacion };
     },
   };
 }

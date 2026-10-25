@@ -50,6 +50,9 @@ const CONGELADA = /cotizacion congelada/;
 /** El de la guarda de I-5. */
 const SNAPSHOT_INMUTABLE = /snapshot inmutable/;
 
+/** El de la guarda de transición de `0007` (M-1). */
+const CICLO_DE_VIDA = /ciclo de vida/;
+
 /**
  * Un snapshot cualquiera. No se parsea en ninguna prueba de este archivo: lo
  * que la base exige de esa columna es que esté o no esté según el estado, no
@@ -845,12 +848,26 @@ describe("ninguna fila de la cotización referencia a otro bufete", () => {
   // otras dos se podían borrar sin que nada se enterara. Las pruebas de
   // inventario no sirven de red: cuentan disparadores, no cláusulas, y un
   // disparador con la mitad de las suyas vacías las sigue pasando.
+  // **Desde `0007` ésta la contesta otra guarda, y no es un retroceso.**
+  // `cotizacion_duplicada_de_inmutable` no deja cambiar `duplicada_de_id` en
+  // absoluto sobre un borrador, así que la cláusula de `duplicada_de_id` del
+  // disparador de tenencia de `UPDATE` ya no puede evaluarse: la escritura
+  // muere antes, venga de donde venga el padre. La guarda nueva es
+  // estrictamente más fuerte —prohíbe también re-apuntar dentro del mismo
+  // bufete, que es lo que cerraba el ciclo de la cadena— y por eso se deja
+  // una sola. Lo que la prueba sigue afirmando es lo que importa: la
+  // escritura **no ocurre** y la fila queda como estaba.
+  //
+  // La arista `duplicada_de_id` sigue cubierta donde todavía se puede
+  // escribir, que es el alta: «rechaza duplicar una cotización del vecino»
+  // acá arriba, y «una cotización duplicada de una inexistente muere en el
+  // disparador» más abajo, que es la que cubre su operador.
   it("rechaza atar una cotización nuestra a una duplicada del vecino", async () => {
     await expect(
       env.DB.prepare("UPDATE cotizacion SET duplicada_de_id = ? WHERE id = ?")
         .bind(vecino.cotizacionId, ctx.cotizacionId)
         .run(),
-    ).rejects.toThrow(TENENCIA_CRUZADA);
+    ).rejects.toThrow(COLUMNA_INMUTABLE);
 
     // El contrapeso: la cotización sigue sin duplicar a nadie, no quedó atada
     // a medias al bufete de al lado.
@@ -958,12 +975,17 @@ describe("el padre inexistente también dispara, que es para lo que está IS NOT
     ).rejects.toThrow(TENENCIA_CRUZADA);
   });
 
+  // Igual que su gemela de más arriba: desde `0007` el `UPDATE` de
+  // `duplicada_de_id` no llega al disparador de tenencia, porque
+  // `cotizacion_duplicada_de_inmutable` lo aborta antes. El operador de esa
+  // cláusula queda cubierto por la prueba del **alta** con un padre
+  // inexistente, que es el camino que todavía existe.
   it("atarla a una duplicada inexistente muere en el disparador", async () => {
     await expect(
       env.DB.prepare("UPDATE cotizacion SET duplicada_de_id = ? WHERE id = ?")
         .bind(nuevoId(), ctx.cotizacionId)
         .run(),
-    ).rejects.toThrow(TENENCIA_CRUZADA);
+    ).rejects.toThrow(COLUMNA_INMUTABLE);
   });
 
   it("reasignarle la autoría a un usuario inexistente muere en el disparador", async () => {
@@ -1210,6 +1232,13 @@ interface Congelada {
  * igual de congeladas, y si la guarda dijera `= 'emitida'` el documento se
  * volvería editable el día que el cliente acepta, que es el peor día
  * posible.
+ *
+ * **Desde `0007` el salto a `ganada` o a `perdida` pasa obligatoriamente por
+ * `emitida`**, y este ayudante lo hace en dos escrituras en vez de una. No
+ * es un rodeo: `cotizacion_el_estado_sigue_el_ciclo_de_vida` rechaza
+ * `borrador → ganada`, que era justo el camino por el que se podía fabricar
+ * un documento congelado sin pasar por `emitir`. Que este ayudante haya
+ * tenido que cambiar es la señal más barata de que la guarda existe.
  */
 async function cotizacionCongelada(
   estado: "emitida" | "ganada" | "perdida" = "emitida",
@@ -1229,10 +1258,16 @@ async function cotizacionCongelada(
   await insertar("cotizacion_linea", linea);
 
   await env.DB.prepare(
-    "UPDATE cotizacion SET estado = ?, snapshot = ? WHERE id = ?",
+    "UPDATE cotizacion SET estado = 'emitida', snapshot = ? WHERE id = ?",
   )
-    .bind(estado, UN_SNAPSHOT, cotizacion.id)
+    .bind(UN_SNAPSHOT, cotizacion.id)
     .run();
+
+  if (estado !== "emitida") {
+    await env.DB.prepare("UPDATE cotizacion SET estado = ? WHERE id = ?")
+      .bind(estado, cotizacion.id)
+      .run();
+  }
 
   return {
     id: String(cotizacion.id),
@@ -1606,7 +1641,339 @@ describe("I-4 también cubre las tablas hijas", () => {
   });
 });
 
-describe("los disparadores de 0004 y 0006 están todos y no hay ninguno de más", () => {
+/**
+ * El estado de una cotización, leído de la base.
+ *
+ * Toda prueba de rechazo de este bloque lo usa como contrapeso: afirmar que
+ * la escritura tiró es afirmar sobre el mensaje, y lo que importa es que la
+ * fila **quedó donde estaba**.
+ */
+async function estadoDe(id: string): Promise<string | undefined> {
+  const fila = await env.DB.prepare(
+    "SELECT estado FROM cotizacion WHERE id = ?",
+  )
+    .bind(id)
+    .first<{ estado: string }>();
+
+  return fila?.estado;
+}
+
+describe("0007 · M-1 · el estado sigue el ciclo de vida", () => {
+  // `docs/diseno.md` §8:
+  //
+  //     borrador  ──editable──>  emitida  ──>  ganada | perdida
+  //
+  // Antes de `0007` la base no decía nada del orden: se midió con una sonda
+  // `sqlite3` y las dieciséis combinaciones origen→destino pasaban, salvo
+  // las tres que vuelven a `borrador`. Las seis de abajo son exactamente las
+  // que esta guarda cierra, y van una por una porque la cobertura de un
+  // `WHEN` con tres pares legales no se mide por disparador sino por celda:
+  // con una sola prueba se pueden borrar dos de los tres pares y todo sigue
+  // verde.
+  it.each([
+    ["borrador", "ganada"],
+    ["borrador", "perdida"],
+    ["ganada", "emitida"],
+    ["ganada", "perdida"],
+    ["perdida", "emitida"],
+    ["perdida", "ganada"],
+  ])("de %s a %s muere en el disparador", async (origen, destino) => {
+    const fila: Fila = {
+      ...filaValida("cotizacion", ctx),
+      estado: origen,
+      // La coherencia de `0004` obliga: un borrador sin snapshot, y
+      // cualquier otro estado con uno.
+      snapshot: origen === "borrador" ? null : UN_SNAPSHOT,
+    };
+    await insertar("cotizacion", fila);
+
+    // Saliendo de un borrador hay que escribir el snapshot en la misma
+    // sentencia, o el que rechaza es el `CHECK` de coherencia y esta prueba
+    // pasaría sin tocar la guarda que dice probar.
+    const sql =
+      origen === "borrador"
+        ? "UPDATE cotizacion SET estado = ?, snapshot = ? WHERE id = ?"
+        : "UPDATE cotizacion SET estado = ? WHERE id = ?";
+    const parametros =
+      origen === "borrador"
+        ? [destino, UN_SNAPSHOT, fila.id]
+        : [destino, fila.id];
+
+    await expect(
+      env.DB.prepare(sql)
+        .bind(...(parametros as (string | null)[]))
+        .run(),
+    ).rejects.toThrow(CICLO_DE_VIDA);
+
+    expect(await estadoDe(String(fila.id))).toBe(origen);
+  });
+
+  it.each(["emitida", "ganada", "perdida"])(
+    "volver a borrador desde %s lo siguen contestando las guardas de 0004 y 0006",
+    async (origen) => {
+      // **Ésta es la prueba del recorte `NEW.estado IS NOT 'borrador'`.**
+      // Las dos guardas que cierran la descongelación son de otros archivos
+      // y están argumentadas y probadas allá; si esta guarda también las
+      // atrapara, serían tres para el mismo hecho y ninguna de las tres
+      // podría distinguirse por mutación. Lo que se afirma acá es de quién
+      // es el rechazo, no que haya rechazo.
+      const fila: Fila = {
+        ...filaValida("cotizacion", ctx),
+        estado: origen,
+        snapshot: UN_SNAPSHOT,
+      };
+      await insertar("cotizacion", fila);
+
+      await expect(
+        env.DB.prepare("UPDATE cotizacion SET estado = 'borrador' WHERE id = ?")
+          .bind(fila.id)
+          .run(),
+      ).rejects.toThrow(/CHECK constraint failed: el_borrador_no_tiene_snapshot/);
+
+      await expect(
+        env.DB.prepare(
+          "UPDATE cotizacion SET estado = 'borrador', snapshot = NULL" +
+            " WHERE id = ?",
+        )
+          .bind(fila.id)
+          .run(),
+      ).rejects.toThrow(SNAPSHOT_INMUTABLE);
+
+      expect(await estadoDe(String(fila.id))).toBe(origen);
+    },
+  );
+
+  it("vaciar el estado nombra la columna y no el ciclo de vida", async () => {
+    // Un `BEFORE UPDATE` corre **antes** que `NOT NULL`, así que sin la
+    // cláusula `NEW.estado IS NOT NULL` este disparador abortaría hablando
+    // del ciclo de vida cuando el defecto real es una columna sin valor.
+    // Medido en las dos formas: con la cláusula llega el `NOT NULL`, sin
+    // ella llega el mensaje del disparador. Es la prueba que mata esa
+    // mutación.
+    const fila = filaValida("cotizacion", ctx);
+    await insertar("cotizacion", fila);
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion SET estado = NULL WHERE id = ?")
+        .bind(fila.id)
+        .run(),
+    ).rejects.toThrow(/NOT NULL constraint failed: cotizacion\.estado/);
+  });
+
+  it.each([
+    ["borrador", "emitida"],
+    ["emitida", "ganada"],
+    ["emitida", "perdida"],
+  ])(
+    "contrapeso: de %s a %s sí pasa, que son las tres flechas de §8",
+    async (origen, destino) => {
+      // Sin estos tres contrapesos, un disparador que abortara **toda**
+      // transición haría pasar las seis pruebas de rechazo de arriba y
+      // dejaría el sistema sin ciclo de vida.
+      const fila: Fila = {
+        ...filaValida("cotizacion", ctx),
+        estado: origen,
+        snapshot: origen === "borrador" ? null : UN_SNAPSHOT,
+      };
+      await insertar("cotizacion", fila);
+
+      if (origen === "borrador") {
+        await env.DB.prepare(
+          "UPDATE cotizacion SET estado = ?, snapshot = ? WHERE id = ?",
+        )
+          .bind(destino, UN_SNAPSHOT, fila.id)
+          .run();
+      } else {
+        await env.DB.prepare("UPDATE cotizacion SET estado = ? WHERE id = ?")
+          .bind(destino, fila.id)
+          .run();
+      }
+
+      expect(await estadoDe(String(fila.id))).toBe(destino);
+    },
+  );
+
+  it("contrapeso: una escritura que no mueve el estado sigue pasando", async () => {
+    // El `WHEN` abre con `NEW.estado IS NOT OLD.estado`, y sin esa cláusula
+    // toda edición de un borrador —que lleva la fila entera, `estado`
+    // incluido— caería en el disparador y la API de T-2 dejaría de guardar.
+    const fila = filaValida("cotizacion", ctx);
+    await insertar("cotizacion", fila);
+
+    await env.DB.prepare(
+      "UPDATE cotizacion SET vence_en = ? WHERE id = ?",
+    )
+      .bind("2030-12-31T23:59:59.999Z", fila.id)
+      .run();
+
+    const guardada = await env.DB.prepare(
+      "SELECT estado, vence_en FROM cotizacion WHERE id = ?",
+    )
+      .bind(fila.id)
+      .first<{ estado: string; vence_en: string | null }>();
+
+    expect(guardada).toEqual({
+      estado: "borrador",
+      vence_en: "2030-12-31T23:59:59.999Z",
+    });
+  });
+});
+
+describe("0007 · M-2 · la procedencia se fija al nacer", () => {
+  /** Una segunda y una tercera cotización de este bufete, las dos borrador. */
+  async function otrasDos(): Promise<[string, string]> {
+    return [
+      await segundaCotizacionNuestra(ctx),
+      await segundaCotizacionNuestra(ctx),
+    ];
+  }
+
+  /** De quién nació, leído de la base. */
+  async function procedenciaDe(id: string): Promise<string | null | undefined> {
+    const fila = await env.DB.prepare(
+      "SELECT duplicada_de_id FROM cotizacion WHERE id = ?",
+    )
+      .bind(id)
+      .first<{ duplicada_de_id: string | null }>();
+
+    return fila?.duplicada_de_id;
+  }
+
+  it("una cotización no puede declararse duplicada de sí misma", async () => {
+    // El ciclo de uno. Medido antes de `0007`: entraba.
+    const [a] = await otrasDos();
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion SET duplicada_de_id = ? WHERE id = ?")
+        .bind(a, a)
+        .run(),
+    ).rejects.toThrow(COLUMNA_INMUTABLE);
+
+    expect(await procedenciaDe(a)).toBeNull();
+  });
+
+  it("dos cotizaciones no pueden apuntarse entre sí", async () => {
+    // El ciclo de dos, que es el que un `CHECK (duplicada_de_id IS NOT id)`
+    // **no** habría cerrado. Medido antes de `0007`: entraba por dos
+    // `UPDATE`, y un ciclo de tres por tres.
+    const [a, b] = await otrasDos();
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion SET duplicada_de_id = ? WHERE id = ?")
+        .bind(b, a)
+        .run(),
+    ).rejects.toThrow(COLUMNA_INMUTABLE);
+
+    expect(await procedenciaDe(a)).toBeNull();
+  });
+
+  it("borrarle la procedencia a un borrador que la tenía muere también", async () => {
+    // **Ésta es la prueba que hace load-bearing al `IS NOT`.**
+    // `duplicada_de_id` es nullable, así que con `<>` la comparación contra
+    // NULL vale NULL, el `WHEN` da falso y el `UPDATE` **pasa**: se borra de
+    // dónde vino la cotización sin que nada avise.
+    const [original] = await otrasDos();
+    const copia: Fila = {
+      ...filaValida("cotizacion", ctx),
+      duplicada_de_id: original,
+    };
+    await insertar("cotizacion", copia);
+
+    await expect(
+      env.DB.prepare(
+        "UPDATE cotizacion SET duplicada_de_id = NULL WHERE id = ?",
+      )
+        .bind(copia.id)
+        .run(),
+    ).rejects.toThrow(COLUMNA_INMUTABLE);
+
+    expect(await procedenciaDe(String(copia.id))).toBe(original);
+  });
+
+  it("y cambiarle la procedencia por otra, igual", async () => {
+    const [original, otra] = await otrasDos();
+    const copia: Fila = {
+      ...filaValida("cotizacion", ctx),
+      duplicada_de_id: original,
+    };
+    await insertar("cotizacion", copia);
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion SET duplicada_de_id = ? WHERE id = ?")
+        .bind(otra, copia.id)
+        .run(),
+    ).rejects.toThrow(COLUMNA_INMUTABLE);
+
+    expect(await procedenciaDe(String(copia.id))).toBe(original);
+  });
+
+  it("el alta autorreferencial la sigue contestando la guarda de tenencia", async () => {
+    // **Esto corrige lo que el plan daba por medido.**
+    // `odd/tasks/cotizaciones.md` dice que `INSERT … id='a',
+    // duplicada_de_id='a'` entra porque la llave foránea se valida después
+    // de insertar la fila. La llave foránea, cierto; pero delante hay otra
+    // guarda que sí lo frena, y es de `0004`: en un `BEFORE INSERT` la fila
+    // todavía no existe, así que la subconsulta de tenencia devuelve NULL y
+    // `NULL IS NOT NEW.tenant_id` aborta.
+    //
+    // De ahí sale el argumento que hace innecesario recorrer la cadena:
+    // para que una fila entre apuntando a otra, la apuntada tiene que
+    // existir ya. El padre es siempre más viejo que el hijo, y un orden
+    // estricto no tiene ciclos **de ninguna longitud**. Con la columna
+    // inmutable, el grafo sólo crece por las hojas y es un bosque.
+    const id = nuevoId();
+    const fila: Fila = {
+      ...filaValida("cotizacion", ctx),
+      id,
+      duplicada_de_id: id,
+    };
+
+    await expect(insertar("cotizacion", fila)).rejects.toThrow(
+      TENENCIA_CRUZADA,
+    );
+  });
+
+  it("contrapeso: una copia nace atada al original y se sigue pudiendo emitir", async () => {
+    // Sin esto, una guarda que rechazara toda escritura de la columna
+    // —incluida la del alta— haría pasar las cuatro pruebas de rechazo de
+    // arriba y la duplicación no existiría.
+    const [original] = await otrasDos();
+    const copia: Fila = {
+      ...filaValida("cotizacion", ctx),
+      duplicada_de_id: original,
+    };
+    await insertar("cotizacion", copia);
+
+    expect(await procedenciaDe(String(copia.id))).toBe(original);
+
+    await env.DB.prepare(
+      "UPDATE cotizacion SET estado = 'emitida', snapshot = ? WHERE id = ?",
+    )
+      .bind(UN_SNAPSHOT, copia.id)
+      .run();
+
+    expect(await estadoDe(String(copia.id))).toBe("emitida");
+  });
+
+  it("sobre una congelada el rechazo es de I-4 y no de ésta", async () => {
+    // El recorte `OLD.estado IS 'borrador'` parte el caso en dos mitades
+    // exactas: sobre un borrador habla esta guarda, sobre cualquier otro
+    // estado habla `cotizacion_emitida_no_se_edita` de `0006`, que ya
+    // vigila `duplicada_de_id` entre sus nueve columnas. Sin el recorte las
+    // dos atraparían lo mismo en tres de los cuatro estados y ninguna sería
+    // verificable por mutación.
+    const congelada = await cotizacionCongelada();
+    const [otra] = await otrasDos();
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion SET duplicada_de_id = ? WHERE id = ?")
+        .bind(otra, congelada.id)
+        .run(),
+    ).rejects.toThrow(CONGELADA);
+  });
+});
+
+describe("los disparadores de 0004, 0006 y 0007 están todos y no hay ninguno de más", () => {
   // La lista va exacta y no por `toContain` a propósito. Un disparador de
   // más sería código muerto —`cotizacion_modulo` no lleva el de `UPDATE` de
   // tenencia porque sus dos únicas columnas comparables son inmutables,
@@ -1620,6 +1987,9 @@ describe("los disparadores de 0004 y 0006 están todos y no hay ninguno de más"
       /* `0006`: I-4 y I-5. */
       "cotizacion_emitida_no_se_edita",
       "cotizacion_snapshot_se_escribe_una_sola_vez",
+      /* `0007`: el ciclo de vida y la cadena de duplicación. */
+      "cotizacion_el_estado_sigue_el_ciclo_de_vida",
+      "cotizacion_duplicada_de_inmutable",
     ],
     cotizacion_modulo: [
       "cotizacion_modulo_tenencia_coherente_al_insertar",
@@ -1781,6 +2151,63 @@ describe("lo que 0006 declara está todo en la base", () => {
       `SELECT name FROM sqlite_master WHERE name IN (${nombres
         .map(() => "?")
         .join(", ")})`,
+    )
+      .bind(...nombres)
+      .all<{ name: string }>();
+
+    expect(results.map((fila) => fila.name).sort()).toEqual([...nombres].sort());
+  });
+});
+
+describe("lo que 0007 declara está todo en la base", () => {
+  // La misma mitad verificable que las de `0004` y `0006`, para la migración
+  // que trae el ciclo de vida y la inmutabilidad de la procedencia. Son dos
+  // declaraciones y ninguna tabla: un `CREATE TRIGGER` que quedara adentro
+  // de un comentario —el encabezado de `0007` nombra varios en prosa— o un
+  // punto y coma de menos se ven acá y no en producción.
+  const MIGRACION = "0007_ciclo_de_vida.sql";
+
+  function disparadoresQueCrea(): string[] {
+    const migracion = env.TEST_MIGRATIONS.find(
+      (candidata) => candidata.name === MIGRACION,
+    );
+    if (migracion === undefined) {
+      throw new Error(`${MIGRACION} no está en TEST_MIGRATIONS`);
+    }
+
+    return migracion.queries.flatMap((consulta) => {
+      const sql = consulta.replace(/^\s*--.*$/gm, "");
+      const hallazgo = /CREATE\s+TRIGGER\s+(\w+)/i.exec(sql);
+      return hallazgo === null ? [] : [hallazgo[1]];
+    });
+  }
+
+  it("declara exactamente dos disparadores y ninguna tabla ni índice", () => {
+    // El contrapeso de siempre: si la expresión regular dejara de encontrar
+    // nada, la prueba de abajo pasaría comparando dos listas vacías. Y el
+    // segundo `expect` fija la decisión de que esta migración **no**
+    // reconstruye `bitacora`: los tres verbos del ciclo de vida ya llegaron
+    // con `0006`, que se los llevó justamente para que no hubiera una
+    // tercera copia de esa tabla.
+    expect(disparadoresQueCrea()).toHaveLength(2);
+
+    const migracion = env.TEST_MIGRATIONS.find(
+      (candidata) => candidata.name === MIGRACION,
+    );
+    const sinComentarios = (migracion?.queries ?? [])
+      .map((consulta) => consulta.replace(/^\s*--.*$/gm, ""))
+      .join("\n");
+
+    expect(sinComentarios).not.toMatch(/CREATE\s+TABLE/i);
+    expect(sinComentarios).not.toMatch(/CREATE\s+(?:UNIQUE\s+)?INDEX/i);
+  });
+
+  it("y los dos existen en la base", async () => {
+    const nombres = disparadoresQueCrea();
+
+    const { results } = await env.DB.prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'trigger'` +
+        ` AND name IN (${nombres.map(() => "?").join(", ")})`,
     )
       .bind(...nombres)
       .all<{ name: string }>();

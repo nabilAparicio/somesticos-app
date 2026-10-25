@@ -17,12 +17,27 @@
  *   PUT    /api/cotizaciones/{id}/lineas/{lid}    edita una
  *   DELETE /api/cotizaciones/{id}/lineas/{lid}    la saca
  *   POST   /api/cotizaciones/{id}/emitir          la congela para siempre
+ *   POST   /api/cotizaciones/{id}/ganar           el cliente aceptó
+ *   POST   /api/cotizaciones/{id}/perder          el cliente no aceptó
+ *   POST   /api/cotizaciones/{id}/duplicar        nace un borrador nuevo
  *
- * **Y nada más.** Ganar, perder y duplicar son de T-5 y siguen cayendo en el
- * 404 general. La cuarta parte de la dirección
- * `/api/cotizaciones/{id}/bitacora` la atiende `worker/bitacora/rutas.ts`,
- * que corre antes y para la que este archivo devuelve `null`: acá sólo se
- * reconocen `modulos`, `lineas` y `emitir` en esa posición.
+ * **Y nada más.** La salida imprimible es T-6 y la apertura de procesos
+ * desde una ganada es T-7; las dos siguen cayendo en el 404 general. La
+ * cuarta parte de la dirección `/api/cotizaciones/{id}/bitacora` la atiende
+ * `worker/bitacora/rutas.ts`, que corre antes y para la que este archivo
+ * devuelve `null`: acá sólo se reconocen `modulos`, `lineas` y los cuatro
+ * verbos del ciclo de vida en esa posición.
+ *
+ * ## Cuatro verbos y no un `PUT` con el estado en el cuerpo
+ *
+ * El argumento que sigue a continuación para `emitir` vale igual para los
+ * otros tres, y la segunda alternativa que descarta —`PUT
+ * /api/cotizaciones/{id}/estado`— lo anticipaba con todas las letras:
+ * aplastaría cuatro hechos distintos en un solo `PUT`. Son cuatro porque la
+ * bitácora tiene que poder decir cuál de los cuatro pasó, y porque tres de
+ * ellos no se parecen entre sí más que en la dirección: emitir congela un
+ * documento, ganar y perder cierran un ciclo que no se reabre, y duplicar
+ * **crea una fila nueva** y contesta 201.
  *
  * ## Por qué emitir es un `POST` a una subruta con verbo
  *
@@ -96,6 +111,7 @@
 import type { Identidad } from "../acceso/identidad";
 import type {
   CotizacionNoEsBorrador,
+  CotizacionNoEsEmitida,
   DatosInvalidos,
   FallaDeValidacion,
   LineaDeCotizacion,
@@ -113,6 +129,8 @@ import {
 } from "./lineas";
 import { normalizarModulo, normalizarOrdenDeModulos } from "./modulos";
 import type {
+  ResultadoDeCierre,
+  ResultadoDeDuplicacion,
   ResultadoDeEmision,
   ResultadoDeEscritura,
   ResultadoDeLineas,
@@ -261,6 +279,66 @@ function respuestaDeEmision(resultado: ResultadoDeEmision): Response {
 
   const cuerpo: RespuestaDeCotizacion = { cotizacion: resultado.cotizacion };
   return json(cuerpo);
+}
+
+/**
+ * El 409 de ganar o perder algo que no está emitido.
+ *
+ * Es el espejo de `noEsBorrador` y son **dos funciones y no una
+ * parametrizada**, por lo mismo que son dos tipos en el contrato: el motivo
+ * que viaja es distinto porque lo que la pantalla tiene que poder decir es
+ * distinto. Una sola función con el estado esperado como argumento le
+ * ahorraría cuatro líneas a este archivo y le pasaría la distinción a quien
+ * lea la respuesta.
+ */
+function noEsEmitida(estado: CotizacionNoEsEmitida["estado"]): Response {
+  const cuerpo: CotizacionNoEsEmitida = {
+    error: "cotizacion_no_es_emitida",
+    estado,
+  };
+  return json(cuerpo, { status: 409 });
+}
+
+/**
+ * La respuesta de ganar y de perder.
+ *
+ * **200 y no 201**, por lo mismo que emitir: no nace ningún recurso con
+ * dirección propia. Lo que cambió es la cotización que ya existía, y es la
+ * que vuelve, con su estado nuevo adentro.
+ */
+function respuestaDeCierre(resultado: ResultadoDeCierre): Response {
+  if (resultado.estado === "no_encontrado") return noEncontrado();
+  if (resultado.estado === "no_es_emitida") {
+    return noEsEmitida(resultado.actual);
+  }
+
+  const cuerpo: RespuestaDeCotizacion = { cotizacion: resultado.cotizacion };
+  return json(cuerpo);
+}
+
+/**
+ * La respuesta de duplicar.
+ *
+ * **201 con `location`, al revés que las otras tres del ciclo de vida**, y
+ * la diferencia es real y no de gusto: acá sí nació una fila, tiene
+ * dirección propia y esa dirección contesta `GET`. Es exactamente el mismo
+ * criterio que el alta de un borrador, que es lo que esto es.
+ *
+ * El cuerpo trae **la copia** y no la original. Lo que la pantalla va a
+ * hacer después de duplicar es abrir la copia para editarla; devolver la
+ * original la obligaría a sacar el identificador del `location`.
+ */
+function respuestaDeDuplicacion(resultado: ResultadoDeDuplicacion): Response {
+  if (resultado.estado === "no_encontrado") return noEncontrado();
+
+  const cuerpo: RespuestaDeCotizacion = { cotizacion: resultado.cotizacion };
+  return json(cuerpo, {
+    status: 201,
+    headers: {
+      location: `/api/cotizaciones/${resultado.cotizacion.id}`,
+      ...SIN_CACHE,
+    },
+  });
 }
 
 /**
@@ -563,8 +641,9 @@ export async function rutasDeCotizaciones(
 
   // Cuatro segmentos con `modulos` o `lineas` al final es la colección;
   // cinco es una fila concreta. La bitácora es el otro cuarto segmento y la
-  // atiende su propio módulo, que corre antes. Todo lo demás —emitir,
-  // duplicar— todavía no existe y tiene que caer en el 404 general y no acá.
+  // atiende su propio módulo, que corre antes. Lo que no esté acá —la
+  // salida imprimible de T-6, los procesos de T-7— tiene que caer en el 404
+  // general y no acá.
   const esDeModulos = segmentos[3] === "modulos";
   const coleccionDeModulos = segmentos.length === 4 && esDeModulos;
   const unModulo = segmentos.length === 5 && esDeModulos;
@@ -573,10 +652,19 @@ export async function rutasDeCotizaciones(
   const coleccionDeLineas = segmentos.length === 4 && esDeLineas;
   const unaLinea = segmentos.length === 5 && esDeLineas;
 
-  // `emitir` es el único cuarto segmento que no nombra una colección: no
-  // hay `/emitir/{algo}`, así que cinco segmentos con `emitir` en el cuarto
-  // cae en el 404 general y no acá.
-  const esEmitir = segmentos.length === 4 && segmentos[3] === "emitir";
+  // Los cuatro verbos del ciclo de vida son los cuartos segmentos que no
+  // nombran una colección: no hay `/emitir/{algo}` ni `/ganar/{algo}`, así
+  // que cinco segmentos con cualquiera de ellos en el cuarto caen en el 404
+  // general y no acá. Por eso la comprobación de longitud va en el `const`
+  // y no adentro de cada rama.
+  const VERBOS = ["emitir", "ganar", "perder", "duplicar"] as const;
+  type Verbo = (typeof VERBOS)[number];
+
+  const verbo: Verbo | null =
+    segmentos.length === 4 &&
+    (VERBOS as readonly string[]).includes(segmentos[3])
+      ? (segmentos[3] as Verbo)
+      : null;
 
   if (coleccionDeModulos || unModulo) {
     const cotizacionId = decodificar(segmentos[2]);
@@ -606,7 +694,7 @@ export async function rutasDeCotizaciones(
     );
   }
 
-  if (esEmitir) {
+  if (verbo !== null) {
     // El 405 va **antes** de mirar si la cotización existe, igual que en las
     // rutas de módulos y de líneas: un verbo que esta dirección no tiene no
     // es una pregunta sobre ninguna cotización, así que contestarlo no dice
@@ -616,14 +704,31 @@ export async function rutasDeCotizaciones(
     const cotizacionId = decodificar(segmentos[2]);
     if (cotizacionId === null) return noEncontrado();
 
-    // No se lee el cuerpo: emitir no lleva ninguno. Un `normalizar` acá
-    // sería un campo que el cuerpo podría imponer sobre la única escritura
-    // del sistema que no se puede deshacer.
-    //
-    // El emisor sale de la identidad que resolvió la puerta de Access y
-    // nunca del cuerpo (I-6), igual que el autor en el alta.
-    return respuestaDeEmision(
-      await servicio.emitir(tenantId, identidad.usuarioId, cotizacionId),
+    // **Ninguno de los cuatro lee el cuerpo, y eso es la decisión.** Un
+    // `normalizar` acá sería un campo que el cuerpo podría imponer sobre
+    // las escrituras del sistema que no se pueden deshacer. Lo único que
+    // estas direcciones reciben es a quién le pasa el hecho, y eso sale de
+    // la identidad que resolvió la puerta de Access (I-6).
+    if (verbo === "emitir") {
+      return respuestaDeEmision(
+        await servicio.emitir(tenantId, identidad.usuarioId, cotizacionId),
+      );
+    }
+
+    if (verbo === "duplicar") {
+      return respuestaDeDuplicacion(
+        await servicio.duplicar(tenantId, identidad.usuarioId, cotizacionId),
+      );
+    }
+
+    // Ganar y perder no reciben la identidad: no congelan a nadie adentro
+    // de un documento, y el autor del hecho lo pone `mutar` por su cuenta
+    // desde la misma puerta. Pasárselo sería un argumento que el puerto no
+    // usaría y que mañana alguien escribiría en una columna.
+    return respuestaDeCierre(
+      verbo === "ganar"
+        ? await servicio.ganar(tenantId, cotizacionId)
+        : await servicio.perder(tenantId, cotizacionId),
     );
   }
 
