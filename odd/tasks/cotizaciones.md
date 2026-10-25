@@ -1,7 +1,7 @@
 # cotizaciones — Tajada 2: el generador de propuestas
 
 **Creado:** 24 de octubre de 2026
-**Estado:** R1 en curso. T-1 y T-2 cerradas, T-3 en marcha. Revisiones RDD **desactivadas** la noche del 24 de octubre a pedido del usuario, para avanzar sin frenar en cada puerta de consentimiento; se reactivan y se revisa la rama entera. La tajada 1 está construida y empujada; falta desplegarla
+**Estado:** **R1 cerrada** (T-1, T-2, T-3). R2 en marcha con T-4. Revisiones RDD **desactivadas** la noche del 24 de octubre a pedido del usuario, para avanzar sin frenar en cada puerta de consentimiento; se reactivan y se revisa la rama entera. La tajada 1 está construida y empujada; falta desplegarla
 (T-16 allá).
 **Diseño de referencia:** `docs/diseno.md` §8 (el generador), §6 (modelo de datos), §5 (invariantes)
 **Tajada anterior:** `odd/tasks/crm-procesos.md`
@@ -162,7 +162,7 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
       y el registro tipado en código de C tienen que moverse juntos. Si se separan, el sistema
       rechaza un tipo que la pantalla ofrece.
 
-- [ ] **T-3 · Líneas de honorarios y gastos estimados.** La clase (`honorario|gasto_estimado`)
+- [x] **T-3 · Líneas de honorarios y gastos estimados.** La clase (`honorario|gasto_estimado`)
       separa las dos familias y la pantalla las muestra separadas y rotula el gasto como
       aproximado. **La aritmética es del sistema**: subtotales y total se derivan, no se guardan.
       *Forecast ~450.*
@@ -280,6 +280,8 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
 | T-2 B · Las pantallas del borrador | `9cd32ef`, `89a71a4` | `typecheck` 0, `test` 0 (1079), `lint` 0, `build` 0, `test:e2e` 0 (186) | aprobada, lineaje `review-1e5f1e3ce2f54aa7`, sin bloqueantes; `89a71a4` quedó `under_budget` |
 | T-2 C1 · La API de los módulos | `b16491a`, `61ebb41` | `typecheck` 0, `test` 0 (1132), `lint` 0, `build` 0 | aprobada, lineaje `review-9963052a67c4ea2d`, sin bloqueantes |
 | T-2 C2 · El editor de módulos | `af086c7`, `b84be59` | `typecheck` 0, `test` 0 (1169), `lint` 0, `build` 0, `test:e2e` 0 (212) | aprobada, lineaje `review-ae94e1f1c8ca1465`, sin bloqueantes |
+| T-3 A · La API de las líneas | `cde7871` | `typecheck` 0, `test` 0 (1248), `lint` 0, `build` 0 | RDD apagada; **dejó `test:e2e` en rojo**, ver abajo |
+| T-3 B · La pantalla de las líneas | `3ec3fd1` | `typecheck` 0, `test` 0 (1358), `lint` 0, `build` 0, `test:e2e` 0 (237) | RDD apagada |
 
 ### Lo que T-1 corrigió de este plan
 
@@ -353,6 +355,35 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
    en qué quedó la cotización y manda a recargar igual. Mitigado donde sí se sabe: el formulario
    de edición lee el estado antes de dibujarse. Cerrarlo pide un tercer campo en `Resultado`,
    contra el comentario que explica por qué son dos.
+
+### Una regla de método que faltaba, y el commit que la costó
+
+**Todo cambio en `src/mensajes.ts` o `src/bitacora.ts` exige el suite de punta a punta completo,
+aunque la unidad no toque una sola pantalla.** Son texto que las pantallas afirman.
+
+Sale de un error concreto. A T-3 A se le dijo «no corras `test:e2e`, esta unidad no toca
+pantallas». Cambió la frase de `orden_incompleto` —de «los módulos de esta cotización» a «lo que
+tiene esta cotización», porque las líneas pasaron a compartir el motivo— y la prueba de punta a
+punta de módulos seguía afirmando el texto viejo. **`cde7871` quedó con el suite en rojo durante
+un commit entero**, y lo encontró el escritor siguiente, no la verificación.
+
+El conteo de ese commit no mentía: declaraba cuatro comandos y los cuatro estaban en 0. Lo que
+faltaba era el quinto, y faltaba porque alguien decidió que no aplicaba.
+
+### Tres lecciones de prueba que esta tajada encontró, cada vez con otra piel
+
+1. **Una aserción que reintenta no puede demostrar un «nunca».** `toHaveCount(0)` tolera la
+   ventana transitoria que se quiere prohibir; para un «nunca» va `.count()`, que lee el instante.
+2. **Un doble de servidor que devuelve lo mismo que se envió no distingue nada.** No separa una
+   pantalla que redibuja la respuesta de una que conserva lo tecleado.
+3. **Dos guardas que resuelven lo mismo por caminos distintos se anulan como garantía:** quitar
+   cualquiera no mata ninguna prueba. Hay que medir las combinaciones y dejar exactamente una.
+   Es la variante de la lección de T-2 C2, donde en cambio eran cuatro declaraciones que no
+   hacían nada.
+
+Y una de método: **una mutación sobreviviente obliga a revisar primero si la mutación fue la
+correcta**, no a concluir que falta cobertura. Mover una llamada en vez de borrarla puede no
+cambiar el comportamiento.
 
 ### Deuda registrada, no cerrada
 
