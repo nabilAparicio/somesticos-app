@@ -403,3 +403,46 @@ export function mensajeDeFallaDelComprobante(
 ): string {
   return FALLAS_DEL_COMPROBANTE[motivo];
 }
+
+/**
+ * Los dos motivos **en ejecución**, para poder comprobar lo que llega por el
+ * cable.
+ *
+ * ## Por qué salen del `Record` y no de una lista propia
+ *
+ * El motivo del modelo tiene las dos cosas en `worker/contract.ts`: una
+ * lista `as const satisfies` y una red `DebeSerVacio` que impide que la
+ * unión y la lista se separen. Acá la lista **se deriva del `Record` que ya
+ * es exhaustivo**, y eso es estrictamente más fuerte que repetir aquel
+ * idioma: no hay dos declaraciones que puedan desincronizarse, porque hay
+ * una sola. Un motivo nuevo en la unión no compila hasta tener su texto, y
+ * en cuanto lo tiene **ya está** en esta lista. No hace falta una red que
+ * vigile una segunda declaración que no existe.
+ *
+ * Y vive acá y no en `worker/contract.ts` por dos razones: el `Record` del
+ * que sale está acá, y el contrato del Worker está fuera de la superficie de
+ * esta unidad. El guardián lo consume `src/api/peticiones.ts`, que ya
+ * importa de este archivo.
+ *
+ * `Object.keys` devuelve `string[]`, y eso alcanza: lo único que se le pide
+ * al conjunto es contestar si una cadena está adentro.
+ */
+const MOTIVOS_DEL_ALMACEN: ReadonlySet<string> = new Set(
+  Object.keys(FALLAS_DEL_COMPROBANTE),
+);
+
+/**
+ * Si lo que llegó por el cable es uno de los motivos que esta versión
+ * conoce.
+ *
+ * Existe por lo mismo que `esMotivoDeFallaDelModelo`: el cuerpo de un 502 es
+ * `unknown` hasta que alguien lo mire, y un `as` dejaría un `undefined`
+ * detrás de un tipo que promete un texto. Un motivo que esta versión no
+ * conoce **tiene que** caer en el camino de reserva, que es el único lugar
+ * donde no se inventa nada.
+ */
+export function esMotivoDeFallaDelComprobante(
+  valor: unknown,
+): valor is MotivoDeFallaDelComprobante {
+  return typeof valor === "string" && MOTIVOS_DEL_ALMACEN.has(valor);
+}

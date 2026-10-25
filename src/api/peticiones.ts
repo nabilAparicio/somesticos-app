@@ -20,13 +20,20 @@ import {
   esMotivoDeFallaDelModelo,
   type AccesoDenegado,
   type BorradoBloqueado,
+  type ComprobanteNoDisponible,
   type DatosInvalidos,
   type FallaDeValidacion,
   type GeneracionFallida,
+  type MotivoDeFallaDelComprobante,
   type MotivoDeFallaDelModelo,
   type NombreDuplicado,
 } from "../../worker/contract";
-import { mensajeDeFallaDelModelo, mensajeDeNombreDuplicado } from "../mensajes";
+import {
+  esMotivoDeFallaDelComprobante,
+  mensajeDeFallaDelComprobante,
+  mensajeDeFallaDelModelo,
+  mensajeDeNombreDuplicado,
+} from "../mensajes";
 
 export type Resultado<T> =
   | { estado: "ok"; valor: T }
@@ -75,6 +82,30 @@ export type Resultado<T> =
    * que esta versión no conoce cae en `falla`, que es donde tiene que caer.
    */
   | { estado: "modelo"; motivo: MotivoDeFallaDelModelo }
+  /**
+   * 502: el almacén de comprobantes de T-10 no pudo, y tampoco por culpa
+   * nuestra ni de quien pidió.
+   *
+   * **La forma de T-9 se extendió, no se ensanchó**, y la diferencia vale
+   * la pena dejarla escrita. Las dos alternativas eran:
+   *
+   *  1. una variante nueva, que es esto;
+   *  2. ensanchar `modelo` a `{ estado: "502"; motivo: … }` con la unión de
+   *     los dos vocabularios adentro.
+   *
+   * La segunda obligaría a que **cada** llamador de un 502 tratara los
+   * nueve motivos: la pantalla del generador tendría que tener algo que
+   * decir sobre un almacén de objetos que no usa, y la de gastos sobre un
+   * techo de tokens que no existe en su ruta. Es exactamente lo que
+   * `MotivoDeFallaDelComprobante` evitó del lado del Worker al no compartir
+   * unión con `MotivoDeFallaDelModelo`, y la razón es la misma: son dos
+   * sistemas de arriba distintos.
+   *
+   * El motivo llega **tipado**, igual que el del modelo y por lo mismo: lo
+   * valida `esMotivoDeFallaDelComprobante`, y uno que esta versión no
+   * conozca cae en `falla`, que es donde tiene que caer.
+   */
+  | { estado: "comprobante"; motivo: MotivoDeFallaDelComprobante }
   | { estado: "falla"; mensaje: string };
 
 type Problema = Exclude<Resultado<never>, { estado: "ok" }>;
@@ -120,13 +151,29 @@ async function problemaDe(respuesta: Response): Promise<Problema | null> {
     };
   }
 
-  // El 502 del generador (T-9). Va **antes** del `!respuesta.ok` genérico,
-  // que es el que lo convertiría en «respuesta inesperada: HTTP 502».
+  // Los dos 502 del sistema: el generador (T-9) y el almacén de
+  // comprobantes (T-10). Van **antes** del `!respuesta.ok` genérico, que es
+  // el que los convertiría en «respuesta inesperada: HTTP 502».
+  //
+  // Lo que decide cuál es **el motivo y no el `error`**, aunque los dos
+  // cuerpos traigan su discriminante. Es deliberado y es una sola guarda:
+  // los dos vocabularios son conjuntos de cadenas disjuntos, así que el
+  // motivo ya decide sin ambigüedad, y mirar además el `error` serían dos
+  // guardas que resuelven lo mismo — quitar cualquiera de las dos no
+  // rompería nada, y la próxima persona que borre una no se entera. Con
+  // una sola, el camino de reserva es el único que queda para un cuerpo
+  // que esta versión no reconoce, que es donde tiene que caer.
   if (respuesta.status === 502) {
-    const cuerpo = (await cuerpoJson(respuesta)) as GeneracionFallida | null;
+    const cuerpo = (await cuerpoJson(respuesta)) as
+      | GeneracionFallida
+      | ComprobanteNoDisponible
+      | null;
     const motivo: unknown = cuerpo?.motivo;
 
     if (esMotivoDeFallaDelModelo(motivo)) return { estado: "modelo", motivo };
+    if (esMotivoDeFallaDelComprobante(motivo)) {
+      return { estado: "comprobante", motivo };
+    }
 
     // Un 502 que no es el nuestro: un proxy delante del Worker, o un
     // servidor más nuevo que esta pantalla. No se inventa un motivo.
@@ -193,6 +240,32 @@ export async function pedirVacio(
   if (problema !== null) return problema;
 
   return { estado: "ok", valor: null };
+}
+
+/**
+ * Para el comprobante, que no es JSON: trae un PDF o una imagen.
+ *
+ * **Se pide con `fetch` y no con un `<a href>`**, y el motivo es el 502 del
+ * almacén: un enlace que navega a la ruta del comprobante deja al navegador
+ * mostrando `{"error":"comprobante_no_disponible",…}` en una pestaña, que
+ * es la forma más clara de no decir nada. Pasando por acá, la negativa
+ * vuelve como `Resultado` y la pantalla dice si hay que configurar el
+ * almacén o volver a intentar en un minuto.
+ *
+ * El cuerpo se lee **sólo en el camino feliz**: `problemaDe` ya consumió el
+ * de las respuestas que no lo son.
+ */
+export async function pedirArchivo(
+  ruta: string,
+  init?: RequestInit,
+): Promise<Resultado<Blob>> {
+  const respuesta = await llamar(ruta, init);
+  if (!(respuesta instanceof Response)) return respuesta;
+
+  const problema = await problemaDe(respuesta);
+  if (problema !== null) return problema;
+
+  return { estado: "ok", valor: await respuesta.blob() };
 }
 
 /**
@@ -317,6 +390,11 @@ export function textoDeProblema(
       // decir. No se compone con `sujeto`: lo que falló no es encontrar una
       // cotización sino generarla, y la frase no habla de ninguna fila.
       return mensajeDeFallaDelModelo(resultado.motivo);
+    case "comprobante":
+      // Tampoco se compone con `sujeto`, y por lo mismo: lo que falló no es
+      // encontrar el movimiento —ése está, y las dos frases empiezan
+      // diciendo que quedó guardado— sino archivar su papel.
+      return mensajeDeFallaDelComprobante(resultado.motivo);
     case "falla":
       return `No se pudo consultar: ${resultado.mensaje}`;
   }

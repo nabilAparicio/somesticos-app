@@ -69,6 +69,7 @@ import { enlaceDe } from "../../ruteo";
 import { cargarUsuarios } from "../../api/usuarios";
 import { cargarAreas } from "../catalogos/api";
 import { Bitacora, type EstadoDeBitacora } from "../Bitacora";
+import { PanelDeGastos } from "./PanelDeGastos";
 import {
   anotar,
   anotarPendiente,
@@ -1416,6 +1417,30 @@ export function DetalleDeProceso({ id }: Props) {
           )}
         </Pila>
       </section>
+
+      {/* ---------------------------------------------------------------
+          T-10 · Los gastos reales y su saldo.
+
+          Van acá: debajo del plan y de la plantilla, y **arriba** de la
+          línea de tiempo y de la bitácora. El criterio es el mismo con el
+          que T-9 puso los pendientes arriba de todo y T-8 las notas al
+          final: lo que hay que hacer algo con ello va antes que lo que se
+          lee cuando se lo busca. La plata de un trámite es lo primero, y
+          los dos registros —lo que alguien quiso dejar dicho y lo que hizo
+          el sistema— son lo último.
+
+          **Cuelga del proceso y no de la cotización**, y eso no es
+          maquetado: el gasto tiene dos vidas en dos lugares
+          (`docs/diseno.md` §6). El estimado vive congelado en la
+          cotización; el real aparece meses después, acá, con su
+          comprobante.
+
+          Es su propio componente con su propia petición, igual que la
+          bitácora: un fallo de la cuenta no puede dejar la pantalla del
+          proceso en blanco, y al revés, el panel se dibuja sin depender de
+          que el detalle haya traído nada más que el identificador.
+          --------------------------------------------------------------- */}
+      <PanelDeGastos procesoId={id} />
 
       {/* ---------------------------------------------------------------
           T-8 · La línea de tiempo.

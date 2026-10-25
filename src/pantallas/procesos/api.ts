@@ -12,6 +12,7 @@
 import {
   ESCRITURA,
   pedir,
+  pedirArchivo,
   textoDeProblema as textoDeProblemaDe,
   type Resultado,
 } from "../../api/peticiones";
@@ -25,6 +26,7 @@ import type {
   CambioDeEstadoDeProceso,
   DatosDeEtapa,
   DatosDeGuardadoDePlantilla,
+  DatosDeMovimiento,
   DatosDeNota,
   DatosDePendiente,
   DatosDeProceso,
@@ -33,6 +35,7 @@ import type {
   PendienteDeProceso,
   PlantillaGuardada,
   RespuestaDeBitacora,
+  RespuestaDeGastos,
   Proceso,
   RespuestaDePendientes,
   RespuestaDeProceso,
@@ -369,4 +372,128 @@ export async function cargarBitacoraDeProceso(
         ),
       }
     : resultado;
+}
+
+/* ==========================================================================
+   Gastos reales y comprobantes (tajada 2, T-10)
+
+   Cinco rutas y **ninguna que lea el saldo por separado**: las cuatro que
+   contestan JSON devuelven la cuenta entera —movimientos y saldo— en el
+   mismo cuerpo, porque son el mismo hecho mirado de dos maneras. Pedirlos
+   por separado abriría la ventana en la que la pantalla muestra una lista y
+   un total que no le corresponde.
+
+   La pantalla **no suma**: lo que estas funciones traen es lo que se dibuja.
+   La resta vive en `worker/gastos/dominio.ts` y corre en el servidor (I-7).
+   ========================================================================== */
+
+/** La dirección de la cuenta de un proceso. Los movimientos cuelgan de ahí. */
+function gastosDe(procesoId: string): string {
+  return `${PROCESOS}/${encodeURIComponent(procesoId)}/gastos`;
+}
+
+/** La del papel de un movimiento. La llave del objeto no aparece acá. */
+function comprobanteDe(procesoId: string, movimientoId: string): string {
+  return `${gastosDe(procesoId)}/${encodeURIComponent(movimientoId)}/comprobante`;
+}
+
+/**
+ * La cuenta del proceso: sus movimientos y lo que suman.
+ *
+ * Es una petición aparte del detalle, por lo mismo que la línea de tiempo y
+ * los pendientes: un fallo acá no puede dejar la pantalla del proceso en
+ * blanco, y la cuenta crece mientras el trámite corre.
+ */
+export function cargarGastos(
+  procesoId: string,
+  signal: AbortSignal,
+): Promise<Resultado<RespuestaDeGastos>> {
+  return pedir<RespuestaDeGastos>(gastosDe(procesoId), { signal });
+}
+
+/**
+ * Registra un gasto o un anticipo.
+ *
+ * **Una sola función para los dos**, y no es ahorro de código: la mecánica
+ * de cobro no es un dato sino qué filas existen (`docs/diseno.md` §6), así
+ * que dos funciones serían dos caminos para escribir la misma fila con el
+ * `tipo` distinto. El tipo viaja adentro de `datos`.
+ *
+ * Quién lo registró **no viaja**: sale de la identidad de Access (I-6).
+ * El saldo tampoco, y no hay dónde ponerlo: `DatosDeMovimiento` no lo tiene.
+ */
+export function registrarMovimiento(
+  procesoId: string,
+  datos: DatosDeMovimiento,
+): Promise<Resultado<RespuestaDeGastos>> {
+  return pedir<RespuestaDeGastos>(gastosDe(procesoId), cuerpo(datos, "POST"));
+}
+
+/**
+ * Saca un movimiento de la cuenta, y su papel del almacén.
+ *
+ * **No hay `editarMovimiento`, y no es un olvido**: la ruta no existe
+ * (decisión de la unidad A). Corregir un monto es sacarlo y volver a
+ * cargarlo, que para una cuenta de cinco movimientos es la misma operación
+ * con más clics y sin ninguna regla nueva que escribir.
+ *
+ * Contesta la cuenta entera y no 204: el saldo que la pantalla tiene que
+ * dibujar es el de los movimientos que quedaron, y recalcularlo acá sería
+ * la segunda aritmética que esta tajada prohíbe.
+ */
+export function quitarMovimiento(
+  procesoId: string,
+  movimientoId: string,
+): Promise<Resultado<RespuestaDeGastos>> {
+  return pedir<RespuestaDeGastos>(
+    `${gastosDe(procesoId)}/${encodeURIComponent(movimientoId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * Sube el papel, o reemplaza el que estaba.
+ *
+ * **La llave no viaja**: la fabrica el servidor con el tenant, el proceso y
+ * el movimiento, que son tres identificadores que el cliente no controla
+ * (ver `llaveDeComprobante`). Lo único que se manda es el archivo, con su
+ * tipo en el encabezado — que es lo que el servidor mira para aceptarlo, y
+ * por eso se pone explícito en vez de dejar que lo deduzca del `Blob`.
+ *
+ * Contesta la cuenta entera porque adjuntar cambia lo que la lista dibuja:
+ * ese movimiento pasa a tener papel.
+ *
+ * **Un `PUT` y no un `POST`**, y reemplazar no deja huérfano: la llave se
+ * deriva de la fila y la fila no cambió, así que el objeto nuevo se escribe
+ * encima del viejo.
+ */
+export function subirComprobante(
+  procesoId: string,
+  movimientoId: string,
+  archivo: File,
+): Promise<Resultado<RespuestaDeGastos>> {
+  return pedir<RespuestaDeGastos>(comprobanteDe(procesoId, movimientoId), {
+    method: "PUT",
+    headers: { "content-type": archivo.type },
+    body: archivo,
+  });
+}
+
+/**
+ * Trae el papel.
+ *
+ * Va por `pedirArchivo` y no por un `<a href>` por el 502 del almacén: un
+ * enlace que navega a esta ruta deja al navegador mostrando el JSON del
+ * error en una pestaña, que es la forma más clara de no decir nada. Está
+ * explicado entero en `src/api/peticiones.ts`.
+ *
+ * El 404 de un movimiento sin papel llega como `no_encontrado`, igual que
+ * el de un movimiento que no existe: desde donde está quien mira, las dos
+ * son «acá no hay papel», y el servidor las junta a propósito.
+ */
+export function traerComprobante(
+  procesoId: string,
+  movimientoId: string,
+): Promise<Resultado<Blob>> {
+  return pedirArchivo(comprobanteDe(procesoId, movimientoId));
 }

@@ -793,3 +793,104 @@
 .campo__control--importe {
   font-variant-numeric: tabular-nums;
 }
+
+/* ======================================================================
+   Los gastos reales de un proceso y su saldo (T-10, unidad B)
+
+   Reusa `.familia`, `.renglones`, `.renglon`, `.suma` y `.campo__control
+   --importe` de las líneas de cotización: son la misma forma —dos familias
+   de dinero con su subtotal— y una segunda hoja para lo mismo serían dos
+   definiciones de «un renglón de importe», que es la copia que esta sección
+   existe para no tener. Lo que se agrega acá es lo que allá no hay: el
+   bloque del saldo y la firma de cada movimiento.
+   ====================================================================== */
+
+/*
+ * El saldo, en su propia caja.
+ *
+ * El borde y el fondo lo separan de las dos listas, igual que el bloque de
+ * pendientes se separa del resto del proceso, y por la misma razón: es lo
+ * que alguien abre esta sección para ver, y un párrafo más entre otros doce
+ * lo salta el ojo.
+ *
+ * **Nada acá distingue nada por color.** De qué lado cae la cuenta lo dice
+ * el titular en palabras, y que el número es informativo lo dice el `<h3>`
+ * que lo encabeza. Un verde y un rojo serían más rápidos de leer en
+ * pantalla y no sobrevivirían ni a la impresora del bufete —que no imprime
+ * fondos— ni a una fotocopia ni a un lector de pantalla.
+ */
+.saldo {
+  min-width: 0;
+  padding: var(--espacio-s);
+  border: 1px solid var(--color-borde);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+}
+
+.saldo__titulo {
+  margin: 0;
+  font-size: var(--texto-m);
+}
+
+/*
+ * **Un movimiento no declara contención propia, y eso se midió.**
+ *
+ * La primera versión de este bloque llevaba `.movimiento { min-width: 0 }`
+ * con el argumento de que un `<li>` de flex conserva su tamaño
+ * mínimo-contenido y empuja hacia afuera. **Es falso acá**, y el método
+ * para descubrirlo es el de T-3 B: medir las combinaciones. Con un concepto
+ * de un token pegado de sesenta y siete letras, sobre los nueve anchos de
+ * §9 de `e2e/gastos.spec.ts`:
+ *
+ *  - con `min-width: 0` en `.movimiento`: pasan los nueve;
+ *  - **sin** `min-width: 0`: pasan los nueve igual;
+ *  - sin `min-width: 0` y además sin el `overflow-wrap: anywhere` de
+ *    `.renglon__concepto`: **caen cinco** —320, 360, 414, 768 y 1024px— y
+ *    el culpable que reporta la medición es `span.renglon__concepto`.
+ *
+ * O sea que la única declaración que carga peso es la que ya existía, y un
+ * `min-width: 0` acá habría sido una declaración que ninguna prueba puede
+ * matar: exactamente las cuatro que T-2 C2 encontró sin hacer nada. Por eso
+ * no está.
+ *
+ * Lo que esto deja dicho para quien venga: **esta pantalla depende del
+ * `overflow-wrap: anywhere` de `.renglon__concepto`**, que es de T-3 B.
+ * Dos pantallas apoyadas en una sola declaración está bien; dos
+ * declaraciones haciendo lo mismo, no. Las dos suites la cubren.
+ *
+ * La fila de botones no necesita nada propio: `.fila` ya declara
+ * `flex-wrap: wrap` y los controles bajan solos.
+ *
+ * Sí hay una clase `.movimiento`, y es sólo el gancho por el que las
+ * pruebas de punta a punta encuentran una fila de la cuenta. No declara
+ * ningún estilo, y ésa es la decisión.
+ */
+
+/*
+ * El día y quién lo cargó: contexto, no dato. Apagado y chico para que no
+ * compita con el concepto y el importe, que es lo que se lee de un vistazo.
+ */
+.movimiento__firma {
+  display: block;
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+}
+
+/*
+ * El control de archivo que el panel reusa para todas las filas.
+ *
+ * Se esconde recortándolo y **no con `display: none`**: un control que no
+ * está en el layout no lo puede enfocar el navegador cuando el botón
+ * visible lo abre, y en algunos navegadores el `click()` programático
+ * tampoco llega. Lo que lo saca de la lectura es el `aria-hidden` del
+ * elemento, que es correcto acá porque los nombres accesibles de verdad
+ * están en los botones visibles de cada fila.
+ */
+.oculto-visualmente {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -14,9 +14,22 @@
  * argumento con el que `worker/cotizaciones/lineas.ts` se niega a guardar un
  * total.
  *
- * La resta vive en **una sola función**, `saldoDe`, que el servidor y la
- * pantalla importan del mismo lugar. Dos restas en dos sitios son dos
- * resultados el día que una cambie.
+ * La resta vive en **una sola función**, `saldoDe`, y **sólo el servidor la
+ * llama**. La pantalla no la importa, y eso es deliberado: T-10 B lo decidió
+ * así y el encabezado de este archivo decía lo contrario hasta que esa unidad
+ * lo midió.
+ *
+ * El motivo es el precedente de T-3 con `totalesDe`. Si la pantalla pudiera
+ * llamarla, la prueba que de verdad importa —que la pantalla **muestra** el
+ * saldo y no lo recalcula— sería imposible de escribir, porque las dos
+ * implementaciones darían el mismo número. Tener la función a mano es la
+ * forma más fácil de que alguien, un martes, la use «para evitar un viaje».
+ * Hay una prueba en `test/gastos-ui.spec.ts` que verifica que el módulo de
+ * pantalla no la exporta.
+ *
+ * Dos restas en dos sitios son dos resultados el día que una cambie — por eso
+ * la resta es una sola. Que viva de un solo lado del cable no la duplica: la
+ * pantalla recibe el número ya restado.
  *
  * **Y el número que sale de acá es informativo, no verdad contable.** Está en
  * el alcance autorizado de la tajada con todas las letras, y se dice en el

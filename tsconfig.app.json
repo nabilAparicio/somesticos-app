@@ -46,6 +46,7 @@
     "worker/contract.ts",
     "worker/db/momentos.ts",
     "worker/cotizaciones/modulos.ts",
-    "worker/cotizaciones/lineas.ts"
+    "worker/cotizaciones/lineas.ts",
+    "worker/gastos/dominio.ts"
   ]
 }
