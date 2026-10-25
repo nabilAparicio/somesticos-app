@@ -1,7 +1,7 @@
 # cotizaciones — Tajada 2: el generador de propuestas
 
 **Creado:** 24 de octubre de 2026
-**Estado:** **R1 cerrada** (T-1, T-2, T-3). R2 en marcha: el fondo de T-4 y T-5 está hecho; falta su pantalla y T-6. Revisiones RDD **desactivadas** la noche del 24 de octubre a pedido del usuario, para avanzar sin frenar en cada puerta de consentimiento; se reactivan y se revisa la rama entera. La tajada 1 está construida y empujada; falta desplegarla
+**Estado:** **R1 y R2 cerradas** (T-1 a T-6). R3 en marcha con T-7, la que cierra el círculo. Revisiones RDD **desactivadas** la noche del 24 de octubre a pedido del usuario, para avanzar sin frenar en cada puerta de consentimiento; se reactivan y se revisa la rama entera. La tajada 1 está construida y empujada; falta desplegarla
 (T-16 allá).
 **Diseño de referencia:** `docs/diseno.md` §8 (el generador), §6 (modelo de datos), §5 (invariantes)
 **Tajada anterior:** `odd/tasks/crm-procesos.md`
@@ -205,11 +205,11 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
 
 ### R2 · El ciclo de vida
 
-- [ ] **T-4 · Emitir, y congelar.** `borrador → emitida`, con el snapshot escrito **en la misma
+- [x] **T-4 · Emitir, y congelar.** `borrador → emitida`, con el snapshot escrito **en la misma
       transacción**. I-4 (una emitida no se edita) e I-5 (el snapshot se escribe una vez y no se
       reescribe) van en la base, con disparadores, no en el código. *Forecast ~400.*
 
-- [ ] **T-5 · Ganada, perdida, duplicada.** El resto del ciclo. Duplicar nace un borrador atado
+- [x] **T-5 · Ganada, perdida, duplicada.** El resto del ciclo. Duplicar nace un borrador atado
       por `duplicada_de_id`; **la historia no se reescribe**. *Forecast ~300.*
 
       **La deuda que T-1 le dejó resultó estar medida mal, y T-5 la cerró mejor.** El ciclo
@@ -218,7 +218,7 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
       `duplicada_de_id`, que cierra ciclos de cualquier longitud. Ver «Una medición de este plan
       resultó falsa» abajo.
 
-- [ ] **T-6 · La salida imprimible.** HTML que se imprime desde el navegador, con hoja de
+- [x] **T-6 · La salida imprimible.** HTML que se imprime desde el navegador, con hoja de
       impresión propia. Sin librería de PDF. DOCX queda para cuando alguien lo pida de verdad.
       *Forecast ~350.*
 
@@ -313,6 +313,8 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
 | T-3 B · La pantalla de las líneas | `3ec3fd1` | `typecheck` 0, `test` 0 (1358), `lint` 0, `build` 0, `test:e2e` 0 (237) | RDD apagada |
 | T-4 A · Emitir y congelar | `5d12016` | `typecheck` 0, `test` 0 (1427), `lint` 0, `build` 0, `test:e2e` 0 (237) | RDD apagada |
 | T-5 A · Ganar, perder, duplicar | `91b234d` | `typecheck` 0, `test` 0 (1504), `lint` 0, `build` 0, `test:e2e` 0 (237) | RDD apagada |
+| T-4 y T-5 B · El ciclo en pantalla | `ceba06a` | `typecheck` 0, `test` 0 (1533), `lint` 0, `build` 0, `test:e2e` 0 (266) | RDD apagada |
+| T-6 · La salida imprimible | `ed0c4a0` | `typecheck` 0, `test` 0 (1575), `lint` 0, `build` 0, `test:e2e` 0 (290) | RDD apagada |
 
 ### Lo que T-1 corrigió de este plan
 
