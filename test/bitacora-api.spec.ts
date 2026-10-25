@@ -1616,6 +1616,130 @@ describe("el vocabulario de la base y el del código dicen lo mismo", () => {
     ]);
   });
 
+  /* ---------------------------------------------------------------------
+   * El agujero que dejaba la prueba de arriba, y que `0005` obligó a cerrar
+   * ---------------------------------------------------------------------
+   *
+   * La de arriba compara **nombres**, y eso alcanzaba mientras los tres
+   * disparadores los crearan los archivos que los escribieron. Desde que
+   * `migrations/0005_bitacora_con_las_lineas.sql` reconstruye la tabla, no:
+   * un `DROP TABLE bitacora` se lleva los tres, y `0005` los vuelve a crear.
+   *
+   * Lo que la lista de nombres **sí** cubre: que la reconstrucción no pierda
+   * ninguno. Lo que **no** cubría, medido y no supuesto: que los recree
+   * distintos. Un `bitacora_tenencia_coherente_al_insertar` con el `WHEN`
+   * cambiado, con el `RAISE` ablandado, con `<>` en vez de `IS NOT` o con la
+   * comparación de tenant quitada entera **tiene el mismo nombre**, así que
+   * pasaba la prueba de arriba sin que nada se pusiera rojo. Mover una
+   * guarda de archivo es barato; mudarla y que se deforme en el camino es
+   * donde se pierde una guarda en silencio, que es exactamente lo que `0002`
+   * dijo que había que vigilar.
+   *
+   * Lo que lo cierra es comparar la **definición**, y contra las
+   * declaraciones originales: `0002` y `0003` son los archivos que no se
+   * pueden tocar, así que lo esperado sale de ellos y lo observado de
+   * `sqlite_master`. No es tautológico leerlo de las migraciones — sería
+   * tautológico leerlo de `0005`, que es la que está bajo sospecha.
+   */
+
+  /** `0002` escribió el índice y los dos de inmutabilidad; `0003`, el de tenencia. */
+  const MIGRACIONES_QUE_LOS_ESCRIBIERON = [
+    "0002_bitacora_inmutable.sql",
+    "0003_tenencia_y_unicidad.sql",
+  ];
+
+  /**
+   * Dos definiciones son la misma si lo son salvo comentarios y espacios.
+   *
+   * SQLite guarda el texto del `CREATE` tal cual se lo pasaron, y lo que se
+   * compara es la guarda y no la tipografía: una sangría distinta entre dos
+   * archivos no es una regresión. Lo que sí tiene que notarse es cualquier
+   * cambio de palabra —un operador, un mensaje, una cláusula de más o de
+   * menos—, y eso sobrevive a esta normalización.
+   */
+  function normalizar(sql: string): string {
+    return sql
+      .replace(/^\s*--.*$/gm, "")
+      .replace(/\s+/g, " ")
+      .replace(/;\s*$/, "")
+      .trim();
+  }
+
+  /**
+   * Los disparadores y el índice de `bitacora` **tal como los escribieron las
+   * migraciones que los crearon**, leídos de `TEST_MIGRATIONS`.
+   */
+  function declaracionesOriginales(): Map<string, string> {
+    const originales = new Map<string, string>();
+
+    for (const nombre of MIGRACIONES_QUE_LOS_ESCRIBIERON) {
+      const migracion = env.TEST_MIGRATIONS.find(
+        (candidata) => candidata.name === nombre,
+      );
+      if (migracion === undefined) {
+        throw new Error(`${nombre} no está en TEST_MIGRATIONS`);
+      }
+
+      for (const consulta of migracion.queries) {
+        // Los comentarios se descartan antes de buscar: los encabezados de
+        // las dos migraciones mencionan `CREATE TRIGGER` en prosa.
+        const sql = normalizar(consulta);
+        const hallazgo =
+          /^CREATE\s+TRIGGER\s+(\w+)\s[\s\S]*\sON\s+bitacora\b/i.exec(sql) ??
+          /^CREATE\s+(?:UNIQUE\s+)?INDEX\s+(\w+)\s+ON\s+bitacora\b/i.exec(sql);
+
+        if (hallazgo !== null) originales.set(hallazgo[1], sql);
+      }
+    }
+
+    return originales;
+  }
+
+  it("los disparadores de la bitácora son los mismos que escribieron 0002 y 0003", async () => {
+    const originales = declaracionesOriginales();
+
+    // Que la lectura de las migraciones no esté vacía: si la expresión
+    // regular dejara de encontrar nada, la comparación de abajo pasaría
+    // trivialmente comparando dos mapas vacíos. Es el mismo contrapeso que
+    // `test/esquema-cotizaciones.spec.ts` le pone a su inventario de `0004`.
+    expect(
+      [...originales.keys()].sort(),
+      "las cuatro declaraciones originales tienen que encontrarse",
+    ).toEqual([
+      "bitacora_entidad",
+      "bitacora_no_se_actualiza",
+      "bitacora_no_se_borra",
+      "bitacora_tenencia_coherente_al_insertar",
+    ]);
+
+    // `sql IS NOT NULL` deja afuera `sqlite_autoindex_bitacora_1`, que es el
+    // índice que SQLite crea solo para la llave primaria: no lo declara
+    // ninguna migración y por eso no tiene texto que comparar.
+    const { results } = await env.DB.prepare(
+      "SELECT name, sql FROM sqlite_master" +
+        " WHERE tbl_name = 'bitacora' AND type IN ('trigger', 'index')" +
+        " AND sql IS NOT NULL ORDER BY name",
+    ).all<{ name: string; sql: string }>();
+
+    const vivas = new Map(
+      results.map((fila) => [fila.name, normalizar(fila.sql)]),
+    );
+
+    // Uno por uno y no por igualdad de mapas: así el rojo dice **cuál**
+    // guarda se deformó y en qué, en vez de volcar las cuatro.
+    for (const [nombre, original] of originales) {
+      expect(
+        vivas.get(nombre),
+        `«${nombre}» no es el que escribió su migración`,
+      ).toBe(original);
+    }
+
+    expect(
+      [...vivas.keys()].sort(),
+      "la reconstrucción no puede agregar ni perder objetos",
+    ).toEqual([...originales.keys()].sort());
+  });
+
   it("el índice que contesta «¿qué pasó con esto?» sigue puesto", async () => {
     // `(entidad, entidad_id, ocurrido_en)` es la consulta de las dos
     // pantallas. Reconstruir la tabla para meterle los `CHECK` es

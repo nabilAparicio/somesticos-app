@@ -29,16 +29,19 @@
  */
 
 import type {
+  ClaseDeLinea,
   Cotizacion,
   DatosDeCotizacion,
+  DatosDeLinea,
   DatosDeModulo,
   EstadoDeCotizacion,
   FallaDeValidacion,
+  LineaDeCotizacion,
   ModuloDeCotizacion,
   TipoDeModulo,
 } from "../contract";
 import type { BaseDeDatos, Sentencia } from "../db/base";
-import { sentencia } from "../db/base";
+import { recorte, sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 import {
   ahoraIso,
@@ -54,6 +57,19 @@ export type ResultadoDeEscritura =
   | { estado: "no_encontrado" };
 
 /**
+ * Las tres formas en que una escritura dentro de una cotización no ocurre.
+ *
+ * Están en un tipo propio porque son **las mismas tres** para los módulos de
+ * prosa y para las líneas, y porque son las que `borradorParaEscribir` y
+ * `escrituraSinEfecto` producen sin saber cuál de las dos familias las pidió.
+ * Lo único que cambia entre una y otra es qué viaja cuando sí se guardó.
+ */
+export type EscrituraBloqueada =
+  | { estado: "invalido"; fallas: FallaDeValidacion[] }
+  | { estado: "no_es_borrador"; actual: EstadoDeCotizacion }
+  | { estado: "no_encontrado" };
+
+/**
  * Lo que devuelve cualquiera de las cuatro escrituras de módulos.
  *
  * Trae **la lista entera** y no el módulo tocado, igual que los pendientes
@@ -63,9 +79,21 @@ export type ResultadoDeEscritura =
  */
 export type ResultadoDeModulos =
   | { estado: "guardado"; modulos: ModuloDeCotizacion[] }
-  | { estado: "invalido"; fallas: FallaDeValidacion[] }
-  | { estado: "no_es_borrador"; actual: EstadoDeCotizacion }
-  | { estado: "no_encontrado" };
+  | EscrituraBloqueada;
+
+/**
+ * Lo que devuelve cualquiera de las cuatro escrituras de líneas.
+ *
+ * Trae **la lista entera** y no la línea tocada, por lo mismo que los
+ * módulos. Y **no trae los totales**, que es la decisión que importa acá:
+ * este archivo lee y escribe filas, y la aritmética vive en una sola función
+ * pura —`totalesDe`, en `worker/cotizaciones/lineas.ts`— que se aplica una
+ * sola vez, al armar la respuesta. Devolverlos desde acá obligaría a sumarlos
+ * también en el `GET`, que es la segunda suma que mañana dice otra cosa.
+ */
+export type ResultadoDeLineas =
+  | { estado: "guardado"; lineas: LineaDeCotizacion[] }
+  | EscrituraBloqueada;
 
 export interface ServicioDeCotizaciones {
   listar(tenantId: string): Promise<Cotizacion[]>;
@@ -118,6 +146,45 @@ export interface ServicioDeCotizaciones {
     cotizacionId: string,
     orden: readonly string[],
   ): Promise<ResultadoDeModulos>;
+
+  /* --- Las líneas de honorarios y gastos estimados (T-3 A) --- */
+
+  /**
+   * Las líneas de una cotización, en su orden.
+   *
+   * **Leer no depende del estado**, igual que con los módulos: una emitida
+   * muestra sus líneas y sus totales como cualquier borrador. Lo que el
+   * estado bloquea es cambiarlas.
+   */
+  listarLineas(
+    tenantId: string,
+    cotizacionId: string,
+  ): Promise<LineaDeCotizacion[]>;
+  agregarLinea(
+    tenantId: string,
+    cotizacionId: string,
+    datos: DatosDeLinea,
+  ): Promise<ResultadoDeLineas>;
+  editarLinea(
+    tenantId: string,
+    cotizacionId: string,
+    lineaId: string,
+    datos: DatosDeLinea,
+  ): Promise<ResultadoDeLineas>;
+  quitarLinea(
+    tenantId: string,
+    cotizacionId: string,
+    lineaId: string,
+  ): Promise<ResultadoDeLineas>;
+  /**
+   * La lista completa de identificadores en su orden nuevo. El `orden` que se
+   * guarda es la **posición en ese arreglo**, nunca un número del cuerpo.
+   */
+  reordenarLineas(
+    tenantId: string,
+    cotizacionId: string,
+    orden: readonly string[],
+  ): Promise<ResultadoDeLineas>;
 }
 
 interface FilaDeCotizacion {
@@ -223,6 +290,48 @@ interface FilaDeModulo {
 const SOBRE_UN_BORRADOR =
   " EXISTS (SELECT 1 FROM cotizacion c WHERE c.tenant_id = ?" +
   " AND c.id = ? AND c.estado = 'borrador')";
+
+interface FilaDeLinea {
+  id: string;
+  clase: ClaseDeLinea;
+  concepto: string;
+  monto: number;
+  tipo_proceso_id: string | null;
+  tipo_proceso_nombre: string | null;
+  orden: number;
+}
+
+/**
+ * Las líneas con el nombre del trámite resuelto en lectura.
+ *
+ * El `LEFT JOIN` lleva **su propio `tenant_id`**, igual que los de
+ * `SELECCION`: con el filtro repetido en la unión, un `tipo_proceso_id` que
+ * cruzara la frontera devuelve `NULL` en vez del nombre ajeno. Y `LEFT` y no
+ * `INNER` porque la columna es nullable a propósito —una línea sin trámite es
+ * el caso corriente— y porque, si la fila apuntada no se pudiera leer desde
+ * este tenant, lo correcto es devolver la línea con el nombre en nulo y no
+ * hacerla desaparecer de la cotización. Un `INNER JOIN` escondería la fila, y
+ * una línea que desaparece es un monto que desaparece del total.
+ */
+const SELECCION_DE_LINEAS =
+  "SELECT l.id, l.clase, l.concepto, l.monto, l.tipo_proceso_id," +
+  " t.nombre AS tipo_proceso_nombre, l.orden" +
+  " FROM cotizacion_linea l" +
+  " LEFT JOIN tipo_proceso t ON t.id = l.tipo_proceso_id" +
+  " AND t.tenant_id = l.tenant_id" +
+  " WHERE l.tenant_id = ? AND l.cotizacion_id = ? ORDER BY l.orden";
+
+function aLinea(fila: FilaDeLinea): LineaDeCotizacion {
+  return {
+    id: fila.id,
+    clase: fila.clase,
+    concepto: fila.concepto,
+    monto: fila.monto,
+    tipoProcesoId: fila.tipo_proceso_id,
+    tipoProcesoNombre: fila.tipo_proceso_nombre,
+    orden: fila.orden,
+  };
+}
 
 function aModulo(fila: FilaDeModulo): ModuloDeCotizacion {
   return {
@@ -377,6 +486,56 @@ export function cotizacionesSobreD1(
   }
 
   /**
+   * Las líneas de la cotización, en su orden. Con el filtro de tenencia
+   * puesto —dos veces, porque la unión lleva el suyo— igual que todas las
+   * demás consultas de este archivo (I-8).
+   */
+  async function leerLineas(
+    tenantId: string,
+    cotizacionId: string,
+  ): Promise<LineaDeCotizacion[]> {
+    const { results } = await db
+      .prepare(SELECCION_DE_LINEAS)
+      .bind(tenantId, cotizacionId)
+      .all<FilaDeLinea>();
+
+    return results.map(aLinea);
+  }
+
+  /**
+   * El trámite de una línea, si viene, tiene que ser una fila de
+   * `tipo_proceso` **de este tenant**.
+   *
+   * Se comprueba acá, contando, y no se deja que salte la llave foránea ni el
+   * disparador de tenencia, por el mismo argumento que `clienteDesconocido`:
+   * lo que llega es un identificador elegido en un desplegable que puede
+   * haber quedado viejo entre que el formulario cargó y se envió, así que
+   * «ese tipo de proceso ya no existe» es una respuesta de negocio y no un
+   * defecto. Se cuenta lo que una persona puede equivocar, y se deja saltar
+   * lo que sólo un defecto produce.
+   *
+   * **No se exige `activo`**, igual que con el cliente: un tipo dado de baja
+   * sigue siendo el trámite de una cotización que ya lo nombraba, y dejar de
+   * poder editarla sería el mismo error que T-5 evitó con los tipos de
+   * cliente.
+   */
+  async function validarTipoDeProceso(
+    tenantId: string,
+    datos: DatosDeLinea,
+  ): Promise<FallaDeValidacion[]> {
+    if (datos.tipoProcesoId === null) return [];
+
+    const fila = await db
+      .prepare("SELECT id FROM tipo_proceso WHERE tenant_id = ? AND id = ?")
+      .bind(tenantId, datos.tipoProcesoId)
+      .first<{ id: string }>();
+
+    if (fila !== null) return [];
+
+    return [{ campo: "tipoProcesoId", motivo: "tipo_proceso_desconocido" }];
+  }
+
+  /**
    * El guardián de las cuatro escrituras: que la cotización exista en este
    * bufete y que siga siendo un borrador.
    *
@@ -394,7 +553,7 @@ export function cotizacionesSobreD1(
   async function borradorParaEscribir(
     tenantId: string,
     cotizacionId: string,
-  ): Promise<ResultadoDeModulos | null> {
+  ): Promise<EscrituraBloqueada | null> {
     const cotizacion = await obtener(tenantId, cotizacionId);
     if (cotizacion === null) return { estado: "no_encontrado" };
 
@@ -448,8 +607,8 @@ export function cotizacionesSobreD1(
   async function escrituraSinEfecto(
     tenantId: string,
     cotizacionId: string,
-    siSigueSiendoBorrador: () => ResultadoDeModulos,
-  ): Promise<ResultadoDeModulos> {
+    siSigueSiendoBorrador: () => EscrituraBloqueada,
+  ): Promise<EscrituraBloqueada> {
     const ahora = await obtener(tenantId, cotizacionId);
     if (ahora === null) return { estado: "no_encontrado" };
 
@@ -963,6 +1122,323 @@ export function cotizacionesSobreD1(
       return {
         estado: "guardado",
         modulos: await leerModulos(tenantId, cotizacionId),
+      };
+    },
+
+    /* --- Las líneas (T-3 A) ---
+     *
+     * Las cuatro escrituras son la copia deliberada de las cuatro de
+     * módulos: la misma comprobación de borrador en el puerto, la misma
+     * cláusula `EXISTS` pegada a cada sentencia, la misma relectura cuando
+     * no se tocó ninguna fila y el mismo rango de paso negativo al
+     * reordenar. No se redescubrió nada: las tres trampas que la unidad C
+     * de T-2 pagó a los golpes —el `orden` calculado fuera del `batch`, el
+     * `UPDATE … SET orden = orden + 1` contra el índice único, y suponer
+     * una sola causa para «cero filas»— son exactamente las mismas acá,
+     * porque `cotizacion_linea` tiene exactamente las mismas restricciones
+     * que `cotizacion_modulo`.
+     *
+     * Lo único que no tiene gemelo es `validarTipoDeProceso`: una línea
+     * puede apuntar a un trámite y un módulo no apunta a nada. */
+
+    listarLineas: leerLineas,
+
+    async agregarLinea(tenantId, cotizacionId, datos) {
+      const bloqueo = await borradorParaEscribir(tenantId, cotizacionId);
+      if (bloqueo !== null) return bloqueo;
+
+      const fallas = await validarTipoDeProceso(tenantId, datos);
+      if (fallas.length > 0) return { estado: "invalido", fallas };
+
+      // **El `orden` se calcula dentro de la sentencia, no antes**, por la
+      // razón que `agregarModulo` deja medida arriba: leerlo en una consulta
+      // aparte abre una ventana en la que otra alta calcula el mismo número
+      // y la segunda choca contra `cotizacion_linea_orden_unico` con un 500
+      // ilegible. Adentro del `INSERT`, el máximo se evalúa con el candado
+      // de escritura tomado y las dos altas se serializan.
+      //
+      // `COALESCE(MAX(orden), -1) + 1` y no `COUNT(*)`: quitar una línea
+      // deja un hueco, y contar devolvería una posición que otra fila ya
+      // tiene.
+      const [efecto] = await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: cotizacionId,
+          accion: "linea_agregada",
+          // El concepto recortado y **nunca el monto**: `detalle` es el
+          // nombre de cara al usuario de lo que el hecho señala, no una
+          // segunda copia del dato. Y es el concepto y no el rótulo de la
+          // clase porque en una cotización hay seis honorarios y lo único
+          // que los distingue es lo que dice cada uno.
+          detalle: recorte(datos.concepto),
+        },
+        sentencia(
+          "INSERT INTO cotizacion_linea (id, tenant_id, cotizacion_id," +
+            " clase, concepto, monto, tipo_proceso_id, orden)" +
+            " SELECT ?, ?, ?, ?, ?, ?, ?," +
+            " (SELECT COALESCE(MAX(orden), -1) + 1 FROM cotizacion_linea" +
+            " WHERE tenant_id = ? AND cotizacion_id = ?) WHERE" +
+            SOBRE_UN_BORRADOR,
+          nuevoId(),
+          tenantId,
+          cotizacionId,
+          datos.clase,
+          datos.concepto,
+          // Va tal cual, sin pasar por ninguna conversión: `normalizarLinea`
+          // ya garantizó que es un entero seguro de cero en adelante, y
+          // cualquier aritmética acá lo volvería un flotante que el `CHECK`
+          // de `0004` rechazaría con un 500.
+          datos.monto,
+          datos.tipoProcesoId,
+          tenantId,
+          cotizacionId,
+          tenantId,
+          cotizacionId,
+        ),
+      );
+
+      if (efecto.meta.changes === 0) {
+        // El `INSERT` no apunta a ninguna fila existente, así que su única
+        // causa de cero es la cláusula `EXISTS`. Que la relectura dijera
+        // «sigue siendo borrador» sería un estado que este sistema no sabe
+        // producir, y se levanta en vez de inventarle una respuesta amable.
+        return escrituraSinEfecto(tenantId, cotizacionId, () => {
+          throw new Error(
+            "la línea no entró en una cotización que sigue siendo borrador",
+          );
+        });
+      }
+
+      return {
+        estado: "guardado",
+        lineas: await leerLineas(tenantId, cotizacionId),
+      };
+    },
+
+    async editarLinea(tenantId, cotizacionId, lineaId, datos) {
+      const bloqueo = await borradorParaEscribir(tenantId, cotizacionId);
+      if (bloqueo !== null) return bloqueo;
+
+      // Que la línea sea de **esta** cotización y de **este** bufete se
+      // comprueba leyéndola, no dejando que el `UPDATE` no encuentre nada:
+      // sin esto, editar una línea ajena y perder la carrera contra una
+      // emisión se contestarían iguales, y son cosas muy distintas.
+      const existentes = await leerLineas(tenantId, cotizacionId);
+      if (!existentes.some((linea) => linea.id === lineaId)) {
+        return { estado: "no_encontrado" };
+      }
+
+      const fallas = await validarTipoDeProceso(tenantId, datos);
+      if (fallas.length > 0) return { estado: "invalido", fallas };
+
+      // El `SET` no menciona `orden`: editar una línea no la mueve de lugar.
+      // Mover es la otra operación, con su propio verbo.
+      const [efecto] = await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: cotizacionId,
+          accion: "linea_editada",
+          // El concepto **nuevo**: es lo que quedó escrito. La bitácora
+          // guarda hechos, no diffs.
+          detalle: recorte(datos.concepto),
+        },
+        sentencia(
+          "UPDATE cotizacion_linea SET clase = ?, concepto = ?, monto = ?," +
+            " tipo_proceso_id = ?" +
+            " WHERE tenant_id = ? AND cotizacion_id = ? AND id = ? AND" +
+            SOBRE_UN_BORRADOR,
+          datos.clase,
+          datos.concepto,
+          datos.monto,
+          datos.tipoProcesoId,
+          tenantId,
+          cotizacionId,
+          lineaId,
+          tenantId,
+          cotizacionId,
+        ),
+      );
+
+      if (efecto.meta.changes === 0) {
+        // Sigue siendo borrador quiere decir que la línea se fue entre la
+        // comprobación de arriba y esta escritura. Es un 404 y no un motivo
+        // nuevo: «esa línea no está» es exactamente lo que esta dirección ya
+        // contesta cuando no estaba desde el principio.
+        return escrituraSinEfecto(tenantId, cotizacionId, () => ({
+          estado: "no_encontrado",
+        }));
+      }
+
+      return {
+        estado: "guardado",
+        lineas: await leerLineas(tenantId, cotizacionId),
+      };
+    },
+
+    async quitarLinea(tenantId, cotizacionId, lineaId) {
+      const bloqueo = await borradorParaEscribir(tenantId, cotizacionId);
+      if (bloqueo !== null) return bloqueo;
+
+      const existentes = await leerLineas(tenantId, cotizacionId);
+      const quitada = existentes.find((linea) => linea.id === lineaId);
+      if (quitada === undefined) return { estado: "no_encontrado" };
+
+      // El hueco que esto deja en `orden` no se recompacta, igual que con
+      // los módulos: lo que la lista usa es el orden **relativo**, el índice
+      // único sólo exige que no se repita, y el reordenamiento ya los deja
+      // consecutivos cuando de verdad hace falta.
+      const [efecto] = await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: cotizacionId,
+          accion: "linea_quitada",
+          detalle: recorte(quitada.concepto),
+        },
+        sentencia(
+          "DELETE FROM cotizacion_linea" +
+            " WHERE tenant_id = ? AND cotizacion_id = ? AND id = ? AND" +
+            SOBRE_UN_BORRADOR,
+          tenantId,
+          cotizacionId,
+          lineaId,
+          tenantId,
+          cotizacionId,
+        ),
+      );
+
+      if (efecto.meta.changes === 0) {
+        return escrituraSinEfecto(tenantId, cotizacionId, () => ({
+          estado: "no_encontrado",
+        }));
+      }
+
+      return {
+        estado: "guardado",
+        lineas: await leerLineas(tenantId, cotizacionId),
+      };
+    },
+
+    /**
+     * El reordenamiento, con la misma mecánica que el de los módulos y por
+     * las mismas razones, que `reordenarModulos` argumenta entera arriba:
+     * `cotizacion_linea_orden_unico` prohíbe incrementar en su lugar, el
+     * rango de paso es **negativo** porque todo orden que este código
+     * escribe es una posición de arreglo y por lo tanto `>= 0`, y las dos
+     * pasadas viajan en el mismo `batch`, que en D1 es una transacción.
+     *
+     * Se conservan los identificadores en vez de borrar e insertar, y acá el
+     * argumento pesa más todavía que en los módulos: T-7 va a abrir un
+     * proceso por cada línea con `tipo_proceso_id`, y `proceso` va a llevar
+     * una llave foránea a `cotizacion_linea`. Una línea que cambia de `id`
+     * cada vez que alguien la arrastra es una llave foránea que apunta a una
+     * fila borrada.
+     */
+    async reordenarLineas(tenantId, cotizacionId, orden) {
+      const bloqueo = await borradorParaEscribir(tenantId, cotizacionId);
+      if (bloqueo !== null) return bloqueo;
+
+      const existentes = await leerLineas(tenantId, cotizacionId);
+      const conocidas = new Set(existentes.map((linea) => linea.id));
+
+      // Un id que no es de ESTA cotización no se toca. Primero éste, porque
+      // «esa línea no es tuya» es más preciso que «la lista no coincide».
+      const fallas: FallaDeValidacion[] = [];
+      orden.forEach((lineaId, indice) => {
+        if (!conocidas.has(lineaId)) {
+          fallas.push({
+            campo: `orden-${String(indice)}`,
+            motivo: "linea_desconocida",
+          });
+        }
+      });
+      if (fallas.length > 0) return { estado: "invalido", fallas };
+
+      // Y la lista tiene que ser una permutación exacta: ni falta ni repite.
+      const nombradas = new Set(orden);
+      if (nombradas.size !== orden.length || orden.length !== conocidas.size) {
+        return {
+          estado: "invalido",
+          fallas: [{ campo: "orden", motivo: "orden_incompleto" }],
+        };
+      }
+
+      // Reordenar a lo que ya estaba no es un hecho, y la pantalla lo va a
+      // mandar igual cuando alguien suelte una línea donde la levantó. Se
+      // corta **antes** de `mutar`: una entrada que dice «reordenó las
+      // líneas» cuando nada se movió es una decisión inventada.
+      const yaEstaba = existentes.every(
+        (linea, indice) => linea.id === orden[indice],
+      );
+      if (yaEstaba) return { estado: "guardado", lineas: existentes };
+
+      const aparcar = (lineaId: string, indice: number): Sentencia =>
+        sentencia(
+          "UPDATE cotizacion_linea SET orden = ?" +
+            " WHERE tenant_id = ? AND cotizacion_id = ? AND id = ? AND" +
+            SOBRE_UN_BORRADOR,
+          -(indice + 1),
+          tenantId,
+          cotizacionId,
+          lineaId,
+          tenantId,
+          cotizacionId,
+        );
+
+      const asentar = (lineaId: string, indice: number): Sentencia =>
+        sentencia(
+          "UPDATE cotizacion_linea SET orden = ?" +
+            " WHERE tenant_id = ? AND cotizacion_id = ? AND id = ? AND" +
+            SOBRE_UN_BORRADOR,
+          indice,
+          tenantId,
+          cotizacionId,
+          lineaId,
+          tenantId,
+          cotizacionId,
+        );
+
+      // Un solo hecho para el movimiento entero, y sin `detalle`: lo que se
+      // movió es la lista, y nombrar una de las líneas diría menos que no
+      // nombrar ninguna.
+      const resultados = await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: cotizacionId,
+          accion: "lineas_reordenadas",
+        },
+        ...orden.map(aparcar),
+        ...orden.map(asentar),
+      );
+
+      // **Ninguna y no la primera.** La guarda `EXISTS` es la misma en las
+      // `2n` sentencias, así que si la cotización dejó de ser un borrador no
+      // escribe ninguna; que no haya escrito ninguna es entonces la
+      // condición exacta de «la operación entera no ocurrió». Mirar sólo la
+      // primera era un defecto medido en los módulos: bastaba con que
+      // desapareciera esa fila para devolver un rechazo **habiendo escrito**.
+      const nadaSeMovio = resultados.every(
+        (resultado) => resultado.meta.changes === 0,
+      );
+
+      if (nadaSeMovio) {
+        // Acá no sirve el 404: la dirección es la de la colección y la
+        // cotización existe. Si sigue siendo un borrador, lo que quedó viejo
+        // es la lista que mandó la pantalla, y eso es lo que
+        // `orden_incompleto` dice.
+        return escrituraSinEfecto(tenantId, cotizacionId, () => ({
+          estado: "invalido",
+          fallas: [{ campo: "orden", motivo: "orden_incompleto" }],
+        }));
+      }
+
+      // Si se movió algo pero a la lista se le fue una línea en el camino,
+      // esto es un guardado honesto y no a medias: las que sobrevivieron
+      // quedaron en el orden pedido, y la lista que vuelve sale de releer la
+      // base, así que dice la verdad — los totales también, porque se
+      // derivan de lo que vuelve.
+      return {
+        estado: "guardado",
+        lineas: await leerLineas(tenantId, cotizacionId),
       };
     },
   };

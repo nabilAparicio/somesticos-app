@@ -11,12 +11,27 @@
  *   PUT    /api/cotizaciones/{id}/modulos         reordena la lista entera
  *   PUT    /api/cotizaciones/{id}/modulos/{mid}   edita uno
  *   DELETE /api/cotizaciones/{id}/modulos/{mid}   lo saca
+ *   GET    /api/cotizaciones/{id}/lineas          las líneas y lo que suman
+ *   POST   /api/cotizaciones/{id}/lineas          agrega una al final
+ *   PUT    /api/cotizaciones/{id}/lineas          reordena la lista entera
+ *   PUT    /api/cotizaciones/{id}/lineas/{lid}    edita una
+ *   DELETE /api/cotizaciones/{id}/lineas/{lid}    la saca
  *
  * **Y nada más.** No hay ruta de emitir —es de T-4, con su propio disparador
- * de inmutabilidad en la base— ni de líneas, que son de T-3. La cuarta parte
- * de la dirección `/api/cotizaciones/{id}/bitacora` la atiende
- * `worker/bitacora/rutas.ts`, que corre antes y para la que este archivo
- * devuelve `null`: acá sólo se reconoce `modulos` en esa posición.
+ * de inmutabilidad en la base—. La cuarta parte de la dirección
+ * `/api/cotizaciones/{id}/bitacora` la atiende `worker/bitacora/rutas.ts`,
+ * que corre antes y para la que este archivo devuelve `null`: acá sólo se
+ * reconocen `modulos` y `lineas` en esa posición.
+ *
+ * ## Las líneas tienen la misma forma que los módulos, y una diferencia
+ *
+ * Las cinco rutas de `lineas` son la copia de las cinco de `modulos`, con el
+ * mismo orden de rechazos y la misma decisión de qué verbo va en cada
+ * dirección. La diferencia está en el cuerpo: la respuesta de líneas trae
+ * **los totales derivados**, y los deriva esta capa con `totalesDe`, una
+ * sola vez y en un solo sitio. La pantalla no suma; el repositorio tampoco
+ * —devuelve filas—. Dos sumas en dos sitios son dos resultados el día que
+ * una cambie.
  *
  * ## Por qué el reordenamiento es un `PUT` a la colección
  *
@@ -62,15 +77,23 @@ import type {
   CotizacionNoEsBorrador,
   DatosInvalidos,
   FallaDeValidacion,
+  LineaDeCotizacion,
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
+  RespuestaDeLineas,
   RespuestaDeModulos,
 } from "../contract";
 import { ahoraIso, hoyEnPanama } from "../db/momentos";
 import { normalizarCotizacion } from "./dominio";
+import {
+  normalizarLinea,
+  normalizarOrdenDeLineas,
+  totalesDe,
+} from "./lineas";
 import { normalizarModulo, normalizarOrdenDeModulos } from "./modulos";
 import type {
   ResultadoDeEscritura,
+  ResultadoDeLineas,
   ResultadoDeModulos,
   ServicioDeCotizaciones,
 } from "./repositorio";
@@ -168,6 +191,33 @@ function respuestaDeModulos(
   // contesta `GET` sería prometer un recurso que no existe.
   const cuerpo: RespuestaDeModulos = { modulos: resultado.modulos };
   return json(cuerpo, { status: estadoAlGuardar });
+}
+
+/**
+ * El cuerpo de las líneas: la lista, y lo que suma.
+ *
+ * **Es el único sitio donde se llama a `totalesDe`.** Lo usan por igual el
+ * `GET` y las cuatro escrituras, así que la lista y sus totales no pueden
+ * salir desincronizados de ninguna dirección: los totales se derivan
+ * siempre de la lista que viaja con ellos, en la misma línea de código.
+ */
+function cuerpoDeLineas(lineas: LineaDeCotizacion[]): RespuestaDeLineas {
+  return { lineas, totales: totalesDe(lineas) };
+}
+
+function respuestaDeLineas(
+  resultado: ResultadoDeLineas,
+  estadoAlGuardar: 200 | 201,
+): Response {
+  if (resultado.estado === "no_encontrado") return noEncontrado();
+  if (resultado.estado === "invalido") return invalido(resultado.fallas);
+  if (resultado.estado === "no_es_borrador") {
+    return noEsBorrador(resultado.actual);
+  }
+
+  // Sin `location` ni en el alta, por lo mismo que con un módulo: una línea
+  // tiene dirección para editarla y para quitarla, pero no para leerla sola.
+  return json(cuerpoDeLineas(resultado.lineas), { status: estadoAlGuardar });
 }
 
 /**
@@ -322,6 +372,111 @@ async function rutasDeModulos(
 }
 
 /**
+ * Las cinco rutas de las líneas de honorarios y gastos estimados.
+ *
+ * **Es la gemela de `rutasDeModulos`**, con el mismo orden de rechazos —404
+ * antes que todo, 409 antes que 422, 422 al final— y por los mismos motivos,
+ * que aquella función argumenta entera. Se mantienen separadas y no
+ * fusionadas en una genérica porque lo único que comparten es ese preámbulo:
+ * las dos normalizaciones son distintas, los cuatro métodos del puerto son
+ * distintos y el cuerpo de la respuesta también —el de líneas lleva los
+ * totales—. Una función parametrizada por cuatro llamadas y dos
+ * normalizadores sería más difícil de leer que las dos, y el día que una de
+ * las dos familias necesite algo propio habría que volver a partirla.
+ *
+ * **Leer nunca se bloquea.** El `GET` contesta igual sobre una emitida, con
+ * sus totales: lo que el estado impide es cambiar el documento, no mirarlo.
+ * Y es justamente lo que T-6 va a necesitar para imprimirlo.
+ */
+async function rutasDeLineas(
+  request: Request,
+  segmentos: string[],
+  tenantId: string,
+  cotizacionId: string,
+  servicio: ServicioDeCotizaciones,
+  unaLinea: boolean,
+): Promise<Response> {
+  const permitidos = unaLinea ? "PUT, DELETE" : "GET, POST, PUT";
+  const metodo = request.method;
+
+  const reconocido = unaLinea
+    ? metodo === "PUT" || metodo === "DELETE"
+    : metodo === "GET" || metodo === "POST" || metodo === "PUT";
+
+  // El 405 va **antes** de mirar si la cotización existe: un verbo que esta
+  // dirección no tiene no es una pregunta sobre ninguna cotización, así que
+  // contestarlo no dice si existe.
+  if (!reconocido) {
+    return json(
+      { error: "method_not_allowed" },
+      { status: 405, headers: { allow: permitidos, ...SIN_CACHE } },
+    );
+  }
+
+  const cotizacion = await servicio.obtener(tenantId, cotizacionId);
+  if (cotizacion === null) return noEncontrado();
+
+  if (metodo === "GET") {
+    return json(
+      cuerpoDeLineas(await servicio.listarLineas(tenantId, cotizacionId)),
+    );
+  }
+
+  if (cotizacion.estado !== "borrador") {
+    return noEsBorrador(cotizacion.estado);
+  }
+
+  if (unaLinea) {
+    const lineaId = decodificar(segmentos[4]);
+    if (lineaId === null) return noEncontrado();
+
+    if (metodo === "DELETE") {
+      return respuestaDeLineas(
+        await servicio.quitarLinea(tenantId, cotizacionId, lineaId),
+        200,
+      );
+    }
+
+    const leido = await leerCuerpo(request);
+    if (!leido.ok) return leido.respuesta;
+
+    const normalizado = normalizarLinea(leido.valor);
+    if (!normalizado.ok) return invalido(normalizado.fallas);
+
+    return respuestaDeLineas(
+      await servicio.editarLinea(
+        tenantId,
+        cotizacionId,
+        lineaId,
+        normalizado.datos,
+      ),
+      200,
+    );
+  }
+
+  const leido = await leerCuerpo(request);
+  if (!leido.ok) return leido.respuesta;
+
+  if (metodo === "PUT") {
+    const normalizado = normalizarOrdenDeLineas(leido.valor);
+    if (!normalizado.ok) return invalido(normalizado.fallas);
+
+    return respuestaDeLineas(
+      await servicio.reordenarLineas(tenantId, cotizacionId, normalizado.orden),
+      200,
+    );
+  }
+
+  const normalizado = normalizarLinea(leido.valor);
+  if (!normalizado.ok) return invalido(normalizado.fallas);
+
+  return respuestaDeLineas(
+    await servicio.agregarLinea(tenantId, cotizacionId, normalizado.datos),
+    201,
+  );
+}
+
+/**
  * Devuelve `null` cuando la ruta no es de cotizaciones, para que quien llama
  * siga buscando y termine en su propio 404.
  */
@@ -363,13 +518,17 @@ export async function rutasDeCotizaciones(
     );
   }
 
-  // Cuatro segmentos con `modulos` al final es la colección; cinco es un
-  // módulo concreto. La bitácora es el otro cuarto segmento y la atiende su
-  // propio módulo, que corre antes. Todo lo demás —líneas, emitir— todavía
-  // no existe y tiene que caer en el 404 general y no acá.
+  // Cuatro segmentos con `modulos` o `lineas` al final es la colección;
+  // cinco es una fila concreta. La bitácora es el otro cuarto segmento y la
+  // atiende su propio módulo, que corre antes. Todo lo demás —emitir,
+  // duplicar— todavía no existe y tiene que caer en el 404 general y no acá.
   const esDeModulos = segmentos[3] === "modulos";
   const coleccionDeModulos = segmentos.length === 4 && esDeModulos;
   const unModulo = segmentos.length === 5 && esDeModulos;
+
+  const esDeLineas = segmentos[3] === "lineas";
+  const coleccionDeLineas = segmentos.length === 4 && esDeLineas;
+  const unaLinea = segmentos.length === 5 && esDeLineas;
 
   if (coleccionDeModulos || unModulo) {
     const cotizacionId = decodificar(segmentos[2]);
@@ -382,6 +541,20 @@ export async function rutasDeCotizaciones(
       cotizacionId,
       servicio,
       unModulo,
+    );
+  }
+
+  if (coleccionDeLineas || unaLinea) {
+    const cotizacionId = decodificar(segmentos[2]);
+    if (cotizacionId === null) return noEncontrado();
+
+    return rutasDeLineas(
+      request,
+      segmentos,
+      tenantId,
+      cotizacionId,
+      servicio,
+      unaLinea,
     );
   }
 

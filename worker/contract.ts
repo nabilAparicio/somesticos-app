@@ -278,13 +278,70 @@ export type MotivoDeFalla =
    * catálogo mal cargado sino una lista que quedó vieja.
    */
   | "modulo_desconocido"
+  /* --- Líneas de honorarios y gastos estimados (tajada 2, T-3 A) --- */
   /**
-   * El reordenamiento no nombra **cada** módulo exactamente una vez.
+   * La `clase` no es ninguna del catálogo cerrado de `ClaseDeLinea`.
+   *
+   * **Cubre también la clase ausente**, por el mismo argumento que
+   * `tipo_de_modulo_desconocido` escribe entero: la clase sale de un control
+   * que la pantalla dibuja **del mismo registro** contra el que el servidor
+   * valida, así que «no mandaste ninguna» y «mandaste una inventada» son el
+   * mismo defecto y se arreglan con la misma frase.
+   */
+  | "clase_de_linea_desconocida"
+  /**
+   * Una línea sin concepto.
+   *
+   * Es motivo propio y no `contenido_requerido`, que es del módulo de prosa,
+   * porque lo que falta es otra cosa y la frase útil es otra: un módulo vacío
+   * es un título sin nada debajo; una línea sin concepto es un monto que el
+   * cliente no sabe por qué está pagando. Y tampoco es `texto_requerido`: ahí
+   * el texto es lo único que la persona escribe, y en una línea escribe
+   * además el monto.
+   */
+  | "concepto_requerido"
+  /**
+   * El `monto` no es un número entero de centavos de cero en adelante.
+   *
+   * **Es un solo motivo para cuatro situaciones** —ausente, no numérico, con
+   * parte decimal y negativo— y la decisión es la misma que la de
+   * `tipo_de_modulo_desconocido`: desde donde está la persona las cuatro son
+   * «eso no es un importe», y la corrección es la misma. Partirlo en cuatro
+   * daría cuatro frases que mandan a hacer lo mismo.
+   *
+   * Y no es una copia del `CHECK (typeof(monto) = 'integer' AND monto >= 0)`
+   * de `migrations/0004_cotizaciones.sql`, por el mismo argumento con el que
+   * `cliente_requerido` existe teniendo `cliente_id NOT NULL` detrás: el
+   * `CHECK` convierte un 1500.5 en un 500 que nadie puede leer; esto lo
+   * convierte en un 422 que dice qué arreglar. Las dos mitades siguen
+   * existiendo, y la de la base es la que sobrevive a un script de
+   * importación (§5).
+   *
+   * Lo que esta validación **sí** garantiza y el `CHECK` no puede: que la
+   * ruta no convierta a coma flotante en el camino. Lo que no pasa por acá no
+   * llega a la base como número.
+   */
+  | "monto_invalido"
+  /**
+   * El reordenamiento nombra una línea que no es de esta cotización.
+   *
+   * El gemelo de `modulo_desconocido`, y por el mismo motivo que aquél no es
+   * `etapa_desconocida`: lo que falla no es un catálogo mal cargado sino una
+   * lista que quedó vieja.
+   */
+  | "linea_desconocida"
+  /**
+   * El reordenamiento no nombra **cada** fila exactamente una vez.
+   *
+   * Lo comparten los módulos de prosa (T-2 C) y las líneas (T-3 A), así que
+   * la frase no puede nombrar a ninguno de los dos: es el mismo argumento
+   * que llevó a `texto_requerido` a dejar de hablar de la nota cuando el
+   * pendiente empezó a compartirlo.
    *
    * El cuerpo es la lista completa en su orden nuevo, no un movimiento: el
    * servidor asigna el `orden` como la posición en ese arreglo. Una lista a
-   * la que le falta un módulo dejaría filas con el orden viejo mezcladas
-   * entre las nuevas, y una que repite uno pediría dos posiciones para la
+   * la que le falta una fila dejaría las demás con el orden viejo mezcladas
+   * entre las nuevas, y una que repite una pediría dos posiciones para la
    * misma fila. Las dos son la misma causa —la pantalla tiene una copia
    * vieja— y se arreglan igual.
    */
@@ -1143,6 +1200,115 @@ export interface RespuestaDeModulos {
   modulos: ModuloDeCotizacion[];
 }
 
+/**
+ * Las dos clases de línea (T-3 A, `docs/diseno.md` §8).
+ *
+ * Es la familia **estructurada** de §8, la otra mitad de la tabla: acá el
+ * modelo no escribe prosa, rellena campos tipados y **el sistema hace la
+ * aritmética**. La barandilla de la tajada vive entera en esta unión y en el
+ * hecho de que no haya ninguna columna de total.
+ *
+ * `honorario` y `gasto_estimado` no son una etiqueta cosmética: la pantalla
+ * las muestra separadas y rotula el gasto como aproximado, porque un
+ * presupuesto de gasto que se lee como un precio cerrado es una promesa que
+ * el bufete no puede cumplir.
+ *
+ * El catálogo es **cerrado y está en dos mitades acopladas**, exactamente
+ * como el de los tipos de módulo: el `CHECK` de `cotizacion_linea.clase` en
+ * `migrations/0004_cotizaciones.sql` y el registro tipado de
+ * `worker/cotizaciones/lineas.ts`, que es el que pone el rótulo y el orden
+ * en que se muestran. `test/lineas-api.spec.ts` las compara y falla si se
+ * separan.
+ */
+export type ClaseDeLinea = "honorario" | "gasto_estimado";
+
+/**
+ * Una línea tal como la lee la pantalla.
+ *
+ * `monto` son **centavos enteros**, nunca una cantidad con coma: es la
+ * restricción 5 de la tajada, y la base la sostiene con
+ * `CHECK (typeof(monto) = 'integer' AND monto >= 0)` porque en SQLite
+ * `INTEGER` es afinidad y no tipo. Lo que cruza el cable es ese mismo entero;
+ * convertirlo a dinero legible es de la pantalla.
+ *
+ * **No trae subtotal ni la línea sabe de totales**: se derivan, y viajan
+ * aparte en `TotalesDeCotizacion`.
+ *
+ * `tipoProcesoId` es opcional y es lo que T-7 va a usar para abrir procesos
+ * desde una cotización ganada. Una línea sin trámite —una consulta, una
+ * mensajería— es el caso corriente y no la excepción.
+ *
+ * `tipoProcesoNombre` se resuelve **en lectura**, igual que `clienteNombre`:
+ * lo que se guarda es la llave. Viene nulo cuando no hay trámite, y también
+ * si la fila apuntada cruzara la frontera del tenant.
+ */
+export interface LineaDeCotizacion {
+  id: string;
+  clase: ClaseDeLinea;
+  concepto: string;
+  /** Centavos enteros, cero o más. Nunca coma flotante. */
+  monto: number;
+  tipoProcesoId: string | null;
+  tipoProcesoNombre: string | null;
+  orden: number;
+}
+
+/**
+ * Lo que el formulario manda al agregar o editar una línea. Ya normalizado.
+ *
+ * Son **cuatro campos y no seis**: `id` y `orden` los pone el servidor, por
+ * lo mismo que en un módulo. Un `orden` que llegara del cuerpo sería el
+ * camino para pedirle a la base dos líneas en la misma posición.
+ */
+export interface DatosDeLinea {
+  clase: ClaseDeLinea;
+  concepto: string;
+  /** Centavos enteros, cero o más. */
+  monto: number;
+  tipoProcesoId: string | null;
+}
+
+/**
+ * Lo que suman las líneas de una cotización. **Derivado, nunca guardado.**
+ *
+ * Es la barandilla de la tajada escrita como tipo: no hay columna de
+ * subtotal ni de total, ni en `cotizacion_linea` ni en `cotizacion`. Si se
+ * guardaran, en seis meses habría cotizaciones cuyo total no coincide con la
+ * suma de sus líneas y nadie sabría cuál de los dos números es el verdadero.
+ *
+ * Los tres son **centavos enteros**, y la aritmética que los produce vive en
+ * `worker/cotizaciones/lineas.ts`, en una función pura que el servidor y la
+ * pantalla importan del mismo lugar. Dos sumas en dos sitios son dos
+ * resultados el día que una cambie.
+ *
+ * El ITBMS no está acá y no es un olvido: es T-12, y está bloqueada por la
+ * decisión de cómo se trata el impuesto sobre honorarios frente a gastos
+ * reembolsables.
+ */
+export interface TotalesDeCotizacion {
+  /** Σ de las líneas de clase `honorario`, en centavos. */
+  honorarios: number;
+  /** Σ de las líneas de clase `gasto_estimado`, en centavos. Aproximado. */
+  gastosEstimados: number;
+  /** La suma de los dos. En centavos. */
+  total: number;
+}
+
+/**
+ * Las líneas de una cotización, **en su orden**, con lo que suman.
+ *
+ * Las cuatro operaciones de escritura devuelven la lista entera y los totales
+ * recalculados, igual que los módulos devuelven la lista entera: lo que
+ * cambió no es una línea sino el documento. Y los totales viajan con ella
+ * porque **la pantalla no los calcula**: si los sumara por su cuenta, el día
+ * que la aritmética cambie habría dos respuestas distintas a la misma
+ * pregunta.
+ */
+export interface RespuestaDeLineas {
+  lineas: LineaDeCotizacion[];
+  totales: TotalesDeCotizacion;
+}
+
 /* ==========================================================================
    Bitácora (T-10)
 
@@ -1295,7 +1461,43 @@ export type AccionDeBitacora =
    * fila que cambió de número: una entrada por módulo movido llenaría la
    * historia de ruido para contar una sola decisión.
    */
-  | "modulos_reordenados";
+  | "modulos_reordenados"
+  /**
+   * Entró una línea de honorario o de gasto estimado (T-3 A). `detalle` lleva
+   * su concepto, recortado.
+   *
+   * Los cuatro verbos de línea van **con prefijo** por la misma regla que los
+   * de módulo: pelados van los hechos propios de la entidad, prefijados los
+   * de algo que *cuelga* de ella. Una línea cuelga de su cotización.
+   *
+   * **El `detalle` es el concepto y no el rótulo de la clase**, que es donde
+   * se separan de los verbos de módulo. En un módulo lo que identifica la
+   * fila de cara a una persona es su tipo —hay a lo sumo un «Alcance»—; en
+   * una línea hay seis honorarios y lo único que los distingue es lo que
+   * dice cada uno. Un «agregó la línea «Honorarios»» repetido seis veces no
+   * contesta «¿quién metió esto?», que es para lo que existe la bitácora.
+   *
+   * **Y nunca el monto.** `detalle` es el nombre de cara al usuario de lo que
+   * el hecho señala, no una segunda copia del dato: el monto vive en su
+   * columna, y copiarlo acá sería guardar un diff disfrazado de pista en la
+   * única tabla que no se puede corregir.
+   */
+  | "linea_agregada"
+  /** Cambió la clase, el concepto, el monto o el trámite de una línea. */
+  | "linea_editada"
+  /**
+   * Una línea salió de la cotización. `detalle` lleva su concepto.
+   *
+   * Es `linea_quitada` y no `linea_borrada` por lo mismo que
+   * `modulo_quitado`: el `borrado` pelado es el de una entidad que tenía
+   * existencia propia y pantalla propia, y una línea nunca la tuvo.
+   */
+  | "linea_quitada"
+  /**
+   * Cambió el orden de las líneas. Va **sin `detalle`**, igual que
+   * `modulos_reordenados` y `plan_editado`: lo que se movió es la lista.
+   */
+  | "lineas_reordenadas";
 
 /**
  * Una entrada tal como la lee la pantalla.

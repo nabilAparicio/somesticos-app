@@ -96,9 +96,32 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   modulo_desconocido:
     "Uno de los módulos ya no es de esta cotización. Hay que volver a" +
     " cargarla.",
+  /* Lo comparten los módulos de prosa y las líneas, así que la frase no
+     puede nombrar a ninguno de los dos: es el mismo argumento que dejó a
+     `texto_requerido` sin nombrar la nota cuando el pendiente empezó a
+     compartirlo. */
   orden_incompleto:
-    "La lista no coincide con los módulos de esta cotización. Hay que volver" +
-    " a cargarla antes de reordenarlos.",
+    "La lista no coincide con lo que tiene esta cotización. Hay que volver a" +
+    " cargarla antes de reordenarla.",
+  /* La clase sale de un control que la pantalla dibuja del mismo registro
+     contra el que el servidor valida, así que la frase sirve igual para «no
+     elegiste ninguna» y para «esa no existe». */
+  clase_de_linea_desconocida:
+    "Hay que decir si la línea es un honorario o un gasto estimado.",
+  /* No dice «el concepto es obligatorio» sino qué pasa sin él: lo que la
+     persona está por mandarle al cliente es un monto sin explicación. */
+  concepto_requerido:
+    "Sin concepto, la línea es un monto que el cliente no sabe por qué está" +
+    " pagando. Hay que decir qué se cobra.",
+  /* Una sola frase para las cuatro formas de no ser un importe —ausente, no
+     numérico, con centavos partidos y negativo— porque desde donde está la
+     persona las cuatro son lo mismo y se arreglan igual. */
+  monto_invalido:
+    "Ese monto no es un importe. Va un número de cero en adelante, sin" +
+    " centavos partidos.",
+  linea_desconocida:
+    "Una de las líneas ya no es de esta cotización. Hay que volver a" +
+    " cargarla.",
 };
 
 /**

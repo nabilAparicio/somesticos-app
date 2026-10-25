@@ -68,6 +68,15 @@ export const VERBOS_DE_BITACORA: Record<AccionDeBitacora, string> = {
   modulo_editado: "editó el módulo",
   modulo_quitado: "quitó el módulo",
   modulos_reordenados: "reordenó los módulos",
+  /* Los cuatro de las líneas de honorarios y gastos estimados (T-3 A).
+     `detalle` lleva el **concepto** de la línea y no el rótulo de su clase:
+     en una cotización hay seis honorarios y lo único que los distingue es lo
+     que dice cada uno. El reordenamiento no nombra ninguno, igual que el de
+     los módulos. */
+  linea_agregada: "agregó la línea",
+  linea_editada: "editó la línea",
+  linea_quitada: "quitó la línea",
+  lineas_reordenadas: "reordenó las líneas",
 };
 
 /**

@@ -144,7 +144,21 @@ export const ACCIONES_POR_ENTIDAD = {
      distintas y la bitácora existe para contestarlas por separado. Lo que
      **no** hay es un verbo por módulo movido: reordenar es un hecho de la
      lista entera, y una entrada por fila convertiría una decisión en seis
-     líneas de ruido. */
+     líneas de ruido.
+
+     ## Los cuatro verbos de línea (T-3 A)
+
+     Las líneas de honorarios y gastos estimados cuelgan de la cotización
+     igual que los módulos de prosa, así que llevan prefijo por la misma
+     regla y son cuatro por el mismo motivo: las cuatro preguntas son
+     distintas y la bitácora existe para contestarlas por separado.
+
+     Lo que **no** se hizo es reusar los verbos de módulo con otro `detalle`.
+     Un `modulo_agregado` que a veces significa una línea convertiría
+     «¿quién metió este honorario?» en una pregunta que hay que contestar
+     leyendo el `detalle` y adivinando de qué familia es. El vocabulario
+     cerrado existe justamente para que esa distinción no dependa de una
+     cadena libre. */
   cotizacion: [
     "creado",
     "editado",
@@ -152,6 +166,10 @@ export const ACCIONES_POR_ENTIDAD = {
     "modulo_editado",
     "modulo_quitado",
     "modulos_reordenados",
+    "linea_agregada",
+    "linea_editada",
+    "linea_quitada",
+    "lineas_reordenadas",
   ],
 } as const satisfies Record<EntidadRegistrada, readonly AccionDeBitacora[]>;
 
