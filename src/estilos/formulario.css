@@ -519,3 +519,76 @@
   font-size: var(--texto-s);
   font-variant-numeric: tabular-nums;
 }
+
+/* ======================================================================
+   Los módulos de prosa de una cotización (T-2, unidad C)
+   ====================================================================== */
+
+/*
+ * Un `<ol>` de verdad, igual que el plan y la plantilla: el orden **es** el
+ * dato —es el orden en que se va a leer la propuesta—, así que el número lo
+ * pone el navegador. Lo que se quita es la sangría que en 320px le roba
+ * espacio al textarea.
+ *
+ * ## Lo que este bloque NO declara, y por qué
+ *
+ * No hay un solo `min-width: 0` acá, y la primera versión tenía tres, con
+ * un comentario que decía que sin ellos el `<textarea>` imponía su ancho
+ * intrínseco y la página se salía en 320px. **Era falso, y se midió.**
+ * Borrando cada declaración y releyendo a 320px el `scrollWidth` del
+ * documento, el ancho del `<li>` y el del control, los números son los
+ * mismos con las tres y sin ninguna: 320, 272 y 245.
+ *
+ * La contención ya está escrita más arriba, dos veces, y no necesitaba una
+ * tercera acá:
+ *
+ *  - el `<textarea>` lleva `.campo__control`, que declara `inline-size:
+ *    100%` y `min-inline-size: 0`, así que no tiene ancho intrínseco que
+ *    imponer;
+ *  - `body` declara `overflow-wrap: break-word` en `base.css`, y eso parte
+ *    el token pegado de un módulo de prosa antes de que empuje nada.
+ *
+ * Y aunque hiciera falta, `min-width: 0` no podía hacerlo: estas cajas son
+ * ítems de contenedores flex **en columna**, donde el eje principal es el
+ * vertical, así que el mínimo automático que esa declaración desarma es el
+ * de altura y no el de ancho.
+ */
+.modulos {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-m);
+  margin: 0;
+  padding-inline-start: var(--espacio-m);
+}
+
+.modulo {
+  padding: var(--espacio-xs) var(--espacio-s);
+  border-inline-start: 3px solid var(--color-borde);
+  border-radius: var(--radio-s);
+  background: var(--color-superficie);
+}
+
+.modulo__rotulo {
+  margin: 0;
+  font-size: var(--texto-m);
+}
+
+/*
+ * La única declaración de este bloque que carga peso, y por eso es la única
+ * con prueba propia: los saltos de línea de un módulo de prosa son parte
+ * del documento, y colapsarlos acá mostraría en pantalla algo distinto de
+ * lo que se va a emitir.
+ *
+ * No lleva `overflow-wrap: anywhere` al lado, que es lo que la primera
+ * versión tenía. El `break-word` heredado de `body` ya parte el token sin
+ * espacios, y la diferencia entre los dos —que `anywhere` además achica el
+ * tamaño mínimo-contenido— sólo se ve en un ítem flex sobre su eje
+ * principal, que no es el caso de este párrafo. Medido con un token de
+ * cincuenta letras seguidas: 245px de ancho y cero desborde con la
+ * declaración y sin ella. Es la diferencia con `.plan__nombre`, que sí la
+ * necesita porque vive dentro de una `Fila`.
+ */
+.modulo__texto {
+  margin: 0;
+  white-space: pre-wrap;
+}

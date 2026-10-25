@@ -138,6 +138,76 @@ const EMITIDA = cotizacion({
   clienteNombre: CLIENTES[1].nombre,
 });
 
+/* --- Los módulos de prosa (T-2, unidad C2) ------------------------------- */
+
+const MODULO_UNO = "7a0f0b11-1111-4111-8111-000000000001";
+const MODULO_DOS = "7a0f0b11-2222-4222-8222-000000000002";
+const MODULO_TRES = "7a0f0b11-3333-4333-8333-000000000003";
+
+const TEXTO_UNO = "Vino por una visa de trabajo.";
+const TEXTO_DOS = "Solicitud, seguimiento y retiro del carné.";
+
+/**
+ * El tercero lleva un token pegado, sin espacios ni guiones, por la misma
+ * razón que el nombre del segundo cliente: un texto que el navegador puede
+ * partir solo no es contenido hostil, y sin contenido hostil la medida de
+ * §9 sobre el editor no mide nada.
+ */
+const TEXTO_TRES =
+  "No incluye TASASYMULTASDELSERVICIONACIONALDEMIGRACIONDEPANAMAOESTE.";
+
+const MODULOS_DEL_BORRADOR = [
+  { id: MODULO_UNO, tipo: "antecedentes", orden: 0, contenido: TEXTO_UNO },
+  { id: MODULO_DOS, tipo: "alcance", orden: 1, contenido: TEXTO_DOS },
+  { id: MODULO_TRES, tipo: "exclusiones", orden: 2, contenido: TEXTO_TRES },
+];
+
+/**
+ * La emitida es la única cotización que dibuja módulos **en modo lectura**,
+ * y lleva dos porque ese camino tiene dos cosas distintas que poner a
+ * prueba. Un solo módulo no puede ser las dos a la vez, y el intento de que
+ * lo fuera produjo una prueba que pasaba sin medir nada.
+ *
+ *  1. **El hostil**: un token pegado de cincuenta letras, sin espacios ni
+ *     guiones. Sin él, las nueve medidas de ancho sobre el detalle de la
+ *     emitida pasaban por encima de un párrafo corriente, que no puede
+ *     empujar nada: medían el detalle, no la prosa. Es la prosa cruda el
+ *     único contenido de esta pantalla que llega al layout sin un control
+ *     que lo contenga.
+ *  2. **El de dos renglones**: dos frases cortas separadas por un salto de
+ *     línea de verdad, que es lo que `white-space: pre-wrap` conserva.
+ *     **Cortas a propósito**: la primera versión de esta prueba usaba un
+ *     texto largo, y a 1280px ese texto envolvía solo — así que medía dos
+ *     renglones con `pre-wrap` y sin él, y sobrevivía a la mutación. Con
+ *     dieciséis caracteres no hay envoltorio posible, y la única cosa que
+ *     puede partirlos en dos es el salto conservado.
+ */
+const TEXTO_HOSTIL_DE_LA_EMITIDA =
+  "Ref CONSTANCIADEANTECEDENTESPENALESDELAREPUBLICADEPANAMA.";
+
+const TEXTO_EN_DOS_RENGLONES = "Primero.\nSegundo.";
+
+const MODULOS_DE_LA_EMITIDA = [
+  {
+    id: "7a0f0b11-4444-4444-8444-000000000004",
+    tipo: "nota_cliente",
+    orden: 0,
+    contenido: TEXTO_HOSTIL_DE_LA_EMITIDA,
+  },
+  {
+    id: "7a0f0b11-5555-4555-8555-000000000006",
+    tipo: "supuestos",
+    orden: 1,
+    contenido: TEXTO_EN_DOS_RENGLONES,
+  },
+];
+
+const MODULOS_POR_COTIZACION: Record<string, Record<string, unknown>[]> = {
+  [BORRADOR_ID]: MODULOS_DEL_BORRADOR,
+  [EMITIDA_ID]: MODULOS_DE_LA_EMITIDA,
+  [BORRADOR_VIEJO_ID]: [],
+};
+
 const BITACORA = {
   entradas: [
     {
@@ -158,6 +228,11 @@ const COTIZACIONES = [BORRADOR, BORRADOR_VIEJO, EMITIDA];
 
 function cuerpoDe(pathname: string): Record<string, unknown> | null {
   if (/^\/api\/cotizaciones\/[^/]+\/bitacora$/.test(pathname)) return BITACORA;
+
+  const deModulos = /^\/api\/cotizaciones\/([^/]+)\/modulos$/.exec(pathname);
+  if (deModulos !== null) {
+    return { modulos: MODULOS_POR_COTIZACION[deModulos[1]] ?? [] };
+  }
 
   if (pathname === "/api/cotizaciones") return { cotizaciones: COTIZACIONES };
   if (pathname === "/api/clientes") return { clientes: CLIENTES };
@@ -272,15 +347,19 @@ test.describe("las cotizaciones del bufete", () => {
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "Editar" })).toBeVisible();
 
-    // Emitir, ganar, perder y duplicar son de T-4 y T-5; los módulos y las
-    // líneas, de la unidad C y de T-3. Ni como botón ni como texto apagado:
-    // un control deshabilitado promete una pantalla que no existe.
+    // Emitir, ganar, perder y duplicar son de T-4 y T-5; las líneas, de
+    // T-3. Ni como botón ni como texto apagado: un control deshabilitado
+    // promete una pantalla que no existe.
+    //
+    // «Módulos» salió de esta lista en la unidad C2, que es la que los
+    // trajo. Lo que ocupó su lugar no es nada: la lista se achicó, porque
+    // una palabra que ya se dibuja a propósito no puede seguir prohibida
+    // acá sin convertir esta prueba en una que falla por tener razón.
     for (const palabra of [
       "Emitir",
       "Duplicar",
       "Ganada",
       "Perdida",
-      "Módulos",
       "Líneas",
       "Total",
     ]) {
@@ -469,6 +548,395 @@ test.describe("las cotizaciones del bufete", () => {
     );
   });
 
+  /* --- El editor de módulos de prosa (unidad C2) ------------------------- */
+
+  /** La dirección de la colección, que casi todas estas pruebas interceptan. */
+  function coleccionDeModulos(url: URL): boolean {
+    return url.pathname === `/api/cotizaciones/${BORRADOR_ID}/modulos`;
+  }
+
+  test("el borrador trae sus módulos en el orden del documento", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    // La espera va primero y no es adorno: `toHaveValue` sobre un `nth`
+    // reintenta, pero sólo después de que el elemento exista. Leer apenas
+    // vuelve el `goto` mide lo que React alcanzó a montar.
+    const textos = page.locator(".modulo textarea");
+    await expect(textos).toHaveCount(3);
+
+    await expect(textos.nth(0)).toHaveValue(TEXTO_UNO);
+    await expect(textos.nth(1)).toHaveValue(TEXTO_DOS);
+    await expect(textos.nth(2)).toHaveValue(TEXTO_TRES);
+  });
+
+  test("el desplegable ofrece los seis tipos del catálogo y ninguno más", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    const tipo = page.getByLabel("Tipo", { exact: true });
+    await expect(tipo).toBeVisible();
+
+    /*
+     * Los seis rótulos están escritos a mano y **no** importados de
+     * `worker/cotizaciones/modulos.ts`, que es de donde el desplegable los
+     * saca: una expectativa calculada con la misma fuente que se prueba
+     * pasa aunque las dos estén mal (restricción 6). Que agregar un tipo
+     * obligue a tocar esta lista es la gracia, no el costo: agregar un tipo
+     * es un despliegue, y el `CHECK` de la migración también hay que
+     * moverlo a mano.
+     */
+    await expect(tipo.locator("option")).toHaveText([
+      "Elegir tipo…",
+      "Antecedentes",
+      "Alcance",
+      "Exclusiones",
+      "Supuestos",
+      "Cláusulas",
+      "Nota al cliente",
+    ]);
+  });
+
+  test("sobre lo que ya se emitió los módulos se leen y no se tocan", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${EMITIDA_ID}`);
+
+    await expect(
+      page.getByRole("heading", { name: "Nota al cliente" }),
+    ).toBeVisible();
+    await expect(page.getByText(TEXTO_HOSTIL_DE_LA_EMITIDA)).toBeVisible();
+
+    // Nada de controles apagados: el aviso ocupa su lugar.
+    await expect(page.getByText("se pueden leer pero no cambiar")).toBeVisible();
+    await expect(page.locator(".modulo textarea")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Quitar/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Agregar" })).toHaveCount(0);
+  });
+
+  test("el texto de un módulo conserva sus saltos de línea", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    // Ancho de sobra a propósito: a 1280px las dos mitades del texto entran
+    // holgadas en un solo renglón, así que lo único que puede partirlas es
+    // el salto que el texto trae. A 320px la medida no distinguiría el
+    // salto conservado de un simple envoltorio.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/cotizaciones/${EMITIDA_ID}`);
+
+    const parrafos = page.locator(".modulo__texto");
+    await expect(parrafos).toHaveCount(2);
+
+    /*
+     * Se cuentan renglones y no se afirma el `white-space` computado:
+     * afirmar la declaración sería copiar la hoja de estilo dentro de la
+     * prueba y pasar aunque el navegador no la aplicara. Lo que importa es
+     * que la pantalla muestre el documento como se escribió — un `<p>` sin
+     * `pre-wrap` colapsa el salto y dibuja un solo renglón.
+     *
+     * Se cuentan **posiciones verticales distintas** y no rectángulos a
+     * secas: un `Range` sobre un texto con `pre-wrap` devuelve un
+     * rectángulo por fragmento, y el salto de línea genera uno propio —
+     * medido, da tres sobre dos renglones—. Lo que no miente es a qué
+     * altura se dibujó cada pedazo.
+     *
+     * Tampoco se divide el alto de la caja por la interlínea: esa cuenta
+     * redondeada tolera que se cuele un padding y empieza a contestar lo
+     * que no se le preguntó.
+     */
+    const renglones = await parrafos.nth(1).evaluate((nodo) => {
+      const rango = document.createRange();
+      rango.selectNodeContents(nodo);
+
+      const alturas = new Set(
+        Array.from(rango.getClientRects()).map((caja) => Math.round(caja.top)),
+      );
+      return alturas.size;
+    });
+
+    expect(renglones).toBe(2);
+  });
+
+  test("subir un módulo manda la lista ordenada entera", async ({ page }) => {
+    await conCotizacionesCargadas(page);
+
+    let enviado: string | null = null;
+    await page.route(coleccionDeModulos, async (ruta) => {
+      if (ruta.request().method() !== "PUT") {
+        await ruta.fallback();
+        return;
+      }
+      enviado = ruta.request().postData();
+      await ruta.fulfill({
+        status: 200,
+        json: {
+          modulos: [
+            { ...MODULOS_DEL_BORRADOR[1], orden: 0 },
+            { ...MODULOS_DEL_BORRADOR[0], orden: 1 },
+            MODULOS_DEL_BORRADOR[2],
+          ],
+        },
+      });
+    });
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    const subir = page.getByRole("button", {
+      name: "Subir el módulo 2: Alcance",
+    });
+    await expect(subir).toBeEnabled();
+    await subir.click();
+
+    // El cuerpo es la lista entera de identificadores en su posición nueva,
+    // y **ninguna posición**: el `orden` lo asigna el servidor.
+    await expect.poll(() => enviado).not.toBeNull();
+    expect(JSON.parse(enviado ?? "{}")).toEqual({
+      orden: [MODULO_DOS, MODULO_UNO, MODULO_TRES],
+    });
+
+    // Y la pantalla dibuja lo que vino, sin recomponer el orden a mano.
+    const textos = page.locator(".modulo textarea");
+    await expect(textos).toHaveCount(3);
+    await expect(textos.nth(0)).toHaveValue(TEXTO_DOS);
+  });
+
+  test("los dos extremos no ofrecen moverse hacia afuera", async ({ page }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    await expect(
+      page.getByRole("button", { name: "Subir el módulo 1: Antecedentes" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Bajar el módulo 3: Exclusiones" }),
+    ).toBeDisabled();
+
+    // Los de adentro sí, que es lo que vuelve significativo lo de arriba.
+    await expect(
+      page.getByRole("button", { name: "Bajar el módulo 1: Antecedentes" }),
+    ).toBeEnabled();
+  });
+
+  test("si la lista quedó vieja, lo dice y vuelve a leer la de verdad", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    // Alguien quitó el tercero desde otra pestaña entre la carga y el clic.
+    let yaChoco = false;
+    await page.route(coleccionDeModulos, async (ruta) => {
+      if (ruta.request().method() === "PUT") {
+        yaChoco = true;
+        await ruta.fulfill({
+          status: 422,
+          json: {
+            error: "datos_invalidos",
+            fallas: [{ campo: "orden", motivo: "orden_incompleto" }],
+          },
+        });
+        return;
+      }
+
+      await ruta.fulfill({
+        status: 200,
+        json: {
+          modulos: yaChoco
+            ? MODULOS_DEL_BORRADOR.slice(0, 2)
+            : MODULOS_DEL_BORRADOR,
+        },
+      });
+    });
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".modulo")).toHaveCount(3);
+
+    await page
+      .getByRole("button", { name: "Subir el módulo 2: Alcance" })
+      .click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "La lista no coincide con los módulos de esta cotización",
+    );
+
+    // Lo que importa no es el mensaje sino esto: la pantalla dejó de
+    // mostrar un módulo que ya no existe. Sin la relectura, el aviso diría
+    // «volvé a cargarla» encima de la lista vieja, y el mismo clic volvería
+    // a fallar para siempre.
+    await expect(page.locator(".modulo")).toHaveCount(2);
+  });
+
+  test("agregar manda el tipo y el texto recortado, y nada más", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let enviado: string | null = null;
+    await page.route(coleccionDeModulos, async (ruta) => {
+      if (ruta.request().method() !== "POST") {
+        await ruta.fallback();
+        return;
+      }
+      enviado = ruta.request().postData();
+      await ruta.fulfill({
+        status: 201,
+        json: {
+          modulos: [
+            ...MODULOS_DEL_BORRADOR,
+            {
+              id: "7a0f0b11-5555-4555-8555-000000000005",
+              tipo: "supuestos",
+              orden: 3,
+              contenido: "El cliente entrega los documentos.",
+            },
+          ],
+        },
+      });
+    });
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    await page.getByLabel("Tipo", { exact: true }).selectOption("supuestos");
+    await page
+      .getByLabel("Texto", { exact: true })
+      .fill("  El cliente entrega los documentos.\n\n");
+    await page.getByRole("button", { name: "Agregar" }).click();
+
+    await expect.poll(() => enviado).not.toBeNull();
+    // Dos campos: `id` y `orden` los pone el servidor, y un `orden` que
+    // llegara del cuerpo sería el camino para pedir dos módulos en la misma
+    // posición.
+    expect(JSON.parse(enviado ?? "{}")).toEqual({
+      tipo: "supuestos",
+      contenido: "El cliente entrega los documentos.",
+    });
+
+    await expect(page.locator(".modulo")).toHaveCount(4);
+    // Y el formulario queda limpio para el siguiente.
+    await expect(page.getByLabel("Texto", { exact: true })).toHaveValue("");
+  });
+
+  test("agregar sin tipo ni texto avisa las dos cosas antes de mandar nada", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let huboAlta = false;
+    await page.route(coleccionDeModulos, async (ruta) => {
+      if (ruta.request().method() === "POST") huboAlta = true;
+      await ruta.fallback();
+    });
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await page.getByRole("button", { name: "Agregar" }).click();
+
+    const alerta = page.getByRole("alert");
+    await expect(alerta).toContainText("Ese no es un tipo de módulo");
+    await expect(alerta).toContainText("Un módulo sin texto es un título");
+
+    expect(huboAlta, "no se manda una petición que ya se sabe inválida").toBe(
+      false,
+    );
+  });
+
+  test("editar un módulo manda su tipo y su texto a su propia dirección", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let enviado: string | null = null;
+    await page.route(
+      (url) =>
+        url.pathname === `/api/cotizaciones/${BORRADOR_ID}/modulos/${MODULO_UNO}`,
+      async (ruta) => {
+        enviado = ruta.request().postData();
+        await ruta.fulfill({
+          status: 200,
+          json: {
+            modulos: [
+              { ...MODULOS_DEL_BORRADOR[0], contenido: "Vino por una visa." },
+              MODULOS_DEL_BORRADOR[1],
+              MODULOS_DEL_BORRADOR[2],
+            ],
+          },
+        });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    const texto = page.locator(".modulo textarea").first();
+    await expect(texto).toHaveValue(TEXTO_UNO);
+
+    const guardar = page.getByRole("button", {
+      name: "Guardar el módulo 1: Antecedentes",
+    });
+    // Sin cambios no hay botón: un «Guardar» apagado debajo de cada módulo
+    // es un control muerto en la pantalla que más se mira.
+    await expect(guardar).toHaveCount(0);
+
+    await texto.fill("Vino por una visa.");
+    await guardar.click();
+
+    await expect.poll(() => enviado).not.toBeNull();
+    expect(JSON.parse(enviado ?? "{}")).toEqual({
+      tipo: "antecedentes",
+      contenido: "Vino por una visa.",
+    });
+  });
+
+  test("descartar devuelve el texto que está guardado", async ({ page }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    const texto = page.locator(".modulo textarea").first();
+    await expect(texto).toHaveValue(TEXTO_UNO);
+
+    await texto.fill("Algo que no se quiso escribir.");
+    await page
+      .getByRole("button", {
+        name: "Descartar los cambios del módulo 1: Antecedentes",
+      })
+      .click();
+
+    await expect(texto).toHaveValue(TEXTO_UNO);
+  });
+
+  test("quitar un módulo lo saca de la lista", async ({ page }) => {
+    await conCotizacionesCargadas(page);
+
+    let metodo: string | null = null;
+    await page.route(
+      (url) =>
+        url.pathname === `/api/cotizaciones/${BORRADOR_ID}/modulos/${MODULO_DOS}`,
+      async (ruta) => {
+        metodo = ruta.request().method();
+        await ruta.fulfill({
+          status: 200,
+          json: {
+            modulos: [MODULOS_DEL_BORRADOR[0], MODULOS_DEL_BORRADOR[2]],
+          },
+        });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".modulo")).toHaveCount(3);
+
+    await page
+      .getByRole("button", { name: "Quitar el módulo 2: Alcance" })
+      .click();
+
+    await expect(page.locator(".modulo")).toHaveCount(2);
+    // 200 con la lista, no 204: un `pedirVacio` acá tiraría la respuesta.
+    expect(metodo).toBe("DELETE");
+  });
+
   /* --- El criterio responsivo de §9 -------------------------------------- */
 
   for (const ancho of ANCHOS) {
@@ -496,6 +964,45 @@ test.describe("las cotizaciones del bufete", () => {
       await expect(
         page.getByRole("heading", { name: "COT-2026-0008" }),
       ).toBeVisible();
+
+      // Y que el módulo en modo lectura esté dibujado antes de medir: es el
+      // único lugar de esta pantalla donde la prosa cruda —con su token
+      // pegado de cincuenta letras— llega al layout sin un control que la
+      // contenga. Sin esta espera, la medida es la del detalle solo.
+      await expect(page.locator(".modulo__texto")).toHaveCount(2);
+
+      const desborde = await medirDesborde(page);
+      expect(
+        desborde.scrollWidth,
+        porQueSeSale(ancho, desborde),
+      ).toBeLessThanOrEqual(desborde.clientWidth);
+    });
+  }
+
+  for (const ancho of ANCHOS) {
+    test(`a ${String(ancho)}px de ancho, sobre el editor de módulos`, async ({
+      page,
+    }) => {
+      await conCotizacionesCargadas(page);
+      await page.setViewportSize({ width: ancho, height: 900 });
+      await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+      /*
+       * Lo que esta medida cubre de verdad es **la fila de controles**: el
+       * desplegable de tipo y las tres flechas conviviendo en una `Fila`
+       * que tiene que envolver sola en 320px.
+       *
+       * Lo que **no** cubre, y conviene decirlo para que nadie le pida más
+       * de lo que da: el `<textarea>` no puede empujar nada, porque
+       * `.campo__control` ya lo fija en `inline-size: 100%` con
+       * `min-inline-size: 0`. La prosa cruda —la que sí podría empujar— se
+       * dibuja sólo en el camino de lectura, y a ésa la miden las nueve
+       * medidas sobre el detalle de la emitida.
+       *
+       * Esperar a que los tres existan antes de medir no es adorno: sin
+       * eso la medida es la del detalle sin módulos.
+       */
+      await expect(page.locator(".modulo textarea")).toHaveCount(3);
 
       const desborde = await medirDesborde(page);
       expect(

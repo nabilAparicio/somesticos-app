@@ -9,14 +9,18 @@
  * cliente: son dos lecturas independientes, y un fallo del registro no puede
  * dejar la ficha en blanco.
  *
+ * Y cuelga el editor de módulos de prosa, que es una tercera lectura por el
+ * mismo motivo: `/modulos` tiene su propia dirección, y un fallo suyo no
+ * puede dejar la ficha en blanco.
+ *
  * ## Lo que esta pantalla todavía no muestra, y por qué no lo insinúa
  *
- * No hay módulos ni líneas —son de la unidad C y de T-3—, no hay total —no
- * hay nada que sumar todavía, y cuando lo haya la aritmética es del sistema
- * y no de la pantalla— y no hay emitir, ganar, perder ni duplicar, que son
- * de T-4 y T-5. Nada de eso aparece apagado ni anunciado: un botón
- * deshabilitado promete una pantalla que no existe, y el criterio de este
- * proyecto es no dibujar puertas donde no hay puerta.
+ * No hay líneas —son de T-3—, no hay total —no hay nada que sumar todavía,
+ * y cuando lo haya la aritmética es del sistema y no de la pantalla— y no
+ * hay emitir, ganar, perder ni duplicar, que son de T-4 y T-5. Nada de eso
+ * aparece apagado ni anunciado: un botón deshabilitado promete una pantalla
+ * que no existe, y el criterio de este proyecto es no dibujar puertas donde
+ * no hay puerta.
  *
  * «Editar» aparece **solo sobre un borrador**, que es lo único que la API
  * deja editar. El aviso de por qué no está vive en `avisoDeNoEsBorrador` y
@@ -39,6 +43,7 @@ import {
   cargarCotizacion,
   textoDeProblema,
 } from "./api";
+import { EditorDeModulos } from "./EditorDeModulos";
 import {
   VACIO,
   avisoDeNoEsBorrador,
@@ -173,6 +178,14 @@ export function DetalleDeCotizacion({ id }: Props) {
           />
         </dl>
       </Rejilla>
+
+      {/*
+        `editable` sale del mismo `avisoDeNoEsBorrador` que decide el botón
+        de editar: una sola lectura del estado manda en las dos cosas, y así
+        no pueden contradecirse — un editor de módulos vivo junto a un aviso
+        de que esto ya no se edita sería la peor de las dos pantallas.
+      */}
+      <EditorDeModulos cotizacionId={cotizacion.id} editable={bloqueo === null} />
 
       <Bitacora estado={bitacora} id="bitacora-de-la-cotizacion" />
     </Pila>
