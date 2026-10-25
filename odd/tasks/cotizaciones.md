@@ -1,7 +1,7 @@
 # cotizaciones — Tajada 2: el generador de propuestas
 
 **Creado:** 24 de octubre de 2026
-**Estado:** **R1 y R2 cerradas** (T-1 a T-6). R3 en marcha con T-7, la que cierra el círculo. Revisiones RDD **desactivadas** la noche del 24 de octubre a pedido del usuario, para avanzar sin frenar en cada puerta de consentimiento; se reactivan y se revisa la rama entera. La tajada 1 está construida y empujada; falta desplegarla
+**Estado:** **R1, R2 y R3 cerradas** (T-1 a T-7). R4 en marcha: T-8 hecha, falta T-9. Revisiones RDD **desactivadas** la noche del 24 de octubre a pedido del usuario, para avanzar sin frenar en cada puerta de consentimiento; se reactivan y se revisa la rama entera. La tajada 1 está construida y empujada; falta desplegarla
 (T-16 allá).
 **Diseño de referencia:** `docs/diseno.md` §8 (el generador), §6 (modelo de datos), §5 (invariantes)
 **Tajada anterior:** `odd/tasks/crm-procesos.md`
@@ -224,7 +224,7 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
 
 ### R3 · Donde las dos mitades se tocan
 
-- [ ] **T-7 · De cotización ganada a procesos.** Una cotización ganada abre un proceso por cada
+- [x] **T-7 · De cotización ganada a procesos.** Una cotización ganada abre un proceso por cada
       línea que lleve `tipo_proceso_id`, sembrando su plan desde la plantilla igual que T-7 de la
       tajada anterior. **I-3 por fin es expresable** —el proceso nacido de una cotización comparte
       cliente con ella— y va a la base como disparador, no como validación.
@@ -234,7 +234,7 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
 
 ### R4 · El generador
 
-- [ ] **T-8 · La costura con el modelo.** Una sola interfaz con una única operación de completado,
+- [x] **T-8 · La costura con el modelo.** Una sola interfaz con una única operación de completado,
       proveedor por configuración, **salida validada contra esquema antes de tocar nada**. Nada
       del resto del sistema sabe que existe un LLM. Modelo por defecto `claude-opus-5`.
       *Bloqueada por la decisión del corpus. Forecast ~400.*
@@ -315,6 +315,8 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
 | T-5 A · Ganar, perder, duplicar | `91b234d` | `typecheck` 0, `test` 0 (1504), `lint` 0, `build` 0, `test:e2e` 0 (237) | RDD apagada |
 | T-4 y T-5 B · El ciclo en pantalla | `ceba06a` | `typecheck` 0, `test` 0 (1533), `lint` 0, `build` 0, `test:e2e` 0 (266) | RDD apagada |
 | T-6 · La salida imprimible | `ed0c4a0` | `typecheck` 0, `test` 0 (1575), `lint` 0, `build` 0, `test:e2e` 0 (290) | RDD apagada |
+| T-7 · De ganada a procesos | `8607370` | `typecheck` 0, `test` 0 (1610), `lint` 0, `build` 0, `test:e2e` 0 (290) | RDD apagada |
+| T-8 · La costura con el modelo | `a78ae1d` | `typecheck` 0, `test` 0 (1710), `lint` 0, `build` 0, `test:e2e` 0 (290) | RDD apagada |
 
 ### Lo que T-1 corrigió de este plan
 
@@ -437,6 +439,33 @@ que el hijo. El agujero era entero del `UPDATE`, así que la guarda correcta no 
 —redundante de un lado, insuficiente del otro— sino la **inmutabilidad** de `duplicada_de_id`.
 Un grafo que sólo crece por las hojas y nunca se reescribe es un bosque: recorrerlo termina
 siempre, y no hace falta tope de profundidad ni detección de ciclos.
+
+### Tres redes de tipos que no atrapaban nada
+
+T-8 encontró, midiendo sobre los archivos reales, que el idioma
+
+```ts
+type AccionesSinDuenio = Exclude<AccionDeBitacora, …>;
+export const TODAS_LAS_ACCIONES_TIENEN_DUENIO: AccionesSinDuenio[] = [];
+```
+
+**no detecta nada**, porque `const x: T[] = []` compila para cualquier `T`: un arreglo vacío es
+asignable a todo. Afecta a tres declaraciones —la del vocabulario de bitácora, que viene de la
+tajada 1, y las de los catálogos de módulos y de clases de línea— que llevaban ocho tareas
+pasando por redes.
+
+Verificar esto costó tres intentos, y los dos primeros son la lección:
+
+| Mutación | Qué pasó |
+|---|---|
+| Sacar un verbo de `ACCIONES_POR_ENTIDAD` | murió el typecheck, **por otra razón**: el literal dejaba de ser asignable a la unión |
+| Agregar un verbo huérfano a la unión | murió, **pero el error venía del `Record` de frases** de `src/bitacora.ts` |
+| Darle **frase pero no dueño** | `typecheck` **exit 0**. Ahí quedó demostrado |
+
+O sea que lo cubierto lo cubría otra cosa, y lo que la red prometía estaba descubierto. La forma
+que sí falla es `type DebeSerVacio<T extends never> = T`.
+
+> **Una mutación que muere no prueba la guarda que uno cree, hasta verificar por qué murió.**
 
 ### Deuda registrada, no cerrada
 
