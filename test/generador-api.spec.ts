@@ -72,6 +72,14 @@ let clienteId: string;
 let areaId: string;
 let tramiteVisaId: string;
 let tramiteDivorcioId: string;
+/**
+ * Un trámite que el bufete **dejó de ofrecer**.
+ *
+ * Existe en la tabla, así que una línea que lo nombre pasa la llave foránea
+ * y el disparador de tenencia sin despeinarse. Lo único que lo frena es que
+ * el prompt no lo ofrezca, y eso es lo que estas pruebas vigilan.
+ */
+let tramiteDeBajaId: string;
 
 /** La descripción que el abogado escribe. Es la entrada de toda la tarea. */
 const DESCRIPCION =
@@ -315,6 +323,7 @@ beforeEach(async () => {
   areaId = nuevoId();
   tramiteVisaId = nuevoId();
   tramiteDivorcioId = nuevoId();
+  tramiteDeBajaId = nuevoId();
 
   const ahora = new Date().toISOString();
 
@@ -349,6 +358,19 @@ beforeEach(async () => {
       TENANT_UNICO_ID,
       areaId,
       "Divorcio de mutuo acuerdo",
+    ),
+    // El que el bufete dio de baja. Está en **todas** las corridas y no sólo
+    // en las pruebas que lo nombran: así la aserción de
+    // `tiposDeProcesoOfrecidos` de más abajo pasa a significar «exactamente
+    // los vigentes» en vez de «los dos que sembré».
+    env.DB.prepare(
+      "INSERT INTO tipo_proceso (id, tenant_id, area_id, nombre, activo)" +
+        " VALUES (?, ?, ?, ?, 0)",
+    ).bind(
+      tramiteDeBajaId,
+      TENANT_UNICO_ID,
+      areaId,
+      "Permiso que ya no se tramita",
     ),
   ]);
 });
@@ -622,6 +644,9 @@ describe("generar un borrador desde una descripción", () => {
     expect(falso.peticiones).toHaveLength(1);
     const enviada = falso.peticiones[0];
 
+    // **Exactamente** los dos vigentes, y no «al menos»: el bufete tiene
+    // sembrado además uno dado de baja, así que esta igualdad también dice
+    // que el inactivo no se coló.
     expect([...(enviada.tiposDeProcesoOfrecidos ?? [])].sort()).toEqual(
       [tramiteVisaId, tramiteDivorcioId].sort(),
     );
@@ -641,6 +666,111 @@ describe("generar un borrador desde una descripción", () => {
 
     expect(respuesta.status).toBe(201);
     expect((await cotizacionDe(respuesta)).venceEn).toBe(manana);
+  });
+});
+
+/* ==========================================================================
+   El trámite dado de baja
+
+   Dar de baja un tipo de proceso es decir que **no se abren más**. Ofrecerlo
+   en el prompt es la misma clase de defecto que ofrecerlo en un desplegable,
+   que es lo que la unidad B de T-2 ya había cerrado del otro lado
+   (`tramitesSeleccionables`, probada en `test/lineas-ui.spec.ts`), y acá
+   cuesta más caro: nadie lo ve. El modelo lo pondría en una línea, la línea
+   pasaría la llave foránea y el disparador de tenencia porque la fila
+   existe, y al ganarse la cotización **T-7 abriría un proceso de un tipo que
+   el bufete dejó de tramitar**, sin que nada lo frene.
+
+   Se afirma en los dos caminos —el texto y la lista declarada— y eso no es
+   una guarda contada dos veces: salen del mismo arreglo, pero por caminos
+   distintos. El texto lo arma `comoSeOfrece` y la lista la arma un `map`
+   sobre los ids, así que un filtro que se aplicara a uno y no al otro
+   pasaría la mitad de estas pruebas. El filtro es uno solo y está antes de
+   los dos, que es justamente lo que estas dos aserciones juntas comprueban.
+   ========================================================================== */
+
+describe("un trámite dado de baja no se ofrece", () => {
+  it("no aparece en el texto del prompt, ni por id ni por nombre", async () => {
+    const falso = modeloQueEscribe(PROPUESTA_COMPLETA);
+
+    await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+
+    const { instrucciones } = falso.peticiones[0];
+
+    expect(
+      instrucciones,
+      "el prompt nombra un trámite que el bufete dejó de tramitar: el modelo" +
+        " lo va a usar, y al ganarse la cotización se abriría un proceso de" +
+        " un tipo que ya no se usa",
+    ).not.toContain(tramiteDeBajaId);
+    expect(instrucciones).not.toContain("Permiso que ya no se tramita");
+
+    // El control de hostilidad, y no es ceremonia: un prompt que no nombra
+    // **ningún** trámite pasaría las dos aserciones de arriba sin medir el
+    // filtro. Lo que hay que comprobar es que el vigente sí está.
+    expect(
+      instrucciones,
+      "el prompt no nombra ningún trámite: esto es la prueba rota, no el" +
+        " filtro funcionando",
+    ).toContain(tramiteVisaId);
+  });
+
+  it("no entra en `tiposDeProcesoOfrecidos`", async () => {
+    const falso = modeloQueEscribe(PROPUESTA_COMPLETA);
+
+    await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+
+    const ofrecidos = falso.peticiones[0].tiposDeProcesoOfrecidos ?? [];
+
+    expect(ofrecidos).not.toContain(tramiteDeBajaId);
+    // El mismo control de hostilidad: una lista vacía no prueba el filtro.
+    expect(ofrecidos).toContain(tramiteVisaId);
+  });
+
+  /**
+   * El cierre del círculo, por rechazo.
+   *
+   * Las dos de arriba miden lo que sale hacia el modelo. Ésta mide lo que
+   * pasa cuando el modelo lo nombra igual —porque lo inventó, o porque lo
+   * vio en una corrida anterior—: el esquema de T-8 lo rechaza por no estar
+   * ofrecido, y **no queda ninguna fila**. Es la mitad que hace que el
+   * filtro no dependa de que el modelo obedezca.
+   */
+  it("y si el modelo lo nombra igual, la propuesta se descarta entera", async () => {
+    const falso = modeloQueEscribe(
+      JSON.stringify({
+        modulos: [{ tipo: "alcance", contenido: "El trámite de siempre." }],
+        lineas: [
+          {
+            clase: "honorario",
+            concepto: "Permiso que ya no se tramita",
+            monto: 90_000,
+            tipoProcesoId: tramiteDeBajaId,
+          },
+        ],
+      }),
+    );
+
+    const respuesta = await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+
+    expect(respuesta.status).toBe(502);
+    const cuerpo = (await respuesta.json()) as { motivo?: string };
+    expect(cuerpo.motivo).toBe("salida_rechazada");
+
+    expect(
+      await cuantasCotizaciones(),
+      "quedó una cotización con una línea que abriría un proceso de un tipo" +
+        " dado de baja",
+    ).toBe(0);
   });
 });
 
