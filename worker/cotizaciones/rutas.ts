@@ -260,10 +260,16 @@ function respuestaDeModulos(
 /**
  * El cuerpo de las líneas: la lista, y lo que suma.
  *
- * **Es el único sitio donde se llama a `totalesDe`.** Lo usan por igual el
+ * **Es el único sitio de este archivo donde se llama a `totalesDe`.** Lo usan por igual el
  * `GET` y las cuatro escrituras, así que la lista y sus totales no pueden
  * salir desincronizados de ninguna dirección: los totales se derivan
  * siempre de la lista que viaja con ellos, en la misma línea de código.
+ *
+ * Fuera de este archivo hay otros dos llamadores, y conviene saberlo porque
+ * la frase de arriba decía «el único sitio» a secas y era falsa:
+ * `worker/cotizaciones/snapshot.ts` lo llama al congelar —el total que el
+ * cliente vio es un hecho histórico— y `worker/cuotas/rutas.ts` lo llama
+ * para resolver la base de un porcentaje. Los tres derivan; ninguno guarda.
  */
 function cuerpoDeLineas(lineas: LineaDeCotizacion[]): RespuestaDeLineas {
   return { lineas, totales: totalesDe(lineas) };

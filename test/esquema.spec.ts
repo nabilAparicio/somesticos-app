@@ -531,38 +531,58 @@ describe("las notas son inmutables", () => {
 });
 
 describe("límites de la tajada 1", () => {
-  // **Esta prueba cambió de alcance el 25 de octubre de 2026, y no es una
-  // prueba nueva.** Hasta `migrations/0009_gastos_y_comprobantes.sql` exigía
-  // que **ninguna** de las dos tablas del dinero existiera. T-10 trae
-  // `movimiento_gasto`, así que el mojón se corre a la que sigue sin existir
-  // en vez de borrarse: `cuota` es de T-11 y sigue **bloqueada por la
-  // decisión de a quién pertenece el plan de pagos** (`docs/diseno.md` §11,
-  // punto 3). Mientras esa decisión no esté tomada, adelantar la tabla es
-  // comprometer el modelo de datos con una de las tres opciones, y eso cuesta
-  // una migración. Esta prueba es la que avisa si alguien lo hace.
+  // **Esta prueba cambió de pregunta el 25 de octubre de 2026, y es la
+  // segunda vez.** Hasta `0009` exigía que ninguna de las dos tablas del
+  // dinero existiera; T-10 trajo `movimiento_gasto` y el mojón se corrió a
+  // `cuota`, que seguía bloqueada por la decisión de a quién pertenece el
+  // plan de pagos (`docs/diseno.md` §11, punto 3).
   //
-  // Lo que `movimiento_gasto` tiene que cumplir —tenencia, inmutabilidad,
-  // centavos enteros, la llave del comprobante y la ausencia de saldo— se
-  // verifica entero en `test/gastos-api.spec.ts`, que es donde están los
-  // datos de prueba para construirla.
-  it("no crea todavía la tabla del plan de pagos", async () => {
-    const bloqueadasPorUnaDecisionAbierta = ["cuota"];
-
+  // **Esa decisión está tomada.** `migrations/0010_plan_de_pagos.sql` la
+  // escribe entera: la opción (c), la cuota cuelga de la cotización o del
+  // proceso con `CHECK` de exclusividad. Así que el límite que este mojón
+  // vigilaba se cruzó, y el mojón no se borra: se da vuelta, igual que el de
+  // `proceso.cotizacion_linea_id` más abajo. Lo que hay que vigilar ahora es
+  // más fuerte que lo que vigilaba antes — que la tabla exista es la mitad
+  // fácil; la que importa es **de qué cuelga**, porque una `cuota` que
+  // hubiera salido con `proceso_id NOT NULL` sería la opción (a) implementada
+  // en silencio, y eso compila, migra y no se nota hasta que una cotización
+  // con dos procesos pida partir en dos un plan que el cliente firmó entero.
+  //
+  // Lo que `cuota` tiene que cumplir —las tres exclusividades, la cuarta
+  // restricción del porcentaje, la tenencia, la inmutabilidad y la ausencia
+  // de cualquier total— se verifica entero en `test/cuotas-api.spec.ts`, que
+  // es donde están los datos de prueba para construirla.
+  it("la tabla del plan de pagos existe, y sus dos padres son nullables", async () => {
     const filas = await env.DB.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table'",
     ).all<{ name: string }>();
     const existentes = filas.results.map((fila) => fila.name);
 
-    expect(
-      existentes.filter((nombre) =>
-        bloqueadasPorUnaDecisionAbierta.includes(nombre),
-      ),
-    ).toEqual([]);
-
-    // La aserción de presencia al lado de la de ausencia: sin ella, esta
-    // prueba pasaría igual si `0009` no se hubiera aplicado nunca, y entonces
-    // no estaría midiendo el límite sino la nada.
+    expect(existentes).toContain("cuota");
+    // La de `0009` se queda al lado: sin ella, esta prueba pasaría igual si
+    // alguien borrara aquella migración.
     expect(existentes).toContain("movimiento_gasto");
+
+    // **La mitad que de verdad mide la decisión.** Las dos columnas de padre
+    // son nullables porque exactamente una tiene que estar, y cuál lo decide
+    // el `CHECK`. Un `NOT NULL` en cualquiera de las dos sería la opción (a)
+    // o la (b) implementada sin decirlo.
+    const columnas = await env.DB.prepare(
+      "SELECT name, \"notnull\" AS obligatoria FROM pragma_table_info('cuota')",
+    ).all<{ name: string; obligatoria: number }>();
+
+    const porNombre = new Map(
+      columnas.results.map((fila) => [fila.name, fila.obligatoria]),
+    );
+
+    expect(porNombre.get("proceso_id")).toBe(0);
+    expect(porNombre.get("cotizacion_id")).toBe(0);
+    // La aserción de presencia al lado de las dos de arriba: sin ella, un
+    // `pragma_table_info` que no devolviera nada haría que las dos
+    // comparaciones contra `0` fueran contra `undefined` y la prueba se
+    // pondría roja por la razón correcta — pero esta línea lo dice en vez de
+    // depender de que `undefined !== 0`.
+    expect(porNombre.get("tenant_id")).toBe(1);
   });
 
   it("le pone a proceso la FK que 0001 difirió, y apunta a cotizacion_linea", async () => {

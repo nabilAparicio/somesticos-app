@@ -31,6 +31,11 @@ import {
 } from "./cotizaciones/repositorio";
 import { rutasDeCotizaciones } from "./cotizaciones/rutas";
 import {
+  cuotasSobreD1,
+  type ServicioDeCuotas,
+} from "./cuotas/repositorio";
+import { rutasDeCuotas } from "./cuotas/rutas";
+import {
   almacenSobreR2,
   gastosSobreD1,
   type AlmacenDeComprobantes,
@@ -128,6 +133,9 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
    * contesta— no se podrían ejercer de ninguna otra manera.
    */
   comprobantes?: AlmacenDeComprobantes;
+
+  /** El plan de pagos de una cotización o de un proceso (tajada 2, T-11). Idem. */
+  cuotas?: ServicioDeCuotas;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -296,6 +304,30 @@ export async function manejar(
     dependencias.modelo ?? modeloDesdeEntorno(env),
   );
   if (cotizaciones !== null) return cotizaciones;
+
+  // El plan de pagos es **subruta de dos colecciones a la vez**, y ésa es la
+  // decisión (c) de `migrations/0010_plan_de_pagos.sql` vista desde el
+  // ruteo: una cuota cuelga de una cotización o de un proceso, y de cuál
+  // cuelga lo dice la dirección y nunca el cuerpo.
+  //
+  // Va después de cotizaciones y antes de procesos, aunque el orden no
+  // cambie qué contesta cada una —`rutasDeCotizaciones` corta en
+  // `segmentos.length !== 3` y `rutasDeProcesos` devuelve `null` para sus
+  // subrutas—, porque deja el reparto escrito.
+  //
+  // Los dos puertos que recibe son **los mismos** que usan las demás rutas y
+  // no copias: el de cotizaciones comprueba que existe y además da las
+  // líneas de las que sale la base del porcentaje, y el de procesos
+  // comprueba el trámite suelto.
+  const cuotas = await rutasDeCuotas(
+    request,
+    url,
+    TENANT_UNICO_ID,
+    servicioDeCotizaciones,
+    servicioDeProcesos,
+    dependencias.cuotas ?? cuotasSobreD1(base),
+  );
+  if (cuotas !== null) return cuotas;
 
   // Las notas van **antes** que los procesos porque son una subruta suya:
   // `rutasDeProcesos` devuelve `null` para `/notas`, así que el orden no

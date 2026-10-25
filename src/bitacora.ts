@@ -108,6 +108,23 @@ export const VERBOS_DE_BITACORA: Record<AccionDeBitacora, string> = {
   gasto_quitado: "quitó el gasto",
   anticipo_quitado: "quitó el anticipo",
   comprobante_adjuntado: "adjuntó el comprobante de",
+  /* Los dos del plan de pagos (tajada 2, T-11). `detalle` lleva el
+     **concepto** de la cuota y nunca su monto ni su porcentaje, por lo mismo
+     que los movimientos y las líneas: en un plan de cuatro renglones lo único
+     que los distingue es lo que dice cada uno, y el importe vive en su
+     columna.
+
+     Las frases **no nombran la entidad**, y acá eso importa más que en
+     ningún otro verbo: la misma cuota puede colgar de una cotización o de un
+     proceso, así que «agregó la cuota» tiene que leerse bien en las dos
+     líneas de tiempo. Un «agregó la cuota de la cotización» mentiría en la
+     mitad de los casos. Es la misma razón por la que este vocabulario son
+     verbos y no pares entidad+verbo: la entidad ya viaja en su columna.
+
+     Y se leen distinto entre sí y distinto de los treinta y uno que ya
+     estaban, que es lo que este `Record` existe para exigir. */
+  cuota_agregada: "agregó la cuota",
+  cuota_quitada: "quitó la cuota",
 };
 
 /**

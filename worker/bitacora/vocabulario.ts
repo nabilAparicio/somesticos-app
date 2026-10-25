@@ -116,6 +116,22 @@ export const ACCIONES_POR_ENTIDAD = {
     "gasto_quitado",
     "anticipo_quitado",
     "comprobante_adjuntado",
+    /* Los dos del plan de pagos (tajada 2, T-11). Cuelgan del proceso cuando
+       la cuota cuelga del proceso, que es el caso del trámite sin cotización
+       —cliente consolidado, encargo simple—.
+
+       **Están también bajo `cotizacion`, y eso es la decisión (c).** Una
+       cuota cuelga de una cotización o de un proceso, con `CHECK` de
+       exclusividad, así que el hecho se registra contra la que de verdad la
+       lleva. Hasta `migrations/0010_plan_de_pagos.sql` estos dos verbos no
+       podían entrar al vocabulario por eso exactamente: la red de abajo exige
+       dueño, y no se sabía cuál era. `0009` lo dejó escrito.
+
+       Un verbo atribuido a dos entidades no es nuevo acá: `creado` y
+       `editado` lo están a cinco. Lo que este registro cierra es qué le puede
+       pasar a cada entidad, no que cada verbo sea de una sola. */
+    "cuota_agregada",
+    "cuota_quitada",
   ],
 
   /* El alta y la edición del borrador (tajada 2, T-2). Emitir, ganar y
@@ -222,6 +238,21 @@ export const ACCIONES_POR_ENTIDAD = {
     "ganado",
     "perdido",
     "duplicado",
+    /* Los dos del plan de pagos (tajada 2, T-11), y éste es el caso
+       mayoritario: cuando hay cotización, el plan es del encargo que el
+       cliente firmó entero, aunque abra dos procesos.
+
+       Cuelgan de la cotización igual que sus módulos y sus líneas, y por la
+       misma razón: una cuota se lee dentro del plan de su cotización, no
+       tiene pantalla ni dirección propia, y darle entidad partiría en dos la
+       respuesta a «¿qué pasó con esta cotización?».
+
+       **El plan no se congela al emitir**, al revés que los módulos y las
+       líneas: las cuotas no entran al snapshot, así que agregar o quitar una
+       no toca el documento congelado. Y es justo cuando una cotización se
+       gana que el plan se termina de acomodar. */
+    "cuota_agregada",
+    "cuota_quitada",
   ],
 } as const satisfies Record<EntidadRegistrada, readonly AccionDeBitacora[]>;
 

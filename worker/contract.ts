@@ -425,7 +425,57 @@ export type MotivoDeFalla =
    * cuál es el tope, porque un rechazo que no lo dice obliga a adivinarlo
    * subiendo.
    */
-  | "comprobante_demasiado_grande";
+  | "comprobante_demasiado_grande"
+  /* --- El plan de pagos (tajada 2, T-11) --- */
+  /**
+   * Una cuota con monto **y** porcentaje, o sin ninguno de los dos.
+   *
+   * **Es un solo motivo para las dos situaciones**, al revés que
+   * `fecha_invalida`/`fecha_futura` y por el criterio que las separa: ahí la
+   * corrección era distinta, acá es la misma. Con los dos puestos hay que
+   * sacar uno; sin ninguno hay que poner uno; en los dos casos la frase que
+   * sirve es «exactamente uno», y partirlo daría dos textos que mandan a
+   * hacer lo mismo.
+   *
+   * El invariante vive en la base, en
+   * `la_cuota_lleva_monto_o_porcentaje_y_nunca_los_dos`. Este motivo es la
+   * mitad amable: lo que la pantalla contesta antes de llegar al `CHECK`.
+   */
+  | "monto_o_porcentaje"
+  /**
+   * Una cuota con fecha de vencimiento **y** hito, o sin ninguno de los dos.
+   *
+   * La hermana de la anterior, con el mismo argumento de un solo motivo. El
+   * `CHECK` es `la_cuota_vence_en_una_fecha_o_contra_un_hito_y_nunca_las_dos`.
+   */
+  | "vencimiento_o_hito"
+  /**
+   * El porcentaje no es un entero de puntos básicos entre 1 y 10000.
+   *
+   * Es motivo propio y no `monto_invalido`, aunque la comprobación se le
+   * parezca: aquél habla de un importe en centavos y éste de una fracción del
+   * total, y la frase de uno debajo del otro campo manda a corregir algo que
+   * nadie tocó. Cubre las cuatro formas de equivocarse —no numérico, cero,
+   * más de 100 % y con decimales que la unidad no admite— por el mismo
+   * criterio con el que `monto_invalido` cubre cuatro.
+   */
+  | "porcentaje_invalido"
+  /**
+   * Una cuota porcentual colgada de un proceso.
+   *
+   * **Un porcentaje necesita una base, y un proceso no tiene ninguna.** El
+   * total vive en la cotización; un proceso tiene gastos reales, que son
+   * plata de terceros, y uno suelto no tiene absolutamente ningún número del
+   * que ser porcentaje. Dicho al derecho: una cuota de un proceso lleva
+   * monto, siempre.
+   *
+   * El invariante vive en la base, en
+   * `un_porcentaje_sin_cotizacion_no_tiene_de_que_ser_porcentaje`. Es la
+   * única de las cuatro restricciones de `cuota` que no estaba en el boceto
+   * de `docs/diseno.md` §6, y está porque la pregunta «¿porcentaje de qué?»
+   * tiene respuesta en un caso y no la tiene en el otro.
+   */
+  | "porcentaje_sin_cotizacion";
 
 export interface FallaDeValidacion {
   campo: string;
@@ -1940,6 +1990,168 @@ export interface ComprobanteNoDisponible {
 }
 
 /* ==========================================================================
+   El plan de pagos (tajada 2, T-11)
+
+   Un **cronograma**, nunca un enum de modalidades (`docs/diseno.md` §6): un
+   pago es una cuota, 50/50 son dos, mensual son N. No hay ningún tipo acá que
+   nombre una forma de cobro, y esa ausencia es la decisión: con un enum, cada
+   forma nueva cuesta una migración y el sistema pasa a tener dos fuentes de
+   verdad —el enum y las filas— que algún día se contradicen.
+
+   Las tres cosas que esta sección hace visibles en el cable:
+
+    - **De qué cuelga una cuota no viaja en el cuerpo.** Lo dice la dirección:
+      `/api/cotizaciones/{id}/cuotas` o `/api/procesos/{id}/cuotas`. Por eso
+      `DatosDeCuota` no tiene `procesoId` ni `cotizacionId`, y la exclusividad
+      de la decisión (c) no se puede violar desde el cliente ni siquiera
+      intentándolo. Es el mismo reparto con el que la identidad de quien
+      escribe sale de la puerta y nunca del cuerpo (I-6).
+    - **El total del plan viaja derivado y nunca almacenado.** Es I-7 con la
+      tercera piel —`0004` se negó a guardar el total de una cotización,
+      `0009` el saldo de un proceso—, y se implementa igual: no hay columna, y
+      `PlanDePagos.total` es lo que sale de `planDe` en ese mismo momento. No
+      hay forma de mandarlo: no está en `DatosDeCuota`.
+    - **El importe de una cuota porcentual lo aplica el servidor.** La
+      pantalla recibe el número ya resuelto y no lo recalcula, por el
+      precedente de T-3 con `totalesDe` y de T-10 con `saldoDe`: con la
+      aritmética a mano del lado del navegador, la prueba de que la pantalla
+      **muestra** y no calcula sería imposible de escribir.
+   ========================================================================== */
+
+/**
+ * Una cuota del cronograma, tal como la lee la pantalla.
+ *
+ * ## `monto` y `porcentaje`: exactamente uno, y el tipo no lo puede decir
+ *
+ * Los dos son `number | null` y exactamente uno viene nulo. Una unión
+ * discriminada —`{ monto: number } | { porcentaje: number }`— lo diría mejor
+ * en el tipo, y **no se usa a propósito**: lo que llega del cable se valida
+ * contra la base, que es donde vive el invariante
+ * (`la_cuota_lleva_monto_o_porcentaje_y_nunca_los_dos`), y una unión acá
+ * obligaría a la pantalla a estrechar con un `in` que el compilador no puede
+ * verificar contra ninguna fila real. Dos formas de decir el mismo
+ * invariante, y la de la base es la que sobrevive a un script de importación
+ * (`docs/diseno.md` §5).
+ *
+ * ## `porcentaje` son **puntos básicos**: enteros, 1 bp = 0,01 %
+ *
+ * Fijado una sola vez, acá y en el `CHECK` de la migración. `50` y `0,5`
+ * conviviendo para decir lo mismo son el mismo defecto que un total guardado:
+ * dos representaciones de un número y ningún lugar donde diga cuál manda.
+ * Son puntos básicos y no puntos porcentuales enteros por un caso que el
+ * bufete tiene hoy: partir unos honorarios en tres da 33,33 / 33,33 / 33,34,
+ * que en puntos básicos es 3333 / 3333 / 3334 y cierra exacto.
+ *
+ * ## `importe`: lo que esa cuota cobra, en centavos, **derivado**
+ *
+ * Con `monto`, es el monto. Con `porcentaje`, es el porcentaje aplicado al
+ * **total de la cotización** de la que cuelga esa cuota. Lo calcula el
+ * servidor con `importeDe` y nunca se guarda en ninguna columna.
+ *
+ * Es `null` en un solo caso: una cuota porcentual sin base. La base lo
+ * impide con
+ * `un_porcentaje_sin_cotizacion_no_tiene_de_que_ser_porcentaje`, así que una
+ * fila así no se puede escribir por la API — pero un script de importación
+ * sí la podría meter, y entonces lo que la pantalla tiene que mostrar es «no
+ * se puede saber» y no un cero que se lee como «no cobra nada». Las dos
+ * guardas no se anulan porque **no resuelven lo mismo**: una decide qué filas
+ * existen, la otra qué se lee de una que existe igual.
+ *
+ * ## `venceEn` es un día de Panamá, `hito` es una frase, y exactamente uno
+ *
+ * `venceEn` llega en `AAAA-MM-DD` y en el calendario de Panamá —se guarda
+ * como el fin de ese día en UTC y se lee de vuelta con la conversión
+ * inversa—; `hito` es texto libre y corto, lo que dispara el cobro: «a la
+ * firma», «contra presentación de la demanda».
+ */
+export interface Cuota {
+  id: string;
+  concepto: string;
+  /** Centavos enteros y siempre positivos. Nulo si la cuota es porcentual. */
+  monto: number | null;
+  /** Puntos básicos, de 1 a 10000. Nulo si la cuota lleva monto. */
+  porcentaje: number | null;
+  /** El día en que vence, `AAAA-MM-DD` en Panamá. Nulo si va contra hito. */
+  venceEn: string | null;
+  /** Qué dispara el cobro. Nulo si la cuota vence en una fecha. */
+  hito: string | null;
+  /** Centavos enteros. Derivado, nunca almacenado. Ver arriba. */
+  importe: number | null;
+  /** Cuándo se escribió la fila. El cronograma se lee en este orden. */
+  creadaEn: string;
+}
+
+/**
+ * El plan entero: sus cuotas y lo que suman.
+ *
+ * Los dos viajan juntos y en la misma respuesta, no en dos rutas, por lo
+ * mismo que la cuenta de gastos: son el mismo hecho mirado de dos maneras.
+ * El total **es** la suma de esas cuotas y de ningunas otras, y pedirlos por
+ * separado abriría la ventana en la que la pantalla muestra un cronograma y
+ * un total que no le corresponde.
+ *
+ * ## `total` es derivado, y esa palabra tiene un significado exacto acá
+ *
+ * No hay columna `total` en `cuota`, ni en `cotizacion`, ni en `proceso`, ni
+ * en ninguna tabla de esta base. `test/cuotas-api.spec.ts` recorre el esquema
+ * vivo y falla si aparece una. Es I-7 con la tercera piel y el mismo
+ * argumento de las dos anteriores: un total almacenado es un total que algún
+ * día no coincide con sus filas, y nadie sabe cuál de los dos números es el
+ * verdadero.
+ *
+ * ## `base` viaja, y por qué hace falta que viaje
+ *
+ * Es el total de la cotización contra el que se aplicaron los porcentajes, o
+ * `null` cuando el plan es de un proceso y no hay ninguno. Sin él, un plan de
+ * «50 % y 50 %» mostraría dos importes que la persona no puede auditar: no
+ * tendría contra qué comprobar que la mitad es la mitad. Es el mismo motivo
+ * por el que `SaldoDeGastos` manda `anticipos` y `gastos` además del saldo.
+ *
+ * ## Y lo que `total` **no** es
+ *
+ * No es lo que el cliente va a pagar: el ITBMS es T-12 y no hay una sola
+ * línea de aritmética de impuestos en este sistema todavía. Tampoco es una
+ * cuenta por cobrar: que una cuota esté en el plan no dice que se haya
+ * cobrado, y registrar el cobro está fuera de la tajada (`docs/diseno.md`
+ * §2).
+ */
+export interface PlanDePagos {
+  /** De la más vieja a la más nueva: un cronograma se lee hacia adelante. */
+  cuotas: Cuota[];
+  /**
+   * `Σ` de los importes, en centavos enteros. Derivado, nunca almacenado.
+   *
+   * Las cuotas cuyo importe no se puede saber no suman: ver `Cuota.importe`.
+   */
+  total: number;
+  /**
+   * El total de la cotización contra el que se aplican los porcentajes, en
+   * centavos. `null` cuando el plan es de un proceso, que no tiene base.
+   */
+  base: number | null;
+}
+
+/**
+ * Lo que el alta de una cuota acepta.
+ *
+ * **No hay total y no puede haberlo**, igual que `DatosDeMovimiento` no tiene
+ * saldo. Y no hay `procesoId` ni `cotizacionId`: de qué cuelga la cuota lo
+ * dice la dirección, no el cuerpo, así que la exclusividad de la decisión (c)
+ * no es algo que el cliente pueda violar.
+ */
+export interface DatosDeCuota {
+  concepto: string;
+  /** Centavos enteros positivos, o `null` si la cuota es porcentual. */
+  monto: number | null;
+  /** Puntos básicos de 1 a 10000, o `null` si la cuota lleva monto. */
+  porcentaje: number | null;
+  /** `AAAA-MM-DD`, o `null` si la cuota va contra hito. */
+  venceEn: string | null;
+  /** Qué dispara el cobro, o `null` si la cuota vence en una fecha. */
+  hito: string | null;
+}
+
+/* ==========================================================================
    Bitácora (T-10)
 
    Quién hizo qué, sobre qué, y cuándo. Es el otro registro del sistema, y
@@ -2204,7 +2416,44 @@ export type AccionDeBitacora =
    * solo, se va con el movimiento, y ese hecho ya lo cuentan `gasto_quitado`
    * y `anticipo_quitado`.
    */
-  | "comprobante_adjuntado";
+  | "comprobante_adjuntado"
+  /* --- Los dos del plan de pagos (tajada 2, T-11) ---
+   *
+   * Son hechos **de la cotización o del proceso**, según de cuál cuelgue esa
+   * cuota, y están atribuidos a las dos en `ACCIONES_POR_ENTIDAD`. Es la
+   * primera consecuencia visible de la decisión (c) de
+   * `migrations/0010_plan_de_pagos.sql`: hasta que esa decisión no estuvo
+   * tomada, estos dos verbos no podían entrar al vocabulario porque no había
+   * entidad a la que atribuirlos, y `0009` lo dejó escrito.
+   *
+   * No hay entidad `cuota` y no hace falta: una cuota no tiene pantalla ni
+   * dirección propia, se lee dentro del plan de su dueño, y darle entidad
+   * partiría en dos la respuesta a «¿qué pasó con esta cotización?». Es el
+   * mismo argumento que dejó los cinco del gasto colgando del proceso.
+   *
+   * Que un verbo esté atribuido a dos entidades no es nuevo: `creado` y
+   * `editado` lo están a cinco. Lo que el vocabulario cierra es qué le puede
+   * pasar a cada entidad, no que cada verbo sea de una sola.
+   *
+   * Van **con prefijo** por la regla de siempre, y `detalle` lleva el
+   * **concepto** de la cuota —nunca el monto ni el porcentaje—, por lo mismo
+   * que las líneas y los movimientos: en un plan de cuatro renglones lo único
+   * que los distingue es lo que dice cada uno, y el importe vive en su
+   * columna.
+   *
+   * Son **dos y no tres**: editar una cuota no es de esta unidad. Se quita y
+   * se vuelve a poner, que para un plan de tres renglones es la misma
+   * operación con un clic más y sin ninguna regla nueva. La ausencia del
+   * verbo es cómo se dice eso, igual que la ausencia de un `PUT` dijo que un
+   * movimiento no se corrige. */
+  /** Entró una cuota en el plan de pagos. `detalle` lleva su concepto. */
+  | "cuota_agregada"
+  /**
+   * Salió del plan. Es `cuota_quitada` y no `cuota_borrada` por lo mismo que
+   * `linea_quitada`: el `borrado` pelado es el de una entidad que tenía
+   * existencia y pantalla propias, y una cuota nunca las tuvo.
+   */
+  | "cuota_quitada";
 
 /**
  * Una entrada tal como la lee la pantalla.

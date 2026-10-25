@@ -159,6 +159,31 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   comprobante_demasiado_grande:
     "Ese archivo pasa de 10 MB. Conviene volver a escanearlo con menos" +
     " resolución, o sacar la foto de nuevo.",
+  /* Una sola frase para «los dos» y para «ninguno»: la corrección que sirve
+     en los dos casos es la misma, elegir uno. La frase dice cuál es cuál en
+     vez de nombrar los campos, porque lo que la persona tiene que decidir es
+     si esa cuota se cobra por una cifra fija o por una parte del total. */
+  monto_o_porcentaje:
+    "Esa cuota tiene que cobrarse de una sola manera: un importe fijo o un" +
+    " porcentaje del total, nunca los dos ni ninguno.",
+  /* La hermana de la anterior, con el mismo criterio. Nombra las dos formas
+     en que una cuota se dispara, porque son las dos cosas entre las que hay
+     que elegir. */
+  vencimiento_o_hito:
+    "Hay que decir cuándo se cobra esa cuota: en una fecha, o contra un" +
+    " hito del trámite. Una de las dos, no las dos.",
+  /* Dice el rango en la unidad que la persona escribe —por ciento con dos
+     decimales— y no en puntos básicos, que es cómo se guarda. La unidad de
+     almacenamiento no es asunto de quien carga el plan. */
+  porcentaje_invalido:
+    "Ese porcentaje no sirve. Va un número mayor que cero y hasta 100, con" +
+    " dos decimales como mucho.",
+  /* No dice «no se permite» sino por qué no se puede: un porcentaje necesita
+     una base, y un trámite suelto no tiene ninguna. Y dice qué hacer en su
+     lugar, que es poner el importe. */
+  porcentaje_sin_cotizacion:
+    "Un trámite sin cotización no tiene un total del que sacar un" +
+    " porcentaje. Acá la cuota va con su importe en dólares.",
 };
 
 /**
