@@ -1,7 +1,7 @@
 # cotizaciones — Tajada 2: el generador de propuestas
 
 **Creado:** 24 de octubre de 2026
-**Estado:** R1 en curso. T-1 cerrada, T-2 A y B cerradas. La tajada 1 está construida y empujada; falta desplegarla
+**Estado:** R1 en curso. T-1 y T-2 cerradas, T-3 en marcha. Revisiones RDD **desactivadas** la noche del 24 de octubre a pedido del usuario, para avanzar sin frenar en cada puerta de consentimiento; se reactivan y se revisa la rama entera. La tajada 1 está construida y empujada; falta desplegarla
 (T-16 allá).
 **Diseño de referencia:** `docs/diseno.md` §8 (el generador), §6 (modelo de datos), §5 (invariantes)
 **Tajada anterior:** `odd/tasks/crm-procesos.md`
@@ -133,7 +133,7 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
       quedó corto por un factor de cuatro, y lo que lo explica es la auditoría en dos dimensiones
       del punto 2 de abajo: una prueba por cláusula y otra por operador, y son diez cláusulas.
 
-- [ ] **T-2 · La cotización en borrador y sus módulos de prosa.** El catálogo de tipos de módulo
+- [x] **T-2 · La cotización en borrador y sus módulos de prosa.** El catálogo de tipos de módulo
       **como registro tipado en código**, no como configuración editable: agregar un tipo es un
       despliegue. Alta, edición, reordenamiento y borrado de módulos dentro de un borrador.
       *Forecast original ~400; real estimado ~1500.*
@@ -149,7 +149,7 @@ Las dos primeras rebanadas no dependen de ninguna decisión abierta.
       - [x] **A · La API del borrador.** Alta, listado, detalle y edición, más el registro de
             `cotizacion` en el vocabulario de bitácora.
       - [x] **B · Las pantallas del borrador.**
-      - [ ] **C · Los módulos de prosa**, las dos capas.
+      - [x] **C · Los módulos de prosa**, las dos capas (C1 la API, C2 la pantalla).
 
       **Lo que C hereda de T-1 y no puede ignorar:** el índice único sobre
       `(cotizacion_id, orden)` impide reordenar incrementando en su lugar. El reordenamiento de
@@ -278,6 +278,8 @@ Punto de partida: `ffafb61`, **841 pruebas unitarias y 145 de punta a punta**, l
 | T-1 · El esquema de la cotización | `9383fc1` | `typecheck` 0, `test` 0 (959), `lint` 0, `build` 0 | aprobada, lineaje `review-a1dbf4335a5f0866`, riesgo medio, lente de fiabilidad, sin hallazgos bloqueantes |
 | T-2 A · La API del borrador | `976525d`, `ba16c23`, `9470d3f` | `typecheck` 0, `test` 0 (1022), `lint` 0, `build` 0 | aprobada ×2, lineajes `review-0d20d7f0bd3bad1e` y `review-6dd79b52500aa28a`, sin bloqueantes; `9470d3f` quedó `under_budget` |
 | T-2 B · Las pantallas del borrador | `9cd32ef`, `89a71a4` | `typecheck` 0, `test` 0 (1079), `lint` 0, `build` 0, `test:e2e` 0 (186) | aprobada, lineaje `review-1e5f1e3ce2f54aa7`, sin bloqueantes; `89a71a4` quedó `under_budget` |
+| T-2 C1 · La API de los módulos | `b16491a`, `61ebb41` | `typecheck` 0, `test` 0 (1132), `lint` 0, `build` 0 | aprobada, lineaje `review-9963052a67c4ea2d`, sin bloqueantes |
+| T-2 C2 · El editor de módulos | `af086c7`, `b84be59` | `typecheck` 0, `test` 0 (1169), `lint` 0, `build` 0, `test:e2e` 0 (212) | aprobada, lineaje `review-ae94e1f1c8ca1465`, sin bloqueantes |
 
 ### Lo que T-1 corrigió de este plan
 
