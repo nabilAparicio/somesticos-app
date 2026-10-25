@@ -29,6 +29,7 @@ import {
   cotizacionesSobreD1,
   type ServicioDeCotizaciones,
 } from "./cotizaciones/repositorio";
+import { regimenDelBufete } from "./cotizaciones/impuesto";
 import { rutasDeCotizaciones } from "./cotizaciones/rutas";
 import {
   cuotasSobreD1,
@@ -227,6 +228,22 @@ export async function manejar(
   // (I-6) ni escribir en otro bufete (I-8).
   const base = baseSobreD1(env.DB, TENANT_UNICO_ID, acceso.valor.usuarioId);
 
+  // El régimen de ITBMS del bufete (T-12), **resuelto una sola vez por
+  // petición** y pasado a quien lo necesite.
+  //
+  // Una sola vez, y no una lectura del entorno en cada capa, por el mismo
+  // motivo por el que `emitir` lee el reloj una sola vez: si las líneas, el
+  // documento y la base del porcentaje resolvieran cada una por su cuenta,
+  // una petición podría contestar con dos aritméticas distintas. Son el
+  // mismo número o no son nada.
+  //
+  // **Hoy devuelve siempre `SIN_ITBMS`**, porque `ITBMS_ACTIVO` no está en
+  // `wrangler.jsonc` y no debe estar hasta que la contadora del bufete
+  // valide el tratamiento del impuesto (`odd/tasks/cotizaciones.md`). La
+  // aritmética está construida y probada en sus dos posiciones; lo que falta
+  // es una firma, no código.
+  const impuesto = regimenDelBufete(env);
+
   const servicioDeClientes = dependencias.clientes ?? servicioSobreD1(base);
 
   const clientes = await rutasDeClientes(
@@ -242,7 +259,7 @@ export async function manejar(
   // la suya y la de su bitácora, que comprueba por el mismo puerto que la
   // fila existe en este bufete y no por una segunda copia de la consulta.
   const servicioDeCotizaciones =
-    dependencias.cotizaciones ?? cotizacionesSobreD1(base);
+    dependencias.cotizaciones ?? cotizacionesSobreD1(base, impuesto);
 
   // Un solo servicio de catálogos para las dos rutas: desde T-11, guardar el
   // plan de un proceso como plantilla escribe por el mismo puerto que la
@@ -302,6 +319,7 @@ export async function manejar(
     // precedencia que eligió `autenticar`: la guarda de configuración vive
     // dentro de la operación.
     dependencias.modelo ?? modeloDesdeEntorno(env),
+    impuesto,
   );
   if (cotizaciones !== null) return cotizaciones;
 
@@ -326,6 +344,7 @@ export async function manejar(
     servicioDeCotizaciones,
     servicioDeProcesos,
     dependencias.cuotas ?? cuotasSobreD1(base),
+    impuesto,
   );
   if (cuotas !== null) return cuotas;
 

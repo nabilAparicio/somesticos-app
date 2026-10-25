@@ -55,6 +55,7 @@ import {
   centavosDesdeTexto,
   exigeRecarga,
   familiasDeLineas,
+  renglonDelImpuesto,
   hayCambioEnLinea,
   hayGastoEstimado,
   lineasOrdenadas,
@@ -70,6 +71,7 @@ import {
   tramitesSeleccionables,
   type BorradorDeLinea,
 } from "../src/pantallas/cotizaciones/lineas";
+import { ROTULO_DEL_ITBMS } from "../worker/cotizaciones/lineas";
 
 const UNO = "11111111-1111-4111-8111-111111111111";
 const DOS = "22222222-2222-4222-8222-222222222222";
@@ -348,6 +350,108 @@ describe("la conversión de ida y vuelta", () => {
       expect(centavosDesdeTexto(texto)).toEqual({ ok: true, centavos });
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// El renglón del ITBMS (T-12)
+// ---------------------------------------------------------------------------
+
+describe("renglonDelImpuesto", () => {
+  /*
+   * **El par que decide la pantalla**, y las dos mitades están en la misma
+   * prueba a propósito.
+   *
+   * Un «no hay renglón» solo no mide nada: pasaría con la función devolviendo
+   * `null` siempre, con el campo mal leído y con el archivo sin escribir. La
+   * mitad de presencia es la que lo ancla — y las dos entradas se diferencian
+   * **sólo** en la clave `itbms`, así que ninguna puede satisfacer a la otra.
+   */
+  it("no hay renglón sin la clave, y sí lo hay con ella", () => {
+    const apagado: TotalesDeCotizacion = {
+      honorarios: 162_345,
+      gastosEstimados: 7_550,
+      total: 169_895,
+    };
+
+    expect(
+      renglonDelImpuesto(apagado),
+      "la pantalla dibujó un ITBMS que el bufete no factura",
+    ).toBeNull();
+
+    const encendido: TotalesDeCotizacion = {
+      honorarios: 162_345,
+      gastosEstimados: 7_550,
+      itbms: 11_364,
+      total: 181_259,
+    };
+
+    expect(renglonDelImpuesto(encendido)).toEqual({
+      rotulo: ROTULO_DEL_ITBMS,
+      importe: 11_364,
+    });
+  });
+
+  /*
+   * **Cero no es ausencia**, que es la decisión entera de T-12 vista desde la
+   * pantalla.
+   *
+   * Con el impuesto encendido y sin honorarios, el renglón va igual y dice
+   * 0,00: ahí el cero es verdad. Si esta función escondiera los ceros, la
+   * ausencia pasaría a significar dos cosas —«no te cobramos impuesto» y «el
+   * bufete todavía no lo factura»— y el cliente no podría distinguirlas.
+   */
+  it("un impuesto de cero sí tiene renglón, porque cero no es ausencia", () => {
+    const soloGastos: TotalesDeCotizacion = {
+      honorarios: 0,
+      gastosEstimados: 7_550,
+      itbms: 0,
+      total: 7_550,
+    };
+
+    expect(renglonDelImpuesto(soloGastos)).toEqual({
+      rotulo: ROTULO_DEL_ITBMS,
+      importe: 0,
+    });
+  });
+
+  /*
+   * **No calcula.** Se le pasa un impuesto que no es el 7 % de esos
+   * honorarios y tiene que salir el que llegó, igual que `familiasDeLineas`
+   * con los subtotales. Es la barandilla de siempre: si alguien metiera el
+   * cálculo en la pantalla, habría dos aritméticas del impuesto y esta prueba
+   * es la que muere.
+   */
+  it("muestra el impuesto que llegó y no el que correspondería", () => {
+    const incoherente: TotalesDeCotizacion = {
+      honorarios: 100_000,
+      gastosEstimados: 0,
+      // El 7 % de 100 000 son 7 000. Esto no lo es, a propósito.
+      itbms: 1,
+      total: 100_001,
+    };
+
+    expect(renglonDelImpuesto(incoherente)?.importe).toBe(1);
+  });
+
+  /** El rótulo sale del Worker y no se escribe otra vez acá. */
+  it("el rótulo nombra el impuesto y su tarifa", () => {
+    const totales: TotalesDeCotizacion = {
+      honorarios: 0,
+      gastosEstimados: 0,
+      itbms: 0,
+      total: 0,
+    };
+
+    expect(renglonDelImpuesto(totales)?.rotulo).toContain("ITBMS");
+    expect(renglonDelImpuesto(totales)?.rotulo).toContain("7");
+  });
+
+  /** `TOTALES_EN_CERO`, que es lo que la pantalla usa antes de la primera
+   *  respuesta, tampoco dibuja impuesto. Sin esto, un renglón de ITBMS
+   *  aparecería durante la carga y desaparecería al llegar la respuesta. */
+  it("los totales de arranque no traen impuesto", () => {
+    expect(renglonDelImpuesto(TOTALES_EN_CERO)).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

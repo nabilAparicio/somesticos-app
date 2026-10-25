@@ -78,7 +78,8 @@ import type {
   TipoDeModulo,
   TotalesDeCotizacion,
 } from "../contract";
-import { rotuloDeClase, totalesDe } from "./lineas";
+import type { RegimenDeImpuesto } from "./lineas";
+import { SIN_ITBMS, rotuloDeClase, totalesDe } from "./lineas";
 import { rotuloDeTipo } from "./modulos";
 
 /**
@@ -187,6 +188,20 @@ export interface DatosParaCongelar {
   emisor: EmisorCongelado;
   /** El mismo momento que va a quedar en la bitácora. */
   emitidaEn: string;
+  /**
+   * Si el bufete factura ITBMS **en el momento de emitir** (T-12).
+   *
+   * Entra como dato y no se lee de ningún lado acá, por lo mismo que
+   * `emitidaEn`: esta función es pura y congelar es justamente el acto de
+   * fijar lo que era cierto en un instante. Quien lo resuelve es
+   * `worker/index.ts` con `regimenDelBufete(env)`, y viaja hasta acá por el
+   * repositorio.
+   *
+   * **Opcional, y la omisión es apagado.** Es el mismo interruptor que
+   * `totalesDe`, en la misma posición por omisión, por el mismo motivo:
+   * olvidarlo deja el documento sin impuesto, que es el estado seguro.
+   */
+  impuesto?: RegimenDeImpuesto;
 }
 
 /**
@@ -201,6 +216,32 @@ export interface DatosParaCongelar {
  * Los totales salen de `totalesDe`, la misma función que usa la respuesta de
  * `/lineas`. **No se suma acá**: dos sumas en dos sitios son dos resultados
  * el día que una cambie, y la que se congelaría sería la equivocada.
+ *
+ * ## El régimen de impuesto se congela con todo lo demás
+ *
+ * **Y ésta es la mitad que de verdad cierra T-12.** El comentario de arriba
+ * —escrito en T-4, cuando el impuesto era una fecha en el calendario— dice
+ * que los totales entran al documento porque *«si mañana `totalesDe` cambia
+ * —el ITBMS de T-12—, recalcular desde las líneas congeladas daría un número
+ * que nadie le prometió a nadie»*. Éste es ese mañana, y la promesa se
+ * sostiene sola: el impuesto se aplica **una vez, acá, con el interruptor
+ * como estaba ese día**, y queda escrito adentro del objeto.
+ *
+ * De ahí salen las dos garantías, que son la misma mirada desde cada lado:
+ *
+ *  - Una cotización emitida hoy, con el impuesto apagado, va a seguir
+ *    imprimiéndose sin ITBMS **para siempre**, aunque mañana la contadora lo
+ *    valide y el interruptor se encienda.
+ *  - Una emitida con el impuesto encendido lo conserva aunque el interruptor
+ *    se vuelva a apagar. El papel es un hecho histórico en las dos
+ *    direcciones, no una preferencia que se relee.
+ *
+ * Lo sostiene que nada de esto se recalcula nunca: `obtenerDocumento` hace
+ * `JSON.parse` de la columna y la devuelve, y
+ * `cotizacion_snapshot_se_escribe_una_sola_vez` (M-3 de `0006`) garantiza que
+ * nadie la reescribió. Está medido en `test/impuesto-api.spec.ts`, moviendo
+ * el interruptor **entre las dos lecturas** — que es la única forma de que
+ * esa prueba distinga algo.
  */
 export function congelar(datos: DatosParaCongelar): SnapshotDeCotizacion {
   return {
@@ -228,6 +269,6 @@ export function congelar(datos: DatosParaCongelar): SnapshotDeCotizacion {
       tipoProcesoId: linea.tipoProcesoId,
       tipoProceso: linea.tipoProcesoNombre,
     })),
-    totales: totalesDe(datos.lineas),
+    totales: totalesDe(datos.lineas, datos.impuesto ?? SIN_ITBMS),
   };
 }

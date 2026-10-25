@@ -74,6 +74,8 @@ import {
   type EmisorCongelado,
   type SnapshotDeCotizacion,
 } from "./snapshot";
+import type { RegimenDeImpuesto } from "./lineas";
+import { SIN_ITBMS } from "./lineas";
 
 export type ResultadoDeEscritura =
   | { estado: "guardado"; cotizacion: Cotizacion }
@@ -677,8 +679,24 @@ function aCotizacion(fila: FilaDeCotizacion): Cotizacion {
   };
 }
 
+/**
+ * @param impuesto
+ *   El régimen de ITBMS del bufete (T-12), que entra acá por un solo motivo:
+ *   **`emitir` es quien congela**, y el impuesto de un documento congelado
+ *   tiene que ser el que regía el día de la emisión.
+ *
+ *   No se lee del entorno acá —este archivo no conoce `Env` y no debería—,
+ *   lo resuelve `worker/index.ts` con `regimenDelBufete(env)` y baja por esta
+ *   puerta, que es el mismo camino por el que bajan el almacén de
+ *   comprobantes y el modelo de lenguaje.
+ *
+ *   **Opcional, y la omisión es apagado**, igual que en `totalesDe` y en
+ *   `congelar`: es el mismo interruptor en la misma posición por omisión, y
+ *   un llamador distraído deja el sistema donde hoy corresponde que esté.
+ */
 export function cotizacionesSobreD1(
   base: BaseDeDatos,
+  impuesto: RegimenDeImpuesto = SIN_ITBMS,
 ): ServicioDeCotizaciones {
   const db = base.lectura;
 
@@ -2221,6 +2239,10 @@ export function cotizacionesSobreD1(
           lineas,
           emisor,
           emitidaEn,
+          // El régimen del día de la emisión, congelado con todo lo demás
+          // (T-12). Después de esta línea nadie lo vuelve a consultar para
+          // este documento: encender o apagar el ITBMS mañana no lo mueve.
+          impuesto,
         }),
       );
 

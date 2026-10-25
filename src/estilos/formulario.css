@@ -772,6 +772,22 @@
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * El ITBMS (T-12) pesa **menos** que un subtotal, y eso es deliberado.
+ *
+ * No es un subtotal de nada: no hay una familia de líneas debajo de la cual
+ * cerrar. Es un renglón que se agrega entre los subtotales y el total, y
+ * dibujarlo con el mismo peso que «Subtotal» lo haría leer como una tercera
+ * familia — «Honorarios, Gastos estimados, ITBMS» — que es exactamente lo
+ * que no es: el cliente no contrató impuesto.
+ *
+ * Sin `border-block-start` propio: hereda el de `.suma`, que es el filete
+ * fino. El grueso lo lleva sólo el total.
+ */
+.suma--impuesto .suma__rotulo {
+  font-weight: var(--peso-normal);
+}
+
 /* El total pesa más que un subtotal, y se ve. */
 .suma--total {
   padding-block-start: var(--espacio-s);

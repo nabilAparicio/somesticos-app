@@ -1895,6 +1895,72 @@ test.describe("las cotizaciones del bufete", () => {
     await expect(sumas.nth(2)).toHaveText("USD 8,888.88");
   });
 
+  /**
+   * **El renglón del ITBMS, medido en el navegador** (T-12).
+   *
+   * Lo que se puede y lo que no se puede medir acá, dicho antes de medirlo:
+   *
+   * El **interruptor** del Worker no se puede mover desde una prueba de punta
+   * a punta. `playwright.config.ts` levanta un solo servidor de Vite para
+   * todas, así que `ITBMS_ACTIVO` vale lo mismo durante la corrida entera —y
+   * por eso el par apagado/encendido del interruptor vive en
+   * `test/impuesto-api.spec.ts`, que sí le pasa el entorno a `manejar`.
+   *
+   * Lo que **sí** se mide acá es la otra mitad, y es la que el navegador es
+   * el único que puede contestar: dado un cuerpo que trae el impuesto y otro
+   * que no, ¿la pantalla dibuja el renglón en un caso y no en el otro? Esa es
+   * la regla de `renglonDelImpuesto` ejercida contra el DOM de verdad.
+   *
+   * Y va con su contrapeso, porque un «no dice ITBMS» solo pasaría con la
+   * pantalla en blanco: en la mitad apagada se exige además que el bloque de
+   * totales **sí** se haya dibujado, con sus tres cifras exactas.
+   */
+  test("el renglón del ITBMS sólo se dibuja cuando el cuerpo lo trae", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    /* --- Apagado: no hay renglón, y los otros tres sí están. --- */
+
+    await expect(page.locator(".suma__importe")).toHaveCount(3);
+    await expect(page.locator(".suma--total .suma__importe")).toHaveText(
+      "USD 8,888.88",
+    );
+    await expect(
+      page.locator(".suma--impuesto"),
+      "la pantalla dibujó un ITBMS que el cuerpo no trae",
+    ).toHaveCount(0);
+
+    /* --- Encendido: el mismo borrador, con `itbms` en el cuerpo. ---
+
+       Se vuelve a enrutar sólo esta dirección y se recarga. El cuerpo es el
+       mismo de antes **más** la clave y con el total crecido en 54 444
+       centavos, que es lo único que cambia entre las dos mitades. */
+    await page.route(
+      (url) => url.pathname === `/api/cotizaciones/${BORRADOR_ID}/lineas`,
+      async (ruta) => {
+        await ruta.fulfill({
+          status: 200,
+          json: {
+            lineas: LINEAS_DEL_BORRADOR,
+            totales: { ...TOTALES_DEL_BORRADOR, itbms: 54_444, total: 943_332 },
+          },
+        });
+      },
+    );
+    await page.reload();
+
+    await expect(page.locator(".suma--impuesto")).toHaveCount(1);
+    // 54 444 centavos, escritos a mano.
+    await expect(page.locator(".suma--impuesto .suma__importe")).toHaveText(
+      "USD 544.44",
+    );
+    await expect(page.locator(".suma--total .suma__importe")).toHaveText(
+      "USD 9,433.32",
+    );
+  });
+
   test("el subtotal del gasto se rotula como aproximado y el del honorario no", async ({
     page,
   }) => {

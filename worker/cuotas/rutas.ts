@@ -88,6 +88,7 @@ import type {
   PlanDePagos,
 } from "../contract";
 import type { ServicioDeCotizaciones } from "../cotizaciones/repositorio";
+import type { RegimenDeImpuesto } from "../cotizaciones/lineas";
 import { totalesDe } from "../cotizaciones/lineas";
 import type { ServicioDeProcesos } from "../procesos/repositorio";
 import { normalizarCuota } from "./dominio";
@@ -179,6 +180,13 @@ export async function rutasDeCuotas(
   cotizaciones: ServicioDeCotizaciones,
   procesos: ServicioDeProcesos,
   cuotas: ServicioDeCuotas,
+  /**
+   * El régimen de ITBMS del bufete (T-12). El mismo objeto que recibe
+   * `rutasDeCotizaciones` en la misma petición, porque la base del
+   * porcentaje **es** el total de esa cotización y tiene que ser el mismo
+   * número que la pantalla de líneas acaba de mostrar.
+   */
+  impuesto: RegimenDeImpuesto,
 ): Promise<Response | null> {
   const segmentos = segmentosDe(url.pathname);
   if (segmentos[0] !== "api") return null;
@@ -212,6 +220,7 @@ export async function rutasDeCuotas(
     tenantId,
     cotizaciones,
     procesos,
+    impuesto,
   );
   if (duenio === null) return noEncontrado();
 
@@ -272,6 +281,32 @@ export async function rutasDeCuotas(
  * importe de la cuota del 50 % cambia con ella, que es lo que «el 50 % del
  * total» quiere decir. Una base congelada al cargar la cuota sería un total
  * almacenado con otro nombre.
+ *
+ * ## La base **incluye el ITBMS** cuando el bufete lo factura (T-12)
+ *
+ * Es la decisión que esta tarea tenía que tomar y dejar escrita, porque es de
+ * las que nadie nota hasta que un cliente reclama: con el impuesto encendido,
+ * una cuota del 50 % pasa a cobrar la mitad del total **con impuesto**.
+ *
+ * Corresponde, y por dos razones:
+ *
+ *  1. **Una cuota no reparte los honorarios del bufete: reparte lo que el
+ *     cliente debe.** Lo que debe es el número grande del papel, ITBMS
+ *     incluido. Si la base lo excluyera, un plan del 100 % sumaría menos que
+ *     la factura y la última cuota no cerraría nunca — el cliente pagaría el
+ *     plan entero y seguiría debiendo el impuesto.
+ *  2. **«¿Porcentaje de qué?» ya tiene dos respuestas y no puede tener
+ *     tres.** T-11 midió que son dos —cuelga de cotización, hay base; cuelga
+ *     de proceso, no hay— y le costó una restricción de base de datos
+ *     (`un_porcentaje_sin_cotizacion_no_tiene_de_que_ser_porcentaje`). Partir
+ *     la base en «con impuesto» y «sin impuesto» agregaría una tercera, y la
+ *     tercera respuesta a una pregunta que ya costó una migración es la que
+ *     nadie se acuerda de mirar.
+ *
+ * Con el interruptor apagado —el despliegue de hoy— esto no cambia un
+ * centavo, que es justamente lo que permitió decidirlo ahora. Está medido en
+ * `test/impuesto-api.spec.ts`: la misma cuota del 50 % sobre la misma
+ * cotización cobra dos importes distintos según la posición del interruptor.
  */
 async function resolverDuenio(
   tipo: TipoDeDuenio,
@@ -279,6 +314,7 @@ async function resolverDuenio(
   tenantId: string,
   cotizaciones: ServicioDeCotizaciones,
   procesos: ServicioDeProcesos,
+  impuesto: RegimenDeImpuesto,
 ): Promise<DuenioDelPlan | null> {
   if (tipo === "proceso") {
     if ((await procesos.obtener(tenantId, id)) === null) return null;
@@ -288,5 +324,5 @@ async function resolverDuenio(
   if ((await cotizaciones.obtener(tenantId, id)) === null) return null;
 
   const lineas = await cotizaciones.listarLineas(tenantId, id);
-  return { tipo, id, base: totalesDe(lineas).total };
+  return { tipo, id, base: totalesDe(lineas, impuesto).total };
 }

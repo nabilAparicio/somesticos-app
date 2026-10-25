@@ -97,6 +97,7 @@ import type {
 } from "../../../worker/contract";
 import {
   CATALOGO_DE_CLASES,
+  ROTULO_DEL_ITBMS,
   esClaseDeLinea,
   rotuloDeClase,
 } from "../../../worker/cotizaciones/lineas";
@@ -331,10 +332,27 @@ export const AVISO_SIN_RELECTURA_DE_LINEAS =
  * permitiría que uno de los dos cambiara sin el otro; así, si el aviso no
  * está, la familia no es aproximada, y no hay forma de que se contradigan.
  */
+/**
+ * El campo de `TotalesDeCotizacion` del que sale el subtotal de una familia.
+ *
+ * **Ni `total` ni `itbms`**, y la exclusión no es defensiva: es lo que el
+ * tipo tiene para decir. Una familia es un grupo de líneas y su subtotal es
+ * lo que esas líneas suman; `total` es de las dos familias juntas, y el
+ * ITBMS **no es una familia de líneas** — nadie lo escribió en ninguna fila,
+ * no se puede agregar, editar ni quitar, y no tiene un encabezado del que
+ * colgar renglones.
+ *
+ * Escrito como `Exclude<…>` y no como la unión literal a mano, para que el
+ * día que el contrato gane un campo de subtotal nuevo —una tercera clase de
+ * línea— éste lo acepte solo, y el día que gane otro que tampoco sea un
+ * subtotal, alguien tenga que venir a decirlo acá.
+ */
+type CampoDeSubtotal = Exclude<keyof TotalesDeCotizacion, "total" | "itbms">;
+
 const COMO_SE_MUESTRA: Record<
   ClaseDeLinea,
   {
-    readonly campoDelSubtotal: keyof TotalesDeCotizacion;
+    readonly campoDelSubtotal: CampoDeSubtotal;
     readonly rotuloDelSubtotal: string;
     readonly aviso: string | null;
   }
@@ -417,6 +435,59 @@ export function familiasDeLineas(
   }
 
   return familias;
+}
+
+/* --------------------------------------------------------------------------
+   El renglón del ITBMS (T-12)
+   -------------------------------------------------------------------------- */
+
+/** El impuesto, listo para dibujar. */
+export interface RenglonDelImpuesto {
+  readonly rotulo: string;
+  /** **Del servidor.** En centavos. */
+  readonly importe: number;
+}
+
+/**
+ * El renglón del impuesto, o `null` si no va ninguno.
+ *
+ * ## La regla es de una sola pieza, y es la que importa
+ *
+ * > El renglón aparece **si y sólo si `totales.itbms` está**.
+ *
+ * No «si es mayor que cero», y acá está la decisión de T-12 que se ve en
+ * pantalla. Un renglón de ITBMS que dice 0,00 le hace creer al cliente que no
+ * se le cobra impuesto; lo que pasa mientras el interruptor esté apagado es
+ * otra cosa muy distinta —**el bufete todavía no lo factura**— y las dos
+ * lecturas llevan a conversaciones opuestas con el contador del cliente.
+ *
+ * Por eso apagado no es cero: es **ausencia**. El contrato lo sostiene con un
+ * campo opcional y no con un número que valga cero, así que esta función no
+ * tiene que adivinar nada — mira si la clave está.
+ *
+ * Y el otro lado de la misma regla: con el impuesto **encendido**, una
+ * cotización que sólo tiene gastos estimados sí lleva su renglón, en cero.
+ * Ahí el cero es verdad —el bufete factura ITBMS, y sobre esta propuesta son
+ * cero porque no hay honorarios— y esconderlo volvería ambigua la ausencia.
+ *
+ * ## Y acá no se suma, igual que en todo este archivo
+ *
+ * El importe llega del servidor dentro de `totales`. La tentación de
+ * calcularlo —son tres caracteres, `× 7 / 100`— es exactamente la misma que
+ * la del total y se rechaza por lo mismo: una segunda aritmética del impuesto
+ * en un segundo lenguaje, y el día que discrepen por un centavo nadie sabe
+ * cuál de los dos números es el de la cotización.
+ *
+ * Sirve a las dos pantallas —el editor y la hoja imprimible— porque el
+ * documento congelado trae sus totales con la misma forma. Que sea **una
+ * sola** función es lo que impide que el borrador y el papel decidan distinto
+ * cuándo hay impuesto.
+ */
+export function renglonDelImpuesto(
+  totales: TotalesDeCotizacion,
+): RenglonDelImpuesto | null {
+  if (totales.itbms === undefined) return null;
+  return { rotulo: ROTULO_DEL_ITBMS, importe: totales.itbms };
 }
 
 /**

@@ -70,7 +70,7 @@ import {
   textoDeProblemaDeLaHoja,
   tituloDeLaHoja,
 } from "./impresion";
-import { importeLegible } from "./lineas";
+import { importeLegible, renglonDelImpuesto } from "./lineas";
 
 type Props = {
   readonly id: string;
@@ -172,6 +172,11 @@ export function HojaDeCotizacion({ id }: Props) {
 
   const familias = familiasDelDocumento(estado.documento);
   const { moneda } = estado.documento.cotizacion;
+
+  // El impuesto del documento congelado, o `null` si no llevaba (T-12). **Es
+  // la misma función que usa el editor**, para que el borrador y el papel no
+  // puedan decidir distinto cuándo hay renglón de ITBMS.
+  const impuesto = renglonDelImpuesto(estado.documento.totales);
 
   return (
     <Pila espacio="holgado">
@@ -296,6 +301,31 @@ export function HojaDeCotizacion({ id }: Props) {
           <table className="hoja__tabla">
             <caption className="hoja__caption">El total de la propuesta</caption>
             <tbody>
+              {/*
+                El ITBMS, si el documento lo llevaba el día que se emitió
+                (T-12).
+
+                **Sale del documento congelado y no de un cálculo de hoy**, y
+                ésa es la garantía entera de T-4 aplicada al impuesto: una
+                propuesta emitida antes de que el bufete facturara ITBMS no
+                tiene este renglón, y no lo va a tener nunca, aunque mañana el
+                interruptor se encienda. El papel que el cliente guardó y éste
+                dicen lo mismo para siempre.
+
+                Y al revés: una emitida con impuesto lo conserva aunque el
+                interruptor se apague.
+              */}
+              {impuesto !== null && (
+                <tr className="hoja__linea hoja__impuesto">
+                  <th scope="row" className="hoja__concepto">
+                    {impuesto.rotulo}
+                  </th>
+                  <td className="hoja__importe numerico">
+                    {importeLegible(impuesto.importe, moneda)}
+                  </td>
+                </tr>
+              )}
+
               <tr className="hoja__linea hoja__total">
                 <th scope="row" className="hoja__concepto">
                   Total

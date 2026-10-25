@@ -40,6 +40,24 @@
  *   `modelo_no_configurado` y de `acceso_no_configurado`—, y todo lo demás
  *   sigue funcionando: se registran gastos y anticipos, y se lee el saldo. Lo
  *   único que no se puede en un despliegue así es adjuntar el papel.
+ * - `ITBMS_ACTIVO`: el interruptor del impuesto (T-12). Está acá por el mismo
+ *   motivo que `IA_MODELO` —no es secreta y el código trae su valor por
+ *   defecto—, pero con una diferencia que conviene no perder: aquélla está
+ *   ausente de `wrangler.jsonc` porque todavía no hace falta, y **ésta está
+ *   ausente porque todavía no debe estar**.
+ *
+ *   La investigación del ITBMS es un supuesto y no verdad fiscal, y
+ *   `odd/tasks/cotizaciones.md` lo dice sin rodeos: ninguna cotización
+ *   emitida puede llevar un total con impuesto hasta que lo valide la
+ *   contadora del bufete. La aritmética está construida y probada en sus dos
+ *   posiciones; lo que falta es una firma.
+ *
+ *   **Opcional, y la omisión es apagado**, que es el estado que hoy
+ *   corresponde. Enciende **sólo** la cadena `si`: `"true"`, `"1"`, `"SI"` y
+ *   `" si "` la dejan apagada, porque el estado seguro es apagado y un
+ *   interruptor que adivina intenciones es el que se enciende solo. El nombre
+ *   y la cadena viven en `worker/cotizaciones/impuesto.ts`, que es donde se
+ *   explica entero.
  */
 
 interface ImportMeta {
@@ -52,6 +70,8 @@ interface ImportMeta {
 
 interface Env {
   ACCESO_DEV_EMAIL?: string;
+  /** Sin esto, o con cualquier cosa que no sea `si`, no hay ITBMS. Ver arriba. */
+  ITBMS_ACTIVO?: string;
   /** Secreto. `wrangler secret put IA_API_KEY`. Nunca en un archivo. */
   IA_API_KEY?: string;
   /** Sin esto, `MODELO_POR_DEFECTO` de `worker/ia/anthropic.ts`. */
@@ -65,6 +85,7 @@ interface Env {
 declare namespace Cloudflare {
   interface Env {
     ACCESO_DEV_EMAIL?: string;
+    ITBMS_ACTIVO?: string;
     IA_API_KEY?: string;
     IA_MODELO?: string;
     IA_PROVEEDOR?: string;

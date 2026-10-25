@@ -195,6 +195,20 @@
   font-size: var(--texto-l);
 }
 
+/*
+ * El ITBMS del documento (T-12), en el bloque del total y antes de él.
+ *
+ * **En peso normal**, al revés que `.hoja__subtotal`: el impuesto no cierra
+ * ninguna familia de líneas, y ponerlo en negrita lo haría leer como una
+ * tercera sección de la propuesta. Es un renglón de la cuenta final, no un
+ * capítulo del encargo.
+ */
+.hoja__impuesto > * {
+  border-block-end: none;
+  font-weight: var(--peso-normal);
+  padding-block-end: var(--espacio-xs);
+}
+
 .hoja__aviso {
   margin-block-start: var(--espacio-xs);
   max-inline-size: var(--prosa-tope);

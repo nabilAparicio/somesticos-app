@@ -1486,7 +1486,46 @@ export interface TotalesDeCotizacion {
   honorarios: number;
   /** Σ de las líneas de clase `gasto_estimado`, en centavos. Aproximado. */
   gastosEstimados: number;
-  /** La suma de los dos. En centavos. */
+  /**
+   * El ITBMS sobre los honorarios, en centavos — **o la clave no está**.
+   *
+   * ## La ausencia significa una sola cosa, y por eso es opcional
+   *
+   * > El campo está **si y sólo si el bufete factura ITBMS**.
+   *
+   * No es `number | null` ni un cero: es una clave que aparece o no aparece,
+   * y las tres formas no son intercambiables. Un `0` diría «no te cobramos
+   * impuesto», que es distinto de «todavía no lo facturamos», y una pantalla
+   * que dibujara un renglón de ITBMS en 0,00 le haría creer al cliente lo
+   * primero cuando lo que pasa es lo segundo. Por eso **apagado no es cero:
+   * es ausencia**, y con el impuesto encendido una cotización sin honorarios
+   * sí lleva su renglón en cero, que ahí sí es verdad.
+   *
+   * ## Y por eso tampoco hace falta subir `VERSION_DEL_SNAPSHOT`
+   *
+   * Un documento congelado con el impuesto apagado queda con **la misma
+   * forma exacta** que los que ya están escritos en la columna `snapshot`,
+   * así que `obtenerDocumento` —que hace `JSON.parse(...) as
+   * DocumentoCongelado` sin validar, y con razón— no tiene nada nuevo que
+   * normalizar. Y uno escrito con el impuesto encendido se describe solo: la
+   * clave presente **es** el aviso de que el total la lleva adentro. Un
+   * número de versión diría menos que eso —no sabría contestar si *esta*
+   * cotización llevó impuesto— y sería el segundo lugar donde decir algo que
+   * el campo ya dice.
+   *
+   * El valor es **centavos enteros y truncado hacia abajo**: el 7 % de
+   * 162 345 son 11 364,15 y acá dice 11 364. El residuo no se reparte ni se
+   * ajusta contra el total, por lo que `worker/cotizaciones/impuesto.ts`
+   * explica entero.
+   */
+  itbms?: number;
+  /**
+   * Lo que el cliente paga. En centavos.
+   *
+   * Con el impuesto apagado es `honorarios + gastosEstimados`. Encendido es
+   * `honorarios + itbms + gastosEstimados`: el gasto estimado es plata de
+   * terceros que el bufete adelanta, y pasa sin gravar.
+   */
   total: number;
 }
 

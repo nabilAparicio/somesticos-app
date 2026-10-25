@@ -339,6 +339,71 @@ test.describe("la hoja imprime el documento congelado", () => {
     expect(await page.getByText("9,999.99").count()).toBe(0);
   });
 
+  /**
+   * **El ITBMS en el papel** (T-12), y lo que esta prueba puede afirmar.
+   *
+   * El interruptor del Worker no se mueve desde acá —un solo servidor de Vite
+   * para la corrida entera—, así que lo que se mide es la regla de la hoja:
+   * un documento congelado **con** `itbms` dibuja su renglón, y uno **sin**
+   * la clave no dibuja ninguno. Las dos mitades, sobre el mismo documento.
+   *
+   * Que el documento emitido sin impuesto siga sin impuesto cuando el
+   * interruptor se enciende está medido donde se puede medir de verdad:
+   * `test/impuesto-api.spec.ts`, contra D1 y moviendo el entorno entre las
+   * dos lecturas.
+   */
+  test("el ITBMS se imprime sólo si el documento congelado lo trae", async ({
+    page,
+  }) => {
+    await conLaApiInterceptada(page);
+    await abrirLaHoja(page);
+
+    const hoja = page.getByRole("article", {
+      name: "Documento de la cotización",
+    });
+
+    /* --- Sin la clave: ningún renglón, y el total sí está. --- */
+
+    await expect(
+      page.locator(".hoja__impuesto"),
+      "el papel imprimió un ITBMS que el documento no congeló",
+    ).toHaveCount(0);
+    await expect(hoja).toContainText("1,698.95");
+
+    /* --- Con la clave: el mismo documento más el impuesto. ---
+
+       11 364 centavos sobre 162 345 de honorarios, y el total pasa de
+       169 895 a 181 259. Escritos a mano. */
+    await page.route(
+      (url) =>
+        url.pathname === `/api/cotizaciones/${EMITIDA_ID}/documento`,
+      async (ruta) => {
+        await ruta.fulfill({
+          status: 200,
+          json: {
+            documento: {
+              ...DOCUMENTO,
+              totales: {
+                ...DOCUMENTO.totales,
+                itbms: 11_364,
+                total: 181_259,
+              },
+            },
+          },
+        });
+      },
+    );
+    await page.reload();
+
+    const impuesto = page.locator(".hoja__impuesto");
+    await expect(impuesto).toHaveCount(1);
+    await expect(impuesto).toContainText("ITBMS");
+    await expect(impuesto.locator(".hoja__importe")).toHaveText("USD 113.64");
+    await expect(
+      page.locator(".hoja__total .hoja__importe"),
+    ).toHaveText("USD 1,812.59");
+  });
+
   test("el título de la pestaña lleva el código, que nombra el PDF", async ({
     page,
   }) => {

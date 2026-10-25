@@ -113,6 +113,7 @@ import {
   normalizarBorradorDeLinea,
   ordenDeLineas,
   podarBorradoresDeLinea,
+  renglonDelImpuesto,
   tramiteDeLaLinea,
   tramitesSeleccionables,
   type BorradorDeLinea,
@@ -451,6 +452,11 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
 
   const avisoDelCatalogo = avisoDeTramites(problemaDeTipos);
 
+  // El impuesto, o `null` si el bufete no lo factura (T-12). Se resuelve acá
+  // y no en el JSX por lo mismo que todo lo demás de este archivo: el `.tsx`
+  // no decide, y «¿va el renglón?» es una decisión.
+  const impuesto = renglonDelImpuesto(totales);
+
   return (
     <section aria-labelledby="lineas-de-la-cotizacion">
       <Pila>
@@ -720,6 +726,29 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
             )}
 
             <Pila espacio="ceñido">
+              {/*
+                El ITBMS, cuando el bufete lo factura (T-12).
+
+                **Y nada cuando no lo factura**, ni siquiera un renglón en
+                cero: `renglonDelImpuesto` devuelve `null` y acá no se dibuja
+                nada. Un «ITBMS (7 %) 0.00» diría que al cliente no se le
+                cobra impuesto, cuando lo que pasa es que el bufete todavía
+                no lo factura, y son dos conversaciones distintas con su
+                contador.
+
+                Va **entre los subtotales y el total** porque ése es el orden
+                de la cuenta: primero lo que suma cada familia, después lo que
+                el impuesto agrega, y al final lo que se paga.
+              */}
+              {impuesto !== null && (
+                <p className="suma suma--impuesto">
+                  <span className="suma__rotulo">{impuesto.rotulo}</span>
+                  <span className="suma__importe">
+                    {importeLegible(impuesto.importe, moneda)}
+                  </span>
+                </p>
+              )}
+
               <p className="suma suma--total">
                 <span className="suma__rotulo">Total</span>
                 <span className="suma__importe">

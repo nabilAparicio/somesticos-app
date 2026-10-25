@@ -172,6 +172,118 @@ export function esClaseDeLinea(valor: unknown): valor is ClaseDeLinea {
    La aritmética. Acá, y en ningún otro lado.
    ========================================================================== */
 
+/* --------------------------------------------------------------------------
+   El ITBMS (T-12)
+
+   **La aritmética del impuesto vive acá y no en `./impuesto.ts`**, y la razón
+   es el encabezado de esta sección: el ITBMS es aritmética de la cotización,
+   igual que la suma de los honorarios, y partirla en dos archivos sería el
+   primer paso hacia dos sitios que suman dinero.
+
+   En `./impuesto.ts` queda lo único que acá no puede estar: la lectura de la
+   variable de entorno que lo enciende. Este archivo viaja al navegador
+   —`tsconfig.app.json` lo lista para que la pantalla comparta el catálogo de
+   clases— y la condición para estar en esa lista es no arrastrar servidor.
+   -------------------------------------------------------------------------- */
+
+/**
+ * La tarifa, en puntos porcentuales enteros.
+ *
+ * **Entera y no `0.07`**, por lo mismo que los montos son centavos: un 7
+ * multiplica exacto y un 0,07 no se puede representar en coma flotante. La
+ * división por cien viene después, y viene escrita de forma que no produzca
+ * un flotante nunca (ver `itbmsDe`).
+ */
+export const TARIFA_DEL_ITBMS_POR_CIENTO = 7;
+
+/** El divisor del porcentaje. Acá, y en ningún otro lado de este archivo. */
+const CIEN = 100;
+
+/**
+ * Cómo se llama el impuesto en el papel que el cliente lee.
+ *
+ * **Se arma con la tarifa y no se escribe a mano**: son las dos mitades
+ * acopladas de siempre, y acá la consecuencia de separarlas es la peor
+ * posible — el documento diría «ITBMS (7 %)» encima de una cuenta hecha a
+ * otra tarifa, y la cifra equivocada es la que el cliente firma.
+ */
+export const ROTULO_DEL_ITBMS = `ITBMS (${String(
+  TARIFA_DEL_ITBMS_POR_CIENTO,
+)} %)`;
+
+/**
+ * Si el bufete factura ITBMS hoy.
+ *
+ * Es un objeto de un solo campo y no un `boolean` suelto, y la razón se lee
+ * en el sitio donde se usa: `totalesDe(lineas, true)` no dice nada —¿true
+ * qué? ¿editable? ¿incluye gastos?— y `totalesDe(lineas, regimen)` sí. Un
+ * booleano posicional en una función de dinero es el que alguien invierte al
+ * refactorizar sin que el compilador se entere.
+ *
+ * **No lleva la tarifa adentro**, y eso también es una decisión: el 7 % es la
+ * ley, no una preferencia del bufete. Si un día la ley cambia, cambia para
+ * todos a la vez y el sitio donde se escribe es la constante de arriba.
+ */
+export interface RegimenDeImpuesto {
+  readonly grava: boolean;
+}
+
+/**
+ * El régimen apagado. **Es el estado por omisión del sistema entero.**
+ *
+ * Existe como constante exportada y no sólo como literal por dentro, porque
+ * es lo que `totalesDe` toma cuando no le pasan nada: el valor por omisión de
+ * ese parámetro **es** el interruptor en su posición apagada, y tener un
+ * nombre para esa posición es lo que permite escribir la prueba que exige que
+ * las dos formas de llegar —no pasar nada y pasar `SIN_ITBMS`— den lo mismo.
+ */
+export const SIN_ITBMS: RegimenDeImpuesto = { grava: false };
+
+/** El régimen encendido. Hoy sólo lo produce `regimenDelBufete`. */
+export const CON_ITBMS: RegimenDeImpuesto = { grava: true };
+
+/**
+ * El ITBMS de una base de honorarios, en centavos enteros.
+ *
+ * ## Se trunca hacia abajo, y el residuo no se cobra
+ *
+ * El 7 % de un número impar de centavos casi nunca es un número entero de
+ * centavos: 162 345 al 7 % son **11 364,15**, y se cobran 11 364. Los 0,15
+ * que sobran no se reparten, no se redondean hacia arriba y no se ajustan
+ * contra el total. Tres razones, y la primera es la que manda:
+ *
+ *  1. **Es la misma regla que `importeDe`** en `worker/cuotas/dominio.ts`,
+ *     que trunca el porcentaje de una cuota. Dos reglas distintas harían que
+ *     «el 7 %» y «700 puntos básicos» del mismo número dieran respuestas
+ *     distintas, y el sistema pasaría a tener dos aritméticas del dinero —que
+ *     es el defecto que esta tajada lleva tres tareas negándose a crear.
+ *  2. **Truncar nunca le cobra al cliente un centavo de más.** Bajo un
+ *     impuesto que la contadora todavía no validó, errar del lado del cliente
+ *     es la única dirección defendible.
+ *  3. **Es exacta por construcción.** `Math.round(base * 7 / 100)` tiene que
+ *     producir un flotante antes de redondearlo; la forma de abajo no. El
+ *     producto es entero y está acotado muy por debajo de 2^53 —diez millones
+ *     de dólares son 10^9 centavos, y por 7 da 7 × 10^9—, el resto se calcula
+ *     con `%`, que sobre enteros exactos es exacto, y la resta deja un
+ *     múltiplo exacto de 100 cuya división sí es representable sin pérdida.
+ *     No hay `Math.round`, no hay `toFixed` y no hay conversión a dólares en
+ *     el camino.
+ *
+ * Y el residuo **se ve**, que es la lección que T-11 dejó escrita con el plan
+ * de pagos: un número que no cierra se muestra, no se ajusta. Acá se ve
+ * porque los cuatro números viajan juntos en `TotalesDeCotizacion`
+ * —honorarios, impuesto y gastos al lado del total—, así que quien quiera
+ * comprobar la cuenta tiene las cuatro cifras delante.
+ *
+ * No hay rama para `0`: cero honorarios dan cero de impuesto por la misma
+ * cuenta, y una cotización que sólo tiene gastos estimados todavía no cobra
+ * nada gravado.
+ */
+export function itbmsDe(honorarios: number): number {
+  const producto = honorarios * TARIFA_DEL_ITBMS_POR_CIENTO;
+  return (producto - (producto % CIEN)) / CIEN;
+}
+
 /**
  * Lo mínimo que hace falta para sumar: la clase y el monto.
  *
@@ -209,9 +321,44 @@ export interface LineaSumable {
  *
  * Una lista vacía suma cero en los tres, y eso no es un caso especial: una
  * cotización sin líneas todavía no cobra nada. No hay rama para eso.
+ *
+ * ## El segundo parámetro **es el interruptor del ITBMS**, y nace apagado
+ *
+ * `impuesto` tiene valor por omisión, y ese valor —`SIN_ITBMS`— no es una
+ * comodidad para no escribirlo: **es la posición apagada del interruptor**,
+ * y es lo que hace que `odd/tasks/cotizaciones.md` se cumpla por
+ * construcción. Ninguna cotización lleva impuesto salvo que alguien lo pida
+ * explícitamente, y quien lo pide es `regimenDelBufete` leyendo una variable
+ * de entorno que hoy no está puesta en ningún lado.
+ *
+ * Que sea opcional y no obligatorio **no se eligió**: `test/generador-api.spec.ts`
+ * llama a `totalesDe(lineas)` con un solo argumento y está fuera de la
+ * superficie de esta tarea. Pero el resultado es el correcto igual, y por un
+ * motivo que vale escribir: un parámetro que se puede olvidar, cuando
+ * olvidarlo deja el sistema en el estado seguro, es un parámetro que falla
+ * bien. Al revés —apagarlo teniendo que acordarse— el primer llamador que
+ * alguien escriba distraído le cobra un impuesto a un cliente.
+ *
+ * ## Por qué acá el total **sí** se deriva, y arriba se insistía en que no
+ *
+ * Con el régimen encendido, `total` sale de `total + itbms` y no de un cuarto
+ * acumulador en el recorrido. Parece lo contrario de lo que el párrafo de
+ * arriba defiende, y no lo es: ahí el argumento era que `honorarios +
+ * gastosEstimados` convierte en tautología una prueba que afirma los tres,
+ * porque **los dos caminos existen** —se pueden sumar las líneas de nuevo—.
+ * El impuesto no tiene segundo camino: no es una línea, nadie lo escribió en
+ * ninguna fila, y la única forma de saber cuánto es, es calcularlo. Derivar
+ * el total de un número que sólo existe derivado no crea una segunda
+ * definición; crea la primera.
+ *
+ * Lo que sí hay que no perder de vista es que **el impuesto se suma al total
+ * y no se mete en `honorarios`**: el subtotal de honorarios es lo que cobra
+ * el bufete, y el ITBMS es plata de la DGI que el bufete recauda. Meterlo
+ * adentro haría que el documento mintiera sobre cuánto cobró el estudio.
  */
 export function totalesDe(
   lineas: readonly LineaSumable[],
+  impuesto: RegimenDeImpuesto = SIN_ITBMS,
 ): TotalesDeCotizacion {
   let honorarios = 0;
   let gastosEstimados = 0;
@@ -223,7 +370,10 @@ export function totalesDe(
     total += linea.monto;
   }
 
-  return { honorarios, gastosEstimados, total };
+  if (!impuesto.grava) return { honorarios, gastosEstimados, total };
+
+  const itbms = itbmsDe(honorarios);
+  return { honorarios, gastosEstimados, itbms, total: total + itbms };
 }
 
 /* ==========================================================================

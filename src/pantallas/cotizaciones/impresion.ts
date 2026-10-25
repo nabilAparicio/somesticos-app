@@ -180,10 +180,27 @@ export const AYUDA_DE_LA_HOJA =
  * argumento que allá: **el texto es** la marca, y una bandera al lado
  * permitiría que uno de los dos cambiara sin el otro.
  */
+/**
+ * El campo de `TotalesDeCotizacion` del que sale el subtotal de una familia.
+ *
+ * **Ni `total` ni `itbms`**, y la exclusión no es defensiva: es lo que el
+ * tipo tiene para decir. Una familia es un grupo de líneas y su subtotal es
+ * lo que esas líneas suman; `total` es de las dos familias juntas, y el
+ * ITBMS **no es una familia de líneas** — nadie lo escribió en ninguna fila,
+ * no se puede agregar, editar ni quitar, y no tiene un encabezado del que
+ * colgar renglones.
+ *
+ * Escrito como `Exclude<…>` y no como la unión literal a mano, para que el
+ * día que el contrato gane un campo de subtotal nuevo —una tercera clase de
+ * línea— éste lo acepte solo, y el día que gane otro que tampoco sea un
+ * subtotal, alguien tenga que venir a decirlo acá.
+ */
+type CampoDeSubtotal = Exclude<keyof TotalesDeCotizacion, "total" | "itbms">;
+
 const COMO_SE_IMPRIME: Record<
   ClaseDeLinea,
   {
-    readonly campoDelSubtotal: keyof TotalesDeCotizacion;
+    readonly campoDelSubtotal: CampoDeSubtotal;
     readonly rotuloDelSubtotal: string;
     readonly aviso: string | null;
   }

@@ -145,6 +145,7 @@ import type { ModeloDeLenguaje } from "../ia/modelo";
 import type { TramiteOfrecido } from "../ia/prompt";
 import { ahoraIso, hoyEnPanama } from "../db/momentos";
 import { normalizarCotizacion } from "./dominio";
+import type { RegimenDeImpuesto } from "./lineas";
 import {
   normalizarLinea,
   normalizarOrdenDeLineas,
@@ -270,14 +271,24 @@ function respuestaDeModulos(
  * `worker/cotizaciones/snapshot.ts` lo llama al congelar —el total que el
  * cliente vio es un hecho histórico— y `worker/cuotas/rutas.ts` lo llama
  * para resolver la base de un porcentaje. Los tres derivan; ninguno guarda.
+ *
+ * **Y los tres reciben el mismo régimen de impuesto** (T-12), que resuelve
+ * `worker/index.ts` una sola vez por petición. Que el régimen sea un
+ * parámetro y no una lectura del entorno en cada sitio es lo que impide que
+ * la lista de líneas diga una cosa y el documento congelado otra dentro de la
+ * misma petición.
  */
-function cuerpoDeLineas(lineas: LineaDeCotizacion[]): RespuestaDeLineas {
-  return { lineas, totales: totalesDe(lineas) };
+function cuerpoDeLineas(
+  lineas: LineaDeCotizacion[],
+  impuesto: RegimenDeImpuesto,
+): RespuestaDeLineas {
+  return { lineas, totales: totalesDe(lineas, impuesto) };
 }
 
 function respuestaDeLineas(
   resultado: ResultadoDeLineas,
   estadoAlGuardar: 200 | 201,
+  impuesto: RegimenDeImpuesto,
 ): Response {
   if (resultado.estado === "no_encontrado") return noEncontrado();
   if (resultado.estado === "invalido") return invalido(resultado.fallas);
@@ -287,7 +298,9 @@ function respuestaDeLineas(
 
   // Sin `location` ni en el alta, por lo mismo que con un módulo: una línea
   // tiene dirección para editarla y para quitarla, pero no para leerla sola.
-  return json(cuerpoDeLineas(resultado.lineas), { status: estadoAlGuardar });
+  return json(cuerpoDeLineas(resultado.lineas, impuesto), {
+    status: estadoAlGuardar,
+  });
 }
 
 /**
@@ -737,6 +750,7 @@ async function rutasDeLineas(
   cotizacionId: string,
   servicio: ServicioDeCotizaciones,
   unaLinea: boolean,
+  impuesto: RegimenDeImpuesto,
 ): Promise<Response> {
   const permitidos = unaLinea ? "PUT, DELETE" : "GET, POST, PUT";
   const metodo = request.method;
@@ -760,7 +774,10 @@ async function rutasDeLineas(
 
   if (metodo === "GET") {
     return json(
-      cuerpoDeLineas(await servicio.listarLineas(tenantId, cotizacionId)),
+      cuerpoDeLineas(
+        await servicio.listarLineas(tenantId, cotizacionId),
+        impuesto,
+      ),
     );
   }
 
@@ -776,6 +793,7 @@ async function rutasDeLineas(
       return respuestaDeLineas(
         await servicio.quitarLinea(tenantId, cotizacionId, lineaId),
         200,
+        impuesto,
       );
     }
 
@@ -793,6 +811,7 @@ async function rutasDeLineas(
         normalizado.datos,
       ),
       200,
+      impuesto,
     );
   }
 
@@ -806,6 +825,7 @@ async function rutasDeLineas(
     return respuestaDeLineas(
       await servicio.reordenarLineas(tenantId, cotizacionId, normalizado.orden),
       200,
+      impuesto,
     );
   }
 
@@ -815,6 +835,7 @@ async function rutasDeLineas(
   return respuestaDeLineas(
     await servicio.agregarLinea(tenantId, cotizacionId, normalizado.datos),
     201,
+    impuesto,
   );
 }
 
@@ -837,6 +858,12 @@ export async function rutasDeCotizaciones(
    */
   catalogos: ServicioDeCatalogos,
   modelo: ModeloDeLenguaje,
+  /**
+   * El régimen de ITBMS del bufete (T-12). Lo resuelve `worker/index.ts` una
+   * sola vez por petición y lo reciben por igual esta ruta y la de cuotas,
+   * para que las dos contesten con la misma aritmética.
+   */
+  impuesto: RegimenDeImpuesto,
 ): Promise<Response | null> {
   const segmentos = segmentosDe(url.pathname);
   if (segmentos[0] !== "api") return null;
@@ -942,6 +969,7 @@ export async function rutasDeCotizaciones(
       cotizacionId,
       servicio,
       unaLinea,
+      impuesto,
     );
   }
 
