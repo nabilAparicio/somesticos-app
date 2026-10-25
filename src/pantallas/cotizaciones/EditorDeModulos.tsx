@@ -28,6 +28,25 @@
  * pantalla que no existe, y el criterio del proyecto es no dibujar puertas
  * donde no hay puerta. Se dice por qué, y se muestran los módulos.
  *
+ * ## La precondición que este archivo no puede garantizar solo
+ *
+ * El efecto de carga **no reinicia el estado** cuando cambia
+ * `cotizacionId`, y no es un olvido: `src/App.tsx` monta
+ * `DetalleDeCotizacion` con `key={ruta.id}`, así que React descarta el
+ * subárbol entero —este componente incluido— al pasar de una cotización a
+ * otra. Esa decisión está razonada allá, y explica además por qué se
+ * prefirió la `key` a reiniciar el estado dentro del efecto: lo segundo es
+ * el renderizado en cascada que `react-hooks` marca.
+ *
+ * Importa dejarlo escrito acá porque **lo que esa `key` evita no es una
+ * pantalla fea**: sin ella, entre el cambio de ruta y la respuesta nueva
+ * este editor seguiría mostrando los módulos de la cotización anterior en
+ * fase «listo», y sus botones mandarían escrituras a la cotización nueva
+ * con los identificadores de módulo de la vieja. Escribir en el documento
+ * equivocado. La precondición tiene prueba propia en
+ * `e2e/cotizaciones.spec.ts`, que navega de una cotización a otra del lado
+ * del cliente y mide que no quede nada de la anterior en pantalla.
+ *
  * Lo que no hay acá es emitir, ganar, perder ni duplicar —de T-4 y T-5— ni
  * nada de líneas ni aritmética, que son de T-3.
  */
@@ -51,12 +70,14 @@ import {
 } from "./api";
 import {
   AVISO_MODULOS_CONGELADOS,
+  AVISO_SIN_RELECTURA,
   AYUDA_DE_MODULOS,
   BORRADOR_DE_MODULO_VACIO,
   CATALOGO_DE_MODULOS,
   borradorDesdeModulo,
   exigeRecarga,
   hayCambioEnModulo,
+  mensajeDeExcepcion,
   mensajeDeFalla,
   mismoOrden,
   modulosOrdenados,
@@ -104,6 +125,8 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
   const [fallas, setFallas] = useState<FallaDeValidacion[]>([]);
   const [problema, setProblema] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  /** La lista en pantalla quedó vieja y la relectura tampoco salió. */
+  const [desactualizada, setDesactualizada] = useState(false);
 
   useEffect(() => {
     const control = new AbortController();
@@ -129,6 +152,10 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
     const ordenados = modulosOrdenados(lista);
     setModulos(ordenados);
     setAbiertos((anteriores) => podarBorradores(anteriores, ordenados));
+    // Toda lista que llega del servidor —de una lectura o de una
+    // escritura— es la buena, así que cualquiera de las dos cancela el
+    // estado de «lo que ves ya no vale».
+    setDesactualizada(false);
   }
 
   /**
@@ -137,10 +164,23 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
    * desde otra pestaña, y entonces lo que hay en pantalla es mentira —
    * reintentar con lo mismo vuelve a fallar. El mensaje se muestra igual,
    * para que el movimiento que no ocurrió no parezca haber ocurrido.
+   *
+   * Devuelve si pudo. **Un fallo acá no se descarta**, que es lo que hacía
+   * la primera versión: dejaba la lista vieja en pantalla debajo de un
+   * mensaje que decía que estaba vieja, sin nada que hacer al respecto.
+   * Ahora se marca, se dice con `AVISO_SIN_RELECTURA` y se ofrece la
+   * puerta.
    */
-  async function volverALeer() {
+  async function volverALeer(): Promise<boolean> {
     const resultado = await cargarModulos(cotizacionId);
-    if (resultado.estado === "ok") recibir(resultado.valor);
+
+    if (resultado.estado !== "ok") {
+      setDesactualizada(true);
+      return false;
+    }
+
+    recibir(resultado.valor);
+    return true;
   }
 
   /** Qué hacer con lo que contestó cualquiera de las cuatro escrituras. */
@@ -164,6 +204,59 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
     setFallas([]);
     setProblema(textoDeProblema(resultado));
     return false;
+  }
+
+  /**
+   * El envoltorio por el que pasan las cuatro escrituras y la relectura a
+   * mano. Existe por el `finally`.
+   *
+   * `pedir` devuelve un `Resultado` para todo lo que sabe que puede pasar,
+   * pero su `respuesta.json()` del camino feliz no está cubierto: un 200
+   * con un cuerpo que no es JSON hace que la promesa **rechace**. Sin este
+   * `finally`, `ocupado` se quedaba arriba para siempre y la pantalla
+   * entera quedaba muerta hasta recargar — el mismo error de forma que el
+   * 409 que escribía de la unidad C1: el camino feliz cuidado y el otro sin
+   * existir.
+   *
+   * El `catch` no está de adorno al lado del `finally`: destrabar los
+   * controles sin decir nada deja a la persona apretando un botón que
+   * aparentemente no hace nada.
+   */
+  async function conLaPantallaOcupada(
+    accion: () => Promise<boolean>,
+  ): Promise<boolean> {
+    setOcupado(true);
+    try {
+      return await accion();
+    } catch (error: unknown) {
+      setFallas([]);
+      setProblema(
+        textoDeProblema({
+          estado: "falla",
+          mensaje: mensajeDeExcepcion(error),
+        }),
+      );
+      return false;
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  function escribir(
+    peticion: () => Promise<Resultado<ModuloDeCotizacion[]>>,
+  ): Promise<boolean> {
+    return conLaPantallaOcupada(async () => aplicar(await peticion()));
+  }
+
+  /** La puerta que abre `AVISO_SIN_RELECTURA`: volver a intentar la lectura. */
+  async function recargar() {
+    const pudo = await conLaPantallaOcupada(() => volverALeer());
+    if (!pudo) return;
+
+    // La lista nueva es la verdad, así que lo que se dijo de la vieja
+    // —tanto la falla como el problema— ya no habla de nada.
+    setFallas([]);
+    setProblema(null);
   }
 
   function borradorDe(modulo: ModuloDeCotizacion): BorradorDeModulo {
@@ -204,22 +297,21 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
       return;
     }
 
-    setOcupado(true);
-    const ok = await aplicar(
-      await editarModulo(cotizacionId, modulo.id, normalizado.datos),
+    const ok = await escribir(() =>
+      editarModulo(cotizacionId, modulo.id, normalizado.datos),
     );
-    setOcupado(false);
 
     // Guardado el módulo, el campo vuelve a mostrar lo que el servidor
-    // devolvió y no lo que se tecleó: son lo mismo salvo por el recorte, y
-    // el que manda es el de la base.
+    // devolvió y no lo que se tecleó. No son siempre lo mismo —el servidor
+    // recorta, y mañana podría normalizar más—, y el que manda es el de la
+    // base. Si la escritura **no** salió, el borrador se queda: tirar lo
+    // que alguien escribió porque el servidor dijo que no es perder
+    // trabajo ajeno para no guardar estado.
     if (ok) olvidarBorrador(modulo.id);
   }
 
   async function quitar(modulo: ModuloDeCotizacion) {
-    setOcupado(true);
-    await aplicar(await quitarModulo(cotizacionId, modulo.id));
-    setOcupado(false);
+    await escribir(() => quitarModulo(cotizacionId, modulo.id));
   }
 
   async function mover(indice: number, direccion: -1 | 1) {
@@ -231,9 +323,7 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
     // petición que ya se sabe estéril, y la pantalla puede saberlo sola.
     if (mismoOrden(pedido, ordenDe(modulos))) return;
 
-    setOcupado(true);
-    await aplicar(await reordenarModulos(cotizacionId, pedido));
-    setOcupado(false);
+    await escribir(() => reordenarModulos(cotizacionId, pedido));
   }
 
   async function agregar(evento: FormEvent<HTMLFormElement>) {
@@ -247,9 +337,9 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
       return;
     }
 
-    setOcupado(true);
-    const ok = await aplicar(await agregarModulo(cotizacionId, normalizado.datos));
-    setOcupado(false);
+    const ok = await escribir(() =>
+      agregarModulo(cotizacionId, normalizado.datos),
+    );
 
     if (ok) setNuevo(BORRADOR_DE_MODULO_VACIO);
   }
@@ -281,6 +371,31 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
             )}
 
             {problema !== null && <Aviso tono="error">{problema}</Aviso>}
+
+            {/*
+              El peor estado de esta pantalla, y el único que lleva botón
+              propio: el servidor avisó que la lista quedó vieja y la
+              relectura tampoco salió. Un aviso que dice «esto que ves no
+              vale» sin con qué arreglarlo es una pared sin puerta, así que
+              acá va la puerta.
+            */}
+            {desactualizada && (
+              <Aviso tono="error">
+                <Pila espacio="ceñido">
+                  <span>{AVISO_SIN_RELECTURA}</span>
+                  <Fila>
+                    <button
+                      type="button"
+                      className="boton"
+                      disabled={ocupado}
+                      onClick={() => void recargar()}
+                    >
+                      Volver a cargar los módulos
+                    </button>
+                  </Fila>
+                </Pila>
+              </Aviso>
+            )}
 
             {fallas.length > 0 && (
               <Aviso tono="error">

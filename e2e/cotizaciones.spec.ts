@@ -156,6 +156,16 @@ const TEXTO_DOS = "Solicitud, seguimiento y retiro del carné.";
 const TEXTO_TRES =
   "No incluye TASASYMULTASDELSERVICIONACIONALDEMIGRACIONDEPANAMAOESTE.";
 
+/**
+ * Lo que el servidor contesta al guardar, **distinto** de lo que se tecleó.
+ *
+ * No es un capricho del escenario: es la única forma de que la prueba de
+ * edición pueda fallar por lo que dice medir. Si la respuesta repitiera el
+ * texto enviado, una pantalla que redibuja lo que vino y una que conserva
+ * lo que había en el campo se verían exactamente igual.
+ */
+const TEXTO_SEGUN_EL_SERVIDOR = "Vino por una visa, y ya tenía una negada.";
+
 const MODULOS_DEL_BORRADOR = [
   { id: MODULO_UNO, tipo: "antecedentes", orden: 0, contenido: TEXTO_UNO },
   { id: MODULO_DOS, tipo: "alcance", orden: 1, contenido: TEXTO_DOS },
@@ -855,11 +865,20 @@ test.describe("las cotizaciones del bufete", () => {
         url.pathname === `/api/cotizaciones/${BORRADOR_ID}/modulos/${MODULO_UNO}`,
       async (ruta) => {
         enviado = ruta.request().postData();
+        /*
+         * La respuesta trae algo **distinto** de lo que se tecleó, y ésa es
+         * toda la gracia. La primera versión de esta prueba devolvía el
+         * mismo texto: así no podía distinguir una pantalla que redibuja lo
+         * que contestó el servidor de una que se queda con lo que había en
+         * el campo, que son justamente las dos cosas que esto dice medir.
+         * Una prueba que no puede fallar por su propio enunciado no prueba
+         * nada.
+         */
         await ruta.fulfill({
           status: 200,
           json: {
             modulos: [
-              { ...MODULOS_DEL_BORRADOR[0], contenido: "Vino por una visa." },
+              { ...MODULOS_DEL_BORRADOR[0], contenido: TEXTO_SEGUN_EL_SERVIDOR },
               MODULOS_DEL_BORRADOR[1],
               MODULOS_DEL_BORRADOR[2],
             ],
@@ -888,6 +907,17 @@ test.describe("las cotizaciones del bufete", () => {
       tipo: "antecedentes",
       contenido: "Vino por una visa.",
     });
+
+    // El campo pasa a mostrar lo que quedó guardado, no lo que se tecleó.
+    await expect(texto).toHaveValue(TEXTO_SEGUN_EL_SERVIDOR);
+
+    // Y los dos botones se van, porque ya no hay nada pendiente de guardar.
+    await expect(guardar).toHaveCount(0);
+    await expect(
+      page.getByRole("button", {
+        name: "Descartar los cambios del módulo 1: Antecedentes",
+      }),
+    ).toHaveCount(0);
   });
 
   test("descartar devuelve el texto que está guardado", async ({ page }) => {
@@ -905,6 +935,271 @@ test.describe("las cotizaciones del bufete", () => {
       .click();
 
     await expect(texto).toHaveValue(TEXTO_UNO);
+  });
+
+  /* --- Los caminos que no son el feliz ----------------------------------- */
+
+  test("pasar de una cotización a otra no deja ver los módulos de la anterior", async ({
+    page,
+  }) => {
+    /*
+     * El riesgo que esto cierra no es estético: si el editor sobreviviera al
+     * cambio de cotización sin reiniciarse, sus botones mandarían escrituras
+     * a la cotización nueva con los identificadores de módulo de la vieja —
+     * escribir en el documento equivocado.
+     *
+     * **Hoy no es alcanzable**, y esta prueba es la que lo fija: `App.tsx`
+     * monta `DetalleDeCotizacion` con `key={ruta.id}`, así que React
+     * descarta el subárbol entero al cambiar de identificador. Esa decisión
+     * está escrita y razonada en `src/App.tsx`, que además explica por qué
+     * se prefirió la `key` a reiniciar el estado dentro del efecto: eso
+     * último es el renderizado en cascada que `react-hooks` marca.
+     *
+     * O sea: esto es una **precondición con prueba**, no un defecto vivo. Si
+     * alguien saca esa `key`, acá se entera.
+     */
+    await conCotizacionesCargadas(page);
+
+    /*
+     * La lectura de módulos de la emitida se demora varios segundos a
+     * propósito. El instante entre el cambio de ruta y esa respuesta es la
+     * ventana donde se verían los módulos de la anterior si el editor se
+     * reusara, y la ventana tiene que durar más que la medición.
+     */
+    await page.route(
+      (url) => url.pathname === `/api/cotizaciones/${EMITIDA_ID}/modulos`,
+      async (ruta) => {
+        await new Promise((listo) => setTimeout(listo, 2500));
+        await ruta.fulfill({
+          status: 200,
+          json: { modulos: MODULOS_DE_LA_EMITIDA },
+        });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".modulo textarea")).toHaveCount(3);
+
+    // Navegación del lado del cliente, igual que `navegarA`: el mismo
+    // nombre de ruta con otro identificador, que es la condición exacta.
+    await page.evaluate((destino) => {
+      window.history.pushState(null, "", destino);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, `/cotizaciones/${EMITIDA_ID}`);
+
+    // La cabecera nueva sí llega rápido: su lectura no está demorada. Esto
+    // es lo que fija el instante de la medición.
+    await expect(
+      page.getByRole("heading", { name: "COT-2026-0008" }),
+    ).toBeVisible();
+
+    /*
+     * **`.count()` y no `toHaveCount`, y acá eso es lo correcto.** Un
+     * `toHaveCount(0)` reintenta hasta cinco segundos, así que da por buena
+     * una pantalla que mostró tres módulos ajenos durante dos segundos y
+     * recién después los soltó — que es exactamente el estado que esta
+     * prueba existe para prohibir. Una aserción que espera no puede
+     * demostrar un «nunca»: hay que leer el instante.
+     *
+     * Medido: sin la `key` de `App.tsx` acá se leen 3 y con ella 0.
+     */
+    const ajenos = await page.locator(".modulo").count();
+    expect(
+      ajenos,
+      "con la lectura nueva todavía en vuelo no puede quedar ni un módulo" +
+        " de la cotización anterior en pantalla",
+    ).toBe(0);
+
+    // Y recién entonces, la lista de la emitida.
+    await expect(page.locator(".modulo__texto")).toHaveCount(2);
+  });
+
+  test("una respuesta ilegible no deja los controles trabados", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    await page.route(
+      (url) =>
+        url.pathname === `/api/cotizaciones/${BORRADOR_ID}/modulos/${MODULO_DOS}`,
+      async (ruta) => {
+        /*
+         * 200 con un cuerpo que no es JSON. `pedir` lo lee con
+         * `respuesta.json()` **fuera de todo `catch`** —ése es el único
+         * `await` suyo que no está cubierto—, así que la promesa **rechaza**
+         * en vez de devolver un `Resultado`. Ningún `if` del editor pasa por
+         * ahí.
+         */
+        await ruta.fulfill({
+          status: 200,
+          contentType: "text/html",
+          body: "<html>no soy json</html>",
+        });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await page
+      .getByRole("button", { name: "Quitar el módulo 2: Alcance" })
+      .click();
+
+    // Lo que no puede pasar es que la pantalla quede muerta: sin un
+    // `finally`, `ocupado` se queda arriba y **todos** los controles quedan
+    // apagados hasta recargar la página.
+    await expect(
+      page.getByRole("button", { name: "Bajar el módulo 1: Antecedentes" }),
+      "una escritura que revienta no puede dejar la pantalla trabada",
+    ).toBeEnabled();
+
+    // Y se dice, en vez de tragarse el fallo.
+    await expect(page.getByRole("alert")).toBeVisible();
+  });
+
+  test("mientras una escritura viaja, los controles no aceptan otra", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let soltar = () => {
+      /* lo reemplaza la promesa de abajo antes de usarse */
+    };
+    const retenida = new Promise<void>((listo) => {
+      soltar = listo;
+    });
+
+    await page.route(
+      (url) =>
+        url.pathname === `/api/cotizaciones/${BORRADOR_ID}/modulos/${MODULO_DOS}`,
+      async (ruta) => {
+        await retenida;
+        await ruta.fulfill({
+          status: 200,
+          json: {
+            modulos: [MODULOS_DEL_BORRADOR[0], MODULOS_DEL_BORRADOR[2]],
+          },
+        });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await page
+      .getByRole("button", { name: "Quitar el módulo 2: Alcance" })
+      .click();
+
+    // Dos escrituras en vuelo sobre la misma lista son dos respuestas que
+    // compiten por pisarse, y la que llegue segunda gana sin motivo.
+    await expect(
+      page.getByRole("button", { name: "Bajar el módulo 1: Antecedentes" }),
+    ).toBeDisabled();
+
+    soltar();
+
+    await expect(page.locator(".modulo")).toHaveCount(2);
+    await expect(
+      page.getByRole("button", { name: "Bajar el módulo 1: Antecedentes" }),
+    ).toBeEnabled();
+  });
+
+  test("un 409 sobre una escritura se dice y no borra lo que se escribió", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    await page.route(
+      (url) =>
+        url.pathname === `/api/cotizaciones/${BORRADOR_ID}/modulos/${MODULO_UNO}`,
+      async (ruta) => {
+        await ruta.fulfill({
+          status: 409,
+          json: { error: "cotizacion_no_es_borrador", estado: "emitida" },
+        });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    const texto = page.locator(".modulo textarea").first();
+    await expect(texto).toHaveValue(TEXTO_UNO);
+
+    const escrito = "Vino por una visa de trabajo, y ya tenía una negada.";
+    await texto.fill(escrito);
+    await page
+      .getByRole("button", { name: "Guardar el módulo 1: Antecedentes" })
+      .click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "ya no es un borrador",
+    );
+
+    // Y lo que la persona escribió sigue ahí: tirar el texto porque el
+    // servidor dijo que no es perder trabajo ajeno para no guardar estado.
+    await expect(texto).toHaveValue(escrito);
+    await expect(
+      page.getByRole("button", { name: "Guardar el módulo 1: Antecedentes" }),
+    ).toBeVisible();
+  });
+
+  test("si la relectura forzada falla, lo dice y ofrece volver a cargar", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let fase: "inicial" | "rota" | "sana" = "inicial";
+    await page.route(coleccionDeModulos, async (ruta) => {
+      if (ruta.request().method() === "PUT") {
+        fase = "rota";
+        await ruta.fulfill({
+          status: 422,
+          json: {
+            error: "datos_invalidos",
+            fallas: [{ campo: "orden", motivo: "orden_incompleto" }],
+          },
+        });
+        return;
+      }
+
+      if (fase === "rota") {
+        fase = "sana";
+        await ruta.fulfill({ status: 503, json: { error: "no_disponible" } });
+        return;
+      }
+
+      await ruta.fulfill({
+        status: 200,
+        json: {
+          modulos:
+            fase === "sana"
+              ? MODULOS_DEL_BORRADOR.slice(0, 2)
+              : MODULOS_DEL_BORRADOR,
+        },
+      });
+    });
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.locator(".modulo")).toHaveCount(3);
+
+    await page
+      .getByRole("button", { name: "Subir el módulo 2: Alcance" })
+      .click();
+
+    /*
+     * El defecto que esto cierra es el silencio: la relectura se descartaba
+     * sin decir nada, así que la lista vieja se quedaba en pantalla **bajo
+     * un mensaje que dice que está vieja**. Quien mira no tiene cómo saber
+     * que lo que ve ya no es lo que hay guardado.
+     */
+    await expect(page.getByText("no se pudo volver a leer")).toBeVisible();
+
+    const recargar = page.getByRole("button", {
+      name: "Volver a cargar los módulos",
+    });
+    await expect(recargar).toBeVisible();
+
+    // Y la puerta funciona: el servidor se recupera y el botón trae la
+    // lista de verdad, que tiene un módulo menos.
+    await recargar.click();
+    await expect(page.locator(".modulo")).toHaveCount(2);
+    await expect(page.getByText("no se pudo volver a leer")).toHaveCount(0);
   });
 
   test("quitar un módulo lo saca de la lista", async ({ page }) => {

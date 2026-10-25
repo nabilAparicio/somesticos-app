@@ -41,6 +41,7 @@ import {
   borradorDesdeModulo,
   exigeRecarga,
   hayCambioEnModulo,
+  mensajeDeExcepcion,
   mismoOrden,
   modulosOrdenados,
   moverModulo,
@@ -389,6 +390,30 @@ describe("podarBorradores", () => {
     podarBorradores(abiertos, []);
 
     expect(Object.keys(abiertos)).toEqual([TRES]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lo que llega sin ser un `Resultado`
+// ---------------------------------------------------------------------------
+
+describe("mensajeDeExcepcion", () => {
+  it("de un `Error` saca su mensaje y no su nombre de clase", () => {
+    // Es el caso real: un 200 con un cuerpo que no es JSON hace que
+    // `respuesta.json()` tire un `SyntaxError`, y lo que le sirve a quien
+    // mira es qué decía, no que fue un `SyntaxError`.
+    expect(
+      mensajeDeExcepcion(new SyntaxError("Unexpected token '<'")),
+    ).toBe("Unexpected token '<'");
+  });
+
+  it("de lo que no es un `Error` saca su texto, sin suponer forma", () => {
+    // `throw "algo"` es legal y pasa: un `error.message` a secas daría
+    // `undefined` y la pantalla mostraría un hueco.
+    expect(mensajeDeExcepcion("se cortó a la mitad")).toBe(
+      "se cortó a la mitad",
+    );
+    expect(mensajeDeExcepcion(null)).toBe("null");
   });
 });
 

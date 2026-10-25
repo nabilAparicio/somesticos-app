@@ -93,6 +93,39 @@ export const AYUDA_DE_MODULOS =
   " el orden en que se van a leer. Cada cambio se guarda por su cuenta: no" +
   " hay un botón al final que confirme todo junto.";
 
+/**
+ * Lo que se dice cuando el servidor avisó que la lista en pantalla quedó
+ * vieja **y la relectura que tenía que arreglarlo tampoco salió**.
+ *
+ * Es el peor de los estados posibles de esta pantalla y por eso tiene frase
+ * propia: lo que se está mirando ya no es lo que hay guardado, y el editor
+ * lo sabe. Callarlo —que es lo que hacía la primera versión, descartando en
+ * silencio una relectura fallida— deja la lista vieja debajo de un mensaje
+ * que dice que está vieja, sin que quien mira tenga cómo saber cuál de las
+ * dos cosas creer.
+ */
+export const AVISO_SIN_RELECTURA =
+  "Lo que está en pantalla ya no es lo que hay guardado y no se pudo volver" +
+  " a leer la lista. Hasta que se relea, lo que se ve es de antes: conviene" +
+  " no guiarse por el orden ni por lo que falta.";
+
+/**
+ * El texto de un error que **no** llegó como `Resultado`.
+ *
+ * `pedir` convierte en `Resultado` todo lo que sabe que puede pasar, pero
+ * tiene un `await` sin red: el `respuesta.json()` del camino feliz. Un 200
+ * con un cuerpo que no es JSON —un proxy que se mete en el medio, un
+ * reinicio del servidor a mitad de la respuesta— hace que la promesa
+ * **rechace**, y ninguna rama del editor pasa por ahí.
+ *
+ * Vive acá y no dentro del componente para que se pueda probar sin montar
+ * un navegador, y espeja a `llamar` en `src/api/peticiones.ts`, que resuelve
+ * lo mismo para el fallo de red.
+ */
+export function mensajeDeExcepcion(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** Lo que se dice donde estarían los controles, sobre algo que ya se mandó. */
 export const AVISO_MODULOS_CONGELADOS =
   "Los módulos de esta cotización se pueden leer pero no cambiar: son el" +
