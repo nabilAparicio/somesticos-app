@@ -28,6 +28,15 @@ const BORRADOR_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f";
 const BORRADOR_VIEJO_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e60";
 const EMITIDA_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e61";
 
+/* --- Los otros tres estados, y las dos copias (T-4 y T-5, unidad B) ----- */
+
+const GANADA_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e62";
+const PERDIDA_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e63";
+/** Una que nació duplicando la emitida: es la que muestra la procedencia. */
+const DUPLICADA_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e64";
+/** La que devuelve `POST /duplicar` sobre el borrador. */
+const COPIA_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e65";
+
 const CLIENTE_ID = "4a3f1d0e-0e2c-4c1f-9a6b-2d8a1c5e7b90";
 const OTRO_CLIENTE_ID = "4a3f1d0e-0e2c-4c1f-9a6b-2d8a1c5e7b91";
 
@@ -136,6 +145,58 @@ const EMITIDA = cotizacion({
   estado: "emitida",
   clienteId: OTRO_CLIENTE_ID,
   clienteNombre: CLIENTES[1].nombre,
+});
+
+/**
+ * El borrador, ya emitido. Es lo que `POST /emitir` devuelve: **la misma
+ * fila** —mismo identificador y mismo código— con el estado movido. Por eso
+ * no entra en el listado: no es una cotización más, es la de siempre
+ * después de congelarse.
+ */
+const BORRADOR_EMITIDO = cotizacion({ estado: "emitida" });
+
+/**
+ * Una ganada, con el contenido hostil de la emitida colgando.
+ *
+ * Es la que miden las nueve medidas de §9 sobre el ciclo de vida, y el
+ * contenido hostil es lo que hace que midan algo: una ganada se dibuja en
+ * modo lectura, así que la prosa cruda y el concepto crudo llegan al layout
+ * sin un control que los contenga, y encima de eso se agrega la franja de
+ * controles nueva. Con contenido corriente la medida sería la del detalle
+ * pelado, que ya está medida en otro lado.
+ */
+const GANADA = cotizacion({
+  id: GANADA_ID,
+  codigo: "COT-2026-0009",
+  estado: "ganada",
+  clienteId: OTRO_CLIENTE_ID,
+  clienteNombre: CLIENTES[1].nombre,
+});
+
+const PERDIDA = cotizacion({
+  id: PERDIDA_ID,
+  codigo: "COT-2026-0010",
+  estado: "perdida",
+});
+
+/**
+ * Nació duplicando la emitida. **Es un borrador**, que es lo único que
+ * duplicar sabe parir, y eso es parte de lo que la prueba de procedencia
+ * comprueba: una copia se puede editar aunque la de arriba esté congelada.
+ */
+const DUPLICADA = cotizacion({
+  id: DUPLICADA_ID,
+  codigo: "COT-2026-0011",
+  estado: "borrador",
+  duplicadaDeId: EMITIDA_ID,
+});
+
+/** La copia que nace al duplicar el borrador. */
+const COPIA = cotizacion({
+  id: COPIA_ID,
+  codigo: "COT-2026-0012",
+  estado: "borrador",
+  duplicadaDeId: BORRADOR_ID,
 });
 
 /* --- Los módulos de prosa (T-2, unidad C2) ------------------------------- */
@@ -349,6 +410,13 @@ const LINEAS_POR_COTIZACION: Record<
     lineas: LINEAS_DE_LA_EMITIDA,
     totales: TOTALES_DE_LA_EMITIDA,
   },
+  // La ganada comparte el contenido hostil de la emitida: es la que miden
+  // las nueve medidas del ciclo de vida, y sin contenido que pueda empujar
+  // medirían el detalle pelado.
+  [GANADA_ID]: {
+    lineas: LINEAS_DE_LA_EMITIDA,
+    totales: TOTALES_DE_LA_EMITIDA,
+  },
   [BORRADOR_VIEJO_ID]: {
     lineas: [],
     totales: { honorarios: 0, gastosEstimados: 0, total: 0 },
@@ -358,6 +426,7 @@ const LINEAS_POR_COTIZACION: Record<
 const MODULOS_POR_COTIZACION: Record<string, Record<string, unknown>[]> = {
   [BORRADOR_ID]: MODULOS_DEL_BORRADOR,
   [EMITIDA_ID]: MODULOS_DE_LA_EMITIDA,
+  [GANADA_ID]: MODULOS_DE_LA_EMITIDA,
   [BORRADOR_VIEJO_ID]: [],
 };
 
@@ -378,6 +447,18 @@ const BITACORA = {
 };
 
 const COTIZACIONES = [BORRADOR, BORRADOR_VIEJO, EMITIDA];
+
+/**
+ * Las del ciclo de vida, que **se abren por su dirección y no salen en el
+ * listado**, y es deliberado.
+ *
+ * Las tres pruebas del listado —el conteo de filas, el orden y el filtro—
+ * están escritas sobre esas tres cotizaciones exactas, y sumar seis más les
+ * cambiaría lo que miden sin agregarles nada: ninguna de las pruebas del
+ * ciclo de vida pasa por el listado. Dicho al revés: lo que este arreglo
+ * separado protege es que una prueba de orden siga midiendo orden.
+ */
+const DEL_CICLO = [GANADA, PERDIDA, DUPLICADA, COPIA];
 
 function cuerpoDe(pathname: string): Record<string, unknown> | null {
   if (/^\/api\/cotizaciones\/[^/]+\/bitacora$/.test(pathname)) return BITACORA;
@@ -405,7 +486,12 @@ function cuerpoDe(pathname: string): Record<string, unknown> | null {
   if (pathname === "/api/cotizaciones") return { cotizaciones: COTIZACIONES };
   if (pathname === "/api/clientes") return { clientes: CLIENTES };
 
-  for (const cotizacion of COTIZACIONES) {
+  // El detalle sirve las siete; el listado, sólo las tres de arriba. Ver
+  // `DEL_CICLO`. `BORRADOR_EMITIDO` no está en ninguna de las dos listas:
+  // comparte identificador con `BORRADOR`, así que por esta dirección se
+  // lee el borrador, y la versión emitida la devuelve `POST /emitir` en la
+  // prueba que la necesita.
+  for (const cotizacion of [...COTIZACIONES, ...DEL_CICLO]) {
     if (pathname === `/api/cotizaciones/${String(cotizacion.id)}`) {
       return { cotizacion };
     }
@@ -504,7 +590,7 @@ test.describe("las cotizaciones del bufete", () => {
     ).toBeHidden();
   });
 
-  test("el detalle de un borrador deja editarlo y no ofrece nada más", async ({
+  test("el detalle de un borrador deja editarlo, emitirlo y duplicarlo", async ({
     page,
   }) => {
     await conCotizacionesCargadas(page);
@@ -515,21 +601,355 @@ test.describe("las cotizaciones del bufete", () => {
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "Editar" })).toBeVisible();
 
-    // Emitir, ganar, perder y duplicar son de T-4 y T-5. Ni como botón ni
-    // como texto apagado: un control deshabilitado promete una pantalla que
-    // no existe.
-    //
-    // «Módulos» salió de esta lista en la unidad C2, y «Líneas» y «Total»
-    // en T-3 B, cada uno en la tarea que lo trajo. Lo que ocupó su lugar no
-    // es nada: la lista se achica, porque una palabra que ya se dibuja a
-    // propósito no puede seguir prohibida acá sin convertir esta prueba en
-    // una que falla por tener razón.
-    for (const palabra of ["Emitir", "Duplicar", "Ganada", "Perdida"]) {
-      await expect(
-        page.getByText(palabra, { exact: false }),
-        `«${palabra}» no es de esta tarea y no puede estar dibujado`,
-      ).toHaveCount(0);
-    }
+    /*
+     * **Esta prueba cambió de contenido en T-5 sin cambiar de criterio.**
+     * Prohibía los cuatro verbos porque ninguno existía todavía, ni en el
+     * Worker. Lo que sigue vigente es lo de siempre: la pantalla no dibuja
+     * lo que no hay. Lo que hay sobre un borrador son dos cosas, y están
+     * en `accionesDe`.
+     */
+    await expect(
+      page.getByRole("button", { name: "Emitir", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Duplicar", exact: true }),
+    ).toBeVisible();
+  });
+
+  /* --- Las tres flechas, y ni una más (T-4 y T-5, unidad B) -------------- */
+
+  /**
+   * Qué controles del ciclo hay en cada estado, leídos **en el instante**.
+   *
+   * Es `.count()` y no `toHaveCount(0)`, y la diferencia es la lección que
+   * esta tajada ya aprendió dos veces: una aserción que reintenta no puede
+   * demostrar un «nunca». `toHaveCount(0)` tolera la ventana en que el
+   * botón estuvo dibujado y después se fue, que es exactamente lo que acá
+   * hay que prohibir — un «Marcar ganada» que parpadea sobre un borrador se
+   * puede apretar.
+   *
+   * Y por eso se espera **primero** a que la pantalla esté dibujada: la
+   * foto del instante tomada apenas vuelve el `goto` no mide la ausencia de
+   * un botón, mide que React todavía no montó nada.
+   */
+  async function controlesDelCiclo(page: Page, id: string): Promise<string[]> {
+    await page.goto(`/cotizaciones/${id}`);
+    // La franja de controles vive en el encabezado, así que esperar al
+    // encabezado es esperar a que el dibujo de esa franja ya haya ocurrido.
+    await expect(page.locator("header h1")).toBeVisible();
+    await expect(page.locator("header .boton").first()).toBeVisible();
+
+    return page.locator("header button.boton").allInnerTexts();
+  }
+
+  test("un borrador se emite y se duplica, y no se gana ni se pierde", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    expect(await controlesDelCiclo(page, BORRADOR_ID)).toEqual([
+      "Emitir",
+      "Duplicar",
+    ]);
+  });
+
+  test("una emitida se gana, se pierde y se duplica, y no se vuelve a emitir", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    expect(await controlesDelCiclo(page, EMITIDA_ID)).toEqual([
+      "Marcar ganada",
+      "Marcar perdida",
+      "Duplicar",
+    ]);
+    // Y tampoco se edita: ése es el botón que `avisoDeNoEsBorrador` explica.
+    expect(await page.getByRole("link", { name: "Editar" }).count()).toBe(0);
+  });
+
+  test("una ganada es el final: lo único que queda es duplicarla", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    expect(await controlesDelCiclo(page, GANADA_ID)).toEqual(["Duplicar"]);
+
+    // Y el aviso nombra esa salida y ninguna otra: un texto que ofreciera
+    // volver a ganarla mandaría a buscar un botón que no está.
+    const aviso = page.getByText("ya no es un borrador");
+    await expect(aviso).toContainText("duplicarla");
+    await expect(aviso).not.toContainText("marcarla ganada");
+  });
+
+  test("una perdida tampoco se vuelve a ganar", async ({ page }) => {
+    await conCotizacionesCargadas(page);
+
+    expect(await controlesDelCiclo(page, PERDIDA_ID)).toEqual(["Duplicar"]);
+  });
+
+  /* --- Emitir es irreversible, y la pantalla lo dice antes --------------- */
+
+  /**
+   * Intercepta `POST /emitir` y devuelve el borrador ya emitido, anotando
+   * cada llamada.
+   *
+   * El arreglo que devuelve es lo que permite afirmar un «todavía no se
+   * mandó nada»: se lee con `.length`, que es una foto del instante, y
+   * nunca con una aserción que reintente.
+   */
+  async function conLaEmisionInterceptada(page: Page): Promise<string[]> {
+    const emisiones: string[] = [];
+
+    // Registrada **después** de la de lectura y por eso gana: Playwright
+    // atiende las rutas en orden inverso al de registro.
+    await page.route(
+      (url) => url.pathname === `/api/cotizaciones/${BORRADOR_ID}/emitir`,
+      async (ruta) => {
+        emisiones.push(ruta.request().method());
+        await ruta.fulfill({ status: 200, json: { cotizacion: BORRADOR_EMITIDO } });
+      },
+    );
+
+    return emisiones;
+  }
+
+  test("la confirmación dice qué pasa y nombra lo que se va a congelar", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await page.getByRole("button", { name: "Emitir", exact: true }).click();
+
+    const panel = page.getByRole("group", {
+      name: "Emitir congela el documento",
+    });
+    await expect(panel).toBeVisible();
+
+    // Qué cotización: con tres pestañas abiertas, una confirmación que no
+    // nombra el código no dice cuál se está por congelar.
+    await expect(panel).toContainText("COT-2026-0007");
+    // Qué pasa, y sobre qué: los módulos y las líneas, que es justo lo que
+    // la persona acaba de escribir.
+    await expect(panel).toContainText("congela el documento");
+    await expect(panel).toContainText("no se vuelve a editar");
+    await expect(panel).toContainText("módulos de prosa");
+    await expect(panel).toContainText("líneas de importe");
+
+    // Y no pregunta si está seguro: informa. «¿Estás seguro?» no informa a
+    // nadie, y una confirmación que no informa se aprieta sin leer.
+    await expect(panel).not.toContainText("seguro");
+    await expect(panel).not.toContainText("¿");
+  });
+
+  test("apretar «Emitir» no emite nada hasta que se confirma", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    const emisiones = await conLaEmisionInterceptada(page);
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await page.getByRole("button", { name: "Emitir", exact: true }).click();
+
+    // La espera va primero y no es adorno: leer el arreglo apenas se
+    // despacha el clic devuelve cero porque todavía no pasó nada, y la
+    // prueba pasaría sin haber medido la confirmación.
+    await expect(
+      page.getByRole("button", { name: "Emitir y congelar" }),
+    ).toBeVisible();
+
+    // `.length` y no una aserción que reintente: lo que hay que demostrar
+    // es un «nunca», y un `toHaveCount(0)` sobre los pedidos toleraría la
+    // ventana en la que la emisión ya viajó.
+    expect(
+      emisiones.length,
+      "la confirmación no puede haber emitido nada todavía",
+    ).toBe(0);
+
+    await page.getByRole("button", { name: "No emitir" }).click();
+    await expect(
+      page.getByRole("button", { name: "Emitir y congelar" }),
+    ).toHaveCount(0);
+    expect(emisiones.length, "«No emitir» no emite").toBe(0);
+
+    // Y el borrador sigue siendo un borrador: el botón de editar no se fue.
+    await expect(page.getByRole("link", { name: "Editar" })).toBeVisible();
+  });
+
+  test("confirmar emite, y lo que queda en pantalla ya no se edita", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    const emisiones = await conLaEmisionInterceptada(page);
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    // Los módulos del borrador se editan: tres campos de texto. Es lo que
+    // tiene que desaparecer, así que hay que verlo antes.
+    await expect(page.locator(".modulo textarea")).toHaveCount(3);
+
+    await page.getByRole("button", { name: "Emitir", exact: true }).click();
+    await page.getByRole("button", { name: "Emitir y congelar" }).click();
+
+    // El estado nuevo sale de la respuesta y no de una recarga: la primera
+    // definición del detalle es «Estado».
+    await expect(
+      page.locator(".definiciones .definicion__valor").first(),
+    ).toHaveText("Emitida");
+
+    // Y los dos editores pasan a lectura **en el mismo dibujo**, sin volver
+    // a pedir nada: `editable` sale del mismo estado que acaba de llegar.
+    await expect(page.locator(".modulo textarea")).toHaveCount(0);
+    await expect(
+      page.getByText("Los módulos de esta cotización se pueden leer"),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Las líneas de esta cotización se pueden leer"),
+    ).toBeVisible();
+
+    // El panel se cerró, y los controles son los de una emitida.
+    await expect(
+      page.getByRole("button", { name: "Emitir y congelar" }),
+    ).toHaveCount(0);
+    expect(await page.locator("header button.boton").allInnerTexts()).toEqual([
+      "Marcar ganada",
+      "Marcar perdida",
+      "Duplicar",
+    ]);
+
+    expect(emisiones).toEqual(["POST"]);
+  });
+
+  /* --- El 409 de ganar algo que ya no está emitido ----------------------- */
+
+  test("si alguien ganó desde otra pestaña, lo dice sin hablar de borrar", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    /*
+     * El servidor contesta el 409 del desenlace y, desde ahí, la lectura
+     * devuelve la ganada: es exactamente lo que pasó del otro lado. La
+     * pantalla tiene que decir qué falló **y** quedar mostrando la verdad,
+     * porque reintentar contra lo que se ve volvería a fallar.
+     */
+    let yaGanada = false;
+
+    await page.route(
+      (url) => url.pathname.startsWith(`/api/cotizaciones/${EMITIDA_ID}`),
+      async (ruta) => {
+        const url = new URL(ruta.request().url());
+
+        if (url.pathname.endsWith("/ganar")) {
+          yaGanada = true;
+          await ruta.fulfill({
+            status: 409,
+            json: { error: "cotizacion_no_es_emitida", estado: "ganada" },
+          });
+          return;
+        }
+
+        if (url.pathname === `/api/cotizaciones/${EMITIDA_ID}` && yaGanada) {
+          await ruta.fulfill({
+            status: 200,
+            json: { cotizacion: { ...EMITIDA, estado: "ganada" } },
+          });
+          return;
+        }
+
+        await ruta.fallback();
+      },
+    );
+
+    await page.goto(`/cotizaciones/${EMITIDA_ID}`);
+    await page.getByRole("button", { name: "Marcar ganada" }).click();
+
+    const alerta = page.getByRole("alert");
+    await expect(alerta).toContainText("no está emitida");
+    // El texto de reserva de `CONFLICTOS` habla de un borrado con
+    // dependientes. Sin la entrada propia, acá se leería «no se pudo
+    // borrar», que es un borrado que nadie pidió.
+    await expect(alerta).not.toContainText("no se pudo borrar");
+
+    // Y la pantalla queda mostrando en qué quedó de verdad: ya no ofrece
+    // los dos desenlaces, porque ganada es el final.
+    await expect(
+      page.locator(".definiciones .definicion__valor").first(),
+    ).toHaveText("Ganada");
+    expect(await page.locator("header button.boton").allInnerTexts()).toEqual([
+      "Duplicar",
+    ]);
+  });
+
+  /* --- Duplicar, y la cadena ------------------------------------------- */
+
+  test("duplicar abre la copia, que nace en borrador", async ({ page }) => {
+    await conCotizacionesCargadas(page);
+
+    await page.route(
+      (url) => url.pathname === `/api/cotizaciones/${GANADA_ID}/duplicar`,
+      async (ruta) => {
+        await ruta.fulfill({
+          status: 201,
+          headers: { location: `/api/cotizaciones/${COPIA_ID}` },
+          json: { cotizacion: { ...COPIA, duplicadaDeId: GANADA_ID } },
+        });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${GANADA_ID}`);
+    await page.getByRole("button", { name: "Duplicar" }).click();
+
+    // La copia se abre, y la que se duplicó no se movió: la pantalla
+    // navega al identificador nuevo, que es el que trajo el cuerpo.
+    await expect(
+      page.getByRole("heading", { name: "COT-2026-0012" }),
+    ).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe(`/cotizaciones/${COPIA_ID}`);
+
+    // Y es un borrador: se puede editar aunque la de arriba estuviera
+    // cerrada. Es lo que vuelve soportable que ganada sea el final.
+    await expect(page.getByRole("link", { name: "Editar" })).toBeVisible();
+  });
+
+  test("una cotización duplicada dice de dónde salió, con enlace", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${DUPLICADA_ID}`);
+
+    // El código de la de arriba no viaja con la cotización: sale de una
+    // lectura aparte, igual que la bitácora. Hasta que llega, la frase dice
+    // lo que sí se sabe, y no inventa un código.
+    await expect(page.getByText("Nació duplicando «COT-2026-0008»")).toBeVisible();
+
+    const enlace = page.getByRole("link", { name: "Ver de dónde salió" });
+    await expect(enlace).toHaveAttribute(
+      "href",
+      `/cotizaciones/${EMITIDA_ID}`,
+    );
+
+    // Y se sube un salto. La cadena entera se recorre así, de a un clic:
+    // es un bosque y siempre llega a una raíz (M-2 de `0007`).
+    await enlace.click();
+    await expect(
+      page.getByRole("heading", { name: "COT-2026-0008" }),
+    ).toBeVisible();
+    // La emitida no nació duplicando nada, así que ahí la cadena termina.
+    expect(
+      await page.getByRole("link", { name: "Ver de dónde salió" }).count(),
+    ).toBe(0);
+  });
+
+  test("una cotización que no nació duplicando no dice nada de procedencia", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+    await expect(page.getByRole("link", { name: "Editar" })).toBeVisible();
+
+    expect(
+      await page.getByText("duplicando").count(),
+      "sin procedencia no se dibuja la frase, ni vacía ni con un hueco",
+    ).toBe(0);
   });
 
   test("el detalle de lo que ya se emitió dice por qué no hay botón de editar", async ({
@@ -2022,6 +2442,75 @@ test.describe("las cotizaciones del bufete", () => {
        */
       await expect(page.locator(".renglon")).toHaveCount(3);
 
+      const desborde = await medirDesborde(page);
+      expect(
+        desborde.scrollWidth,
+        porQueSeSale(ancho, desborde),
+      ).toBeLessThanOrEqual(desborde.clientWidth);
+    });
+  }
+
+  for (const ancho of ANCHOS) {
+    test(`a ${String(ancho)}px de ancho, sobre una ganada con su ciclo`, async ({
+      page,
+    }) => {
+      await conCotizacionesCargadas(page);
+      await page.setViewportSize({ width: ancho, height: 900 });
+      await page.goto(`/cotizaciones/${GANADA_ID}`);
+
+      /*
+       * Lo que esta medida agrega a la del detalle de la emitida es **la
+       * franja de controles del ciclo**, que es contenido nuevo de esta
+       * unidad y vive en una `Fila` que tiene que envolver sola en 320px.
+       *
+       * La ganada lleva el contenido hostil de la emitida —la prosa cruda
+       * con su token pegado de cincuenta letras y el concepto crudo dentro
+       * de una `Fila`— porque sin él la medida sería la del detalle pelado:
+       * es la lección de T-3 B, que una prueba de ancho sobre texto
+       * corriente no mide contención.
+       *
+       * Esperar a que los tres estén dibujados no es adorno: sin eso se
+       * mide una página a medio montar.
+       */
+      await expect(page.locator(".modulo__texto")).toHaveCount(2);
+      await expect(page.locator(".renglon__concepto")).toHaveCount(1);
+      await expect(page.locator("header button.boton")).toHaveCount(1);
+
+      const desborde = await medirDesborde(page);
+      expect(
+        desborde.scrollWidth,
+        porQueSeSale(ancho, desborde),
+      ).toBeLessThanOrEqual(desborde.clientWidth);
+    });
+  }
+
+  for (const ancho of ANCHOS) {
+    test(`a ${String(ancho)}px de ancho, con la confirmación abierta`, async ({
+      page,
+    }) => {
+      await conCotizacionesCargadas(page);
+      await page.setViewportSize({ width: ancho, height: 900 });
+      await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+      await page.getByRole("button", { name: "Emitir", exact: true }).click();
+      await expect(
+        page.getByRole("button", { name: "Emitir y congelar" }),
+      ).toBeVisible();
+
+      /*
+       * Lo que esta medida cubre es **el panel de confirmación**: su cadena
+       * de rellenos y bordes, y sus dos botones en una `Fila` que tiene que
+       * envolver en 320px, encima de la franja de controles del encabezado.
+       *
+       * Lo que **no** cubre, y conviene decirlo para que nadie le pida más
+       * de lo que da: el párrafo del panel no puede empujar nada, porque
+       * todo lo que entra ahí es prosa con espacios más el código de la
+       * cotización, que el servidor genera con la forma
+       * `COT-<año>-<correlativo>`. No hay en ese bloque un solo token cuyo
+       * largo dependa de lo que alguien escriba, así que no se le agregó
+       * ninguna declaración de contención propia: habría sido la segunda
+       * guarda del mismo hecho, y dos guardas del mismo hecho no son
+       * verificables.
+       */
       const desborde = await medirDesborde(page);
       expect(
         desborde.scrollWidth,

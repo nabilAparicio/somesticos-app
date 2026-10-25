@@ -529,11 +529,19 @@ describe("avisoDeNoEsBorrador", () => {
   });
 
   it("no promete una salida que esta pantalla no tiene", () => {
-    // Emitir, ganar, perder y duplicar son de T-4 y T-5. Un aviso que los
-    // nombrara mandaría a buscar un botón que no existe.
+    // **Esta prueba cambió de contenido en T-5 sin cambiar de criterio.**
+    // Decía que el aviso no podía nombrar ninguno de los cuatro verbos,
+    // porque entonces no existía ninguno. Ahora existen los cuatro, y lo
+    // que sigue estando prohibido es nombrar una salida **que este estado
+    // no tenga**: ganada y perdida son el final del ciclo, así que el único
+    // verbo que puede aparecer sobre una ganada es duplicar.
+    //
+    // El detalle completo de cada estado vive en `test/ciclo-ui.spec.ts`,
+    // junto al mapa que lo decide.
     const aviso = avisoDeNoEsBorrador(cotizacion({ estado: "ganada" })) ?? "";
 
-    for (const palabra of ["emitir", "duplicar", "ganar", "perder"]) {
+    expect(aviso.toLowerCase()).toContain("duplicarla");
+    for (const palabra of ["emitirla", "marcarla ganada", "marcarla perdida"]) {
       expect(aviso.toLowerCase()).not.toContain(palabra);
     }
   });

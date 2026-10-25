@@ -6,14 +6,16 @@
  * de datos a texto, y adentro de un `.tsx` solo se pueden probar montando un
  * navegador para leer lo que ya era una cadena.
  *
- * **Nada de acá decide una acción.** Emitir, ganar, perder y duplicar son de
- * T-4 y T-5; los módulos y las líneas son de la unidad C y de T-3. Lo que
+ * **Nada de acá decide una acción.** Qué se puede hacer en cada estado lo
+ * manda `ciclo.ts`, que es de donde este archivo saca las salidas que nombra
+ * —y por eso no puede prometer una puerta que la pantalla no dibuje—. Lo que
  * este archivo hace con el estado es **decirlo**, que es distinto de ofrecer
  * un botón para cambiarlo.
  */
 
 import type { Cotizacion, EstadoDeCotizacion } from "../../../worker/contract";
 import { ORDEN_ES, VACIO, diaLegible, fechaLegible, plano } from "../../formatos";
+import { salidasEnProsa } from "./ciclo";
 
 export { VACIO, diaLegible, fechaLegible };
 
@@ -134,11 +136,16 @@ export function filtrarCotizaciones(
  * el cuerpo y por el mismo motivo: «ya no es borrador» sin decir en qué
  * quedó obliga a recargar para enterarse.
  *
- * Y **no nombra ninguna salida que esta pantalla no tenga**. El criterio del
- * proyecto es que ninguna negativa se quede sin puerta, pero una puerta
- * dibujada donde no hay puerta es peor: emitir, ganar, perder y duplicar son
- * de T-4 y T-5, y mencionarlos acá mandaría a buscar un botón que no
- * existe. La puerta que sí hay es mirar la cotización como quedó.
+ * Y **nombra exactamente las salidas que esta pantalla tiene**, ni una más.
+ * El criterio del proyecto es que ninguna negativa se quede sin puerta, y
+ * una puerta dibujada donde no hay puerta es peor — por eso la enumeración
+ * no se escribe acá a mano: sale de `salidasEnProsa`, o sea del mismo mapa
+ * que decide los botones del detalle. Sobre una emitida dice tres; sobre una
+ * ganada o una perdida dice una sola, porque ése es el final del ciclo.
+ *
+ * Hasta T-5 esta frase terminaba sin nombrar ninguna, y era correcto: los
+ * cuatro verbos no existían todavía ni en el Worker. Lo que cambió no es el
+ * criterio sino la pantalla.
  */
 export function avisoDeNoEsBorrador(cotizacion: Cotizacion): string | null {
   if (cotizacion.estado === "borrador") return null;
@@ -148,6 +155,7 @@ export function avisoDeNoEsBorrador(cotizacion: Cotizacion): string | null {
       cotizacion,
     )}», y lo que salió del borrador no se edita. Su contenido es el` +
     " registro de lo que se mandó, y cambiarlo ahora reescribiría un" +
-    " documento que el cliente ya tiene."
+    ` documento que el cliente ya tiene. Lo que queda por hacer con ella es` +
+    ` ${salidasEnProsa(cotizacion)}.`
   );
 }

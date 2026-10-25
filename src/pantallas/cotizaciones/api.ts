@@ -5,11 +5,11 @@
  * problema— vive en `src/api/peticiones.ts`. Acá quedan solo las rutas de
  * cotizaciones y el sujeto con el que se nombra un 404.
  *
- * **Son cuatro rutas de la cotización, una quinta de lectura, las cinco de
- * los módulos y las cinco de las líneas, y nada más.** No hay emitir, ni
- * ganar, ni perder, ni duplicar: son de T-4 y T-5 y todavía no existen del
- * lado del Worker. Una función acá que pida una ruta que no existe es un 404
- * que la pantalla explicaría como «no es de este bufete».
+ * **Son cuatro rutas de la cotización, una quinta de lectura, las cuatro del
+ * ciclo de vida, las cinco de los módulos y las cinco de las líneas, y nada
+ * más.** Lo que sigue sin existir es la salida imprimible (T-6) y la apertura
+ * de procesos (T-7): una función acá que pida una ruta que no existe es un
+ * 404 que la pantalla explicaría como «no es de este bufete».
  *
  * El listado de clientes para el desplegable del formulario **no se declara
  * de nuevo acá**: se importa de `../clientes/api`, que es donde vive. Una
@@ -104,6 +104,85 @@ export async function actualizarCotizacion(
   return resultado.estado === "ok"
     ? { estado: "ok", valor: resultado.valor.cotizacion }
     : resultado;
+}
+
+/* ==========================================================================
+   El ciclo de vida (T-4 y T-5)
+
+   Los cuatro verbos de `worker/cotizaciones/rutas.ts`, con una forma que se
+   repite en los cuatro: **`POST` a una subruta con verbo, sin cuerpo**.
+
+   El cuerpo ausente no es una omisión de este archivo, es el contrato: el
+   Worker no lee ninguno, y mandarlo sería ofrecerle a la pantalla un campo
+   con el que imponer algo sobre escrituras que no se pueden deshacer. Lo
+   único que estas direcciones reciben es a quién le pasa el hecho, y eso sale
+   de la identidad que resolvió la puerta de Access (I-6).
+
+   Por eso tampoco llevan `ESCRITURA`: esa constante pone el
+   `content-type: application/json`, y declarar el tipo de un cuerpo que no
+   viaja es decir algo falso en una cabecera.
+
+   Los cuatro desenvuelven `RespuestaDeCotizacion`, igual que el alta y la
+   edición. Los tres primeros devuelven **la misma cotización con su estado
+   nuevo**; `duplicar` devuelve **la copia**, que es una fila distinta con
+   identificador propio — es lo que deja abrirla sin leer el `location`.
+   ========================================================================== */
+
+function direccionDeVerbo(cotizacionId: string, verbo: string): string {
+  return `/api/cotizaciones/${encodeURIComponent(cotizacionId)}/${verbo}`;
+}
+
+async function pedirVerbo(
+  cotizacionId: string,
+  verbo: "emitir" | "ganar" | "perder" | "duplicar",
+): Promise<Resultado<Cotizacion>> {
+  const resultado = await pedir<RespuestaDeCotizacion>(
+    direccionDeVerbo(cotizacionId, verbo),
+    { method: "POST" },
+  );
+
+  return resultado.estado === "ok"
+    ? { estado: "ok", valor: resultado.valor.cotizacion }
+    : resultado;
+}
+
+/**
+ * Emitir: `borrador → emitida`, con el snapshot escrito en la misma
+ * transacción. **No se deshace**, y por eso la pantalla lo confirma antes
+ * (`ciclo.ts`, `confirmacionDeEmitir`).
+ */
+export function emitirCotizacion(
+  cotizacionId: string,
+): Promise<Resultado<Cotizacion>> {
+  return pedirVerbo(cotizacionId, "emitir");
+}
+
+/** Ganar: `emitida → ganada`. Terminal. */
+export function ganarCotizacion(
+  cotizacionId: string,
+): Promise<Resultado<Cotizacion>> {
+  return pedirVerbo(cotizacionId, "ganar");
+}
+
+/** Perder: `emitida → perdida`. Terminal. */
+export function perderCotizacion(
+  cotizacionId: string,
+): Promise<Resultado<Cotizacion>> {
+  return pedirVerbo(cotizacionId, "perder");
+}
+
+/**
+ * Duplicar: nace un borrador nuevo atado por `duplicada_de_id`, desde
+ * cualquier estado, y la de arriba se queda exactamente como estaba.
+ *
+ * Lo que vuelve es **la copia**. El 201 trae además un `location`, y no se
+ * lee: sacarle el identificador a una cabecera cuando el cuerpo ya trae la
+ * fila entera es trabajo de más que además se rompe distinto.
+ */
+export function duplicarCotizacion(
+  cotizacionId: string,
+): Promise<Resultado<Cotizacion>> {
+  return pedirVerbo(cotizacionId, "duplicar");
 }
 
 /* ==========================================================================

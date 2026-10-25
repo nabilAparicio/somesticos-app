@@ -7,9 +7,19 @@
  * lo mismo que el de clientes: el bufete son dos personas y la cartera cabe
  * entera en una respuesta.
  *
- * **La tabla muestra el estado y no ofrece cambiarlo.** Emitir, ganar,
- * perder y duplicar son de T-4 y T-5. Un distintivo que dice «Emitida» es
- * información; un botón que no existe es una promesa.
+ * **La tabla muestra el estado y no ofrece cambiarlo**, y desde T-5 eso es
+ * una decisión y no una tarea pendiente: emitir, ganar, perder y duplicar
+ * existen, y viven en el detalle.
+ *
+ * El motivo es que las cuatro son irreversibles de un modo u otro —emitir
+ * congela, ganar y perder son el final, duplicar deja una fila nueva— y
+ * ninguna se decide mirando una fila de tabla: se decide mirando el
+ * documento. Una franja de botones por renglón, encima, pone «Emitir» y
+ * «Marcar perdida» a un píxel de distancia en una lista donde lo único que
+ * distingue un renglón del de al lado es el código.
+ *
+ * Un distintivo que dice «Emitida» es información; un botón de más acá sería
+ * una emisión equivocada.
  */
 import { useEffect, useMemo, useState } from "react";
 

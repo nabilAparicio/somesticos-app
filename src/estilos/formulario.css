@@ -160,6 +160,49 @@
   list-style: disc;
 }
 
+/*
+ * La confirmación de emitir (T-4 B).
+ *
+ * Lleva la misma forma que `.aviso--error` —borde de acento, fondo tenue—
+ * porque es lo mismo que un aviso: un bloque que hay que leer antes de
+ * seguir. Lo que lo distingue no es el color sino que trae sus propios
+ * botones debajo, y eso lo pone el marcado.
+ *
+ * **Ni ancho ni alto, ni posicionamiento.** No es un diálogo flotante: vive
+ * en el flujo, debajo del encabezado y encima del documento que está por
+ * congelarse, que es lo que alguien quiere poder seguir mirando mientras
+ * decide. `max-inline-size` es tope de legibilidad y no ancho — a 320px
+ * mide 320px.
+ *
+ * **No lleva ninguna declaración de contención, y está medido.** Todo lo
+ * que entra acá es prosa con espacios más el código de la cotización, que
+ * el servidor genera con la forma `COT-<año>-<correlativo>`: no hay en este
+ * bloque un solo token cuyo largo dependa de lo que alguien escriba. El
+ * `overflow-wrap: break-word` que `body` declara en `base.css` alcanza, y
+ * agregar un `anywhere` acá sería la segunda guarda del mismo hecho —la
+ * lección de T-3 B: dos declaraciones que resuelven el mismo desborde se
+ * anulan como garantía, porque quitar cualquiera no mata ninguna prueba.
+ */
+.confirmacion {
+  min-width: 0;
+  padding: var(--espacio-m);
+  border: var(--borde-fino);
+  border-inline-start: 3px solid var(--color-acento);
+  border-radius: var(--radio-m);
+  background: var(--color-acento-tenue);
+  max-inline-size: 72ch;
+}
+
+/*
+ * El título dice qué pasa, no qué se pregunta, así que pesa como un título
+ * y no como una pregunta: tamaño de párrafo largo y no de sección, porque
+ * no abre una sección sino un aviso.
+ */
+.confirmacion__titulo {
+  margin: 0;
+  font-size: var(--texto-m);
+}
+
 /* ======================================================================
    Listas de definiciones (el detalle)
    ====================================================================== */

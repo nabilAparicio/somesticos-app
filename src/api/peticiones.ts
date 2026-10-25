@@ -35,9 +35,10 @@ export type Resultado<T> =
    * chocó con dependientes (`tiene_dependientes`, T-6), el avance de un
    * proceso que ya no tiene etapas por delante (`sin_etapas_pendientes`,
    * T-7) y el nombre de catálogo ya tomado dentro del bufete
-   * (`nombre_duplicado` y `nombre_duplicado_de_baja`, T-12) y la edición de
+   * (`nombre_duplicado` y `nombre_duplicado_de_baja`, T-12), la edición de
    * una cotización que ya salió del borrador (`cotizacion_no_es_borrador`,
-   * tajada 2).
+   * tajada 2) y el desenlace de una que no está emitida
+   * (`cotizacion_no_es_emitida`, T-5).
    *
    * Los dos detalles son nulos salvo en el 409 que los trae. Son campos
    * distintos y no uno solo porque son formas distintas: unificarlos en un
@@ -170,9 +171,10 @@ export async function pedirVacio(
  * Un `as const satisfies Record<MotivoDeConflicto, string>` —lo que
  * `COLECCION_POR_ENTIDAD` hace en `worker/bitacora/rutas.ts`— lo volvería
  * exhaustivo y un 409 nuevo no compilaría hasta tener texto, que es
- * exactamente lo que faltó acá: `cotizacion_no_es_borrador` existía desde
- * T-2 A y caía en el texto de reserva, que habla de un borrado que nadie
- * pidió.
+ * exactamente lo que faltó acá dos veces seguidas:
+ * `cotizacion_no_es_borrador` existía desde T-2 A y
+ * `cotizacion_no_es_emitida` desde T-5 A, y los dos caían en el texto de
+ * reserva, que habla de un borrado que nadie pidió.
  *
  * **Lo que lo frena es que ese tipo no existe.** Los ocho `error` de
  * `worker/contract.ts` no tienen hoy una unión que los junte, y el `Record`
@@ -204,6 +206,27 @@ const CONFLICTOS: Record<string, string> = {
     "Esta cotización ya no es un borrador, y lo que salió del borrador no se" +
     " edita: su contenido es el registro de lo que se mandó. Hay que volver" +
     " a cargarla para ver en qué estado quedó y quién la movió.",
+  /*
+   * El espejo del de arriba, y la carrera perdida del otro lado: alguien
+   * ganó, perdió o todavía no emitió esta cotización mientras el detalle
+   * estaba abierto. Es la tercera vez en esta tajada que un 409 nuevo llega
+   * sin entrada propia y cae en el texto de reserva, que habla de un borrado
+   * que nadie pidió; por eso se escribe en la misma unidad que dibuja el
+   * botón que lo puede provocar y no en la siguiente.
+   *
+   * La frase **distingue las dos formas de no estar emitida** porque son dos
+   * situaciones distintas y lo que hay que hacer después no es lo mismo: un
+   * borrador hay que emitirlo, y una ganada o una perdida ya no admiten
+   * nada. El estado concreto viaja en el cuerpo del 409 y no llega hasta acá
+   * —`Resultado` conserva el motivo y dos detalles, y éste no es ninguno de
+   * los dos—, así que la frase nombra las dos y manda a recargar, que es lo
+   * que deja ver cuál fue.
+   */
+  cotizacion_no_es_emitida:
+    "Esta cotización no está emitida, y ganar o perder es el desenlace de un" +
+    " documento que ya salió: un borrador todavía no se mandó, y una ganada" +
+    " o una perdida ya cerraron su ciclo. Hay que volver a cargarla para ver" +
+    " en qué estado quedó y quién la movió.",
 };
 
 /**

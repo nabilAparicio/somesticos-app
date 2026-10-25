@@ -53,6 +53,7 @@
     "../src/pantallas/procesos/pendientes.ts",
     "../src/pantallas/cotizaciones/formulario.ts",
     "../src/pantallas/cotizaciones/presentacion.ts",
+    "../src/pantallas/cotizaciones/ciclo.ts",
     "../src/pantallas/cotizaciones/modulos.ts",
     "../src/pantallas/cotizaciones/lineas.ts",
     // `src/api/peticiones.ts` es el primero de esta lista que **no** es un
