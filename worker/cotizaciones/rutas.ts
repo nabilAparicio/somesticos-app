@@ -16,12 +16,33 @@
  *   PUT    /api/cotizaciones/{id}/lineas          reordena la lista entera
  *   PUT    /api/cotizaciones/{id}/lineas/{lid}    edita una
  *   DELETE /api/cotizaciones/{id}/lineas/{lid}    la saca
+ *   POST   /api/cotizaciones/{id}/emitir          la congela para siempre
  *
- * **Y nada más.** No hay ruta de emitir —es de T-4, con su propio disparador
- * de inmutabilidad en la base—. La cuarta parte de la dirección
+ * **Y nada más.** Ganar, perder y duplicar son de T-5 y siguen cayendo en el
+ * 404 general. La cuarta parte de la dirección
  * `/api/cotizaciones/{id}/bitacora` la atiende `worker/bitacora/rutas.ts`,
  * que corre antes y para la que este archivo devuelve `null`: acá sólo se
- * reconocen `modulos` y `lineas` en esa posición.
+ * reconocen `modulos`, `lineas` y `emitir` en esa posición.
+ *
+ * ## Por qué emitir es un `POST` a una subruta con verbo
+ *
+ * Rompe con el resto del archivo —`modulos` y `lineas` son colecciones— y es
+ * deliberado. Las dos alternativas y por qué no:
+ *
+ *  - **`PUT /api/cotizaciones/{id}` con `estado` en el cuerpo.** Convertiría
+ *    el único hecho irreversible del sistema en un campo más del formulario
+ *    de edición, y abriría la puerta a mandar `estado` junto con
+ *    `clienteId`. `DatosDeCotizacion` tiene dos campos justamente para que
+ *    no exista ese camino.
+ *  - **`PUT /api/cotizaciones/{id}/estado`.** Sugiere que el estado se
+ *    escribe, y lo que pasa acá es mucho más que escribirlo: se arma y se
+ *    congela un documento. Además obligaría a T-5 a meter `ganada`,
+ *    `perdida` y la duplicación por la misma dirección, aplastando cuatro
+ *    hechos distintos en un solo `PUT` — exactamente lo que este archivo ya
+ *    evitó con el reordenamiento de módulos.
+ *
+ * `POST` y no `PUT` porque no es idempotente ni se le parece: la segunda vez
+ * contesta 409, y tiene que contestarlo.
  *
  * ## Las líneas tienen la misma forma que los módulos, y una diferencia
  *
@@ -92,6 +113,7 @@ import {
 } from "./lineas";
 import { normalizarModulo, normalizarOrdenDeModulos } from "./modulos";
 import type {
+  ResultadoDeEmision,
   ResultadoDeEscritura,
   ResultadoDeLineas,
   ResultadoDeModulos,
@@ -218,6 +240,27 @@ function respuestaDeLineas(
   // Sin `location` ni en el alta, por lo mismo que con un módulo: una línea
   // tiene dirección para editarla y para quitarla, pero no para leerla sola.
   return json(cuerpoDeLineas(resultado.lineas), { status: estadoAlGuardar });
+}
+
+/**
+ * La respuesta de emitir.
+ *
+ * **200 y no 201**, aunque haya nacido un documento: el snapshot no tiene
+ * dirección propia y no hay nada a lo que apuntar con un `location`. Lo que
+ * cambió es la cotización que ya existía, y es la que vuelve.
+ *
+ * Y no devuelve el snapshot. Es el documento entero, nadie que esté mirando
+ * la ficha lo necesita, y `SELECCION` lo deja afuera a propósito desde T-2.
+ * Lo que la pantalla necesita saber es que el estado cambió.
+ */
+function respuestaDeEmision(resultado: ResultadoDeEmision): Response {
+  if (resultado.estado === "no_encontrado") return noEncontrado();
+  if (resultado.estado === "no_es_borrador") {
+    return noEsBorrador(resultado.actual);
+  }
+
+  const cuerpo: RespuestaDeCotizacion = { cotizacion: resultado.cotizacion };
+  return json(cuerpo);
 }
 
 /**
@@ -530,6 +573,11 @@ export async function rutasDeCotizaciones(
   const coleccionDeLineas = segmentos.length === 4 && esDeLineas;
   const unaLinea = segmentos.length === 5 && esDeLineas;
 
+  // `emitir` es el único cuarto segmento que no nombra una colección: no
+  // hay `/emitir/{algo}`, así que cinco segmentos con `emitir` en el cuarto
+  // cae en el 404 general y no acá.
+  const esEmitir = segmentos.length === 4 && segmentos[3] === "emitir";
+
   if (coleccionDeModulos || unModulo) {
     const cotizacionId = decodificar(segmentos[2]);
     if (cotizacionId === null) return noEncontrado();
@@ -555,6 +603,27 @@ export async function rutasDeCotizaciones(
       cotizacionId,
       servicio,
       unaLinea,
+    );
+  }
+
+  if (esEmitir) {
+    // El 405 va **antes** de mirar si la cotización existe, igual que en las
+    // rutas de módulos y de líneas: un verbo que esta dirección no tiene no
+    // es una pregunta sobre ninguna cotización, así que contestarlo no dice
+    // si existe.
+    if (request.method !== "POST") return metodoNoPermitido("POST");
+
+    const cotizacionId = decodificar(segmentos[2]);
+    if (cotizacionId === null) return noEncontrado();
+
+    // No se lee el cuerpo: emitir no lleva ninguno. Un `normalizar` acá
+    // sería un campo que el cuerpo podría imponer sobre la única escritura
+    // del sistema que no se puede deshacer.
+    //
+    // El emisor sale de la identidad que resolvió la puerta de Access y
+    // nunca del cuerpo (I-6), igual que el autor en el alta.
+    return respuestaDeEmision(
+      await servicio.emitir(tenantId, identidad.usuarioId, cotizacionId),
     );
   }
 

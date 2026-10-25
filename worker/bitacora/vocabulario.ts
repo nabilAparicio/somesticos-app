@@ -158,7 +158,31 @@ export const ACCIONES_POR_ENTIDAD = {
      «¿quién metió este honorario?» en una pregunta que hay que contestar
      leyendo el `detalle` y adivinando de qué familia es. El vocabulario
      cerrado existe justamente para que esa distinción no dependa de una
-     cadena libre. */
+     cadena libre.
+
+     ## Los cuatro del ciclo de vida (T-4, y tres de T-5 por adelantado)
+
+     `emitido` es de T-4 y los otros tres de T-5. Entran juntos porque
+     `migrations/0006_emitir_y_congelar.sql` reconstruye `bitacora` una sola
+     vez para los cuatro: ampliar el `CHECK` de `accion` cuesta copiar la
+     tabla entera, y hacerlo dos veces en dos commits seguidos para agregar
+     cuatro cadenas sería pagar el costo dos veces por nada.
+
+     **Un verbo sin sitio que lo emita compila, y eso es lo que lo hace
+     posible.** La red de abajo —`AccionesSinDuenio`— exige que todo verbo
+     tenga *dueño*, no que tenga emisor: basta con atribuirlo a su entidad.
+     Lo que sí exige una entrada por verbo es el `Record` de frases de
+     `src/bitacora.ts`, y los cuatro la tienen. Si la red hubiera sido «todo
+     verbo tiene emisor», esto no se podía y había que reconstruir la tabla
+     una vez por tarea; se verificó antes de aceptarlo.
+
+     Van **pelados** y no `cotizacion_emitida`, por la regla que separa a
+     `creado` y `cerrado` de `nota_agregada`: la entidad ya viaja en su
+     columna y sólo llevan prefijo los hechos de lo que cuelga de ella.
+
+     Y son masculinos por lo mismo que `creado` y `editado`: lo que se
+     guarda es un verbo conjugado cuyo sujeto es la persona, no un adjetivo
+     que concuerde con la cotización. */
   cotizacion: [
     "creado",
     "editado",
@@ -170,6 +194,10 @@ export const ACCIONES_POR_ENTIDAD = {
     "linea_editada",
     "linea_quitada",
     "lineas_reordenadas",
+    "emitido",
+    "ganado",
+    "perdido",
+    "duplicado",
   ],
 } as const satisfies Record<EntidadRegistrada, readonly AccionDeBitacora[]>;
 

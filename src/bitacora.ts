@@ -77,6 +77,21 @@ export const VERBOS_DE_BITACORA: Record<AccionDeBitacora, string> = {
   linea_editada: "editó la línea",
   linea_quitada: "quitó la línea",
   lineas_reordenadas: "reordenó las líneas",
+  /* Los cuatro del ciclo de vida. `emitido` es de T-4; los otros tres son de
+     T-5 y llegan con su frase porque un verbo sin frase no significa nada —
+     ver `migrations/0006_emitir_y_congelar.sql`, que reconstruye `bitacora`
+     una sola vez para los cuatro—. `detalle` lleva el código de la
+     cotización, igual que en `creado` y `editado`: es lo que la identifica
+     de cara a una persona.
+
+     Los cuatro se leen distinto entre sí y distinto de los veintidós que ya
+     estaban, que es lo que este `Record` existe para exigir: «emitió» no es
+     «editó», y «duplicó» no es «dio de alta» aunque las dos terminen en un
+     borrador nuevo — la segunda dice de dónde salió y la primera no. */
+  emitido: "emitió",
+  ganado: "ganó",
+  perdido: "perdió",
+  duplicado: "duplicó",
 };
 
 /**

@@ -1497,7 +1497,41 @@ export type AccionDeBitacora =
    * Cambió el orden de las líneas. Va **sin `detalle`**, igual que
    * `modulos_reordenados` y `plan_editado`: lo que se movió es la lista.
    */
-  | "lineas_reordenadas";
+  | "lineas_reordenadas"
+  /**
+   * La cotización se emitió y quedó congelada (T-4). `detalle` lleva su
+   * código, igual que `creado` y `editado`.
+   *
+   * Va **pelado** y no `cotizacion_emitida`, por la regla de siempre: la
+   * entidad ya viaja en su columna, y sólo llevan prefijo los hechos de algo
+   * que *cuelga* de ella. Es el mismo caso que `cerrado` para el proceso.
+   *
+   * Es el verbo más caro del vocabulario y conviene decir por qué: es el
+   * único hecho del sistema que **no tiene vuelta atrás**. A partir de él la
+   * base deja de aceptar escrituras sobre la cotización y sobre sus módulos
+   * y sus líneas (I-4 e I-5, `migrations/0006_emitir_y_congelar.sql`), así
+   * que esta entrada es el borde entre un documento que se edita y uno que
+   * sólo se duplica.
+   */
+  | "emitido"
+  /* --- Los tres de T-5, que esta migración se lleva por adelantado ---
+   *
+   * `migrations/0006_emitir_y_congelar.sql` amplía el `CHECK` de `accion` una
+   * sola vez para los cuatro verbos del ciclo de vida, en vez de reconstruir
+   * `bitacora` otra vez dentro de dos commits. No son especulación: los tres
+   * están escritos en el plan de la tajada y en el ciclo de vida de
+   * `docs/diseno.md` §8. **Su lógica es de T-5**; lo que entra acá es el
+   * vocabulario y su frase, que es lo que un verbo significa. */
+  /** El cliente aceptó. `detalle` lleva el código de la cotización. */
+  | "ganado"
+  /** El cliente no aceptó, o la propuesta venció sin respuesta. */
+  | "perdido"
+  /**
+   * Nació un borrador nuevo copiando esta cotización, atado por
+   * `duplicada_de_id`. La historia no se reescribe: el hecho es de la
+   * cotización que se copió.
+   */
+  | "duplicado";
 
 /**
  * Una entrada tal como la lee la pantalla.

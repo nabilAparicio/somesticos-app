@@ -49,10 +49,37 @@ import {
   finDelDiaEnPanama,
 } from "../db/momentos";
 import { rotuloDeTipo } from "./modulos";
+import {
+  congelar,
+  type ClienteCongelado,
+  type EmisorCongelado,
+} from "./snapshot";
 
 export type ResultadoDeEscritura =
   | { estado: "guardado"; cotizacion: Cotizacion }
   | { estado: "invalido"; fallas: FallaDeValidacion[] }
+  | { estado: "no_es_borrador"; actual: EstadoDeCotizacion }
+  | { estado: "no_encontrado" };
+
+/**
+ * Lo que devuelve emitir (T-4).
+ *
+ * **No tiene rama `invalido`, y la ausencia es la decisión.** Emitir no lleva
+ * cuerpo: lo único que se le manda es la dirección de la cotización, así que
+ * no hay formulario que corregir. Una rama que el sistema no sabe producir
+ * obligaría a la ruta a escribir una respuesta inalcanzable, que es el mismo
+ * adorno que `0004` se sacó de encima con los disparadores que no podían
+ * disparar.
+ *
+ * Y tampoco hay una rama para «esta cotización está vacía». Se evaluó y se
+ * dejó afuera: ni el plan de la tajada ni `docs/diseno.md` dicen que una
+ * propuesta tenga que traer líneas o módulos para salir, y una regla que
+ * nadie pidió sería inventar negocio desde acá. Queda anotado como lo que es
+ * —una pregunta abierta para quien escriba la pantalla— y no disfrazado de
+ * invariante.
+ */
+export type ResultadoDeEmision =
+  | { estado: "emitida"; cotizacion: Cotizacion }
   | { estado: "no_es_borrador"; actual: EstadoDeCotizacion }
   | { estado: "no_encontrado" };
 
@@ -185,6 +212,26 @@ export interface ServicioDeCotizaciones {
     cotizacionId: string,
     orden: readonly string[],
   ): Promise<ResultadoDeLineas>;
+
+  /* --- Emitir y congelar (T-4 A) --- */
+
+  /**
+   * Pasa el borrador a emitida y escribe su snapshot **en la misma
+   * escritura**.
+   *
+   * `emisorId` llega de la puerta de Access y nunca del cuerpo, igual que el
+   * autor en `crear` (I-6): quien congela un documento queda firmado adentro
+   * del documento.
+   *
+   * Es la única operación del sistema que no tiene vuelta atrás. Después de
+   * ella la base rechaza toda escritura sobre la cotización, sus módulos y
+   * sus líneas (I-4 e I-5, `migrations/0006_emitir_y_congelar.sql`).
+   */
+  emitir(
+    tenantId: string,
+    emisorId: string,
+    id: string,
+  ): Promise<ResultadoDeEmision>;
 }
 
 interface FilaDeCotizacion {
@@ -339,6 +386,53 @@ function aModulo(fila: FilaDeModulo): ModuloDeCotizacion {
     tipo: fila.tipo,
     orden: fila.orden,
     contenido: fila.contenido,
+  };
+}
+
+/**
+ * El cliente entero, para congelarlo dentro del snapshot.
+ *
+ * Es una consulta aparte y no una ampliación de `SELECCION`, y es a
+ * propósito: el listado y la ficha no necesitan el documento ni el
+ * representante legal de nadie, y arrastrarlos en las dos consultas que más
+ * corren para que una tercera los use sería pagar en todas partes lo que
+ * hace falta en una.
+ *
+ * El `LEFT JOIN` lleva **su propio `tenant_id`**, como todos los de este
+ * archivo: con el filtro repetido en la unión, un `tipo_cliente_id` que
+ * cruzara la frontera devuelve `NULL` en vez del nombre ajeno. Y se resuelve
+ * el **nombre** del tipo y no su llave, porque lo que va al snapshot es lo
+ * que una persona puede leer dentro de seis años.
+ */
+const SELECCION_DE_CLIENTE =
+  "SELECT c.id, c.nombre, t.nombre AS tipo, c.documento_tipo," +
+  " c.documento_numero, c.representante_legal, c.email, c.telefono" +
+  " FROM cliente c" +
+  " LEFT JOIN tipo_cliente t ON t.id = c.tipo_cliente_id" +
+  " AND t.tenant_id = c.tenant_id" +
+  " WHERE c.tenant_id = ? AND c.id = ?";
+
+interface FilaDeCliente {
+  id: string;
+  nombre: string;
+  tipo: string | null;
+  documento_tipo: string | null;
+  documento_numero: string | null;
+  representante_legal: string | null;
+  email: string | null;
+  telefono: string | null;
+}
+
+function aClienteCongelado(fila: FilaDeCliente): ClienteCongelado {
+  return {
+    id: fila.id,
+    nombre: fila.nombre,
+    tipo: fila.tipo,
+    documentoTipo: fila.documento_tipo,
+    documentoNumero: fila.documento_numero,
+    representanteLegal: fila.representante_legal,
+    email: fila.email,
+    telefono: fila.telefono,
   };
 }
 
@@ -617,6 +711,48 @@ export function cotizacionesSobreD1(
     }
 
     return siSigueSiendoBorrador();
+  }
+
+  /**
+   * El cliente de la cotización, con el filtro de tenencia puesto (I-8).
+   *
+   * Devuelve `null` sólo si la fila no está, y eso no es un caso de negocio:
+   * `cliente_id` es `NOT NULL`, la llave foránea está en `NO ACTION` y
+   * `cotizacion_tenencia_coherente_al_insertar` ya garantizó que las dos
+   * filas son del mismo bufete. Quien llama levanta en vez de inventarle una
+   * respuesta amable, igual que `crear` con su relectura imposible.
+   */
+  async function leerClienteCongelado(
+    tenantId: string,
+    clienteId: string,
+  ): Promise<ClienteCongelado | null> {
+    const fila = await db
+      .prepare(SELECCION_DE_CLIENTE)
+      .bind(tenantId, clienteId)
+      .first<FilaDeCliente>();
+
+    return fila === null ? null : aClienteCongelado(fila);
+  }
+
+  /**
+   * Quién emite, resuelto a nombre.
+   *
+   * El identificador viene de la puerta de Access, así que la fila existe.
+   * El nombre se deja nulo si no se pudiera leer desde este bufete, por el
+   * mismo criterio que `creadaPorNombre` en `SELECCION`: un hueco honesto
+   * antes que un nombre ajeno, y antes que hacer fallar una emisión por un
+   * dato de presentación.
+   */
+  async function leerEmisor(
+    tenantId: string,
+    emisorId: string,
+  ): Promise<EmisorCongelado> {
+    const fila = await db
+      .prepare("SELECT nombre FROM usuario WHERE tenant_id = ? AND id = ?")
+      .bind(tenantId, emisorId)
+      .first<{ nombre: string }>();
+
+    return { id: emisorId, nombre: fila?.nombre ?? null };
   }
 
   return {
@@ -1440,6 +1576,128 @@ export function cotizacionesSobreD1(
         estado: "guardado",
         lineas: await leerLineas(tenantId, cotizacionId),
       };
+    },
+
+    /**
+     * Emitir: el borrador se convierte en documento y deja de ser editable
+     * (T-4, I-4 e I-5 de `docs/diseno.md` §5).
+     *
+     * ## El estado y el snapshot viajan en **una sola sentencia**
+     *
+     * No en el mismo `batch`: en el mismo `UPDATE`. Es más fuerte, y no es
+     * una elegancia. El `CHECK` de coherencia de `0004`
+     * —`(estado = 'borrador') IS (snapshot IS NULL)`— se evalúa por
+     * sentencia, así que partir esto en dos muere en la primera de las dos,
+     * en cualquiera de los dos órdenes: la que sólo cambia el estado deja
+     * una emitida sin snapshot, y la que sólo escribe el snapshot deja un
+     * borrador con uno. No existe la mitad escrita. La entrada de bitácora
+     * va en el mismo `batch` que el `UPDATE`, que en D1 es una transacción,
+     * así que el hecho tampoco se puede separar del efecto.
+     *
+     * ## `AND estado = 'borrador'` sigue estando, y ahora por otro motivo
+     *
+     * Hasta `0006` esa cláusula era la única guarda real contra la carrera.
+     * Ahora la base también se niega —reescribir el snapshot muere en
+     * `cotizacion_snapshot_se_escribe_una_sola_vez`—, y la cláusula queda
+     * por lo que distingue a las dos: la guarda de la base aborta con un
+     * 500, y esto **cuenta** el estado para contestar un 409 que dice en
+     * qué quedó la cotización. No se atrapa nada; se cuenta antes.
+     *
+     * ## La ventana que queda, dicha para que sea una decisión
+     *
+     * Entre leer los módulos y las líneas y escribir el `UPDATE` hay un
+     * instante en el que otra petición puede agregar una línea. Si pasa, esa
+     * línea entra en la cotización —todavía es borrador— y **no** entra en
+     * el snapshot, así que el documento congelado diría menos que las filas
+     * vivas. Es la misma ventana que el repositorio ya acepta en el
+     * correlativo del código, con el mismo argumento —dos personas en el
+     * bufete— y con un costo mayor, así que queda anotada en vez de
+     * supuesta. Cerrarla del todo pide que la lectura y la escritura
+     * compartan transacción, y eso es `worker/db/base.ts`.
+     */
+    async emitir(tenantId, emisorId, id) {
+      // La existencia se comprueba **dentro del tenant**: una cotización de
+      // otro bufete es, desde acá, una cotización que no existe.
+      const actual = await obtener(tenantId, id);
+      if (actual === null) return { estado: "no_encontrado" };
+
+      if (actual.estado !== "borrador") {
+        return { estado: "no_es_borrador", actual: actual.estado };
+      }
+
+      const cliente = await leerClienteCongelado(tenantId, actual.clienteId);
+      if (cliente === null) {
+        // Inalcanzable salvo defecto: `cliente_id` es `NOT NULL`, la llave
+        // foránea está en `NO ACTION` y el disparador de tenencia ya exigió
+        // que las dos filas sean del mismo bufete. Se levanta en vez de
+        // congelar un documento sin el cliente al que se le prometió.
+        throw new Error(
+          "la cotización que se emite apunta a un cliente que no se puede leer",
+        );
+      }
+
+      // Los dos listados salen de las mismas funciones que sirven el `GET`,
+      // con su `ORDER BY orden`. `congelar` copia ese orden tal cual: un
+      // segundo criterio acá haría que el documento congelado se leyera
+      // distinto que el vivo.
+      const modulos = await leerModulos(tenantId, id);
+      const lineas = await leerLineas(tenantId, id);
+      const emisor = await leerEmisor(tenantId, emisorId);
+
+      // Una sola lectura del reloj para el snapshot. La de la bitácora la
+      // hace `mutar` por su cuenta y es un milisegundo después; no se
+      // fuerzan a ser la misma porque son dos hechos distintos —cuándo se
+      // congeló el documento y cuándo se registró— y hacerlas coincidir
+      // obligaría a que `mutar` recibiera el momento desde afuera, que es la
+      // puerta por la que se puede fechar un hecho a mano.
+      const emitidaEn = ahoraIso();
+
+      const snapshot = JSON.stringify(
+        congelar({
+          cotizacion: actual,
+          cliente,
+          modulos,
+          lineas,
+          emisor,
+          emitidaEn,
+        }),
+      );
+
+      const [efecto] = await base.mutar(
+        {
+          entidad: "cotizacion",
+          entidadId: id,
+          accion: "emitido",
+          // El código, igual que en el alta y en la edición: es lo que
+          // identifica a la cotización de cara a una persona.
+          detalle: actual.codigo,
+        },
+        sentencia(
+          "UPDATE cotizacion SET estado = 'emitida', snapshot = ?" +
+            " WHERE tenant_id = ? AND id = ? AND estado = 'borrador'",
+          snapshot,
+          tenantId,
+          id,
+        ),
+      );
+
+      if (efecto.meta.changes === 0) {
+        // Perdimos la carrera contra otra emisión. Se relee para decir la
+        // verdad sobre en qué quedó, igual que en `actualizar`, y con el
+        // mismo residuo conocido: la entrada de bitácora ya viajó en el
+        // mismo `batch`, así que queda un «emitió» de una emisión que no
+        // ocurrió. Es el mal menor, y acá el único que la otra petición ya
+        // escribió de verdad.
+        const ahora = await obtener(tenantId, id);
+        if (ahora === null) return { estado: "no_encontrado" };
+
+        return { estado: "no_es_borrador", actual: ahora.estado };
+      }
+
+      const cotizacion = await obtener(tenantId, id);
+      if (cotizacion === null) return { estado: "no_encontrado" };
+
+      return { estado: "emitida", cotizacion };
     },
   };
 }

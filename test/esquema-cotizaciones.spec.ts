@@ -44,6 +44,20 @@ const TENENCIA_CRUZADA = /tenencia cruzada/;
 /** El de los cinco disparadores de inmutabilidad. */
 const COLUMNA_INMUTABLE = /columna inmutable/;
 
+/** El `RAISE(ABORT, …)` de las siete guardas de I-4 de `0006`. */
+const CONGELADA = /cotizacion congelada/;
+
+/** El de la guarda de I-5. */
+const SNAPSHOT_INMUTABLE = /snapshot inmutable/;
+
+/**
+ * Un snapshot cualquiera. No se parsea en ninguna prueba de este archivo: lo
+ * que la base exige de esa columna es que esté o no esté según el estado, no
+ * qué forma tiene adentro. Quién decide la forma es
+ * `worker/cotizaciones/snapshot.ts`, y lo prueba `test/emitir-api.spec.ts`.
+ */
+const UN_SNAPSHOT = '{"version":1,"lineas":[]}';
+
 /** Los seis tipos de módulo de prosa de `docs/diseno.md` §8. */
 const TIPOS_DE_MODULO = [
   "alcance",
@@ -1163,27 +1177,467 @@ describe("un módulo y una línea no se mudan de cotización", () => {
   );
 });
 
-describe("los disparadores de 0004 están todos y no hay ninguno de más", () => {
+/* ===========================================================================
+   I-4 e I-5, que son de `migrations/0006_emitir_y_congelar.sql` (T-4 A)
+   ===========================================================================
+
+   El criterio del archivo no cambia y acá pesa más que en ningún otro lado:
+   **un invariante se prueba por rechazo**. Una prueba que emite una
+   cotización y verifica que quedó emitida no prueba nada de I-4 — pasa igual
+   con los ocho disparadores borrados.
+
+   Lo que sí hay son contrapesos, y están nombrados como tales: sin ellos, un
+   disparador escrito sin condición —que abortara toda escritura sobre una
+   cotización que ya no es borrador— haría pasar todas las pruebas de rechazo
+   y rompería el ciclo de vida de T-5 sin que nada se pusiera rojo. */
+
+interface Congelada {
+  id: string;
+  moduloId: string;
+  lineaId: string;
+}
+
+/**
+ * Una cotización ya congelada, con un módulo y una línea adentro.
+ *
+ * Los dos hijos entran **antes** de congelarla, que es el único momento en
+ * que se puede: después, los seis disparadores de M-4 los rechazan. Esa
+ * secuencia es, de paso, la demostración de que el alta sigue funcionando
+ * sobre un borrador.
+ *
+ * `estado` es un parámetro y no una constante porque la regla no habla de
+ * `emitida` sino de **«ya no es borrador»**: una ganada y una perdida están
+ * igual de congeladas, y si la guarda dijera `= 'emitida'` el documento se
+ * volvería editable el día que el cliente acepta, que es el peor día
+ * posible.
+ */
+async function cotizacionCongelada(
+  estado: "emitida" | "ganada" | "perdida" = "emitida",
+): Promise<Congelada> {
+  const cotizacion = filaValida("cotizacion", ctx);
+  await insertar("cotizacion", cotizacion);
+
+  const modulo: Fila = {
+    ...filaValida("cotizacion_modulo", ctx),
+    cotizacion_id: cotizacion.id,
+  };
+  const linea: Fila = {
+    ...filaValida("cotizacion_linea", ctx),
+    cotizacion_id: cotizacion.id,
+  };
+  await insertar("cotizacion_modulo", modulo);
+  await insertar("cotizacion_linea", linea);
+
+  await env.DB.prepare(
+    "UPDATE cotizacion SET estado = ?, snapshot = ? WHERE id = ?",
+  )
+    .bind(estado, UN_SNAPSHOT, cotizacion.id)
+    .run();
+
+  return {
+    id: String(cotizacion.id),
+    moduloId: String(modulo.id),
+    lineaId: String(linea.id),
+  };
+}
+
+/** Un segundo cliente y un segundo usuario, los dos de este bufete. */
+async function segundosDelBufete(): Promise<{
+  clienteId: string;
+  usuarioId: string;
+}> {
+  const clienteId = nuevoId();
+  const usuarioId = nuevoId();
+  const ahora = ahoraIso();
+
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO usuario (id, tenant_id, nombre, email) VALUES (?, ?, ?, ?)",
+    ).bind(usuarioId, TENANT_UNICO_ID, "Otra", `${usuarioId}@bufete.pa`),
+    env.DB.prepare(
+      "INSERT INTO cliente (id, tenant_id, tipo_cliente_id, nombre, telefono," +
+        " creado_por, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).bind(
+      clienteId,
+      TENANT_UNICO_ID,
+      ctx.tipoClienteId,
+      "Segundo cliente",
+      "+507 6111-1111",
+      ctx.usuarioId,
+      ahora,
+    ),
+  ]);
+
+  return { clienteId, usuarioId };
+}
+
+describe("I-4 · una cotización que ya no es borrador no se edita", () => {
+  // **Una prueba por cláusula**, que es la lección 2 de T-1: la cobertura de
+  // una condición con nueve `OR` no se mide por disparador sino por rama.
+  // Con una sola prueba se puede borrar ocho de las nueve comparaciones y
+  // todo sigue verde.
+  //
+  // Dos de las nueve son nullable —`vence_en` y `duplicada_de_id`— y ésas
+  // van de nulo a valor **a propósito**: es la única forma en que la
+  // elección de `IS NOT` sobre `<>` es observable. Con `<>`, una comparación
+  // contra NULL vale NULL, el `WHEN` da falso y la escritura **pasa**.
+  it.each([
+    "id",
+    "cliente_id",
+    "codigo",
+    "fecha",
+    "vence_en",
+    "moneda",
+    "duplicada_de_id",
+    "creada_por",
+    "creada_en",
+  ])("cambiarle %s a una emitida muere en el disparador", async (columna) => {
+    const congelada = await cotizacionCongelada();
+    const otros = await segundosDelBufete();
+    const otraCotizacion = await segundaCotizacionNuestra(ctx);
+
+    // Los valores son todos **legítimos y de este bufete**: con un
+    // identificador inexistente saltaría primero el disparador de tenencia
+    // de `0004` y la prueba estaría afirmando la guarda equivocada.
+    const valores: Record<string, string> = {
+      id: nuevoId(),
+      cliente_id: otros.clienteId,
+      codigo: `COT-${nuevoId()}`,
+      fecha: "2020-03-04T05:06:07.008Z",
+      vence_en: "2030-12-31T23:59:59.999Z",
+      // El `CHECK` de moneda sólo admite 'USD', así que no hay segundo valor
+      // legítimo. Lo que esta prueba afirma es **cuál de las dos guardas
+      // contesta**: con la cláusula puesta aborta el disparador; sin ella
+      // llegaría el `CHECK`, con otro mensaje.
+      moneda: "PAB",
+      duplicada_de_id: otraCotizacion,
+      creada_por: otros.usuarioId,
+      creada_en: "2019-01-02T03:04:05.006Z",
+    };
+
+    await expect(
+      env.DB.prepare(`UPDATE cotizacion SET ${columna} = ? WHERE id = ?`)
+        .bind(valores[columna], congelada.id)
+        .run(),
+    ).rejects.toThrow(CONGELADA);
+  });
+
+  it.each(["emitida", "ganada", "perdida"] as const)(
+    "una %s tampoco se edita: la regla es «ya no es borrador»",
+    async (estado) => {
+      const congelada = await cotizacionCongelada(estado);
+
+      await expect(
+        env.DB.prepare("UPDATE cotizacion SET codigo = ? WHERE id = ?")
+          .bind(`COT-${nuevoId()}`, congelada.id)
+          .run(),
+      ).rejects.toThrow(CONGELADA);
+    },
+  );
+
+  it("contrapeso: el estado sí se mueve, que es lo que T-5 necesita", async () => {
+    // Sin esto, un disparador que abortara **toda** actualización de una
+    // emitida haría pasar las trece pruebas de rechazo de arriba y dejaría
+    // el ciclo de vida de `docs/diseno.md` §8 sin su segunda mitad.
+    const congelada = await cotizacionCongelada();
+
+    await env.DB.prepare("UPDATE cotizacion SET estado = 'ganada' WHERE id = ?")
+      .bind(congelada.id)
+      .run();
+
+    const guardada = await env.DB.prepare(
+      "SELECT estado, snapshot FROM cotizacion WHERE id = ?",
+    )
+      .bind(congelada.id)
+      .first<{ estado: string; snapshot: string | null }>();
+
+    // Y el snapshot sigue siendo el mismo: ganar no reescribe el documento.
+    expect(guardada).toEqual({ estado: "ganada", snapshot: UN_SNAPSHOT });
+  });
+
+  it("contrapeso: un borrador se sigue editando entero", async () => {
+    // El otro extremo: un `WHEN` sin la condición de estado congelaría todas
+    // las cotizaciones desde que nacen, y la API de T-2 dejaría de guardar.
+    const fila = filaValida("cotizacion", ctx);
+    await insertar("cotizacion", fila);
+
+    await env.DB.prepare(
+      "UPDATE cotizacion SET codigo = ?, vence_en = ? WHERE id = ?",
+    )
+      .bind(`COT-${nuevoId()}`, "2030-12-31T23:59:59.999Z", fila.id)
+      .run();
+
+    const guardada = await env.DB.prepare(
+      "SELECT vence_en FROM cotizacion WHERE id = ?",
+    )
+      .bind(fila.id)
+      .first<{ vence_en: string | null }>();
+
+    expect(guardada?.vence_en).toBe("2030-12-31T23:59:59.999Z");
+  });
+
+  it("`tenant_id` sigue contestando con su propia guarda y no con ésta", async () => {
+    // La cláusula de `tenant_id` **no está** en el `WHEN` de I-4, y esta
+    // prueba es la que lo fija: `cotizacion_tenant_inmutable` de `0004` ya
+    // la vuelve inmutable en todos los estados. Dos guardas para el mismo
+    // hecho no son defensa en profundidad: son dos guardas que ninguna
+    // prueba puede distinguir, porque neutralizar cualquiera deja a la otra
+    // atrapando el caso.
+    const congelada = await cotizacionCongelada();
+    const vecino = await sembrarVecino();
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion SET tenant_id = ? WHERE id = ?")
+        .bind(vecino.tenantId, congelada.id)
+        .run(),
+    ).rejects.toThrow(COLUMNA_INMUTABLE);
+  });
+});
+
+describe("I-5 · el snapshot se escribe una vez y no se reescribe jamás", () => {
+  it("reescribir el snapshot de una emitida muere en el disparador", async () => {
+    const congelada = await cotizacionCongelada();
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion SET snapshot = ? WHERE id = ?")
+        .bind('{"version":1,"lineas":[{"monto":1}]}', congelada.id)
+        .run(),
+    ).rejects.toThrow(SNAPSHOT_INMUTABLE);
+  });
+
+  it("descongelar —volver a borrador y vaciar el snapshot— muere también", async () => {
+    // **Ésta es la prueba que hace load-bearing al `IS NOT`.** Con `<>`,
+    // `NEW.snapshot <> OLD.snapshot` contra NULL vale NULL, el `WHEN` da
+    // falso y el disparador no dispara; el `CHECK` de coherencia de `0004`
+    // ve una fila consistente —borrador sin snapshot— y la deja pasar. La
+    // cotización emitida vuelve a ser editable **habiendo perdido el
+    // documento que se le mandó al cliente**, que es el peor agujero que
+    // esta tarea podía dejar. Un solo carácter lo abre.
+    const congelada = await cotizacionCongelada();
+
+    await expect(
+      env.DB.prepare(
+        "UPDATE cotizacion SET estado = 'borrador', snapshot = NULL" +
+          " WHERE id = ?",
+      )
+        .bind(congelada.id)
+        .run(),
+    ).rejects.toThrow(SNAPSHOT_INMUTABLE);
+
+    // El contrapeso que hace a la prueba sobre la consecuencia y no sobre el
+    // mensaje: la cotización quedó como estaba, no a medio descongelar.
+    const guardada = await env.DB.prepare(
+      "SELECT estado, snapshot FROM cotizacion WHERE id = ?",
+    )
+      .bind(congelada.id)
+      .first<{ estado: string; snapshot: string | null }>();
+
+    expect(guardada).toEqual({ estado: "emitida", snapshot: UN_SNAPSHOT });
+  });
+
+  it("escribirle un snapshot a un borrador que ya tenía uno muere", async () => {
+    // El estado no entra en la guarda de I-5 y esto lo fija: lo que la hace
+    // disparar es que **ya haya un snapshot**, venga de donde venga. Es la
+    // mitad que impide que mañana alguien abra un camino de reescritura
+    // pasando primero por otro estado.
+    const fila: Fila = {
+      ...filaValida("cotizacion", ctx),
+      estado: "perdida",
+      snapshot: UN_SNAPSHOT,
+    };
+    await insertar("cotizacion", fila);
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion SET snapshot = ? WHERE id = ?")
+        .bind('{"version":1,"lineas":[]} ', fila.id)
+        .run(),
+    ).rejects.toThrow(SNAPSHOT_INMUTABLE);
+  });
+
+  // El contrapeso de I-5 —que la **primera** escritura del snapshot sí
+  // pasa— ya está escrito más arriba, en «deja pasar la emisión que escribe
+  // estado y snapshot juntos». No se repite acá: dos pruebas que afirman lo
+  // mismo son una que nadie va a actualizar cuando cambie la regla.
+});
+
+describe("I-4 también cubre las tablas hijas", () => {
+  // Una cotización emitida cuyos módulos o líneas se pueden cambiar no está
+  // congelada: cambia el documento **sin tocar una sola columna de
+  // `cotizacion`**, así que el disparador de I-4 ni se entera. Son seis
+  // pruebas porque son seis disparadores, uno por par (tabla, operación), y
+  // SQLite no permite escribirlo más corto.
+
+  it("agregar un módulo a una emitida muere en el disparador", async () => {
+    const congelada = await cotizacionCongelada();
+
+    await expect(
+      insertar("cotizacion_modulo", {
+        ...filaValida("cotizacion_modulo", ctx),
+        cotizacion_id: congelada.id,
+        orden: 99,
+      }),
+    ).rejects.toThrow(CONGELADA);
+  });
+
+  it("editar un módulo de una emitida muere en el disparador", async () => {
+    const congelada = await cotizacionCongelada();
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion_modulo SET contenido = ? WHERE id = ?")
+        .bind("Otra cosa que el cliente nunca leyó.", congelada.moduloId)
+        .run(),
+    ).rejects.toThrow(CONGELADA);
+  });
+
+  it("quitar un módulo de una emitida muere en el disparador", async () => {
+    const congelada = await cotizacionCongelada();
+
+    await expect(
+      env.DB.prepare("DELETE FROM cotizacion_modulo WHERE id = ?")
+        .bind(congelada.moduloId)
+        .run(),
+    ).rejects.toThrow(CONGELADA);
+  });
+
+  it("agregar una línea a una emitida muere en el disparador", async () => {
+    const congelada = await cotizacionCongelada();
+
+    await expect(
+      insertar("cotizacion_linea", {
+        ...filaValida("cotizacion_linea", ctx),
+        cotizacion_id: congelada.id,
+        orden: 99,
+      }),
+    ).rejects.toThrow(CONGELADA);
+  });
+
+  it("editar una línea de una emitida muere en el disparador", async () => {
+    const congelada = await cotizacionCongelada();
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion_linea SET monto = ? WHERE id = ?")
+        .bind(1, congelada.lineaId)
+        .run(),
+    ).rejects.toThrow(CONGELADA);
+  });
+
+  it("quitar una línea de una emitida muere en el disparador", async () => {
+    // **La más barata de todas las formas de cambiar una propuesta
+    // emitida**: un `DELETE` que se lleve el honorario más caro deja una
+    // cotización que el cliente aceptó cobrando menos. `0004` no tiene
+    // ningún disparador de `DELETE` y acá la conclusión se invierte.
+    const congelada = await cotizacionCongelada();
+
+    await expect(
+      env.DB.prepare("DELETE FROM cotizacion_linea WHERE id = ?")
+        .bind(congelada.lineaId)
+        .run(),
+    ).rejects.toThrow(CONGELADA);
+  });
+
+  it.each(["ganada", "perdida"] as const)(
+    "las hijas de una %s están igual de congeladas",
+    async (estado) => {
+      const congelada = await cotizacionCongelada(estado);
+
+      await expect(
+        env.DB.prepare("DELETE FROM cotizacion_linea WHERE id = ?")
+          .bind(congelada.lineaId)
+          .run(),
+      ).rejects.toThrow(CONGELADA);
+    },
+  );
+
+  it("contrapeso: las tres operaciones siguen andando sobre un borrador", async () => {
+    // Sin esto, seis disparadores sin condición harían pasar las ocho
+    // pruebas de rechazo de arriba y dejarían el editor de T-2 y T-3 sin
+    // poder escribir una sola línea.
+    const borrador = await segundaCotizacionNuestra(ctx);
+    const modulo: Fila = {
+      ...filaValida("cotizacion_modulo", ctx),
+      cotizacion_id: borrador,
+    };
+    const linea: Fila = {
+      ...filaValida("cotizacion_linea", ctx),
+      cotizacion_id: borrador,
+    };
+
+    await insertar("cotizacion_modulo", modulo);
+    await insertar("cotizacion_linea", linea);
+
+    await env.DB.prepare("UPDATE cotizacion_modulo SET contenido = ? WHERE id = ?")
+      .bind("Editado sin problema.", modulo.id)
+      .run();
+    await env.DB.prepare("DELETE FROM cotizacion_linea WHERE id = ?")
+      .bind(linea.id)
+      .run();
+
+    const quedan = await env.DB.prepare(
+      "SELECT (SELECT COUNT(*) FROM cotizacion_modulo WHERE cotizacion_id = ?)" +
+        " AS modulos, (SELECT COUNT(*) FROM cotizacion_linea" +
+        " WHERE cotizacion_id = ?) AS lineas",
+    )
+      .bind(borrador, borrador)
+      .first<{ modulos: number; lineas: number }>();
+
+    expect(quedan).toEqual({ modulos: 1, lineas: 0 });
+  });
+
+  it("mudar una línea a una emitida sigue siendo «columna inmutable»", async () => {
+    // El `WHEN` de `UPDATE` mira `OLD.cotizacion_id` y **no** `NEW`, y esta
+    // prueba es la que lo fija: la mudanza ya la aborta
+    // `cotizacion_linea_cotizacion_inmutable` de `0004`, en todos los
+    // estados y con el mensaje más exacto de los dos. Mirar `NEW` acá sería
+    // la segunda guarda para el mismo hecho, y entonces ninguna de las dos
+    // sería verificable.
+    const congelada = await cotizacionCongelada();
+    const borrador = await segundaCotizacionNuestra(ctx);
+    const linea: Fila = {
+      ...filaValida("cotizacion_linea", ctx),
+      cotizacion_id: borrador,
+    };
+    await insertar("cotizacion_linea", linea);
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion_linea SET cotizacion_id = ? WHERE id = ?")
+        .bind(congelada.id, linea.id)
+        .run(),
+    ).rejects.toThrow(COLUMNA_INMUTABLE);
+  });
+});
+
+describe("los disparadores de 0004 y 0006 están todos y no hay ninguno de más", () => {
   // La lista va exacta y no por `toContain` a propósito. Un disparador de
-  // más sería código muerto —`cotizacion_modulo` no lleva el de `UPDATE`
-  // porque sus dos únicas columnas comparables son inmutables, igual que
-  // `proceso_etapa` en `0003`— y ésta es la prueba que lo haría notar.
+  // más sería código muerto —`cotizacion_modulo` no lleva el de `UPDATE` de
+  // tenencia porque sus dos únicas columnas comparables son inmutables,
+  // igual que `proceso_etapa` en `0003`— y ésta es la prueba que lo haría
+  // notar.
   const esperados: Record<string, string[]> = {
     cotizacion: [
       "cotizacion_tenencia_coherente_al_insertar",
       "cotizacion_tenencia_coherente_al_actualizar",
       "cotizacion_tenant_inmutable",
+      /* `0006`: I-4 y I-5. */
+      "cotizacion_emitida_no_se_edita",
+      "cotizacion_snapshot_se_escribe_una_sola_vez",
     ],
     cotizacion_modulo: [
       "cotizacion_modulo_tenencia_coherente_al_insertar",
       "cotizacion_modulo_tenant_inmutable",
       "cotizacion_modulo_cotizacion_inmutable",
+      /* `0006`: I-4 en la tabla hija, una por operación. */
+      "cotizacion_modulo_no_entra_en_una_congelada",
+      "cotizacion_modulo_no_cambia_en_una_congelada",
+      "cotizacion_modulo_no_sale_de_una_congelada",
     ],
     cotizacion_linea: [
       "cotizacion_linea_tenencia_coherente_al_insertar",
       "cotizacion_linea_tenencia_coherente_al_actualizar",
       "cotizacion_linea_tenant_inmutable",
       "cotizacion_linea_cotizacion_inmutable",
+      "cotizacion_linea_no_entra_en_una_congelada",
+      "cotizacion_linea_no_cambia_en_una_congelada",
+      "cotizacion_linea_no_sale_de_una_congelada",
     ],
   };
 
@@ -1249,6 +1703,80 @@ describe("M-0 · la migración y sus guardas llegan juntas o no llegan", () => {
 
   it("y todos ellos existen en la base", async () => {
     const nombres = objetosQueCrea().map((objeto) => objeto.nombre);
+    const { results } = await env.DB.prepare(
+      `SELECT name FROM sqlite_master WHERE name IN (${nombres
+        .map(() => "?")
+        .join(", ")})`,
+    )
+      .bind(...nombres)
+      .all<{ name: string }>();
+
+    expect(results.map((fila) => fila.name).sort()).toEqual([...nombres].sort());
+  });
+});
+
+describe("lo que 0006 declara está todo en la base", () => {
+  // La misma mitad verificable que la de `0004`, para la migración que trae
+  // I-4 e I-5: un `CREATE TRIGGER` que quedó adentro de un comentario, o un
+  // punto y coma de menos, se ve acá y no en producción.
+  //
+  // Son trece declaraciones: la tabla intermedia de la reconstrucción de
+  // `bitacora`, el índice y los tres disparadores que esa reconstrucción
+  // recrea, y los ocho de la congelación. El `ALTER TABLE … RENAME` no
+  // cuenta como declaración y por eso `bitacora_nueva` no existe al final;
+  // se la excluye por nombre en vez de con una expresión regular más floja,
+  // para que la exclusión sea una decisión visible.
+  const MIGRACION = "0006_emitir_y_congelar.sql";
+
+  /** La tabla de paso, que termina renombrada y por eso no se busca. */
+  const RENOMBRADA = "bitacora_nueva";
+
+  function objetosQueCrea(): { clase: string; nombre: string }[] {
+    const migracion = env.TEST_MIGRATIONS.find(
+      (candidata) => candidata.name === MIGRACION,
+    );
+    if (migracion === undefined) {
+      throw new Error(`${MIGRACION} no está en TEST_MIGRATIONS`);
+    }
+
+    return migracion.queries.flatMap((consulta) => {
+      // Los comentarios se descartan antes de buscar: el encabezado nombra
+      // `CREATE TRIGGER` en prosa varias veces.
+      const sql = consulta.replace(/^\s*--.*$/gm, "");
+      const hallazgo =
+        /CREATE\s+TABLE\s+(\w+)/i.exec(sql) ??
+        /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(\w+)/i.exec(sql) ??
+        /CREATE\s+TRIGGER\s+(\w+)/i.exec(sql);
+
+      return hallazgo === null
+        ? []
+        : [
+            {
+              clase: hallazgo[0].split(/\s+/)[1].toUpperCase(),
+              nombre: hallazgo[1],
+            },
+          ];
+    });
+  }
+
+  it("declara los once disparadores y el índice que recrea", () => {
+    // El contrapeso de siempre: si la expresión regular dejara de encontrar
+    // nada, la prueba de abajo pasaría comparando dos listas vacías.
+    const declarados = objetosQueCrea();
+
+    expect(
+      declarados.filter((objeto) => objeto.clase === "TRIGGER"),
+    ).toHaveLength(11);
+    expect(declarados.filter((objeto) => objeto.clase === "INDEX")).toHaveLength(
+      1,
+    );
+  });
+
+  it("y todos ellos existen en la base", async () => {
+    const nombres = objetosQueCrea()
+      .map((objeto) => objeto.nombre)
+      .filter((nombre) => nombre !== RENOMBRADA);
+
     const { results } = await env.DB.prepare(
       `SELECT name FROM sqlite_master WHERE name IN (${nombres
         .map(() => "?")

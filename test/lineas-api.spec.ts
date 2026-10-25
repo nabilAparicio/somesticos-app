@@ -461,15 +461,43 @@ beforeEach(async () => {
   // borrado es el de las llaves foráneas, que están en `NO ACTION`: las
   // líneas antes que las cotizaciones y que los tipos de proceso, y las
   // cotizaciones antes que los clientes.
-  await env.DB.prepare("DELETE FROM cotizacion_linea").run();
-  await env.DB.prepare("DELETE FROM cotizacion").run();
-  await env.DB.prepare("DELETE FROM cliente").run();
-  await env.DB.prepare("DELETE FROM tipo_proceso").run();
-  await env.DB.prepare("DELETE FROM area").run();
-  await env.DB.prepare("DELETE FROM usuario WHERE tenant_id <> ?")
+  // **Y sólo se borra lo que sigue en borrador.** Desde
+  // `migrations/0006_emitir_y_congelar.sql`, las hijas de una cotización que
+  // ya no es borrador no se pueden quitar (I-4), y la cotización tampoco se
+  // puede borrar mientras tenga hijas colgando, porque la llave foránea está
+  // en `NO ACTION`: una emitida con hijas es, a propósito, indeleble. Lo que
+  // cada prueba deja emitido se queda, y por eso el código lleva pegado su
+  // identificador — con uno fijo, `cotizacion_codigo_unico` rechazaría la
+  // siembra de la prueba siguiente.
+  await env.DB.prepare(
+    "DELETE FROM cotizacion_linea WHERE cotizacion_id IN" +
+      " (SELECT id FROM cotizacion WHERE estado = 'borrador')",
+  ).run();
+  await env.DB.prepare("DELETE FROM cotizacion WHERE estado = 'borrador'").run();
+  await env.DB.prepare(
+    "DELETE FROM cliente WHERE id NOT IN (SELECT cliente_id FROM cotizacion)",
+  ).run();
+  await env.DB.prepare(
+    "DELETE FROM tipo_proceso WHERE id NOT IN" +
+      " (SELECT tipo_proceso_id FROM cotizacion_linea" +
+      " WHERE tipo_proceso_id IS NOT NULL)",
+  ).run();
+  await env.DB.prepare(
+    "DELETE FROM area WHERE id NOT IN (SELECT area_id FROM tipo_proceso)",
+  ).run();
+  await env.DB.prepare(
+    "DELETE FROM usuario WHERE tenant_id <> ?" +
+      " AND id NOT IN (SELECT creada_por FROM cotizacion)" +
+      " AND id NOT IN (SELECT creado_por FROM cliente)",
+  )
     .bind(TENANT_UNICO_ID)
     .run();
-  await env.DB.prepare("DELETE FROM tenant WHERE id <> ?")
+  await env.DB.prepare(
+    "DELETE FROM tenant WHERE id <> ?" +
+      " AND id NOT IN (SELECT tenant_id FROM cotizacion)" +
+      " AND id NOT IN (SELECT tenant_id FROM cliente)" +
+      " AND id NOT IN (SELECT tenant_id FROM usuario)",
+  )
     .bind(TENANT_UNICO_ID)
     .run();
 
@@ -488,7 +516,7 @@ beforeEach(async () => {
   const anio = ahora.slice(0, 4);
 
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO tenant (id, nombre) VALUES (?, ?)").bind(
+    env.DB.prepare("INSERT OR IGNORE INTO tenant (id, nombre) VALUES (?, ?)").bind(
       OTRO_TENANT_ID,
       "Otro bufete",
     ),
@@ -545,7 +573,7 @@ beforeEach(async () => {
       cotizacionId,
       TENANT_UNICO_ID,
       clienteId,
-      `COT-${anio}-0001`,
+      `COT-${anio}-${cotizacionId}`,
       ahora,
       autorId,
       ahora,
@@ -559,7 +587,7 @@ beforeEach(async () => {
       cotizacionAjenaId,
       OTRO_TENANT_ID,
       clienteAjenoId,
-      `COT-${anio}-0007`,
+      `COT-${anio}-${cotizacionAjenaId}`,
       ahora,
       autorAjenoId,
       ahora,
