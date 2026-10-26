@@ -94,7 +94,24 @@ dice por qué**. Se prueba por rechazo.
       viven en la misma zona de la pantalla, así no se la toca dos veces:
       «Estado del proceso» deja de ser una sección huérfana entre la cabecera
       y la tira, y la tira deja de pesar menos que el ruido que la rodea.
-- [ ] **T-3 · El resto dentro de su pestaña, y el aire.** Pendientes, Dinero
+- [ ] **T-3 · El resto dentro de su pestaña, y el aire.** Arranca por las dos
+      cosas que se vieron recorriendo T-2 con datos reales, las dos en la
+      lista de pasos y las dos nacidas de fundirla:
+
+      1. **«Avanzar» quedó sepultado debajo de «Guardar plan».** Antes vivía
+         pegado al paso que iba a marcar, dentro de «Lo que falta»; al fundir
+         las listas se soltó y ahora se lee como un control más del
+         formulario de edición. Es la acción más frecuente del día y la única
+         de la pestaña que escribe un hecho irreversible. El realce de
+         «Guardar plan» se decidió en T-2 con un argumento válido —dos
+         botones oscuros pegados no destacan ninguno—, así que **lo que hay
+         que corregir es el lugar, no el énfasis.**
+      2. **El paso que viene no se distingue en la lista.** Los cumplidos
+         llevan su fecha al costado; el próximo no lleva nada. La cabecera lo
+         nombra en «LO QUE VIENE», pero la lista es donde la persona mira, y
+         ahí el cuarto renglón se ve igual que uno cualquiera.
+
+      Y después lo demás: Pendientes, Dinero
       e Historial revisados ahora que cada uno tiene su propio espacio. Más
       las otras dos de la recorrida de T-1: la columna de contenido usa 770 de
       2000 píxeles y deja medio lado vacío —se nota sobre todo en la lista de
@@ -497,3 +514,16 @@ Queda para el coordinador.
   de T-15 espera por «Plan de trabajo» en vez de por «Cumplido».
 
 **Pendiente del coordinador:** el commit. El escritor no commiteó nada.
+
+## Deuda anotada que vive fuera del alcance de esta funcionalidad
+
+- **CSS muerto en `src/estilos/formulario.css`.** Al fundir las listas en T-2
+  quedaron sin un solo consumidor `.plan` (304), `.plan__paso` (313),
+  `.plan__nombre` (325), `.plan__paso--cumplido` (336), más
+  `.plan--cumplido` y `.plan--pendiente`, que sólo vivían en el `.tsx`. No se
+  borraron porque **no es mecánico**: dos comentarios del mismo archivo
+  (líneas 631 y 714) usan `.plan__nombre` como punto de referencia para
+  explicar otras decisiones, así que borrarlo obliga a reescribirlos.
+- **«Etapa nueva» y «Agregar etapa» siguen activos con el proceso cerrado.**
+  Sólo tocan el borrador y «Guardar plan» está apagado, así que no escriben
+  nada; pero ofrecen una salida que no lleva a ningún lado. Viene de T-7.
