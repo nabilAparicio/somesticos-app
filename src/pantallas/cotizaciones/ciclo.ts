@@ -42,15 +42,29 @@
  * las líneas, en el mismo cuerpo que ellas.
  *
  * Decía además «no abre procesos (T-7)», y seguía siendo cierto cuando T-15
- * lo borró: **abrir** procesos es del servidor y pasa dentro de la misma
+ * lo borró: **abrir** procesos es del servidor y pasaba dentro de la misma
  * transacción que marca la cotización ganada. Lo que T-15 trajo acá es otra
  * cosa — **decir cuáles abrió**, que es el final del ciclo visto desde la
  * pantalla y por lo tanto exactamente de lo que este archivo habla.
+ *
+ * ## Y lo que T-13 trajo: **proponer** cuáles abrir
+ *
+ * Abrir sigue siendo del servidor. Lo que vive acá desde T-13 es la
+ * derivación que el servidor dejó de hacer: qué procesos sugieren las
+ * líneas de una cotización ganada, para que el bufete la edite antes de que
+ * exista nada. Es una función pura sobre datos que la pantalla ya tiene
+ * —`LineaDeCotizacion` viaja con su `tipoProcesoId` y su
+ * `tipoProcesoNombre` resueltos desde T-3— y por eso no hay ninguna ruta
+ * nueva que la pida: una propuesta que viajara de ida para volver corregida
+ * serían dos formas del mismo dato en el cable.
  */
 
 import type {
   Cotizacion,
+  DatosDeProcesoPorAbrir,
   EstadoDeCotizacion,
+  FallaDeValidacion,
+  LineaDeCotizacion,
   Proceso,
 } from "../../../worker/contract";
 
@@ -224,37 +238,40 @@ export function textoDeProcedencia(origen: Cotizacion | null): string {
   return `Nació duplicando «${origen.codigo}».`;
 }
 
+
 /**
- * En qué quedó una cotización ganada (T-15).
+ * En qué quedó una cotización ganada (T-15, corregido por T-13).
  *
- * ## Por qué esto no vive en la respuesta de ganar
+ * ## Una sola fuente, y ya no dos momentos
  *
- * `RespuestaDeCierre.procesosAbiertos` trae el conteo desde T-7, y contesta
- * la pregunta **en el instante en que alguien aprieta el botón**. Pero la
- * pregunta que una persona se hace de verdad es tres meses después, delante
- * de una cotización que no recuerda: «ésta, ¿en qué quedó?». Una respuesta
- * que se pierde al recargar no la contesta.
+ * T-15 escribió acá que `RespuestaDeCierre.procesosAbiertos` contestaba la
+ * pregunta «en el instante» y que el detalle la volvía a contestar leyendo
+ * la lista de procesos, y que eso eran «dos momentos en que se lo mira» de
+ * una sola fuente. **La corrección de T-13 es que ya no hay dos momentos,
+ * hay uno**: ganar dejó de abrir procesos, así que aquel conteo dejó de
+ * existir y se fue del contrato. Lo que queda es esta lectura, y es la
+ * única.
  *
- * Por eso el detalle lo lee del listado de procesos cada vez que se dibuja,
- * y el conteo de la respuesta se queda como está: no hay dos lugares donde
- * se decida cuántos procesos abrió una cotización, hay uno —las filas de
- * `proceso` que apuntan a sus líneas— y dos momentos en que se lo mira.
+ * La pregunta que sostiene el bloque no cambió, y es la que importa: una
+ * persona que abre esta cotización tres meses después quiere saber en qué
+ * quedó, y una respuesta que se pierde al recargar no la contesta.
  *
- * ## Los tres finales, y por qué son tres y no dos
+ * ## Los tres finales, y por qué el del medio cambió de frase
  *
  *  - **Con procesos**, la frase termina en dos puntos porque abajo va la
  *    lista. Es lo que ata el número a los enlaces: «abrió 2» sin la lista
  *    debajo obliga a ir a buscarlos a otra pantalla.
- *  - **Sin ninguno**, se dice igual, y además se dice *por qué*. Es el mismo
- *    argumento con el que el contrato decidió que el conteo viajara aunque
- *    valga cero: una ganada donde ninguna línea lleva tipo de proceso es
- *    legítima y corriente —una consulta, un timbre, una mensajería— y «no
- *    abrió ninguno» es información, mientras que un bloque que desaparece es
- *    un hueco.
+ *  - **Sin ninguno**, la frase de T-15 decía *por qué*: «ninguna de sus
+ *    líneas lleva tipo de proceso». **Eso era cierto mientras ganar
+ *    abriera**, y con T-13 pasó a ser falso: una ganada con cinco líneas de
+ *    trámite también muestra cero hasta que alguien confirme la propuesta.
+ *    Decirlo igual mandaría a revisar las líneas de una cotización que no
+ *    tiene nada malo. La frase nueva dice lo que de verdad pasa —todavía no
+ *    se abrió ninguno— y el panel de abajo dice qué hacer con eso.
  *  - **La lectura que no salió** es el tercero, y no se confunde con el
  *    cero. Es el mismo criterio que `textoDeProcedencia` unos renglones más
- *    arriba: un fallo de red dicho como «no abrió ninguno» manda a alguien a
- *    concluir que no hay procesos que sí existen.
+ *    arriba: un fallo de red dicho como «no abrió ninguno» manda a alguien
+ *    a concluir que no hay procesos que sí existen.
  *
  * El `null` es ese tercer caso. El arreglo vacío es el segundo. Que sean
  * dos valores distintos y no uno solo es la diferencia entre las dos
@@ -272,8 +289,7 @@ export function textoDeProcesosAbiertos(
 
   if (procesos.length === 0) {
     return (
-      "Esta cotización está ganada y no abrió ningún proceso: ninguna de sus" +
-      " líneas lleva tipo de proceso."
+      "Esta cotización está ganada y todavía no abrió ningún proceso."
     );
   }
 
@@ -283,3 +299,251 @@ export function textoDeProcesosAbiertos(
         procesos.length,
       )} procesos:`;
 }
+
+/* ==========================================================================
+   T-13 B · La propuesta de procesos, antes de que exista ninguno
+
+   El usuario eligió, entre dos caminos, el de proponer y confirmar:
+
+   > «Al ganar, muestra "voy a abrir estos dos procesos" con sus nombres y
+   > tipos, y vos sacás uno, fusionás, cambiás el tipo o agregás otro.
+   > Recién entonces nacen.»
+
+   El otro camino —abrir y que el bufete ajuste después— se descartó por el
+   propio ejemplo de la sociedad anónima: el sistema infiere dos y el bufete
+   quiere uno, así que nacería un expediente que hay que borrar, y borrar un
+   proceso arrastra bitácora. La ambigüedad se resuelve antes de que haya
+   algo que deshacer.
+   ========================================================================== */
+
+/**
+ * Una fila de la propuesta: un proceso que todavía no existe.
+ *
+ * **No es `DatosDeProcesoPorAbrir` con un campo más, aunque se le parezca**,
+ * y la diferencia es la que separa un formulario de un cuerpo de petición:
+ *
+ *  - `responsableId` es `string` y no `string | null`, porque la cadena
+ *    vacía es lo que manda un `<select>` sin elegir. Convertirla a nulo es
+ *    trabajo de `aAperturaDeProcesos`, en el borde, y no de cada control.
+ *  - `clave` no viaja a ningún lado: es la identidad de la fila **dentro de
+ *    la pantalla**, y existe porque React necesita una y porque sin ella
+ *    sacar la segunda de tres filas redibujaría la tercera encima de la
+ *    segunda, perdiendo el foco y el texto a medio escribir. No puede ser
+ *    el índice por exactamente eso.
+ */
+export interface PropuestaDeProceso {
+  readonly clave: string;
+  readonly tipoProcesoId: string;
+  readonly titulo: string;
+  /** Cadena vacía es «sin responsable»: es lo que manda un `<select>`. */
+  readonly responsableId: string;
+}
+
+/**
+ * La siembra: **una propuesta por cada línea con trámite**.
+ *
+ * ## Qué se siembra y qué no
+ *
+ * Las líneas sin `tipoProcesoId` no entran, y no son un caso raro ni un
+ * dato faltante: son honorarios y gastos que no corresponden a ningún
+ * expediente —una consulta, un timbre, la mensajería— y `0004` las declaró
+ * el caso corriente al hacer la columna nullable. Es el mismo filtro que
+ * hacía el servidor hasta T-13, trasladado entero.
+ *
+ * ## El título es el concepto de la línea, y no se pide de nuevo
+ *
+ * Es el texto que el abogado ya escribió para nombrar ese trabajo de cara
+ * al cliente. Pedirle que lo escriba otra vez al abrir el proceso sería
+ * pedirle dos nombres para una cosa, y el día que no coincidan nadie sabría
+ * cuál manda. Se puede reescribir fila por fila, que es el punto entero de
+ * la tarea; lo que no se puede es llegar en blanco.
+ *
+ * ## El responsable nace vacío
+ *
+ * Ganar una cotización cierra una venta, no reparte trabajo. Repartirlo es
+ * una decisión aparte, y acá se puede tomar —el desplegable está— sin que
+ * sea un requisito: `proceso.responsable_id` es nullable desde `0003`.
+ *
+ * ## El orden
+ *
+ * Es el de la lista que llega, y la lista que llega es la de la cotización:
+ * `GET /api/cotizaciones/{id}/lineas` la sirve con `ORDER BY orden`. No se
+ * vuelve a ordenar acá, y la omisión es deliberada: un segundo criterio de
+ * orden sobre la misma lista sería el que un día dice algo distinto del
+ * primero, y ninguno de los dos podría llamarse «el orden de la
+ * cotización».
+ *
+ * La lista que llega no se toca: puede ser estado de React.
+ */
+export function propuestaDeProcesos(
+  lineas: readonly LineaDeCotizacion[],
+): PropuestaDeProceso[] {
+  return lineas
+    .filter((linea) => linea.tipoProcesoId !== null)
+    .map((linea) => ({
+      // El identificador de la línea que la sembró. Es estable mientras la
+      // fila viva, y no se puede repetir: dos filas de la propuesta nacidas
+      // de la misma línea no existen.
+      clave: linea.id,
+      tipoProcesoId: linea.tipoProcesoId ?? "",
+      titulo: linea.concepto,
+      responsableId: "",
+    }));
+}
+
+/**
+ * Una fila en blanco, para «agregar uno que no estaba».
+ *
+ * Es el caso que el usuario pidió con todas las letras —«¿qué sucede si
+ * como bufete no había visto este tipo de caso y en este momento quiero
+ * crear este nuevo tipo de proceso?»— y el que vuelve útil al panel sobre
+ * una cotización que ya abrió los suyos.
+ *
+ * La `clave` la pone quien llama y no esta función, porque la unicidad es
+ * una propiedad de **la lista** y no de la fila: una función que la
+ * generara sola tendría que llevar un contador propio, y ese contador
+ * sobreviviría entre dos cotizaciones distintas.
+ */
+export function propuestaVacia(clave: string): PropuestaDeProceso {
+  return { clave, tipoProcesoId: "", titulo: "", responsableId: "" };
+}
+
+/**
+ * Lo que la propuesta tiene que cumplir antes de mandarse.
+ *
+ * Es **la segunda copia** de la validación, declarada como tal, igual que
+ * `validarProceso` en el alta a mano: la que manda vive en
+ * `worker/procesos/dominio.ts` y en los dos repositorios. Ésta avisa antes
+ * de mandar, que es la diferencia entre un campo marcado al instante y una
+ * ida y vuelta al servidor para enterarse de lo mismo.
+ *
+ * Las tres cosas que mira son las tres que el servidor rechaza con 422 sin
+ * tocar la base: que haya al menos una fila, que cada una tenga tipo, y que
+ * cada una tenga título. Lo que **no** mira —que el tipo sea de este bufete,
+ * que el responsable exista— no se puede decidir acá y no se intenta: eso
+ * es de quien tiene las filas.
+ *
+ * Las fallas llevan la posición delante del campo, con la misma forma que
+ * el servidor usa en su respuesta, para que las dos listas se lean igual.
+ */
+export function validarPropuesta(
+  filas: readonly PropuestaDeProceso[],
+): FallaDeValidacion[] {
+  if (filas.length === 0) {
+    return [{ campo: "procesos", motivo: "sin_procesos_que_abrir" }];
+  }
+
+  const fallas: FallaDeValidacion[] = [];
+
+  filas.forEach((fila, indice) => {
+    if (fila.tipoProcesoId.trim() === "") {
+      fallas.push({
+        campo: `proceso-${String(indice)}.tipoProcesoId`,
+        motivo: "tipo_proceso_requerido",
+      });
+    }
+    if (fila.titulo.trim() === "") {
+      fallas.push({
+        campo: `proceso-${String(indice)}.titulo`,
+        motivo: "titulo_requerido",
+      });
+    }
+  });
+
+  return fallas;
+}
+
+/**
+ * De las filas de la pantalla al cuerpo de la petición.
+ *
+ * Es el borde donde la cadena vacía del `<select>` se vuelve el `null` del
+ * contrato, y donde la `clave` se queda afuera: es identidad de pantalla y
+ * no hay columna donde ponerla. El recorte va acá y no en cada control por
+ * lo mismo que en `aPeticionDeProceso` del alta: un título con un espacio
+ * al final no es un título distinto, y guardar los dos dejaría dos procesos
+ * que se ven iguales en el listado.
+ */
+export function aAperturaDeProcesos(
+  filas: readonly PropuestaDeProceso[],
+): DatosDeProcesoPorAbrir[] {
+  return filas.map((fila) => {
+    const responsableId = fila.responsableId.trim();
+
+    return {
+      tipoProcesoId: fila.tipoProcesoId.trim(),
+      titulo: fila.titulo.trim(),
+      responsableId: responsableId === "" ? null : responsableId,
+    };
+  });
+}
+
+/** El rótulo del control que confirma la apertura. */
+export const ROTULO_DE_ABRIR = "Abrir estos procesos";
+
+/** El rótulo del control que agrega una fila en blanco. */
+export const ROTULO_DE_AGREGAR_PROCESO = "Agregar otro proceso";
+
+/**
+ * Lo que el panel dice **antes** de que nazca nada, y es distinto según lo
+ * que la cotización ya tenga.
+ *
+ * ## Dos estados, y la diferencia importa
+ *
+ *  - **La ganada que todavía no abrió ninguno** es el momento en que la
+ *    pregunta es urgente: el encargo está vendido y el trabajo no tiene
+ *    expediente. La propuesta aparece sembrada y a la vista, y el texto
+ *    dice que es una sugerencia y qué se puede hacer con ella.
+ *  - **La ganada que ya abrió procesos** es otra cosa. Volver a sembrar
+ *    ofrecería lo que ya existe, que es ruido de la peor clase: invita a
+ *    abrir dos veces lo mismo. Ahí el panel es un camino para **abrir
+ *    otro**, arranca vacío, y el texto dice por qué.
+ *
+ * ## Por qué el texto nombra el paso extra
+ *
+ * Porque es la mitad del ejemplo del usuario —«crear una sociedad anónima
+ * puede ser sólo crearla, o crearla y registrarla»— y la que el sistema ya
+ * sabía hacer sin que se notara: los pasos de un proceso son editables,
+ * `PUT /api/procesos/{id}/etapas` reemplaza el plan entero. Lo que faltaba
+ * era que el sistema no impusiera la partición antes. Sin esta frase, quien
+ * mira la propuesta ve dos filas y cree que fusionarlas pierde un paso.
+ *
+ * El criterio del texto es el mismo que el de `confirmacionDeEmitir`: que
+ * diga qué pasa, no que pregunte si está seguro. La diferencia es que acá
+ * **no hay confirmación aparte**, y tampoco hace falta: a diferencia de
+ * emitir, lo que esto escribe se puede deshacer —un proceso recién abierto
+ * se cierra—, y la lista a la vista ya es la revisión.
+ */
+export function textoDeAperturaDeProcesos(yaAbrio: boolean): string {
+  if (yaAbrio) {
+    return (
+      "Esta cotización ya abrió los suyos, así que acá no se propone nada:" +
+      " lo que sigue es para abrir uno más, si hace falta. Es el caso del" +
+      " trámite que no estaba cotizado, o del tipo de proceso que el" +
+      " catálogo todavía no tenía cuando se armó la propuesta."
+    );
+  }
+
+  return (
+    "Estos son los procesos que las líneas de esta cotización sugieren." +
+    " Todavía no existe ninguno: se saca el que no corresponda, se le" +
+    " cambia el tipo o el título, y se agrega el que falte. Dos líneas que" +
+    " para el bufete son un solo expediente se fusionan sacando una y" +
+    " renombrando la otra; el paso de más se le agrega después al plan del" +
+    " proceso, que es editable."
+  );
+}
+
+/**
+ * Lo que el panel dice cuando no pudo sembrar nada porque las líneas no se
+ * leyeron.
+ *
+ * Es el mismo criterio que separa el cero del fallo de red en
+ * `textoDeProcesosAbiertos`, aplicado a la otra lectura: una propuesta
+ * vacía porque la cotización no tiene trámites y una propuesta vacía porque
+ * no se pudo leer nada se ven igual, y la primera es información mientras
+ * la segunda es un hueco. El panel sigue sirviendo —se puede agregar una
+ * fila a mano—, así que el texto lo dice en vez de esconder el control.
+ */
+export const AVISO_DE_LINEAS_NO_LEIDAS =
+  "Las líneas de esta cotización no se pudieron leer ahora, así que no hay" +
+  " nada sembrado. Se puede agregar un proceso a mano igual.";

@@ -22,13 +22,30 @@
  *   POST   /api/cotizaciones/{id}/perder          el cliente no aceptó
  *   POST   /api/cotizaciones/{id}/duplicar        nace un borrador nuevo
  *   GET    /api/cotizaciones/{id}/documento       el documento congelado
+ *   POST   /api/cotizaciones/{id}/procesos        abre los que el bufete eligió
  *
- * **Y nada más.** La apertura de procesos desde una ganada es T-7 y sigue
- * cayendo en el 404 general. La cuarta parte de la dirección
+ * **Y nada más.** La cuarta parte de la dirección
  * `/api/cotizaciones/{id}/bitacora` la atiende `worker/bitacora/rutas.ts`,
  * que corre antes y para la que este archivo devuelve `null`: acá sólo se
- * reconocen `modulos`, `lineas`, `documento` y los cuatro verbos del ciclo
- * de vida en esa posición.
+ * reconocen `modulos`, `lineas`, `documento`, `procesos` y los cuatro verbos
+ * del ciclo de vida en esa posición.
+ *
+ * ## `procesos` es un `POST` y no tiene `GET` hermano, y la ausencia se
+ * decidió
+ *
+ * La propuesta —qué procesos sugieren las líneas de esta cotización— **no
+ * se pide**: se deriva en la pantalla, que ya tiene las líneas con su
+ * `tipoProcesoId` y su `tipoProcesoNombre` resueltos desde T-3. Un `GET`
+ * acá sería un segundo lugar donde se decide qué sugiere una cotización, y
+ * además obligaría a que la propuesta viajara de ida para volver corregida.
+ * Lo que el servidor no puede delegar —que el cliente sea el de la
+ * cotización, que el tipo sea de este bufete, que el estado sea `ganada`—
+ * está en el `POST`.
+ *
+ * Y «¿qué procesos tiene ya esta cotización?» tampoco se contesta acá: lo
+ * contesta `GET /api/procesos`, que desde T-15 entrega cada proceso con su
+ * cotización de origen resuelta. Dos direcciones para la misma pregunta
+ * serían dos respuestas el día que una cambie.
  *
  * ## `documento` es la única lectura de esta tabla que no pasa por `SELECCION`
  *
@@ -122,12 +139,15 @@ import type { Identidad } from "../acceso/identidad";
 import type {
   CotizacionNoEsBorrador,
   CotizacionNoEsEmitida,
+  CotizacionNoEsGanada,
   CotizacionSinDocumento,
+  DatosDeProcesoPorAbrir,
   DatosInvalidos,
   FallaDeValidacion,
   GeneracionFallida,
   LineaDeCotizacion,
   MotivoDeFallaDelModelo,
+  RespuestaDeApertura,
   RespuestaDeCierre,
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
@@ -145,6 +165,14 @@ import type { ModeloDeLenguaje } from "../ia/modelo";
 import type { TramiteOfrecido } from "../ia/prompt";
 import { ahoraIso, hoyEnPanama } from "../db/momentos";
 import { normalizarCotizacion } from "./dominio";
+/**
+ * T-13: cada fila de la apertura se normaliza con el mismo normalizador que
+ * el alta a mano de un proceso. Es un tipo y una función pura —ni D1 ni
+ * HTTP—, así que la flecha no le da a este módulo ninguna dependencia nueva
+ * sobre el de procesos más allá de la que ya tenía su repositorio.
+ */
+import type { Normalizacion } from "../procesos/dominio";
+import { normalizarProceso } from "../procesos/dominio";
 import type { RegimenDeImpuesto } from "./lineas";
 import {
   normalizarLinea,
@@ -153,6 +181,7 @@ import {
 } from "./lineas";
 import { normalizarModulo, normalizarOrdenDeModulos } from "./modulos";
 import type {
+  ResultadoDeApertura,
   ResultadoDeCierre,
   ResultadoDeDocumento,
   ResultadoDeDuplicacion,
@@ -349,17 +378,15 @@ function noEsEmitida(estado: CotizacionNoEsEmitida["estado"]): Response {
  * dirección propia. Lo que cambió es la cotización que ya existía, y es la
  * que vuelve, con su estado nuevo adentro.
  *
- * ## Y sigue siendo 200 aunque ganar abra procesos (T-7)
+ * ## Y desde T-13 no hay nada más que discutir
  *
- * Es la pregunta que esta tarea obligó a contestar: ganar **sí** crea filas
- * nuevas, y un 201 llevaría `location`. No corresponde, por dos razones. La
- * primera es que `location` es una dirección y acá no hay una sino N, que
- * es cero en el caso corriente de una cotización de puras consultas. La
- * segunda es la que decide: lo que la petición pidió fue cerrar un
- * desenlace, y los procesos son su consecuencia, no lo pedido. El recurso
- * que la respuesta describe es la cotización.
- *
- * Cuántos se abrieron viaja en el cuerpo, siempre, incluso en cero.
+ * T-7 tuvo que defender el 200 contra un 201, porque ganar **sí** creaba
+ * filas nuevas: abría un proceso por cada línea con trámite. La defensa era
+ * que `location` es una dirección y había N, y que lo pedido era el
+ * desenlace y no los trámites. T-13 le sacó el sujeto a la pregunta: ganar
+ * no crea ninguna fila fuera de la cotización, así que el 200 no tiene
+ * contra qué defenderse. Lo que crea filas es `POST /{id}/procesos`, que es
+ * la que contesta 201.
  */
 function respuestaDeCierre(resultado: ResultadoDeCierre): Response {
   if (resultado.estado === "no_encontrado") return noEncontrado();
@@ -367,11 +394,143 @@ function respuestaDeCierre(resultado: ResultadoDeCierre): Response {
     return noEsEmitida(resultado.actual);
   }
 
-  const cuerpo: RespuestaDeCierre = {
-    cotizacion: resultado.cotizacion,
-    procesosAbiertos: resultado.procesosAbiertos,
-  };
+  const cuerpo: RespuestaDeCierre = { cotizacion: resultado.cotizacion };
   return json(cuerpo);
+}
+
+/**
+ * El 409 de abrir procesos sobre algo que no está ganado (T-13).
+ *
+ * Es la tercera función de la familia y no una `noEsBorrador` parametrizada,
+ * por el mismo argumento que ya separaba a las dos primeras: el motivo que
+ * viaja es distinto porque lo que la pantalla tiene que poder decir es
+ * distinto. Acá además la frase es la más específica de las tres —«el
+ * cliente todavía no aceptó esto»— y aplastarla contra las otras dos
+ * mandaría a emitir algo que ya salió.
+ */
+function noEsGanada(estado: CotizacionNoEsGanada["estado"]): Response {
+  const cuerpo: CotizacionNoEsGanada = {
+    error: "cotizacion_no_es_ganada",
+    estado,
+  };
+  return json(cuerpo, { status: 409 });
+}
+
+/**
+ * La respuesta de abrir procesos desde una cotización ganada (T-13).
+ *
+ * **201 y sin `location`**, y las dos mitades se decidieron por separado:
+ *
+ *  - **201** porque acá sí nacieron recursos con dirección propia, al revés
+ *    que en los tres verbos del ciclo de vida. Es lo mismo que contesta el
+ *    alta de un proceso por su propia puerta, y tiene que contestar lo
+ *    mismo: es el mismo hecho entrando por otro lado.
+ *  - **Sin `location`** porque esa cabecera lleva **una** dirección y acá
+ *    nacen N. Las N van en el cuerpo, que es donde caben. Es exactamente la
+ *    razón que T-7 adujo para no poner un 201 en ganar; lo que cambió es
+ *    que ahora el recurso pedido sí son los procesos, así que el código
+ *    sube y lo que se cae es la cabecera.
+ */
+function respuestaDeApertura(resultado: ResultadoDeApertura): Response {
+  if (resultado.estado === "no_encontrado") return noEncontrado();
+  if (resultado.estado === "no_es_ganada") return noEsGanada(resultado.actual);
+  if (resultado.estado === "invalido") return invalido(resultado.fallas);
+
+  const cuerpo: RespuestaDeApertura = { abiertos: resultado.abiertos };
+  return json(cuerpo, { status: 201, headers: SIN_CACHE });
+}
+
+/**
+ * El cuerpo de `POST /api/cotizaciones/{id}/procesos`, normalizado.
+ *
+ * ## Por qué vive acá y no en `dominio.ts`
+ *
+ * Los normalizadores puros de este módulo están repartidos por entidad:
+ * `dominio.ts` sabe qué es una cotización aceptable, `lineas.ts` qué es una
+ * línea, `modulos.ts` qué es un módulo. Esto no normaliza ninguna de las
+ * tres: normaliza el **envoltorio** de una ruta —que venga un objeto, que
+ * traiga una lista, que la lista no esté vacía— y delega cada fila en el
+ * normalizador que ya sabe qué necesita un proceso para nacer. Lo que queda
+ * acá es exactamente lo que es de esta dirección y de ninguna entidad.
+ *
+ * ## Cada fila la normaliza `normalizarProceso`, la del alta a mano
+ *
+ * Y se le inyecta el `clienteId` de la cotización. Dos normalizadores para
+ * «qué necesita un proceso para nacer» serían dos definiciones de «el
+ * título es obligatorio» que se separan en el primer cambio; el precio de
+ * reusar el del alta es que pide un cliente, y el cliente lo tenemos: es el
+ * de la cotización, que es I-3. El repositorio lo vuelve a poner por su
+ * cuenta al escribir, así que el que se inyecta acá no llega a la base — lo
+ * único que hace es dejar que la función de allá corra entera.
+ *
+ * Las fallas de cada fila salen con la **posición delante del campo**, que
+ * es lo que `reemplazarEtapas` ya hace con `etapa-{i}`: con la lista entera
+ * en pantalla, «falta el título» sin decir en cuál de las tres filas obliga
+ * a mirarlas una por una.
+ */
+function normalizarApertura(
+  cuerpo: unknown,
+  clienteId: string,
+): Normalizacion<DatosDeProcesoPorAbrir[]> {
+  const crudo = cuerpo as { procesos?: unknown } | null;
+
+  if (
+    typeof crudo !== "object" ||
+    crudo === null ||
+    Array.isArray(crudo) ||
+    !Array.isArray(crudo.procesos)
+  ) {
+    return { ok: false, fallas: [{ campo: "procesos", motivo: "tipo_invalido" }] };
+  }
+
+  const filas: unknown[] = crudo.procesos;
+
+  // La lista vacía se rechaza en vez de contestar 201 sin que exista nada
+  // nuevo. El argumento largo está en `sin_procesos_que_abrir`, en el
+  // contrato.
+  if (filas.length === 0) {
+    return {
+      ok: false,
+      fallas: [{ campo: "procesos", motivo: "sin_procesos_que_abrir" }],
+    };
+  }
+
+  const fallas: FallaDeValidacion[] = [];
+  const datos: DatosDeProcesoPorAbrir[] = [];
+
+  filas.forEach((fila, indice) => {
+    const esObjeto =
+      typeof fila === "object" && fila !== null && !Array.isArray(fila);
+
+    // Una fila que no es un objeto se rechaza acá y no se le inyecta nada:
+    // esparcir un número o una cadena produciría un objeto con las claves
+    // equivocadas, y la respuesta diría «falta el título» de algo que no es
+    // un proceso ni se le parece.
+    if (!esObjeto) {
+      fallas.push({ campo: `proceso-${String(indice)}`, motivo: "tipo_invalido" });
+      return;
+    }
+
+    const normalizado = normalizarProceso({ ...fila, clienteId });
+
+    if (!normalizado.ok) {
+      for (const falla of normalizado.fallas) {
+        fallas.push({
+          ...falla,
+          campo: `proceso-${String(indice)}.${falla.campo}`,
+        });
+      }
+      return;
+    }
+
+    datos.push({
+      tipoProcesoId: normalizado.datos.tipoProcesoId,
+      titulo: normalizado.datos.titulo,
+      responsableId: normalizado.datos.responsableId,
+    });
+  });
+
+  return fallas.length > 0 ? { ok: false, fallas } : { ok: true, datos };
 }
 
 /**
@@ -913,9 +1072,8 @@ export async function rutasDeCotizaciones(
 
   // Cuatro segmentos con `modulos` o `lineas` al final es la colección;
   // cinco es una fila concreta. La bitácora es el otro cuarto segmento y la
-  // atiende su propio módulo, que corre antes. Lo que no esté acá —la
-  // salida imprimible de T-6, los procesos de T-7— tiene que caer en el 404
-  // general y no acá.
+  // atiende su propio módulo, que corre antes. Lo que no esté acá tiene que
+  // caer en el 404 general y no acá.
   const esDeModulos = segmentos[3] === "modulos";
   const coleccionDeModulos = segmentos.length === 4 && esDeModulos;
   const unModulo = segmentos.length === 5 && esDeModulos;
@@ -929,6 +1087,13 @@ export async function rutasDeCotizaciones(
   // `/emitir/{algo}`, y por eso la longitud se comprueba acá y no adentro
   // de la rama.
   const esDocumento = segmentos.length === 4 && segmentos[3] === "documento";
+
+  // Los procesos de una cotización ganada (T-13). Tampoco es una colección
+  // con filas direccionables: `/procesos/{algo}` cae en el 404 general,
+  // porque la dirección de un proceso es `/api/procesos/{id}` y no ésta.
+  // Dos direcciones para el mismo recurso serían dos respuestas el día que
+  // una cambie.
+  const esDeProcesos = segmentos.length === 4 && segmentos[3] === "procesos";
 
   // Los cuatro verbos del ciclo de vida son los cuartos segmentos que no
   // nombran una colección: no hay `/emitir/{algo}` ni `/ganar/{algo}`, así
@@ -985,6 +1150,42 @@ export async function rutasDeCotizaciones(
 
     return respuestaDeDocumento(
       await servicio.obtenerDocumento(tenantId, cotizacionId),
+    );
+  }
+
+  if (esDeProcesos) {
+    // El 405 va **antes** de mirar si la cotización existe, igual que en
+    // todas las subrutas de este archivo: un método que esta dirección no
+    // admite no es una pregunta sobre ninguna cotización, así que
+    // contestarlo no dice si existe.
+    //
+    // `POST` y nada más. **No hay `GET`**, y el argumento está en la
+    // cabecera: la propuesta se deriva en la pantalla y la lista de lo que
+    // ya se abrió la contesta `GET /api/procesos`.
+    if (request.method !== "POST") return metodoNoPermitido("POST");
+
+    const cotizacionId = decodificar(segmentos[2]);
+    if (cotizacionId === null) return noEncontrado();
+
+    const leido = await leerCuerpo(request);
+    if (!leido.ok) return leido.respuesta;
+
+    // **El 404 y el 409 van antes del 422, y por eso la cotización se lee
+    // acá.** Un cuerpo mal armado contra una cotización ajena contestaría
+    // 422, y eso bastaría para saber que ese identificador existe (I-8);
+    // contra una que todavía no se ganó mandaría a corregir una lista que
+    // no va a entrar igual. El puerto vuelve a comprobar las dos cosas —se
+    // niega aunque esta lectura no existiera—; lo que se decide acá es el
+    // orden, que es lo único que esta capa decide.
+    const actual = await servicio.obtener(tenantId, cotizacionId);
+    if (actual === null) return noEncontrado();
+    if (actual.estado !== "ganada") return noEsGanada(actual.estado);
+
+    const normalizado = normalizarApertura(leido.valor, actual.clienteId);
+    if (!normalizado.ok) return invalido(normalizado.fallas);
+
+    return respuestaDeApertura(
+      await servicio.abrirProcesos(tenantId, cotizacionId, normalizado.datos),
     );
   }
 

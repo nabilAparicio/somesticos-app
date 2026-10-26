@@ -166,23 +166,34 @@ export interface ProcesoPorNacer {
   readonly sentencias: readonly Sentencia[];
 }
 
-/**
- * La condición bajo la cual la apertura entra, evaluada **en el momento de
- * escribir** y no antes.
+/*
+ * Acá vivía `CondicionDeApertura`, la precondición que T-7 le colgaba a cada
+ * `INSERT` de apertura para que la petición que perdía la carrera de ganar
+ * no escribiera sus procesos igual. **T-13 la dejó sin un solo llamador y
+ * por eso se fue**, y la medición vale la pena dejarla escrita porque la
+ * conclusión no es obvia:
  *
- * Existe por la carrera de T-7. Quien abre procesos dentro de la misma
- * transacción que otra escritura necesita que las aperturas compartan su
- * precondición: si la otra petición ganó la carrera en el medio, acá no
- * tiene que entrar nada. Una comprobación hecha antes del `batch` no sirve,
- * porque la ventana está justo ahí.
+ *  - Ganar ya no abre nada, así que aquella carrera —dos peticiones que
+ *    leyeron `emitida` a la vez y las dos escribían trámites— no existe.
+ *    Lo único que ganar escribe ahora es su `UPDATE`, que trae su propia
+ *    cláusula `AND estado = 'emitida'` y su propia prueba.
+ *  - La ruta nueva —abrir procesos sobre una ganada— **no la necesita, y
+ *    ponérsela habría sido una guarda que ninguna prueba puede matar.** Su
+ *    precondición sería `estado = 'ganada'`, y `ganada` es terminal: el
+ *    disparador `cotizacion_el_estado_sigue_el_ciclo_de_vida` de `0007`
+ *    enumera las transiciones en positivo y ninguna sale de ahí. O sea que
+ *    no hay mutación que pueda volverla falsa entre leer y escribir, y una
+ *    condición que nadie puede falsificar no distingue a nadie.
+ *  - Dos peticiones que abren procesos a la vez sobre la misma ganada
+ *    **entran las dos, y eso es correcto**: abrir no es una transición, es
+ *    aditivo. Dos personas que piden cada una su expediente tienen que
+ *    terminar con dos, que es exactamente lo que el bufete pidió al querer
+ *    poder abrir otro meses después.
  *
- * `sql` es el cuerpo de un `EXISTS`: un `SELECT` que devuelve al menos una
- * fila cuando la apertura corresponde.
+ * Con la condición fuera, las sentencias volvieron a ser `INSERT … VALUES`:
+ * la forma `INSERT … SELECT` existía nada más que para poder colgarles un
+ * `WHERE EXISTS`.
  */
-export interface CondicionDeApertura {
-  readonly sql: string;
-  readonly parametros: readonly Vinculable[];
-}
 
 /**
  * Las sentencias que abren uno o varios procesos, con su plan ya sembrado.
@@ -208,25 +219,17 @@ export interface CondicionDeApertura {
  * `alcanzada_en` queda nulo en todas: un proceso recién abierto no tiene
  * nada cumplido, ni siquiera su primer paso.
  *
- * ## Por qué las sentencias son `INSERT … SELECT` y no `INSERT … VALUES`
+ * ## Las sentencias no llevan condición, y antes sí
  *
- * Para que `soloSi` pueda existir. `VALUES` no admite `WHERE`, así que una
- * apertura condicionada obligaría a dos formas de la misma sentencia, y dos
- * formas son dos sitios donde arreglar el mismo defecto. `SELECT ?, ?, …`
- * sin `WHERE` es exactamente equivalente a `VALUES (?, ?, …)` —medido—, así
- * que la forma es una sola y la condición se le agrega o no.
- *
- * La condición va en **todas** las sentencias y no sólo en la del proceso.
- * Si fuera sólo en la primera, al no entrar el proceso las etapas quedarían
- * colgando de un padre inexistente y la llave foránea abortaría la
- * transacción entera: quien perdió la carrera recibiría un 500 en vez de la
- * respuesta que le corresponde.
+ * Hasta T-13 esta función aceptaba un `soloSi` y escribía `INSERT … SELECT …
+ * WHERE EXISTS (…)` para poder colgárselo. El bloque de arriba cuenta por
+ * qué se fue y qué se midió para saberlo. Sin él, `VALUES` dice lo mismo con
+ * menos letras y sin prometer una condición que ya no hay dónde poner.
  */
 export async function aperturasDeProcesos(
   lectura: LecturaD1,
   tenantId: string,
   aperturas: readonly AperturaDeProceso[],
-  soloSi?: CondicionDeApertura,
 ): Promise<ProcesoPorNacer[]> {
   if (aperturas.length === 0) return [];
 
@@ -252,22 +255,18 @@ export async function aperturasDeProcesos(
 
   const abierto = ahoraIso();
 
-  /** `INSERT INTO tabla (cols) SELECT ?, … [WHERE EXISTS (…)]`. */
+  /** `INSERT INTO tabla (cols) VALUES (?, …)`. */
   function entra(
     tabla: string,
     columnas: readonly string[],
     valores: readonly Vinculable[],
   ): Sentencia {
-    const seleccion =
-      `INSERT INTO ${tabla} (${columnas.join(", ")})` +
-      ` SELECT ${columnas.map(() => "?").join(", ")}`;
-
-    return soloSi === undefined
-      ? { sql: seleccion, parametros: valores }
-      : {
-          sql: `${seleccion} WHERE EXISTS (${soloSi.sql})`,
-          parametros: [...valores, ...soloSi.parametros],
-        };
+    return {
+      sql:
+        `INSERT INTO ${tabla} (${columnas.join(", ")})` +
+        ` VALUES (${columnas.map(() => "?").join(", ")})`,
+      parametros: valores,
+    };
   }
 
   return aperturas.map((apertura) => {
@@ -316,6 +315,80 @@ export async function aperturasDeProcesos(
       ],
     };
   });
+}
+
+/**
+ * Que la fila exista **en este tenant**. Una fila de otro tenant es, desde
+ * acá, una fila que no existe.
+ *
+ * Está al nivel del módulo y no adentro del adaptador porque desde T-13 hay
+ * dos puertas que abren procesos —el alta a mano y la apertura desde una
+ * cotización ganada— y las dos tienen que preguntar lo mismo. Toma una
+ * `LecturaD1` y no la base entera por el mismo motivo que
+ * `aperturasDeProcesos`: lo único que hace es consultar.
+ */
+async function existeEnElTenant(
+  lectura: LecturaD1,
+  tabla: "cliente" | "tipo_proceso" | "usuario",
+  tenantId: string,
+  id: string,
+): Promise<boolean> {
+  const fila = await lectura
+    .prepare(`SELECT id FROM ${tabla} WHERE tenant_id = ? AND id = ?`)
+    .bind(tenantId, id)
+    .first<{ id: string }>();
+
+  return fila !== null;
+}
+
+/**
+ * Las dos llaves que **toda** apertura recibe de afuera: el tipo de proceso
+ * y, si vino, el responsable.
+ *
+ * Se exporta porque el alta a mano (`crear`, acá mismo) y la apertura desde
+ * una cotización ganada (`abrirProcesos`, en `worker/cotizaciones/
+ * repositorio.ts`) validan exactamente lo mismo, y dos copias serían dos
+ * criterios de «qué tipo de proceso es válido» que se separan en el primer
+ * cambio. El cliente **no** está acá porque las dos puertas lo consiguen de
+ * lugares distintos: el alta lo recibe del cuerpo y lo tiene que validar; la
+ * apertura lo saca de la cotización, que es I-3 y no se negocia desde
+ * afuera.
+ *
+ * No se exige `activo = 1` en el tipo de proceso, por la misma razón que
+ * T-5 no lo exige del tipo de cliente y T-6 no lo exige del área: qué se
+ * puede *elegir* lo decide la pantalla; qué es *válido* lo decide esto. Si
+ * se exigiera, dar de baja un tipo rompería la apertura de un proceso que el
+ * bufete sí quiere abrir con él —y es justo el caso que destapó T-13, donde
+ * el catálogo de entonces no tenía el trámite que hoy hace falta—.
+ *
+ * Los `campo` que devuelve son los del alta —`tipoProcesoId` y
+ * `responsableId`—. Quien valida una lista los prefija con la posición de la
+ * fila, que es lo que `reemplazarEtapas` ya hace con `etapa-{i}`.
+ */
+export async function fallasDeLasLlavesDelProceso(
+  lectura: LecturaD1,
+  tenantId: string,
+  datos: { readonly tipoProcesoId: string; readonly responsableId: string | null },
+): Promise<FallaDeValidacion[]> {
+  const fallas: FallaDeValidacion[] = [];
+
+  if (!(await existeEnElTenant(lectura, "tipo_proceso", tenantId, datos.tipoProcesoId))) {
+    fallas.push({
+      campo: "tipoProcesoId",
+      motivo: "tipo_proceso_desconocido",
+    });
+  }
+  if (
+    datos.responsableId !== null &&
+    !(await existeEnElTenant(lectura, "usuario", tenantId, datos.responsableId))
+  ) {
+    fallas.push({
+      campo: "responsableId",
+      motivo: "responsable_desconocido",
+    });
+  }
+
+  return fallas;
 }
 
 /**
@@ -634,30 +707,18 @@ export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
   }
 
   /**
-   * Que la fila exista **en este tenant**. Una fila de otro tenant es, desde
-   * acá, una fila que no existe.
-   */
-  async function existe(
-    tabla: "cliente" | "tipo_proceso" | "usuario",
-    tenantId: string,
-    id: string,
-  ): Promise<boolean> {
-    const fila = await db
-      .prepare(`SELECT id FROM ${tabla} WHERE tenant_id = ? AND id = ?`)
-      .bind(tenantId, id)
-      .first<{ id: string }>();
-
-    return fila !== null;
-  }
-
-  /**
    * Las tres llaves que el alta recibe de afuera.
    *
-   * No se exige `activo = 1` en el tipo de proceso, por la misma razón que
-   * T-5 no lo exige del tipo de cliente y T-6 no lo exige del área: qué se
-   * puede *elegir* lo decide la pantalla; qué es *válido* lo decide esto. Si
-   * se exigiera, dar de baja un tipo rompería el alta de un proceso que el
-   * bufete sí quiere abrir con él.
+   * Son **la del cliente más las dos compartidas**: el cliente lo valida
+   * esta puerta porque es la única que lo recibe del cuerpo, y el tipo y el
+   * responsable salen de `fallasDeLasLlavesDelProceso`, que es la misma
+   * función que usa la apertura desde una cotización ganada. El argumento de
+   * por qué no se exige `activo = 1` vive allá, al lado del código que lo
+   * decide.
+   *
+   * El orden de las fallas se conserva —cliente, tipo, responsable— porque
+   * es el orden de los campos del formulario, y una lista de problemas que
+   * no sigue el orden en que se leen obliga a buscarlos.
    */
   async function validarLlaves(
     tenantId: string,
@@ -665,24 +726,11 @@ export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
   ): Promise<FallaDeValidacion[]> {
     const fallas: FallaDeValidacion[] = [];
 
-    if (!(await existe("cliente", tenantId, datos.clienteId))) {
+    if (!(await existeEnElTenant(db, "cliente", tenantId, datos.clienteId))) {
       fallas.push({ campo: "clienteId", motivo: "cliente_desconocido" });
     }
-    if (!(await existe("tipo_proceso", tenantId, datos.tipoProcesoId))) {
-      fallas.push({
-        campo: "tipoProcesoId",
-        motivo: "tipo_proceso_desconocido",
-      });
-    }
-    if (
-      datos.responsableId !== null &&
-      !(await existe("usuario", tenantId, datos.responsableId))
-    ) {
-      fallas.push({
-        campo: "responsableId",
-        motivo: "responsable_desconocido",
-      });
-    }
+
+    fallas.push(...(await fallasDeLasLlavesDelProceso(db, tenantId, datos)));
 
     return fallas;
   }

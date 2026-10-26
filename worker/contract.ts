@@ -161,6 +161,18 @@ export type MotivoDeFalla =
    * próximo proceso nacería sin pasos sin que nadie lo pidiera.
    */
   | "plan_vacio"
+  /* --- Abrir procesos desde una cotización ganada (tajada 2, T-13) --- */
+  /**
+   * La lista de procesos por abrir llegó vacía.
+   *
+   * **No es un no-op silencioso, y por eso se rechaza.** Abrir cero procesos
+   * no escribe nada y sin embargo dejaría una entrada de bitácora por cada
+   * proceso que no nació —o ninguna, que es peor: una petición de escritura
+   * contestada con 201 sin que exista nada nuevo—. El sitio de «no abrir
+   * ninguno» es no apretar el botón, y la pantalla lo apaga; esto es la red
+   * de abajo para el cuerpo armado a mano.
+   */
+  | "sin_procesos_que_abrir"
   /* --- Notas (T-8) --- */
   /**
    * Una nota sin texto no es una nota. Es lo único que una persona escribe
@@ -1292,33 +1304,109 @@ export interface RespuestaDeCotizaciones {
 }
 
 /**
- * La respuesta de ganar y de perder (T-5, ampliada por T-7).
+ * La respuesta de ganar y de perder (T-5, ampliada por T-7, vaciada por
+ * T-13).
  *
- * Es `RespuestaDeCotizacion` con un dato más, y es un tipo propio en vez de
- * un campo opcional en aquél porque el dato no es opcional acá: siempre
- * viaja, incluso cuando vale cero.
+ * **Vuelve a ser `RespuestaDeCotizacion` y por un rato dejó de serlo.** T-7
+ * le agregó `procesosAbiertos`, el conteo de los trámites que el desenlace
+ * abría, con un argumento que era correcto mientras ganar abriera algo: que
+ * «no abrió ninguno» y «no sé cuántos abrió» se ven igual desde una pantalla
+ * si el campo falta. T-13 le sacó el sujeto a esa frase — **ganar ya no abre
+ * nada**, porque el reparto de líneas a expedientes es del bufete y no del
+ * sistema, y se decide después, en `POST /api/cotizaciones/{id}/procesos`.
+ * Un conteo que valdría cero siempre no es información: es un campo que
+ * promete una consecuencia que esta ruta ya no tiene.
  *
- * ## Por qué el cero se dice y no se calla
- *
- * Una cotización ganada donde **ninguna** línea lleva tipo de proceso no
- * abre ningún trámite, y eso es legítimo y corriente: una consulta, un
- * timbre y una gestión de mensajería son cobros que no abren expediente.
- * Pero «no abrió ninguno» y «no sé cuántos abrió» se ven igual desde una
- * pantalla si el campo falta, y la primera es información y la segunda es
- * un hueco. Con el número siempre presente, la confirmación puede decir «se
- * abrieron dos procesos» o «no se abrió ningún proceso» sin adivinar.
- *
- * ## Y por qué viaja también en perder
- *
- * Porque vale cero **por construcción** y no por casualidad: perder no es
- * una puerta hacia `proceso`. Un tipo distinto para cada verbo obligaría a
- * la ruta a repetir la misma rama con otro nombre, que es el mismo
- * argumento por el que `cerrar` es una función y no dos.
+ * Sigue siendo un tipo propio y no un alias de `RespuestaDeCotizacion`
+ * porque las dos rutas contestan preguntas distintas y el día que el
+ * desenlace vuelva a traer algo suyo —la propuesta ya armada, por ejemplo—
+ * el sitio donde ponerlo es éste y no el de leer una cotización.
  */
 export interface RespuestaDeCierre {
   cotizacion: Cotizacion;
-  /** Cuántos procesos abrió este desenlace. Cero es una respuesta. */
-  procesosAbiertos: number;
+}
+
+/**
+ * Un proceso por abrir desde una cotización ganada (T-13).
+ *
+ * **Son tres campos y no cuatro, y el que falta es la decisión.**
+ * `clienteId` no se lee del cuerpo: sale de la cotización, que es I-3 —el
+ * proceso nacido de una cotización comparte cliente con ella— y lo sostiene
+ * un disparador de `migrations/0011_el_proceso_cuelga_de_la_cotizacion.sql`.
+ * Aceptarlo acá sería ofrecer un camino para pedir un proceso de otro
+ * cliente y que la base lo abortara con un 500 en vez de que la API no
+ * tenga dónde recibirlo.
+ *
+ * `origen` tampoco viaja, por el mismo criterio con el que `DatosDeProceso`
+ * no lo lleva: lo deriva quien escribe la fila, de si hay cotización detrás
+ * o no. Un `origen` que llegara del cuerpo sería el camino para marcar como
+ * nacido de una cotización algo que no nació de ninguna.
+ *
+ * No es `Omit<DatosDeProceso, "clienteId">` aunque hoy coincidan campo por
+ * campo: el día que el alta a mano gane un campo suyo, ese campo no tiene
+ * por qué entrar por esta puerta, y un `Omit` lo metería sin que nadie lo
+ * decida.
+ */
+export interface DatosDeProcesoPorAbrir {
+  tipoProcesoId: string;
+  titulo: string;
+  responsableId: string | null;
+}
+
+/**
+ * El cuerpo de `POST /api/cotizaciones/{id}/procesos` (T-13).
+ *
+ * Es un objeto con una lista adentro y **no la lista pelada**, por lo mismo
+ * que el reordenamiento de módulos manda `{ orden: [...] }`: un JSON de
+ * nivel superior que es un arreglo es el que después nadie sabe versionar.
+ *
+ * La lista va **en el orden en que el bufete la confirmó**, y los procesos
+ * nacen en ese orden. No es cosmética: es el orden en que la pantalla los
+ * va a listar debajo de la cotización, y el que alguien reconoce tres meses
+ * después.
+ */
+export interface DatosDeApertura {
+  procesos: DatosDeProcesoPorAbrir[];
+}
+
+/**
+ * Lo que contesta abrir procesos desde una cotización ganada (T-13).
+ *
+ * **Son identificadores y no procesos enteros, y la lista corta es la
+ * decisión.** La pregunta «¿qué procesos tiene esta cotización?» se contesta
+ * en un solo lugar —las filas de `proceso` que apuntan a ella, que
+ * `GET /api/procesos` entrega con su cotización de origen resuelta— y una
+ * respuesta con los procesos completos sería el segundo. La pantalla, al
+ * volver de acá, relee esa lista; esto es lo que un 201 le debe a quien
+ * pidió, no el camino por el que la pantalla se entera.
+ *
+ * No hay `location`, y la ausencia tiene el mismo motivo que en ganar:
+ * `location` es **una** dirección y acá nacen N. Por eso las direcciones van
+ * en el cuerpo, que es donde caben todas.
+ */
+export interface RespuestaDeApertura {
+  /** Los procesos recién nacidos, en el orden en que se pidieron. */
+  abiertos: string[];
+}
+
+/**
+ * El 409 de abrir procesos sobre una cotización que no se ganó (T-13).
+ *
+ * Es el tercero de la familia, junto a `CotizacionNoEsBorrador` y
+ * `CotizacionNoEsEmitida`, y es un tipo propio por la misma razón que
+ * aquellos dos son dos: lo que la pantalla tiene que poder decir es
+ * distinto. «Todavía no se mandó», «ya se cerró» y «el cliente todavía no
+ * aceptó» mandan a hacer tres cosas diferentes, y un motivo genérico
+ * obligaría a reconstruir cuál de las tres fue comparando estados.
+ *
+ * Lleva `estado` por lo mismo que los otros dos: «no está ganada» sin decir
+ * en qué quedó obliga a recargar para enterarse, y lo que la persona
+ * necesita saber es si falta emitirla, si falta el sí del cliente, o si ya
+ * se perdió.
+ */
+export interface CotizacionNoEsGanada {
+  error: "cotizacion_no_es_ganada";
+  estado: EstadoDeCotizacion;
 }
 
 /**

@@ -870,6 +870,17 @@ function servicioConIntruso(intruso: () => Promise<unknown>) {
   );
 }
 
+/** Cuántos procesos cuelgan de una cotización, leído de la tabla. */
+async function cuantosProcesos(cotizacionId: string): Promise<number> {
+  const fila = await env.DB.prepare(
+    "SELECT count(*) AS n FROM proceso WHERE cotizacion_id = ?",
+  )
+    .bind(cotizacionId)
+    .first<{ n: number }>();
+
+  return fila?.n ?? 0;
+}
+
 describe("perder la carrera contra el otro desenlace", () => {
   it("ganar una que se perdió en el medio contesta 409 con el estado de verdad", async () => {
     // **Ésta es la prueba de la cláusula `AND estado = 'emitida'` del
@@ -896,42 +907,40 @@ describe("perder la carrera contra el otro desenlace", () => {
     expect((await filaDe(cotizacion.id))?.estado).toBe("perdida");
   });
 
-  it("la que pierde la carrera tampoco abre los procesos (T-7)", async () => {
-    // **Una premisa del plan de T-7 resultó falsa, y ésta es la prueba que
-    // la corrige.** El plan decía que T-7 no necesitaba idempotencia propia
-    // porque «la transición ya la garantiza». La transición garantiza que
-    // el **estado** se escribe una sola vez —lo prueba la hermana de
-    // arriba—, pero las aperturas no colgaban de ella: un `UPDATE` que
-    // cambia cero filas no es un error, así que la petición perdedora
-    // escribía sus procesos igual y la cotización terminaba con los
-    // trámites abiertos dos veces.
+  it("ganar no abre ningún proceso, ni ganando ni perdiendo la carrera", async () => {
+    // **Esta prueba cambió de objeto con T-13 y la de antes vale la pena
+    // contarla.** T-7 abría un proceso por cada línea con trámite dentro de
+    // la misma transacción que ganaba, y la petición que perdía la carrera
+    // escribía sus procesos igual —un `UPDATE` que cambia cero filas no es
+    // un error— así que la cotización terminaba con los trámites abiertos
+    // dos veces. Lo que lo cerraba era una precondición colgada de cada
+    // `INSERT`, y esta prueba era su asesino.
     //
-    // Lo que lo cierra es que cada `INSERT` de apertura lleve la misma
-    // precondición que el `UPDATE` —`estado = 'emitida'`— evaluada dentro
-    // de la transacción, y que las aperturas vayan **antes** del `UPDATE`,
-    // porque después la condición ya sería cierta por obra nuestra.
+    // T-13 le sacó el sujeto: **ganar no abre nada**, porque el reparto de
+    // líneas a expedientes es del bufete y se confirma después, en
+    // `POST /api/cotizaciones/{id}/procesos`. Con la apertura fuera, la
+    // precondición dejó de tener a quién proteger y se borró; lo que queda
+    // que medir es el hecho nuevo, y hay que medirlo en vez de suponerlo.
     //
-    // Medido quitando la condición: esta prueba muere con un proceso
-    // abierto de más. No es una guarda que ninguna prueba pueda matar.
-    const cotizacion = await emitirUnaCompleta();
+    // Se mide **en las dos ramas de la carrera**, que es lo que la vuelve
+    // una prueba y no una afirmación: la cotización tiene una línea con
+    // `tipo_proceso_id`, así que hasta `0010` la perdedora habría dejado un
+    // proceso y la ganadora otro.
+    const perdedora = await emitirUnaCompleta();
 
     const resultado = await servicioConIntruso(() =>
       env.DB.prepare("UPDATE cotizacion SET estado = 'ganada' WHERE id = ?")
-        .bind(cotizacion.id)
+        .bind(perdedora.id)
         .run(),
-    ).ganar(TENANT_UNICO_ID, cotizacion.id);
+    ).ganar(TENANT_UNICO_ID, perdedora.id);
 
     expect(resultado).toEqual({ estado: "no_es_emitida", actual: "ganada" });
+    expect(await cuantosProcesos(perdedora.id)).toBe(0);
 
-    // El desenlace que quedó es el del intruso, y los procesos que quedaron
-    // son los suyos: ninguno, porque el intruso escribió el estado a mano.
-    const abiertos = await env.DB.prepare(
-      "SELECT count(*) AS n FROM proceso p WHERE p.cotizacion_id = ?",
-    )
-      .bind(cotizacion.id)
-      .first<{ n: number }>();
-
-    expect(abiertos?.n).toBe(0);
+    // Y la que gana la carrera limpia tampoco abre nada.
+    const ganadora = await emitirUnaCompleta();
+    expect((await ganar(ganadora.id)).status).toBe(200);
+    expect(await cuantosProcesos(ganadora.id)).toBe(0);
   });
 
   it("el puerto se niega igual sin pasar por la ruta", async () => {

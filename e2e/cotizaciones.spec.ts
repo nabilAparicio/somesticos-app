@@ -37,6 +37,17 @@ const DUPLICADA_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e64";
 /** La que devuelve `POST /duplicar` sobre el borrador. */
 const COPIA_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e65";
 
+/**
+ * La emitida del escenario de T-13: la que se gana y todavía no abrió nada.
+ *
+ * Es una cotización aparte de `EMITIDA` y de `GANADA` a propósito. Aquellas
+ * dos sostienen las nueve medidas de §9 y la lista de procesos ya abiertos,
+ * y meterles el recorrido de la apertura les cambiaría lo que miden: la
+ * ganada tiene dos procesos en el banco, así que sobre ella el panel no
+ * siembra nada y el escenario no se podría recorrer.
+ */
+const POR_ABRIR_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e66";
+
 const CLIENTE_ID = "4a3f1d0e-0e2c-4c1f-9a6b-2d8a1c5e7b90";
 const OTRO_CLIENTE_ID = "4a3f1d0e-0e2c-4c1f-9a6b-2d8a1c5e7b91";
 
@@ -199,6 +210,21 @@ const COPIA = cotizacion({
   duplicadaDeId: BORRADOR_ID,
 });
 
+/* --- T-13 · la emitida que se va a ganar y después abrir ---------------- */
+
+const POR_ABRIR = cotizacion({
+  id: POR_ABRIR_ID,
+  codigo: "COT-2026-0013",
+  estado: "emitida",
+});
+
+/** La misma fila después de ganarse: lo que contesta `POST /ganar`. */
+const POR_ABRIR_GANADA = cotizacion({
+  id: POR_ABRIR_ID,
+  codigo: "COT-2026-0013",
+  estado: "ganada",
+});
+
 /* --- Los módulos de prosa (T-2, unidad C2) ------------------------------- */
 
 const MODULO_UNO = "7a0f0b11-1111-4111-8111-000000000001";
@@ -297,6 +323,33 @@ const TIPOS_DE_PROCESO = [
     areaNombre: "Migración",
     nombre: "Permiso que ya no se tramita",
     descripcion: null,
+    activo: false,
+  },
+];
+
+/* --- T-13 · el equipo del bufete, para el desplegable de responsable ----- */
+
+/**
+ * Dos personas, y **una dada de baja**.
+ *
+ * La de baja es la medición: `responsablesSeleccionables` no la ofrece, y
+ * con las dos activas una pantalla que mostrara la lista cruda pasaría
+ * igual que una que filtra.
+ */
+const RESPONSABLE_ACTIVO = "Itzel Araúz";
+const RESPONSABLE_DE_BAJA = "Quien ya no está en el bufete";
+
+const EQUIPO = [
+  {
+    id: "3c0a0b11-1111-4111-8111-000000000001",
+    nombre: RESPONSABLE_ACTIVO,
+    email: "itzel@bufete.test",
+    activo: true,
+  },
+  {
+    id: "3c0a0b11-2222-4222-8222-000000000002",
+    nombre: RESPONSABLE_DE_BAJA,
+    email: "quien-se-fue@bufete.test",
     activo: false,
   },
 ];
@@ -497,6 +550,60 @@ const TOTALES_DE_LA_EMITIDA = {
   total: 320_050,
 };
 
+/**
+ * Las tres líneas del escenario de T-13: **dos con trámite y una sin él**.
+ *
+ * Es el ejemplo de la sociedad anónima del usuario, escrito como lo
+ * escribiría el abogado: constituir y registrar se cobran aparte porque se
+ * tarifan aparte, y para el bufete pueden ser un solo expediente.
+ *
+ * La tercera, sin `tipoProcesoId`, es la medición del filtro: con las tres
+ * llevando trámite, una propuesta que ignorara la columna y sembrara todo
+ * pasaría igual.
+ *
+ * Los conceptos son **distintos entre sí y ninguno es prefijo del otro**:
+ * `getByRole(name:)` compara por subcadena, así que con «Sociedad anónima»
+ * y «Sociedad anónima registrada» el botón de sacar una encontraría dos.
+ */
+const CONCEPTO_CONSTITUIR = "Constitución de la sociedad anónima";
+const CONCEPTO_REGISTRAR = "Inscripción en el Registro Público";
+
+const LINEAS_POR_ABRIR = [
+  {
+    id: "8b1f0c11-6666-4666-8666-000000000006",
+    clase: "honorario",
+    concepto: CONCEPTO_CONSTITUIR,
+    monto: 120_000,
+    tipoProcesoId: TRAMITE_VISA,
+    tipoProcesoNombre: "Visa de trabajo",
+    orden: 0,
+  },
+  {
+    id: "8b1f0c11-7777-4777-8777-000000000007",
+    clase: "honorario",
+    concepto: CONCEPTO_REGISTRAR,
+    monto: 80_000,
+    tipoProcesoId: TRAMITE_VISA,
+    tipoProcesoNombre: "Visa de trabajo",
+    orden: 1,
+  },
+  {
+    id: "8b1f0c11-8888-4888-8888-000000000008",
+    clase: "gasto_estimado",
+    concepto: "Timbres del Registro Público",
+    monto: 5_000,
+    tipoProcesoId: null,
+    tipoProcesoNombre: null,
+    orden: 2,
+  },
+];
+
+const TOTALES_POR_ABRIR = {
+  honorarios: 200_000,
+  gastosEstimados: 5_000,
+  total: 205_000,
+};
+
 const LINEAS_POR_COTIZACION: Record<
   string,
   { lineas: Record<string, unknown>[]; totales: Record<string, number> }
@@ -520,6 +627,7 @@ const LINEAS_POR_COTIZACION: Record<
     lineas: [],
     totales: { honorarios: 0, gastosEstimados: 0, total: 0 },
   },
+  [POR_ABRIR_ID]: { lineas: LINEAS_POR_ABRIR, totales: TOTALES_POR_ABRIR },
 };
 
 const MODULOS_POR_COTIZACION: Record<string, Record<string, unknown>[]> = {
@@ -527,6 +635,7 @@ const MODULOS_POR_COTIZACION: Record<string, Record<string, unknown>[]> = {
   [EMITIDA_ID]: MODULOS_DE_LA_EMITIDA,
   [GANADA_ID]: MODULOS_DE_LA_EMITIDA,
   [BORRADOR_VIEJO_ID]: [],
+  [POR_ABRIR_ID]: [],
 };
 
 const BITACORA = {
@@ -557,7 +666,7 @@ const COTIZACIONES = [BORRADOR, BORRADOR_VIEJO, EMITIDA];
  * ciclo de vida pasa por el listado. Dicho al revés: lo que este arreglo
  * separado protege es que una prueba de orden siga midiendo orden.
  */
-const DEL_CICLO = [GANADA, PERDIDA, DUPLICADA, COPIA];
+const DEL_CICLO = [GANADA, PERDIDA, DUPLICADA, COPIA, POR_ABRIR];
 
 function cuerpoDe(pathname: string): Record<string, unknown> | null {
   if (/^\/api\/cotizaciones\/[^/]+\/bitacora$/.test(pathname)) return BITACORA;
@@ -598,6 +707,13 @@ function cuerpoDe(pathname: string): Record<string, unknown> | null {
 
   if (pathname === "/api/cotizaciones") return { cotizaciones: COTIZACIONES };
   if (pathname === "/api/clientes") return { clientes: CLIENTES };
+
+  // T-13: el panel de apertura pide el equipo del bufete para el
+  // desplegable de responsable. No bloquea nada —un proceso se abre sin
+  // responsable— pero sin esta rama el banco contestaría 404 y el panel se
+  // dibujaría con un desplegable de una sola opción sin que eso lo decida
+  // nadie.
+  if (pathname === "/api/usuarios") return { usuarios: EQUIPO };
 
   // T-15: el detalle de una ganada lee el listado entero de procesos y se
   // queda con los suyos. Es una lectura más de una pantalla que ya hace
@@ -2782,6 +2898,9 @@ test.describe("qué abrió una cotización ganada", () => {
     // `.count()` y no `toHaveCount(0)`: una aserción que reintenta no puede
     // demostrar un «nunca».
     expect(await page.locator(".procesos-abiertos").count()).toBe(0);
+    // Y el panel de apertura tampoco: los dos cuelgan de la misma
+    // condición, y afirmar uno solo dejaría al otro sin asesino.
+    expect(await page.locator(".apertura").count()).toBe(0);
   });
 
   test("la perdida tampoco: perder no es una puerta hacia proceso", async ({
@@ -2798,5 +2917,289 @@ test.describe("qué abrió una cotización ganada", () => {
     // esta misma cotización perdida. Un bloque colgado del simple «tiene
     // procesos» en vez de «está ganada» lo dibujaría acá.
     expect(await page.locator(".procesos-abiertos").count()).toBe(0);
+    expect(await page.locator(".apertura").count()).toBe(0);
+  });
+
+  test("la ganada que ya abrió no vuelve a proponer: el panel arranca vacío", async ({
+    page,
+  }) => {
+    // La otra mitad de los dos estados del panel. El banco le da a esta
+    // ganada dos procesos y una línea con trámite, así que una siembra que
+    // no mirara los procesos abiertos ofrecería acá una fila que ya existe
+    // — que es el ruido que invita a abrir dos veces lo mismo.
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${GANADA_ID}`);
+
+    await expect(
+      page.getByRole("heading", { name: "Abrir procesos" }),
+    ).toBeVisible();
+    await expect(page.getByText("ya abrió los suyos")).toBeVisible();
+
+    // Se espera a que el panel esté dibujado —el botón de agregar lo
+    // prueba— antes de contar el cero de filas.
+    await expect(
+      page.getByRole("button", { name: "Agregar otro proceso" }),
+    ).toBeVisible();
+    expect(await page.locator(".apertura__fila").count()).toBe(0);
+  });
+});
+
+/* ==========================================================================
+   T-13 · De cotización ganada a procesos, con el bufete decidiendo
+
+   Es **el escenario de la sociedad anónima del usuario**, recorrido entero:
+
+   > «Por ejemplo crear una sociedad anónima puede ser sólo crearla, o
+   > crearla y registrarla: desde el sistema serían 2 procesos, pero para el
+   > bufete es lo mismo, es un solo proceso que luego tiene un paso extra.»
+
+   El sistema propone dos —una por cada línea con trámite—, el bufete saca
+   una, y nace exactamente la que quedó. Lo que sólo se puede comprobar acá
+   es el **recorrido**: que ganar deje la propuesta a la vista sin recargar,
+   que los controles de cada fila existan y respondan, que sacar una no
+   toque a la otra, y que lo que se manda sea lo que quedó en pantalla.
+
+   La derivación y los textos ya están probados como funciones en
+   `test/ciclo-ui.spec.ts`; los cuatro rechazos de la ruta, en
+   `test/apertura-api.spec.ts`. Ninguna de las dos puede ver el cableado.
+   ========================================================================== */
+
+test.describe("abrir los procesos de una cotización recién ganada", () => {
+  test("se propone una por línea con trámite, se saca una, y nace la que quedó", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    /*
+     * El banco guarda lo que la pantalla manda, y la lista de procesos se
+     * arma **de eso**. Es lo que vuelve a la prueba capaz de fallar: un
+     * banco que devolviera siempre los mismos dos procesos no distinguiría
+     * una pantalla que manda lo que quedó en la lista de una que manda la
+     * propuesta entera.
+     */
+    const pedidos: { tipoProcesoId: string; titulo: string }[] = [];
+    let ganada = false;
+
+    await page.route(
+      (url) => url.pathname.startsWith(`/api/cotizaciones/${POR_ABRIR_ID}`),
+      async (ruta) => {
+        const url = new URL(ruta.request().url());
+
+        if (url.pathname.endsWith("/ganar")) {
+          ganada = true;
+          await ruta.fulfill({
+            status: 200,
+            json: { cotizacion: POR_ABRIR_GANADA },
+          });
+          return;
+        }
+
+        if (url.pathname.endsWith("/procesos")) {
+          const cuerpo = ruta.request().postDataJSON() as {
+            procesos: { tipoProcesoId: string; titulo: string }[];
+          };
+          pedidos.push(...cuerpo.procesos);
+          await ruta.fulfill({
+            status: 201,
+            json: {
+              abiertos: cuerpo.procesos.map(
+                (_, indice) => `nacido-${String(indice)}`,
+              ),
+            },
+          });
+          return;
+        }
+
+        // Después de ganar, la relectura del detalle tiene que decir la
+        // verdad: es lo que mantiene el panel dibujado.
+        if (url.pathname === `/api/cotizaciones/${POR_ABRIR_ID}` && ganada) {
+          await ruta.fulfill({
+            status: 200,
+            json: { cotizacion: POR_ABRIR_GANADA },
+          });
+          return;
+        }
+
+        await ruta.fallback();
+      },
+    );
+
+    await page.route(
+      (url) => url.pathname === "/api/procesos",
+      async (ruta) => {
+        await ruta.fulfill({
+          status: 200,
+          json: {
+            procesos: pedidos.map((cada, indice) => ({
+              ...PROCESOS[1],
+              id: `nacido-${String(indice)}`,
+              titulo: cada.titulo,
+              cotizacionDeOrigen: {
+                id: POR_ABRIR_ID,
+                codigo: POR_ABRIR.codigo,
+              },
+            })),
+          },
+        });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${POR_ABRIR_ID}`);
+
+    // Antes de ganar no hay panel: la propuesta es de una ganada.
+    await expect(
+      page.getByRole("button", { name: "Marcar ganada" }),
+    ).toBeVisible();
+    expect(await page.locator(".apertura").count()).toBe(0);
+
+    await page.getByRole("button", { name: "Marcar ganada" }).click();
+
+    /* --- La propuesta, con sus dos nombres y sin la línea sin trámite --- */
+
+    const filas = page.locator(".apertura__fila");
+    await expect(filas).toHaveCount(2);
+
+    // Los títulos son los conceptos de las líneas, y la tercera línea —la
+    // de timbres, sin trámite— no está. Dos, no tres.
+    await expect(filas.nth(0).locator("input")).toHaveValue(
+      CONCEPTO_CONSTITUIR,
+    );
+    await expect(filas.nth(1).locator("input")).toHaveValue(CONCEPTO_REGISTRAR);
+
+    // Y ganar no abrió nada por su cuenta: el bloque de arriba lo dice.
+    await expect(
+      page.getByText("Esta cotización está ganada y todavía no abrió ningún proceso."),
+    ).toBeVisible();
+
+    /* --- El desplegable de tipos no ofrece el que está dado de baja ----- */
+
+    const tipos = filas.nth(0).locator("select").first();
+    const ofrecidos = await tipos.locator("option").allInnerTexts();
+    // Las dos direcciones juntas: sin la primera, un desplegable vacío
+    // pasaría la segunda sola.
+    expect(ofrecidos).toContain("Visa de trabajo");
+    expect(ofrecidos).not.toContain("Permiso que ya no se tramita");
+
+    /* --- Sacar una, que es «fusionar dos en uno» ------------------------ */
+
+    await page
+      .getByRole("button", { name: `Sacar «${CONCEPTO_REGISTRAR}» de la lista` })
+      .click();
+
+    await expect(filas).toHaveCount(1);
+    // La que quedó es la otra, y no la que se sacó renombrada: con el
+    // índice en vez de la clave, React habría dibujado el valor de la
+    // primera sobre la fila equivocada.
+    await expect(filas.nth(0).locator("input")).toHaveValue(
+      CONCEPTO_CONSTITUIR,
+    );
+
+    /* --- Abrir, y comprobar que nació exactamente la que quedó ---------- */
+
+    await page.getByRole("button", { name: "Abrir estos procesos" }).click();
+
+    await expect(
+      page.getByText("Esta cotización está ganada y abrió 1 proceso:"),
+    ).toBeVisible();
+
+    const enlaces = page.locator(".procesos-abiertos a");
+    await expect(enlaces).toHaveCount(1);
+    await expect(enlaces).toHaveText(CONCEPTO_CONSTITUIR);
+
+    // Lo que se mandó es lo que quedó en pantalla, medido sobre el cuerpo
+    // de la petición y no sobre lo que se ve: una pantalla que mandara las
+    // dos y dibujara una pasaría la aserción de arriba.
+    expect(pedidos.map((cada) => cada.titulo)).toEqual([CONCEPTO_CONSTITUIR]);
+
+    // Y la que se sacó no nació. `.count()` y no `toHaveCount(0)`: una
+    // aserción que reintenta no puede demostrar un «nunca».
+    expect(
+      await page.getByRole("link", { name: CONCEPTO_REGISTRAR }).count(),
+    ).toBe(0);
+
+    // El panel queda listo para abrir otro, que es el camino que el bufete
+    // pidió para el trámite que aparece después.
+    expect(await page.locator(".apertura__fila").count()).toBe(0);
+    await expect(page.getByText("ya abrió los suyos")).toBeVisible();
+  });
+
+  test("agregar un proceso que ninguna línea propuso", async ({ page }) => {
+    // El caso del usuario con todas las letras: «¿qué sucede si como bufete
+    // no había visto este tipo de caso y en este momento quiero crear este
+    // nuevo tipo de proceso? Debe haber una forma de pasar de una
+    // cotización a un proceso manualmente».
+    await conCotizacionesCargadas(page);
+
+    const pedidos: { tipoProcesoId: string; titulo: string }[] = [];
+
+    await page.route(
+      (url) => url.pathname === `/api/cotizaciones/${GANADA_ID}/procesos`,
+      async (ruta) => {
+        const cuerpo = ruta.request().postDataJSON() as {
+          procesos: { tipoProcesoId: string; titulo: string }[];
+        };
+        pedidos.push(...cuerpo.procesos);
+        await ruta.fulfill({ status: 201, json: { abiertos: ["nacido-a-mano"] } });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${GANADA_ID}`);
+
+    // Arranca vacío —esta ganada ya abrió los suyos— así que el botón de
+    // confirmar está apagado: no promete una puerta que no lleva a nada.
+    const confirmar = page.getByRole("button", {
+      name: "Abrir estos procesos",
+    });
+    await expect(confirmar).toBeDisabled();
+
+    await page.getByRole("button", { name: "Agregar otro proceso" }).click();
+
+    const fila = page.locator(".apertura__fila");
+    await expect(fila).toHaveCount(1);
+
+    await fila.locator("select").first().selectOption(TRAMITE_VISA);
+    await fila.locator("input").fill("Divorcio, que el catálogo no tenía");
+
+    await confirmar.click();
+
+    expect(pedidos).toEqual([
+      {
+        tipoProcesoId: TRAMITE_VISA,
+        titulo: "Divorcio, que el catálogo no tenía",
+        responsableId: null,
+      },
+    ]);
+  });
+
+  test("el título en blanco no se manda: lo dice antes de pedir nada", async ({
+    page,
+  }) => {
+    // La segunda copia de la validación, que es lo que evita una ida y
+    // vuelta para enterarse de lo mismo. La que manda es la del servidor y
+    // tiene su prueba en `test/apertura-api.spec.ts`; ésta mide que acá se
+    // avise antes, y que **no se llame** a la ruta.
+    await conCotizacionesCargadas(page);
+
+    let llamadas = 0;
+    await page.route(
+      (url) => url.pathname === `/api/cotizaciones/${GANADA_ID}/procesos`,
+      async (ruta) => {
+        llamadas += 1;
+        await ruta.fulfill({ status: 201, json: { abiertos: [] } });
+      },
+    );
+
+    await page.goto(`/cotizaciones/${GANADA_ID}`);
+    await page.getByRole("button", { name: "Agregar otro proceso" }).click();
+
+    const fila = page.locator(".apertura__fila");
+    await fila.locator("select").first().selectOption(TRAMITE_VISA);
+
+    await page.getByRole("button", { name: "Abrir estos procesos" }).click();
+
+    await expect(
+      page.getByText("El título es obligatorio", { exact: false }),
+    ).toBeVisible();
+    expect(llamadas).toBe(0);
   });
 });

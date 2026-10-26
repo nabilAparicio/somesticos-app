@@ -56,6 +56,12 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   plan_vacio:
     "Este proceso no tiene plan todavía: no hay pasos que guardar como" +
     " plantilla.",
+  /* No dice «la lista está vacía» sino qué pasa si se manda así: no nace
+     nada. Y dice la salida, que es la que la persona probablemente quiere:
+     si no hay que abrir ninguno, no hay nada que confirmar. */
+  sin_procesos_que_abrir:
+    "No hay ningún proceso en la lista, así que no nacería ninguno. Hay que" +
+    " agregar al menos uno, o dejar esta cotización como está.",
   /* `texto_requerido` lo comparten la nota (T-8) y el pendiente (T-9), así
      que la frase no puede nombrar a ninguno de los dos: un «la nota no
      puede ir vacía» debajo del formulario de pendientes es un mensaje que

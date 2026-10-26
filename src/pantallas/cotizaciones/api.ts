@@ -7,9 +7,10 @@
  *
  * **Son cuatro rutas de la cotización, una quinta de lectura, la del
  * generador, las cuatro del ciclo de vida, las cinco de los módulos, las
- * cinco de las líneas y la del documento congelado, y nada más.** Una
- * función acá que pida una ruta que no existe es un 404 que la pantalla
- * explicaría como «no es de este bufete».
+ * cinco de las líneas, la del documento congelado, las tres del plan de
+ * pagos y la apertura de procesos de T-13, y nada más.** Una función acá
+ * que pida una ruta que no existe es un 404 que la pantalla explicaría como
+ * «no es de este bufete».
  *
  * El listado de clientes para el desplegable del formulario **no se declara
  * de nuevo acá**: se importa de `../clientes/api`, que es donde vive. Una
@@ -33,12 +34,15 @@ import type {
   Cotizacion,
   DatosDeCotizacion,
   DatosDeCuota,
+  DatosDeApertura,
   DatosDeGeneracion,
   DatosDeLinea,
   DatosDeModulo,
+  DatosDeProcesoPorAbrir,
   DocumentoCongelado,
   ModuloDeCotizacion,
   PlanDePagos,
+  RespuestaDeApertura,
   RespuestaDeBitacora,
   RespuestaDeCotizacion,
   RespuestaDeCotizaciones,
@@ -222,6 +226,41 @@ export function duplicarCotizacion(
   cotizacionId: string,
 ): Promise<Resultado<Cotizacion>> {
   return pedirVerbo(cotizacionId, "duplicar");
+}
+
+/* ==========================================================================
+   Abrir procesos desde una cotización ganada (T-13 B)
+   ========================================================================== */
+
+/**
+ * Los procesos que el bufete acaba de confirmar, abiertos de una vez.
+ *
+ * **Es la única ruta de escritura de este archivo que no devuelve lo que
+ * la pantalla va a dibujar, y es deliberado.** Lo que vuelve son los
+ * identificadores de los procesos recién nacidos; la lista que el detalle
+ * muestra debajo sale de `GET /api/procesos`, que es el único lugar donde
+ * se decide qué proceso cuelga de qué cotización (T-15). Si esta respuesta
+ * trajera los procesos enteros habría dos, y el día que una cambie la
+ * pantalla mostraría una cosa al abrir y otra al recargar.
+ *
+ * Lleva `ESCRITURA`, al revés que los cuatro verbos del ciclo de vida: ésta
+ * **sí** manda cuerpo, y es la lista editada. Declarar el tipo de un cuerpo
+ * que viaja es decir algo cierto.
+ */
+export async function abrirProcesosDeCotizacion(
+  cotizacionId: string,
+  procesos: readonly DatosDeProcesoPorAbrir[],
+): Promise<Resultado<string[]>> {
+  const cuerpo: DatosDeApertura = { procesos: [...procesos] };
+
+  const resultado = await pedir<RespuestaDeApertura>(
+    `/api/cotizaciones/${encodeURIComponent(cotizacionId)}/procesos`,
+    { method: "POST", ...ESCRITURA, body: JSON.stringify(cuerpo) },
+  );
+
+  return resultado.estado === "ok"
+    ? { estado: "ok", valor: resultado.valor.abiertos }
+    : resultado;
 }
 
 /* ==========================================================================

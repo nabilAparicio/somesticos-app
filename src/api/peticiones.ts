@@ -338,6 +338,26 @@ const CONFLICTOS: Record<string, string> = {
     " documento que ya salió: un borrador todavía no se mandó, y una ganada" +
     " o una perdida ya cerraron su ciclo. Hay que volver a cargarla para ver" +
     " en qué estado quedó y quién la movió.",
+  /*
+   * El tercero de la familia (T-13): abrir procesos sobre algo que el
+   * cliente todavía no aceptó. Se escribe en la misma unidad que dibuja el
+   * panel que lo puede provocar y no en la siguiente, que es la lección que
+   * esta tajada ya pagó tres veces — un 409 sin entrada propia cae en el
+   * texto de reserva, que habla de un borrado que nadie pidió.
+   *
+   * La frase nombra **las tres** formas de no estar ganada porque lo que
+   * hay que hacer después es distinto en cada una: un borrador hay que
+   * emitirlo, una emitida espera el sí del cliente, y una perdida no abre
+   * nada nunca. El estado concreto viaja en el cuerpo del 409 y no llega
+   * hasta acá —`Resultado` conserva el motivo y dos detalles, y éste no es
+   * ninguno de los dos—, así que la frase las nombra y manda a recargar,
+   * que es lo que deja ver cuál fue.
+   */
+  cotizacion_no_es_ganada:
+    "Los trámites se abren desde una cotización ganada, y ésta no lo está:" +
+    " un borrador todavía no se mandó, una emitida está esperando el sí del" +
+    " cliente, y una perdida no abre nada. Hay que volver a cargarla para" +
+    " ver en qué estado quedó y quién la movió.",
 };
 
 /**

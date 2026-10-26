@@ -895,8 +895,10 @@ describe("el alta de un proceso rechaza lo que no se puede guardar", () => {
     // una apertura **sin cotización**, y `aperturasDeProcesos` deriva el
     // origen de ahí en vez de recibirlo, justamente para que no se pueda
     // escribir `'cotizacion'` sobre una fila que no viene de ninguna. La
-    // única puerta hacia un proceso de cotización es ganar una. Que el
-    // cliente lo pida no lo cambia.
+    // única puerta hacia un proceso de cotización es
+    // `POST /api/cotizaciones/{id}/procesos`, y la dirección es la que
+    // decide: ahí la cotización está en la ruta y acá no hay ninguna. Que
+    // el cliente lo pida por esta puerta no lo cambia.
     const proceso = await crearProceso({
       clienteId,
       tipoProcesoId: tipoResidenciaId,

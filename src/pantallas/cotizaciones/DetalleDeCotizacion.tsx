@@ -41,12 +41,32 @@
  * tres convertiría la confirmación en un trámite que se aprieta sin leer, que
  * es exactamente lo que la de emitir no puede ser.
  *
+ * ## Los procesos, que esta pantalla ahora sí abre (T-13, unidad B)
+ *
+ * Decía «no abre procesos (T-7)», y era cierto mientras los abriera ganar.
+ * T-13 le devolvió esa decisión al bufete —la línea es una unidad de
+ * facturación y el proceso una unidad de trabajo, y no tienen por qué ser
+ * lo mismo— y el sitio donde se toma es este panel.
+ *
+ * Va **acá y no en una pantalla aparte**, al lado de «Procesos que abrió»,
+ * por tres motivos que se sostienen juntos: no hay navegación que perder
+ * entre ver la propuesta y confirmarla; se puede volver meses después, que
+ * es cuando aparece el trámite que no estaba cotizado; y la sección que
+ * contesta «¿en qué quedó esto?» ya existía justo arriba, así que las dos
+ * mitades de la misma pregunta quedan juntas.
+ *
+ * La propuesta se **deriva en la pantalla** (`ciclo.ts`,
+ * `propuestaDeProcesos`) sobre las líneas que esta misma pantalla lee. No
+ * hay ruta que la pida, y el argumento está allá: una propuesta que viajara
+ * de ida para volver corregida serían dos formas del mismo dato en el
+ * cable.
+ *
  * ## Lo que esta pantalla sigue sin hacer
  *
- * No abre procesos (T-7) y **no muestra el snapshot**: lo que se dibuja acá
- * sale de las tablas vivas, igual que antes de T-4. El snapshot es la
- * prueba de qué se le mandó al cliente y se lee en la hoja imprimible, que
- * es otra pantalla y otra lectura.
+ * **No muestra el snapshot**: lo que se dibuja acá sale de las tablas
+ * vivas, igual que antes de T-4. El snapshot es la prueba de qué se le
+ * mandó al cliente y se lee en la hoja imprimible, que es otra pantalla y
+ * otra lectura.
  *
  * Lo que esta pantalla sí hace desde T-6 es **ofrecer esa hoja**, y sólo
  * sobre lo que tiene documento: un enlace a imprimir un borrador lleva a un
@@ -59,21 +79,46 @@
  */
 import { useEffect, useState } from "react";
 
-import type { Cotizacion, Proceso } from "../../../worker/contract";
+import type {
+  Cotizacion,
+  FallaDeValidacion,
+  Proceso,
+  TipoProceso,
+  Usuario,
+} from "../../../worker/contract";
 import { hoyEnPanama } from "../../../worker/db/momentos";
+import { cargarUsuarios } from "../../api/usuarios";
 import { Aviso } from "../../layout/Aviso";
 import { Enlace } from "../../layout/Enlace";
 import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
 import { Rejilla } from "../../layout/Rejilla";
+import { mensajeDeFalla } from "../../mensajes";
 import { navegarA } from "../../navegacion";
 import { enlaceDe } from "../../ruteo";
 import { Bitacora, type EstadoDeBitacora } from "../Bitacora";
+import { cargarTiposProceso } from "../catalogos/api";
 import { cargarProcesos } from "../procesos/api";
 import { procesosDeCotizacion } from "../procesos/presentacion";
+/*
+ * Los dos filtros de «quién se puede elegir» se importan de la pantalla de
+ * procesos en vez de copiarse acá, y es la misma decisión que
+ * `FormularioDeProceso` ya tomó con el segundo: son las mismas reglas sobre
+ * las mismas tablas, y dos copias serían dos criterios que se desincronizan
+ * en el primer cambio.
+ *
+ * Importa especialmente el de tipos. Un trámite dado de baja que llegara al
+ * desplegable abriría un proceso de un tipo que el bufete ya no usa, y la
+ * excepción —el que **ya está elegido** sigue ofreciéndose— es la que
+ * impide que un desplegable se vacíe solo y parezca haber perdido el dato.
+ */
+import { tipoSeleccionables } from "../procesos/formulario";
+import { responsablesSeleccionables } from "../procesos/pendientes";
 import {
+  abrirProcesosDeCotizacion,
   cargarBitacoraDeCotizacion,
   cargarCotizacion,
+  cargarLineas,
   duplicarCotizacion,
   emitirCotizacion,
   ganarCotizacion,
@@ -82,14 +127,23 @@ import {
   type Resultado,
 } from "./api";
 import {
+  AVISO_DE_LINEAS_NO_LEIDAS,
   ROTULOS_DE_ACCION,
+  ROTULO_DE_ABRIR,
+  ROTULO_DE_AGREGAR_PROCESO,
   ROTULO_DE_CANCELAR_EMISION,
   ROTULO_DE_CONFIRMAR_EMISION,
+  aAperturaDeProcesos,
   accionesDe,
   confirmacionDeEmitir,
+  propuestaDeProcesos,
+  propuestaVacia,
+  textoDeAperturaDeProcesos,
   textoDeProcedencia,
   textoDeProcesosAbiertos,
+  validarPropuesta,
   type AccionDeCiclo,
+  type PropuestaDeProceso,
 } from "./ciclo";
 import { EditorDeLineas } from "./EditorDeLineas";
 import { EditorDeModulos } from "./EditorDeModulos";
@@ -153,6 +207,33 @@ type Abiertos = {
   readonly procesos: readonly Proceso[] | null;
 };
 
+/**
+ * La propuesta de procesos que el bufete está editando (T-13).
+ *
+ * **`de` no es decoración**, por tercera vez en este archivo y por el mismo
+ * motivo: duplicar navega a la copia sin desmontar el componente, y sin el
+ * identificador adentro las filas a medio editar de una ganada quedarían
+ * dibujadas debajo del borrador recién nacido — y peor, el botón las
+ * abriría contra la cotización equivocada.
+ *
+ * `conLineas` en `false` quiere decir que las líneas no se leyeron, no que
+ * la cotización no tenga trámites. Son dos cosas que producen la misma
+ * lista vacía y se dicen distinto, igual que el cero y el fallo de red en
+ * `Abiertos`.
+ *
+ * `nuevas` es el contador de filas agregadas a mano, y existe para darles
+ * una `clave` que no se repita. Vive **adentro de la propuesta** y no en un
+ * estado aparte para que se reinicie junto con ella: un contador que
+ * sobreviviera al cambio de cotización no rompería nada hoy, pero sería un
+ * dato de una cotización colgando de otra.
+ */
+type Propuesta = {
+  readonly de: string;
+  readonly filas: readonly PropuestaDeProceso[];
+  readonly conLineas: boolean;
+  readonly nuevas: number;
+};
+
 function Dato({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
     <div className="definicion">
@@ -169,7 +250,27 @@ export function DetalleDeCotizacion({ id }: Props) {
   });
   const [procedencia, setProcedencia] = useState<Procedencia | null>(null);
   const [abiertos, setAbiertos] = useState<Abiertos | null>(null);
+  const [propuesta, setPropuesta] = useState<Propuesta | null>(null);
+  const [tipos, setTipos] = useState<TipoProceso[]>([]);
+  const [equipo, setEquipo] = useState<Usuario[]>([]);
+  const [fallas, setFallas] = useState<FallaDeValidacion[]>([]);
   const [ocupado, setOcupado] = useState(false);
+
+  /**
+   * Cuántas veces se releyó lo que esta cotización abrió.
+   *
+   * Es lo que hace que abrir procesos se vea sin recargar: el efecto de
+   * abajo cuelga de este número además del identificador, así que subirlo
+   * después de un 201 vuelve a preguntar. **No es un `setState` dentro de
+   * un efecto** —lo sube el manejador del botón— que es lo que React
+   * desaconseja y lo que el linter de este proyecto rechaza.
+   *
+   * La alternativa era escribir en `abiertos` los procesos que devuelve la
+   * apertura, y es justo la que no se quiere: habría dos lugares donde se
+   * decide qué procesos tiene una cotización, y el día que difieran la
+   * pantalla mostraría una cosa al abrir y otra al recargar.
+   */
+  const [recargas, setRecargas] = useState(0);
 
   /*
    * Las dos cosas que esta pantalla dice **de una cotización concreta**
@@ -227,6 +328,14 @@ export function DetalleDeCotizacion({ id }: Props) {
       ? estado.cotizacion.id
       : null;
 
+  /*
+   * Lo mismo visto como pregunta de sí o no, para los dos catálogos que no
+   * dependen de **cuál** cotización es. Sale de `ganadaId` y no de un
+   * segundo `estado === "ganada"` escrito al lado: dos lecturas del mismo
+   * hecho son dos sitios donde un día dice cosas distintas.
+   */
+  const esGanada = ganadaId !== null;
+
   /**
    * La de arriba en la cadena de duplicación, y **sólo ella**.
    *
@@ -261,7 +370,8 @@ export function DetalleDeCotizacion({ id }: Props) {
   }, [origenId]);
 
   /**
-   * Los procesos que esta cotización abrió, cuando está ganada (T-15).
+   * Lo que esta cotización ganada tiene y lo que podría abrir (T-15, con la
+   * siembra de T-13).
    *
    * ## Por qué cuelga del estado y no sólo del identificador
    *
@@ -270,9 +380,9 @@ export function DetalleDeCotizacion({ id }: Props) {
    * sobre un borrador —no hay nada que pedir—, y marcar ganada desde el
    * botón de arriba dispara la lectura sola, porque `aplicar` reemplaza la
    * cotización en `estado` y `ganadaId` pasa de nulo a tenerlo. Sin eso
-   * habría que recargar para ver qué abrió lo que uno acaba de ganar.
+   * habría que recargar para ver el panel de lo que uno acaba de ganar.
    *
-   * ## Por qué lee el listado entero y no una ruta propia
+   * ## Por qué lee el listado entero de procesos y no una ruta propia
    *
    * Porque la ruta propia no existe y no hace falta. El servidor ya
    * entrega la cartera completa de procesos en una respuesta —es la misma
@@ -281,34 +391,108 @@ export function DetalleDeCotizacion({ id }: Props) {
    * cotización de origen resuelta desde T-15. Una ruta nueva sería un
    * segundo lugar donde se decide qué proceso cuelga de qué cotización.
    *
-   * Es un efecto aparte y no una lectura encadenada, por el mismo motivo
-   * que la bitácora y la procedencia: un fallo de esta lectura no puede
-   * dejar la ficha en blanco.
+   * ## Por qué las dos lecturas van juntas y no en dos efectos
+   *
+   * Porque **la segunda depende de la primera para decidir qué hacer**: la
+   * propuesta se siembra sólo si la cotización todavía no abrió ninguno, y
+   * eso lo contesta la lista de procesos. En dos efectos, el orden de
+   * llegada decidiría si el panel aparece sembrado o vacío, que es
+   * exactamente la clase de parpadeo que no se puede probar. Con un
+   * `Promise.all` el resultado es el mismo siempre.
+   *
+   * Que vayan juntas **no las vuelve bloqueantes la una de la otra**: las
+   * dos devuelven `Resultado` y ninguna tira, así que un fallo de las
+   * líneas deja la lista de procesos igual y al revés. Y sigue siendo un
+   * efecto aparte del de la cotización, por lo mismo que la bitácora y la
+   * procedencia: un fallo de esta lectura no puede dejar la ficha en
+   * blanco.
+   *
+   * `recargas` está en las dependencias y es lo que hace que abrir se vea
+   * sin recargar la página. Ver su declaración.
    */
   useEffect(() => {
     if (ganadaId === null) return;
 
     const control = new AbortController();
 
-    void cargarProcesos(control.signal).then((resultado) => {
+    void Promise.all([
+      cargarProcesos(control.signal),
+      cargarLineas(ganadaId, control.signal),
+    ]).then(([deProcesos, deLineas]) => {
       if (control.signal.aborted) return;
 
-      setAbiertos({
+      const suyos =
+        deProcesos.estado === "ok"
+          ? procesosDeCotizacion(deProcesos.valor, ganadaId)
+          : null;
+
+      setAbiertos({ de: ganadaId, procesos: suyos });
+
+      // **La siembra corre sólo sobre la ganada que todavía no abrió
+      // ninguno.** Si ya abrió, proponer de nuevo ofrecería lo que ya
+      // existe e invitaría a abrir dos veces lo mismo; ahí el panel
+      // arranca vacío y es un camino para agregar otro.
+      //
+      // Y si la lista de procesos **no se pudo leer**, tampoco se siembra:
+      // no sabemos si ya abrió, y proponer a ciegas es el mismo riesgo sin
+      // la excusa. El bloque de arriba ya dice que la lectura falló.
+      const sembrar = suyos !== null && suyos.length === 0;
+
+      setPropuesta({
         de: ganadaId,
-        procesos:
-          resultado.estado === "ok"
-            ? procesosDeCotizacion(resultado.valor, ganadaId)
-            : null,
+        filas:
+          sembrar && deLineas.estado === "ok"
+            ? propuestaDeProcesos(deLineas.valor.lineas)
+            : [],
+        conLineas: deLineas.estado === "ok",
+        nuevas: 0,
       });
     });
 
     return () => {
       control.abort();
     };
-  }, [ganadaId]);
+  }, [ganadaId, recargas]);
 
   /**
-   * Las cuatro escrituras del ciclo pasan por acá, y existe por el
+   * Los dos catálogos que el panel de apertura necesita para sus
+   * desplegables: los tipos de proceso y el equipo del bufete.
+   *
+   * Cuelgan de `esGanada` y no de `ganadaId`, y la diferencia es real: no
+   * dependen de **cuál** cotización es, así que colgarlos del
+   * identificador los volvería a pedir al navegar de una ganada a otra sin
+   * desmontar el componente. Lo que sí hace falta es no pedirlos sobre un
+   * borrador, donde no hay panel que llenar.
+   *
+   * **Ninguno de los dos bloquea nada**, al revés que en el alta a mano,
+   * donde un proceso sin cliente ni tipo no existe. Acá la propuesta ya
+   * está sembrada con los tipos que las líneas traían, así que un catálogo
+   * que no cargue deja los desplegables cortos pero no impide confirmar lo
+   * que ya estaba. El 422 del servidor es la red de abajo.
+   */
+  useEffect(() => {
+    if (!esGanada) return;
+
+    const control = new AbortController();
+
+    void Promise.all([
+      cargarTiposProceso(control.signal),
+      cargarUsuarios(control.signal),
+    ]).then(([catalogo, personas]) => {
+      if (control.signal.aborted) return;
+
+      if (catalogo.estado === "ok") setTipos(catalogo.valor);
+      if (personas.estado === "ok") setEquipo(personas.valor);
+    });
+
+    return () => {
+      control.abort();
+    };
+  }, [esGanada]);
+
+  /**
+   * Las cuatro escrituras del ciclo y la apertura pasan por acá, y existe
+por el
    * `finally`: es la misma forma que `conLaPantallaOcupada` de los dos
    * editores, y está acá por el mismo defecto que aquélla cierra.
    *
@@ -407,6 +591,137 @@ export function DetalleDeCotizacion({ id }: Props) {
         accion === "ganar" ? ganarCotizacion(id) : perderCotizacion(id),
       ),
     );
+  }
+
+  /* ----------------------------------------------------------------------
+     T-13 · El panel de apertura
+
+     Las cuatro cosas que se le pueden hacer a la propuesta —editar una
+     fila, sacar una, agregar otra y confirmarla— pasan por estas cuatro
+     funciones. Las tres primeras son escrituras de estado y no tocan la
+     red; la cuarta es la única que abre algo.
+
+     Todas vuelven a escribir la propuesta entera en vez de mutarla: es
+     estado de React, y `filas` viaja como `readonly` desde `ciclo.ts`
+     justamente para que no haya forma de empujarle una fila encima.
+     -------------------------------------------------------------------- */
+
+  /**
+   * Cambia un campo de una fila, identificada por su `clave`.
+   *
+   * **Por la clave y no por el índice**, y es la misma razón por la que las
+   * filas la tienen: sacar la segunda de tres y después escribir en la que
+   * quedó debajo tiene que escribir en esa y no en la que ocupó su lugar.
+   */
+  function editarFila(
+    clave: string,
+    campo: "tipoProcesoId" | "titulo" | "responsableId",
+    valor: string,
+  ) {
+    setPropuesta((anterior) =>
+      anterior === null
+        ? anterior
+        : {
+            ...anterior,
+            filas: anterior.filas.map((fila) =>
+              fila.clave === clave ? { ...fila, [campo]: valor } : fila,
+            ),
+          },
+    );
+  }
+
+  /**
+   * Saca una fila de la propuesta.
+   *
+   * Es la mitad de «fusionar dos en uno»: la otra mitad es renombrar la que
+   * queda, que se hace con el campo de título. No hay un gesto propio para
+   * fusionar, y la ausencia se decidió — un botón «fusionar» tendría que
+   * preguntar cuál de los dos títulos sobrevive, que es exactamente lo que
+   * sacar y renombrar ya contesta sin preguntar nada.
+   */
+  function sacarFila(clave: string) {
+    setPropuesta((anterior) =>
+      anterior === null
+        ? anterior
+        : {
+            ...anterior,
+            filas: anterior.filas.filter((fila) => fila.clave !== clave),
+          },
+    );
+  }
+
+  /**
+   * Agrega una fila en blanco al final.
+   *
+   * La `clave` sale del contador de la propuesta y lleva prefijo: las
+   * sembradas usan el identificador de su línea, que es un UUID, así que
+   * `nueva-0` no puede chocar con ninguna. El contador sube siempre y no
+   * se recalcula del largo de la lista — con el largo, agregar, sacar y
+   * volver a agregar daría dos filas con la misma clave.
+   */
+  function agregarFila() {
+    setPropuesta((anterior) =>
+      anterior === null
+        ? anterior
+        : {
+            ...anterior,
+            filas: [
+              ...anterior.filas,
+              propuestaVacia(`nueva-${String(anterior.nuevas)}`),
+            ],
+            nuevas: anterior.nuevas + 1,
+          },
+    );
+  }
+
+  /**
+   * Abre los procesos de la propuesta.
+   *
+   * ## La validación previa, y por qué no es la guarda
+   *
+   * `validarPropuesta` es la segunda copia de lo que el servidor rechaza
+   * con 422, y está acá para marcar el campo al instante en vez de cobrar
+   * una ida y vuelta. La que manda es la del servidor, que se niega
+   * igual: lo prueba `test/apertura-api.spec.ts` llamando a la ruta
+   * directamente.
+   *
+   * ## Por qué al volver se relee en vez de usar la respuesta
+   *
+   * El 201 trae los identificadores de lo que nació, y no se usan para
+   * dibujar nada: lo que hace esta función es subir `recargas`, que vuelve
+   * a preguntar por la lista de procesos. El argumento está en la
+   * declaración de ese contador — dos lugares donde se decide qué procesos
+   * tiene una cotización son dos respuestas el día que difieran.
+   *
+   * La propuesta se reconstruye sola con esa relectura: la cotización pasa
+   * a tener procesos, así que la siembra no corre y el panel queda vacío,
+   * listo para abrir otro. Por eso no hay un `setPropuesta` de limpieza
+   * acá.
+   */
+  async function abrir(): Promise<void> {
+    if (propuesta === null || propuesta.de !== id) return;
+
+    const previas = validarPropuesta(propuesta.filas);
+    setFallas(previas);
+    setAviso(null);
+    if (previas.length > 0) return;
+
+    const resultado = await abrirProcesosDeCotizacion(
+      id,
+      aAperturaDeProcesos(propuesta.filas),
+    );
+
+    if (resultado.estado === "invalido") {
+      setFallas(resultado.fallas);
+      return;
+    }
+    if (resultado.estado !== "ok") {
+      setAviso({ id, mensaje: textoDeProblema(resultado) });
+      return;
+    }
+
+    setFallas([]);
+    setRecargas((cuantas) => cuantas + 1);
   }
 
   if (estado.fase === "cargando") return <p>Consultando…</p>;
@@ -629,6 +944,219 @@ export function DetalleDeCotizacion({ id }: Props) {
                   ))}
                 </ul>
               )}
+          </Pila>
+        </section>
+      )}
+
+      {/*
+        T-13 · Qué procesos abrir, y cuáles.
+
+        Va **debajo** de «Procesos que abrió» y no arriba: primero lo que
+        hay, después lo que podría haber. Es el mismo orden en que una
+        persona hace la pregunta —«¿esto en qué quedó?» antes de «¿qué le
+        falta?»— y el que deja que el texto del panel pueda hablar de lo
+        que se acaba de leer más arriba.
+
+        Se dibuja sobre la misma condición que aquél, `ganadaId`, y por el
+        mismo motivo: colgarlo de «tiene líneas con trámite» lo dibujaría
+        sobre un borrador que todavía se está escribiendo, y colgarlo de un
+        segundo `estado === "ganada"` serían dos lecturas del mismo hecho.
+
+        Las filas se dibujan **inline y no con un componente declarado
+        acá adentro**. No es estilo: un componente declarado dentro de otro
+        es un tipo nuevo en cada render, así que React desmonta y vuelve a
+        montar el árbol entero: el campo de título perdería el foco a cada
+        tecla. Con una lista de filas editables es exactamente donde
+        aparece.
+      */}
+      {ganadaId !== null && (
+        <section className="apertura" aria-labelledby="abrir-procesos">
+          <Pila espacio="ceñido">
+            <h2 id="abrir-procesos" className="apertura__titulo">
+              Abrir procesos
+            </h2>
+            <p>
+              {textoDeAperturaDeProcesos(
+                abiertos !== null &&
+                  abiertos.de === ganadaId &&
+                  abiertos.procesos !== null &&
+                  abiertos.procesos.length > 0,
+              )}
+            </p>
+
+            {/*
+              La lista vacía porque las líneas no se leyeron se dice, y no
+              se confunde con la lista vacía de una cotización sin
+              trámites. Es el mismo criterio que separa el cero del fallo
+              de red en el bloque de arriba.
+            */}
+            {propuesta !== null &&
+              propuesta.de === ganadaId &&
+              !propuesta.conLineas && (
+                <Aviso>{AVISO_DE_LINEAS_NO_LEIDAS}</Aviso>
+              )}
+
+            {fallas.length > 0 && (
+              <Aviso tono="error">
+                <ul className="lista-de-fallas">
+                  {fallas.map((falla) => (
+                    <li key={`${falla.campo}-${falla.motivo}`}>
+                      {mensajeDeFalla(falla.motivo, falla.cuantos)}
+                    </li>
+                  ))}
+                </ul>
+              </Aviso>
+            )}
+
+            {propuesta !== null && propuesta.de === ganadaId && (
+              <>
+                <ul className="sin-viñetas apertura__filas">
+                  {propuesta.filas.map((fila) => (
+                    <li key={fila.clave} className="apertura__fila">
+                      <Rejilla minimo="12rem">
+                        <div className="campo">
+                          <label
+                            className="campo__rotulo"
+                            htmlFor={`apertura-tipo-${fila.clave}`}
+                          >
+                            Tipo de proceso
+                          </label>
+                          <select
+                            id={`apertura-tipo-${fila.clave}`}
+                            className="campo__control"
+                            value={fila.tipoProcesoId}
+                            onChange={(evento) => {
+                              editarFila(
+                                fila.clave,
+                                "tipoProcesoId",
+                                evento.target.value,
+                              );
+                            }}
+                          >
+                            <option value="">Elegir tipo…</option>
+                            {tipoSeleccionables(tipos, fila.tipoProcesoId).map(
+                              (tipo) => (
+                                <option key={tipo.id} value={tipo.id}>
+                                  {tipo.nombre}
+                                </option>
+                              ),
+                            )}
+                          </select>
+                        </div>
+
+                        <div className="campo">
+                          <label
+                            className="campo__rotulo"
+                            htmlFor={`apertura-titulo-${fila.clave}`}
+                          >
+                            Título
+                          </label>
+                          <input
+                            id={`apertura-titulo-${fila.clave}`}
+                            className="campo__control"
+                            type="text"
+                            value={fila.titulo}
+                            onChange={(evento) => {
+                              editarFila(
+                                fila.clave,
+                                "titulo",
+                                evento.target.value,
+                              );
+                            }}
+                          />
+                        </div>
+
+                        <div className="campo">
+                          <label
+                            className="campo__rotulo"
+                            htmlFor={`apertura-responsable-${fila.clave}`}
+                          >
+                            Responsable
+                          </label>
+                          <select
+                            id={`apertura-responsable-${fila.clave}`}
+                            className="campo__control"
+                            value={fila.responsableId}
+                            onChange={(evento) => {
+                              editarFila(
+                                fila.clave,
+                                "responsableId",
+                                evento.target.value,
+                              );
+                            }}
+                          >
+                            {/* La opción vacía se NOMBRA, igual que en el
+                                alta a mano: abrir un proceso sin decidir
+                                quién lo lleva es legítimo, y justamente
+                                por eso tiene que elegirse a sabiendas y no
+                                quedar en un hueco en blanco. */}
+                            <option value="">Sin responsable asignado</option>
+                            {responsablesSeleccionables(
+                              equipo,
+                              fila.responsableId,
+                            ).map((persona) => (
+                              <option key={persona.id} value={persona.id}>
+                                {persona.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </Rejilla>
+
+                      {/*
+                        El rótulo nombra **cuál** se saca y no dice sólo
+                        «Quitar». Con tres filas en pantalla, tres
+                        controles que se llaman igual son tres controles
+                        que ni una prueba ni un lector de pantalla pueden
+                        distinguir. El título puede estar vacío en una fila
+                        recién agregada, y entonces se nombra por su
+                        posición, que es lo único que queda.
+                      */}
+                      <button
+                        type="button"
+                        className="boton boton--tenue"
+                        disabled={ocupado}
+                        onClick={() => {
+                          sacarFila(fila.clave);
+                        }}
+                      >
+                        {fila.titulo.trim() === ""
+                          ? "Sacar este proceso de la lista"
+                          : `Sacar «${fila.titulo.trim()}» de la lista`}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+
+                <Fila>
+                  <button
+                    type="button"
+                    className="boton"
+                    disabled={ocupado}
+                    onClick={agregarFila}
+                  >
+                    {ROTULO_DE_AGREGAR_PROCESO}
+                  </button>
+                  {/*
+                    El que confirma se apaga con la lista vacía, y eso no
+                    reemplaza al 422 de `sin_procesos_que_abrir`: lo que
+                    hace es no prometer una puerta que no lleva a ningún
+                    lado. La guarda sigue siendo la del servidor, y tiene
+                    su prueba.
+                  */}
+                  <button
+                    type="button"
+                    className="boton boton--primario"
+                    disabled={ocupado || propuesta.filas.length === 0}
+                    onClick={() => {
+                      void conLaPantallaOcupada(abrir);
+                    }}
+                  >
+                    {ROTULO_DE_ABRIR}
+                  </button>
+                </Fila>
+              </>
+            )}
           </Pila>
         </section>
       )}

@@ -217,7 +217,20 @@ canvas {
  * una caja flexible se niega a encoger por debajo de su contenido, que es la
  * forma en que §9 se rompe.
  */
-.procesos-abiertos {
+/*
+ * T-13 · El panel de apertura comparte el envoltorio del bloque de arriba,
+ * y **no se escribe dos veces**.
+ *
+ * Son dos clases y no una porque las pruebas cuentan sobre cada bloque por
+ * separado —es el mismo argumento con el que `etiqueta--origen` no es
+ * `etiqueta--tenue`— pero la caja es la misma caja, y dos reglas idénticas
+ * serían dos declaraciones que resuelven lo mismo: quitar cualquiera no
+ * rompería nada visible en la otra, así que ninguna sería verificable.
+ * Un solo bloque con los dos selectores deja una sola declaración que
+ * matar.
+ */
+.procesos-abiertos,
+.apertura {
   min-width: 0;
   padding: var(--espacio-s);
   border: 1px solid var(--color-borde);
@@ -225,6 +238,37 @@ canvas {
   background: var(--color-superficie);
 }
 
-.procesos-abiertos__titulo {
+.procesos-abiertos__titulo,
+.apertura__titulo {
   font-size: var(--texto-m);
+}
+
+/*
+ * Las filas de la propuesta, una debajo de otra con aire entre ellas.
+ *
+ * `grid` y no márgenes: lo que hay que separar son hermanos de una lista,
+ * y `gap` no mete espacio antes de la primera ni después de la última, que
+ * es lo que un `margin-block` obliga a corregir con un `:last-child`.
+ *
+ * El separador **no es decoración**: cada fila lleva tres controles y un
+ * botón, así que sin una línea entre ellas los de dos filas distintas se
+ * leen como un solo formulario de seis campos. `:not(:first-child)` y no
+ * `:not(:last-child)` por la misma razón que el `gap`: el borde va entre
+ * filas y no alrededor del bloque, que ya tiene el suyo.
+ */
+.apertura__filas {
+  display: grid;
+  gap: var(--espacio-m);
+  margin: 0;
+  padding: 0;
+}
+
+.apertura__fila {
+  display: grid;
+  gap: var(--espacio-xs);
+}
+
+.apertura__fila:not(:first-child) {
+  padding-block-start: var(--espacio-m);
+  border-block-start: var(--borde-fino);
 }

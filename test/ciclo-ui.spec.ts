@@ -29,16 +29,23 @@ import { describe, expect, it } from "vitest";
 import type {
   Cotizacion,
   EstadoDeCotizacion,
+  LineaDeCotizacion,
   Proceso,
 } from "../worker/contract";
 import { textoDeProblema } from "../src/api/peticiones";
 import {
+  AVISO_DE_LINEAS_NO_LEIDAS,
   ROTULOS_DE_ACCION,
+  aAperturaDeProcesos,
   accionesDe,
   confirmacionDeEmitir,
+  propuestaDeProcesos,
+  propuestaVacia,
   salidasEnProsa,
+  textoDeAperturaDeProcesos,
   textoDeProcedencia,
   textoDeProcesosAbiertos,
+  validarPropuesta,
   type AccionDeCiclo,
 } from "../src/pantallas/cotizaciones/ciclo";
 import { avisoDeNoEsBorrador } from "../src/pantallas/cotizaciones/presentacion";
@@ -339,21 +346,23 @@ describe("textoDeProblema, sobre `cotizacion_no_es_emitida`", () => {
 });
 
 /* ==========================================================================
-   T-15 · En qué quedó esta cotización
+   T-15 · En qué quedó esta cotización, corregido por T-13
 
-   `procesosAbiertos` —el conteo que la respuesta de ganar trae desde T-7—
-   contesta la pregunta **en el instante** y se pierde al recargar. La
-   pregunta que una persona se hace de verdad es tres meses después: «esta
-   cotización, ¿en qué quedó?». Por eso el detalle lo lee del listado de
-   procesos cada vez que lo dibuja, y este texto es lo que encabeza esa
+   La pregunta que sostiene el bloque es la de tres meses después: «esta
+   cotización, ¿en qué quedó?». Se contesta leyendo el listado de procesos
+   cada vez que el detalle se dibuja, y este texto es lo que encabeza esa
    lista.
 
-   El cero **se dice**, con el mismo argumento con que el contrato decidió
-   que el conteo viajara aunque valga cero: una ganada sin ninguna línea con
-   tipo de proceso no abre nada, y eso es legítimo y corriente —una
-   consulta, un timbre, una mensajería—. «No abrió ninguno» y «no sé cuántos
-   abrió» se ven igual si el bloque desaparece, y la primera es información
-   mientras la segunda es un hueco.
+   **Lo que T-13 corrigió es el porqué del cero.** T-15 lo explicaba
+   —«ninguna de sus líneas lleva tipo de proceso»— y era cierto mientras
+   ganar abriera los procesos solo. Ahora ganar no abre nada, así que una
+   ganada con cinco líneas de trámite también muestra cero hasta que
+   alguien confirme la propuesta, y la explicación vieja mandaría a revisar
+   líneas que no tienen nada malo.
+
+   El cero **se sigue diciendo**, y por el mismo motivo de siempre: «no
+   abrió ninguno» y «no sé cuántos abrió» se ven igual si el bloque
+   desaparece, y la primera es información mientras la segunda es un hueco.
    ========================================================================== */
 
 const PROCESO_ID = "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f";
@@ -402,9 +411,20 @@ describe("qué abrió una cotización ganada", () => {
 
   it("dice el cero en vez de callarse", () => {
     expect(textoDeProcesosAbiertos([])).toBe(
-      "Esta cotización está ganada y no abrió ningún proceso: ninguna de sus" +
-        " líneas lleva tipo de proceso.",
+      "Esta cotización está ganada y todavía no abrió ningún proceso.",
     );
+  });
+
+  it("y el cero ya no culpa a las líneas, que es lo que T-13 corrigió", () => {
+    // La frase de T-15 explicaba el cero con «ninguna de sus líneas lleva
+    // tipo de proceso». Desde que ganar no abre nada, eso es falso de una
+    // ganada con trámites de sobra: el cero quiere decir que todavía nadie
+    // confirmó la propuesta. Esta aserción es la que mata la frase vieja
+    // si alguien la devuelve.
+    expect(textoDeProcesosAbiertos([])).not.toContain("líneas");
+    // Y «todavía» es la palabra que hace la diferencia: sin ella, el cero
+    // se lee como definitivo y el panel de abajo no tendría sentido.
+    expect(textoDeProcesosAbiertos([])).toContain("todavía");
   });
 
   it("la lectura que no salió no se confunde con el cero", () => {
@@ -419,5 +439,290 @@ describe("qué abrió una cotización ganada", () => {
     expect(textoDeProcesosAbiertos(null)).not.toBe(
       textoDeProcesosAbiertos([]),
     );
+  });
+});
+
+/* ==========================================================================
+   T-13 B · La propuesta de procesos
+
+   La derivación que el servidor dejó de hacer y que vive acá desde T-13:
+   qué procesos sugieren las líneas de una cotización ganada. Es pura y se
+   prueba como pura; que el panel la dibuje es de `e2e/cotizaciones.spec.ts`.
+
+   Las líneas de prueba se escriben **a mano** y los valores esperados
+   también: ninguno sale de `propuestaDeProcesos` ni de ninguna función del
+   Worker. Es la restricción 6 de la tajada, y acá importa especialmente
+   porque lo que se mide es un filtro y un mapeo —las dos cosas que un eco
+   contra sí mismo pasaría sin notar.
+   ========================================================================== */
+
+const TRAMITE_VISA = "5e2a0d11-1111-4111-8111-000000000001";
+const TRAMITE_SOCIEDAD = "5e2a0d11-2222-4222-8222-000000000002";
+
+function linea(ajustes: Partial<LineaDeCotizacion> = {}): LineaDeCotizacion {
+  return {
+    id: "8b1f0c11-1111-4111-8111-000000000001",
+    clase: "honorario",
+    concepto: "Gestión de la visa de trabajo",
+    monto: 150_000,
+    tipoProcesoId: TRAMITE_VISA,
+    tipoProcesoNombre: "Visa de trabajo",
+    orden: 0,
+    ...ajustes,
+  };
+}
+
+describe("qué procesos propone una cotización ganada", () => {
+  it("siembra una propuesta por cada línea con trámite", () => {
+    expect(
+      propuestaDeProcesos([
+        linea(),
+        linea({
+          id: "8b1f0c11-2222-4222-8222-000000000002",
+          concepto: "Constitución de la sociedad anónima",
+          tipoProcesoId: TRAMITE_SOCIEDAD,
+          tipoProcesoNombre: "Sociedad anónima",
+          orden: 1,
+        }),
+      ]),
+    ).toEqual([
+      {
+        clave: "8b1f0c11-1111-4111-8111-000000000001",
+        tipoProcesoId: TRAMITE_VISA,
+        titulo: "Gestión de la visa de trabajo",
+        responsableId: "",
+      },
+      {
+        clave: "8b1f0c11-2222-4222-8222-000000000002",
+        tipoProcesoId: TRAMITE_SOCIEDAD,
+        titulo: "Constitución de la sociedad anónima",
+        responsableId: "",
+      },
+    ]);
+  });
+
+  it("deja afuera las líneas sin trámite, que son el caso corriente", () => {
+    // Una consulta y un timbre son cobros que no abren expediente, y `0004`
+    // los declaró el caso corriente al hacer la columna nullable. El
+    // contrapeso es la línea con trámite en el medio: con las tres sin
+    // trámite, una función que devolviera siempre vacío pasaría igual.
+    const filas = propuestaDeProcesos([
+      linea({
+        id: "sin-tramite-1",
+        concepto: "Consulta inicial",
+        tipoProcesoId: null,
+        tipoProcesoNombre: null,
+        orden: 0,
+      }),
+      linea({ id: "con-tramite", orden: 1 }),
+      linea({
+        id: "sin-tramite-2",
+        clase: "gasto_estimado",
+        concepto: "Timbres fiscales",
+        tipoProcesoId: null,
+        tipoProcesoNombre: null,
+        orden: 2,
+      }),
+    ]);
+
+    expect(filas).toHaveLength(1);
+    expect(filas[0].clave).toBe("con-tramite");
+  });
+
+  it("una cotización sin ninguna línea de trámite no propone nada", () => {
+    // Y eso **no es un error**: es el caso de `COT-2026-0007`, nueve líneas
+    // y ningún trámite porque el catálogo no tenía «divorcio». El panel
+    // sigue ofreciendo agregar uno a mano, que es lo que T-13 vino a
+    // arreglar.
+    expect(
+      propuestaDeProcesos([
+        linea({ tipoProcesoId: null, tipoProcesoNombre: null }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("el título es el concepto de la línea y no el nombre del tipo", () => {
+    // Es la decisión: el concepto es el texto que el abogado ya escribió
+    // para nombrar ese trabajo de cara al cliente. Con el nombre del tipo,
+    // cinco visas del mismo tipo se llamarían igual — y además habría dos
+    // nombres para una cosa.
+    const [fila] = propuestaDeProcesos([
+      linea({
+        concepto: "Visa de trabajo de Carlos Pérez",
+        tipoProcesoNombre: "Visa de trabajo",
+      }),
+    ]);
+
+    expect(fila.titulo).toBe("Visa de trabajo de Carlos Pérez");
+    expect(fila.titulo).not.toBe("Visa de trabajo");
+  });
+
+  it("conserva el orden de la lista que recibe", () => {
+    // El orden de la cotización, que es el que `GET /lineas` sirve. Las
+    // líneas van con los conceptos al revés del alfabeto para que un
+    // `sort` escondido se note.
+    expect(
+      propuestaDeProcesos([
+        linea({ id: "c", concepto: "Zeta", orden: 0 }),
+        linea({ id: "b", concepto: "Eme", orden: 1 }),
+        linea({ id: "a", concepto: "Alfa", orden: 2 }),
+      ]).map((fila) => fila.titulo),
+    ).toEqual(["Zeta", "Eme", "Alfa"]);
+  });
+
+  it("no toca la lista que recibe, que puede ser estado de React", () => {
+    const lineas = [linea(), linea({ id: "otra", tipoProcesoId: null })];
+    const copia = structuredClone(lineas);
+
+    propuestaDeProcesos(lineas);
+
+    expect(lineas).toEqual(copia);
+  });
+
+  it("la fila en blanco nace vacía y con la clave que le dan", () => {
+    expect(propuestaVacia("nueva-0")).toEqual({
+      clave: "nueva-0",
+      tipoProcesoId: "",
+      titulo: "",
+      responsableId: "",
+    });
+  });
+});
+
+describe("lo que la propuesta tiene que cumplir antes de mandarse", () => {
+  it("la lista vacía se rechaza: no nacería nada", () => {
+    expect(validarPropuesta([])).toEqual([
+      { campo: "procesos", motivo: "sin_procesos_que_abrir" },
+    ]);
+  });
+
+  it("una propuesta sembrada entera pasa sin fallas", () => {
+    // El contrapeso de todo el bloque: si esto fallara, las pruebas de
+    // rechazo de abajo pasarían por el motivo equivocado.
+    expect(validarPropuesta(propuestaDeProcesos([linea()]))).toEqual([]);
+  });
+
+  it("marca la fila sin tipo y la fila sin título, con su posición", () => {
+    // La posición delante del campo, con la misma forma que usa la
+    // respuesta del servidor: con tres filas en pantalla, «falta el
+    // título» sin decir en cuál obliga a mirarlas una por una.
+    expect(
+      validarPropuesta([
+        { clave: "a", tipoProcesoId: TRAMITE_VISA, titulo: "Bien", responsableId: "" },
+        { clave: "b", tipoProcesoId: "", titulo: "Sin tipo", responsableId: "" },
+        { clave: "c", tipoProcesoId: TRAMITE_VISA, titulo: "   ", responsableId: "" },
+      ]),
+    ).toEqual([
+      { campo: "proceso-1.tipoProcesoId", motivo: "tipo_proceso_requerido" },
+      { campo: "proceso-2.titulo", motivo: "titulo_requerido" },
+    ]);
+  });
+
+  it("no inventa fallas sobre lo que no puede saber", () => {
+    // Que el tipo sea de este bufete o que el responsable exista no se
+    // puede decidir en la pantalla, y no se intenta: una validación que
+    // adivinara eso sería la que un día contradice al servidor.
+    expect(
+      validarPropuesta([
+        {
+          clave: "a",
+          tipoProcesoId: "un-tipo-que-esta-pantalla-no-puede-verificar",
+          titulo: "Algo",
+          responsableId: "alguien-que-esta-pantalla-no-puede-verificar",
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("de las filas de la pantalla al cuerpo de la petición", () => {
+  it("la cadena vacía del desplegable se vuelve el nulo del contrato", () => {
+    expect(
+      aAperturaDeProcesos([
+        { clave: "a", tipoProcesoId: TRAMITE_VISA, titulo: "Con nadie", responsableId: "" },
+        {
+          clave: "b",
+          tipoProcesoId: TRAMITE_VISA,
+          titulo: "Con alguien",
+          responsableId: "4a3f1d0e-0e2c-4c1f-9a6b-2d8a1c5e7b90",
+        },
+      ]),
+    ).toEqual([
+      { tipoProcesoId: TRAMITE_VISA, titulo: "Con nadie", responsableId: null },
+      {
+        tipoProcesoId: TRAMITE_VISA,
+        titulo: "Con alguien",
+        responsableId: "4a3f1d0e-0e2c-4c1f-9a6b-2d8a1c5e7b90",
+      },
+    ]);
+  });
+
+  it("recorta el título y deja la clave afuera", () => {
+    // La clave es identidad de pantalla y no hay columna donde ponerla; un
+    // título con espacios al final no es un título distinto, y guardar los
+    // dos dejaría dos procesos que se ven iguales en el listado.
+    expect(
+      aAperturaDeProcesos([
+        {
+          clave: "nueva-3",
+          tipoProcesoId: `  ${TRAMITE_VISA}  `,
+          titulo: "  Constitución de la sociedad  ",
+          responsableId: "  ",
+        },
+      ]),
+    ).toEqual([
+      {
+        tipoProcesoId: TRAMITE_VISA,
+        titulo: "Constitución de la sociedad",
+        responsableId: null,
+      },
+    ]);
+  });
+});
+
+describe("lo que el panel de apertura dice", () => {
+  it("sobre la ganada que todavía no abrió ninguno, propone y dice qué hacer", () => {
+    const texto = textoDeAperturaDeProcesos(false);
+
+    // Las tres cosas que la frase tiene que decir, y ninguna es decorativa:
+    // que todavía no existe nada, que se puede editar, y cómo se fusionan
+    // dos en uno — que es el ejemplo de la sociedad anónima del usuario.
+    expect(texto).toContain("Todavía no existe ninguno");
+    expect(texto).toContain("se agrega el que falte");
+    expect(texto).toContain("fusionan");
+  });
+
+  it("y nombra el paso extra, que es la otra mitad del ejemplo", () => {
+    // «Un proceso con un paso extra» ya se puede armar: los pasos de un
+    // proceso son editables. Sin esta frase, quien mira la propuesta ve dos
+    // filas y cree que fusionarlas pierde un paso.
+    expect(textoDeAperturaDeProcesos(false)).toContain("editable");
+  });
+
+  it("sobre la ganada que ya abrió, no propone: ofrece abrir otro", () => {
+    const texto = textoDeAperturaDeProcesos(true);
+
+    expect(texto).toContain("ya abrió los suyos");
+    expect(texto).toContain("abrir uno más");
+  });
+
+  it("las dos frases no se pueden confundir", () => {
+    // Si fueran la misma, el panel diría «estos son los que sugieren las
+    // líneas» sobre una cotización que ya los abrió, que es exactamente el
+    // ruido que invita a abrir dos veces lo mismo.
+    expect(textoDeAperturaDeProcesos(true)).not.toBe(
+      textoDeAperturaDeProcesos(false),
+    );
+  });
+
+  it("el aviso de las líneas no leídas no se confunde con no tener trámites", () => {
+    // Es el mismo criterio que separa el cero del fallo de red más arriba:
+    // una propuesta vacía porque la cotización no tiene trámites y una
+    // vacía porque no se leyó nada se ven igual, y la primera es
+    // información mientras la segunda es un hueco.
+    expect(AVISO_DE_LINEAS_NO_LEIDAS).toContain("no se pudieron leer");
+    // Y dice que el panel sigue sirviendo, en vez de dejar a alguien
+    // mirando un control que parece roto.
+    expect(AVISO_DE_LINEAS_NO_LEIDAS).toContain("a mano");
   });
 });

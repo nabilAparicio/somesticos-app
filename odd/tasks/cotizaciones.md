@@ -648,3 +648,102 @@ rechazo y por aceptación.
    `…sqlite.antes-de-0011` al lado.
 2. **El `pnpm dev` del puerto 5173 quedó bajado** para liberar la base. Las de punta a punta usan
    el 5174 con `--strictPort` y levantaron el suyo.
+
+### Unidad B · La propuesta, la ruta y el panel, cerrada
+
+**Qué entró:** la ruta `POST /api/cotizaciones/{id}/procesos`, la derivación de la propuesta
+como función pura de la pantalla, y el panel «Abrir procesos» en el detalle de la cotización.
+Con eso **cambia la conducta**: ganar deja de abrir trámites y el bufete confirma la lista antes
+de que exista nada, que es la opción (b) que el usuario eligió.
+
+**Checks observados:** `typecheck` 0, `test` 0 (2146, eran 2108), `lint` 0, `build` 0,
+`test:e2e` 0 (377, eran 373).
+
+#### Qué se borró, y qué se midió antes de borrarlo
+
+Las dos piezas que la unidad A había dejado en pie «por si acaso» se quedaron sin llamador, y
+las dos se fueron. Ninguna de las dos decisiones es de intuición:
+
+- **`lineasQueAbrenTramite`** era la derivación del servidor. No se mudó de archivo: se mudó de
+  **lado**. Vive ahora en `src/pantallas/cotizaciones/ciclo.ts` porque lo que el bufete necesita
+  ver es una propuesta **editable**, y una propuesta que el servidor armara tendría que viajar de
+  ida para volver corregida — dos formas del mismo dato en el cable. La pantalla ya tiene las
+  líneas con `tipoProcesoId` y `tipoProcesoNombre` resueltos desde T-3, así que la siembra es una
+  derivación pura sobre datos que ya están ahí. Por eso **no hay un `GET` de la propuesta**.
+
+- **`CondicionDeApertura` y el `soloSi` de `aperturasDeProcesos`** existían por la carrera de
+  T-7, y la medición dice que sobran por **dos** razones independientes. La primera: ganar ya no
+  abre nada, así que aquella carrera —dos peticiones que leyeron `emitida` a la vez y las dos
+  escribían trámites— no existe. La segunda, que es la que importa para la ruta nueva: su
+  precondición sería `estado = 'ganada'`, y **`ganada` es terminal** por
+  `cotizacion_el_estado_sigue_el_ciclo_de_vida` de `0007`, que enumera las transiciones en
+  positivo y no admite ninguna que salga de ahí. Ninguna mutación puede volverla falsa entre leer
+  y escribir, así que habría sido **una guarda que ninguna prueba puede matar**. Con el `soloSi`
+  fuera, las sentencias volvieron a `INSERT … VALUES`: la forma `INSERT … SELECT` existía nada más
+  que para poder colgarles un `WHERE EXISTS`.
+
+#### La carrera de abrir no es una carrera, y se dice en vez de simularse
+
+Dos peticiones que abren procesos a la vez sobre la misma ganada **entran las dos**, y es
+correcto: abrir no es una transición, es aditivo. No existe un juego de procesos «correcto» del
+que la segunda sea una repetición — el bufete pidió explícitamente poder abrir otro meses
+después. Por eso no hay guarda de idempotencia y hay en cambio una prueba que mide lo contrario:
+que la segunda apertura suma y no reemplaza.
+
+#### La bitácora: una transacción por proceso, y la deuda de T-7 se pagó
+
+`mutar` admite **un evento por transacción**, y de ahí salía el agujero que T-7 dejó anotado: los
+procesos nacían sin una sola línea de bitácora propia. Allá era defendible —la decisión era una,
+ganar, y repetirla por línea habría sido ruido—. **Con T-13 ese argumento se da vuelta**: cada
+fila de la lista es una elección propia, con su tipo, su título y su responsable elegidos a mano.
+Así que cada proceso entra en su propia transacción y deja su `creado` con el título como
+detalle, igual que el alta a mano.
+
+Lo que se paga es la atomicidad **entre** procesos: si el tercero aborta contra un disparador,
+los dos primeros ya nacieron y la petición sale con el error crudo —no se atrapa nada—. Es el
+precio correcto, porque lo que de verdad tiene que ser atómico es cada proceso con su plan —«un
+proceso guardado sin su plan es peor que ninguno»— y eso cada `mutar` lo conserva entero. La
+pantalla relee la lista al volver, así que lo que sí nació se ve.
+
+#### La respuesta del 201 no son los procesos, y eso evita el segundo camino
+
+`POST /{id}/procesos` contesta `{ abiertos: string[] }`: los identificadores, en el orden en que
+se pidieron, y sin `location` —esa cabecera lleva **una** dirección y acá nacen N—. No devuelve
+los procesos enteros a propósito: «¿qué procesos tiene esta cotización?» se contesta en un solo
+lugar, `GET /api/procesos` con su cotización de origen resuelta (T-15), y una respuesta con los
+procesos completos habría sido el segundo. La pantalla, al volver, **relee** esa lista subiendo un
+contador que está en las dependencias del efecto.
+
+#### Tres guardas, con su asesino medido
+
+Se mutaron las tres y las tres murieron, cada una con un solo nombre:
+
+| Guarda | Qué muere al quitarla |
+|---|---|
+| El 409 `no_es_ganada` **de la capa de rutas** | «el 409 va antes que el 422», y **sólo ésa**: el puerto se niega igual, así que lo único que la ruta decide es el **orden**. Está escrito así en el código. |
+| Validar las llaves de **todas** las filas antes de escribir una | «una llave mala en la última fila no deja nacer las de arriba»: con la validación adentro del bucle, el primer proceso nace y el segundo se rechaza. |
+| Sembrar **sólo** si la cotización no abrió ninguno | tres de punta a punta, incluida la del panel vacío sobre una ganada que ya abrió. Sin ella se vuelve a ofrecer lo que ya existe. |
+
+#### Dos frases que decían algo que dejó de ser cierto
+
+- **El cero de «Procesos que abrió»** explicaba el porqué: «ninguna de sus líneas lleva tipo de
+  proceso». Era cierto mientras ganar abriera solo; ahora una ganada con cinco líneas de trámite
+  también muestra cero hasta que alguien confirme, y la frase vieja mandaría a revisar líneas que
+  no tienen nada malo. Dice «todavía no abrió ningún proceso», y hay una prueba que mata la frase
+  vieja si alguien la devuelve.
+- **El comentario de `textoDeProcesosAbiertos`** hablaba de «dos momentos en que se lo mira». Ya
+  no hay dos: el conteo `procesosAbiertos` se fue del contrato con el hecho que contaba, y queda
+  una sola lectura.
+
+#### Lo que la pantalla no construyó, porque ya existía
+
+Los pasos de un proceso **ya son editables** (`PUT /api/procesos/{id}/etapas`), así que «un
+proceso con un paso extra» es algo que el bufete ya podía armar. Lo que faltaba era que el
+sistema no le impusiera la partición antes. El panel lo dice con una frase, y hay una prueba
+unitaria sobre esa frase: sin ella, quien mira la propuesta ve dos filas y cree que fusionarlas
+pierde un paso.
+
+Tampoco hay un gesto propio para **fusionar**: fusionar dos es sacar una y renombrar la otra, y
+un botón «fusionar» tendría que preguntar cuál de los dos títulos sobrevive — que es justo lo que
+sacar y renombrar ya contesta sin preguntar nada. El camino existe y está recorrido entero en la
+prueba de punta a punta de la sociedad anónima.

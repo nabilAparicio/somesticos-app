@@ -37,6 +37,7 @@ import type {
   DocumentoCongelado,
   EstadoDeCotizacion,
   FallaDeValidacion,
+  DatosDeProcesoPorAbrir,
   LineaDeCotizacion,
   ModuloDeCotizacion,
   TipoDeModulo,
@@ -52,16 +53,27 @@ import type { PropuestaDelModelo } from "../ia/esquema";
 import { recorte, sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 /**
- * T-7: la apertura de procesos desde una cotización ganada.
+ * T-7, reescrito por T-13: la apertura de procesos desde una cotización
+ * ganada.
  *
  * Es la única flecha que este módulo le tira al de procesos, y va en este
- * sentido a propósito: la cotización sabe que al ganarse abre trámites; un
- * proceso no tiene por qué saber que existen las cotizaciones. Se importa
- * el **constructor de sentencias** y no el servicio, porque las aperturas
- * tienen que viajar en el mismo `batch` que marca la cotización ganada.
+ * sentido a propósito: la cotización sabe que de ella pueden colgar
+ * trámites; un proceso no tiene por qué saber que existen las cotizaciones.
+ *
+ * Se importan el **constructor de sentencias** y el **validador de llaves**,
+ * y no el servicio de procesos. El motivo cambió con T-13 y conviene
+ * dejarlo dicho: hasta `0010` era que las aperturas tenían que viajar en el
+ * mismo `batch` que marcaba la cotización ganada. Ya no viajan con nada —
+ * abrir es su propia petición— y lo que sostiene la forma ahora es la
+ * dirección de la dependencia: `worker/index.ts` le pasa a esta ruta el
+ * servicio de cotizaciones y nada más, así que pedirle el de procesos sería
+ * recablear el Worker para conseguir lo que dos funciones ya dan.
  */
 import type { AperturaDeProceso } from "../procesos/repositorio";
-import { aperturasDeProcesos } from "../procesos/repositorio";
+import {
+  aperturasDeProcesos,
+  fallasDeLasLlavesDelProceso,
+} from "../procesos/repositorio";
 import {
   ahoraIso,
   diaEnPanama,
@@ -119,20 +131,33 @@ export type ResultadoDeEmision =
  * llevan cuerpo, así que no hay formulario que corregir.
  */
 export type ResultadoDeCierre =
-  | {
-      estado: "guardado";
-      cotizacion: Cotizacion;
-      /**
-       * Cuántos procesos abrió este desenlace (T-7).
-       *
-       * Siempre viaja, y en perder siempre vale cero: ganar es la única
-       * puerta de una cotización hacia `proceso`. El cero no es un hueco —
-       * una ganada cuyas líneas son todas consultas y timbres no abre
-       * ningún trámite, y eso es el caso corriente del bufete.
-       */
-      procesosAbiertos: number;
-    }
+  | { estado: "guardado"; cotizacion: Cotizacion }
   | { estado: "no_es_emitida"; actual: EstadoDeCotizacion }
+  | { estado: "no_encontrado" };
+
+/**
+ * Lo que devuelve abrir procesos desde una cotización ganada (T-13).
+ *
+ * **Tiene rama `invalido` y las tres del ciclo de vida no la tienen**, y la
+ * diferencia es exactamente la que justifica la tarea: emitir, ganar y
+ * perder no llevan cuerpo —lo único que se les manda es la dirección—,
+ * mientras que esto lleva la lista que el bufete acaba de editar. Hay
+ * formulario que corregir, así que hay una rama que lo dice.
+ *
+ * `no_es_ganada` y no `no_es_emitida`: la precondición es la contraria de la
+ * de ganar. Un documento que todavía no salió no abre trámites, y uno que el
+ * cliente no aceptó tampoco. Las dos son «no está ganada» y la rama lleva el
+ * estado adentro para que la pantalla pueda decir cuál de las tres es.
+ *
+ * `abiertos` son los identificadores de los procesos que nacieron, en el
+ * orden en que se pidieron. No son los procesos enteros, y el argumento
+ * está en `RespuestaDeApertura`: quién cuelga de qué cotización se contesta
+ * en un solo lugar, y no es éste.
+ */
+export type ResultadoDeApertura =
+  | { estado: "abiertos"; abiertos: string[] }
+  | { estado: "invalido"; fallas: FallaDeValidacion[] }
+  | { estado: "no_es_ganada"; actual: EstadoDeCotizacion }
   | { estado: "no_encontrado" };
 
 /**
@@ -410,11 +435,40 @@ export interface ServicioDeCotizaciones {
    * No recibe quién la gana: el autor del hecho lo pone `mutar` desde la
    * identidad de la petición (I-6), y acá no se congela nada —a diferencia
    * de emitir, donde el emisor entra **adentro** del snapshot—.
+   *
+   * **No abre ningún proceso, y hasta T-13 abría uno por línea con
+   * trámite.** El reparto de líneas a expedientes es del bufete y se decide
+   * después, con la propuesta a la vista, en `abrirProcesos`.
    */
   ganar(tenantId: string, id: string): Promise<ResultadoDeCierre>;
 
   /** `emitida → perdida`. El espejo de `ganar`, y tan terminal como ella. */
   perder(tenantId: string, id: string): Promise<ResultadoDeCierre>;
+
+  /* --- Abrir procesos desde una ganada (T-13 B) --- */
+
+  /**
+   * Abre los procesos que el bufete confirmó, colgados de esta cotización.
+   *
+   * **Es la mitad del sistema que T-13 le devolvió al bufete.** Hasta
+   * `0010`, ganar abría un proceso por cada línea con `tipo_proceso_id`, y
+   * eso imponía desde la estructura una decisión que no es del sistema:
+   * constituir y registrar una sociedad se cobran aparte porque se tarifan
+   * aparte, y que sean uno o dos expedientes es otra pregunta. Ahora el
+   * sistema **propone** —la derivación vive en la pantalla, que ya tiene las
+   * líneas— y acá nace sólo lo que alguien confirmó.
+   *
+   * Se puede llamar más de una vez sobre la misma cotización, y **es a
+   * propósito**: es el caso que el usuario pidió con todas las letras, el
+   * trámite que el catálogo no tenía cuando se cotizó. Por eso no hay guarda
+   * de «ya abrió los suyos»: no existe un juego de procesos correcto del que
+   * una segunda llamada sea una repetición.
+   */
+  abrirProcesos(
+    tenantId: string,
+    id: string,
+    procesos: readonly DatosDeProcesoPorAbrir[],
+  ): Promise<ResultadoDeApertura>;
 
   /**
    * Nace un borrador nuevo atado al original por `duplicada_de_id`, con
@@ -997,72 +1051,27 @@ export function cotizacionesSobreD1(
     return { id: emisorId, nombre: fila?.nombre ?? null };
   }
 
-  /**
-   * Las líneas de una cotización que abren trámite (T-7).
+  /*
+   * Acá vivía `lineasQueAbrenTramite`, la derivación que convertía cada
+   * línea con `tipo_proceso_id` en una apertura, y **T-13 la dejó sin
+   * llamador**. Se borró en vez de dejarla esperando a alguien: código que
+   * nadie llama es peor que código ausente, porque el próximo que lo lea va
+   * a creer que describe lo que el sistema hace.
    *
-   * Son las que llevan `tipo_proceso_id`. Las que no lo llevan **no son un
-   * caso raro ni un dato faltante**: son honorarios y gastos que no
-   * corresponden a ningún expediente —una consulta, un timbre, la
-   * mensajería— y `0004` las declaró el caso corriente al hacer la columna
-   * nullable. Por eso el filtro es un `WHERE` y no una validación: no hay
-   * nada que reportar.
+   * La derivación no se perdió: **cambió de lado**. Ahora vive en
+   * `src/pantallas/cotizaciones/ciclo.ts`, como función pura, y eso no es
+   * una mudanza por comodidad. Lo que el bufete necesita ver antes de que
+   * nazca nada es una propuesta editable, y una propuesta que el servidor
+   * armara tendría que viajar de ida para volver corregida — dos formas del
+   * mismo dato en el cable. La pantalla ya tiene las líneas con su
+   * `tipoProcesoId` y su `tipoProcesoNombre` resueltos, así que la siembra
+   * es una derivación pura sobre datos que ya están ahí.
    *
-   * El cliente sale de la **cotización**, que desde T-13 es también de
-   * quien cuelga el proceso: la frase de T-7 sobre que la línea no tiene
-   * cliente propio sigue siendo cierta y ahora es más directa, porque la
-   * cotización dejó de ser un dato que había que ir a buscar y pasó a ser
-   * el padre. Es la mitad de I-3 que el código aporta; la otra, la que no
-   * depende de que el código se porte bien, es el disparador de
-   * `0011_el_proceso_cuelga_de_la_cotizacion.sql`.
-   *
-   * **Sigue saliendo una apertura por línea con trámite, y eso es a
-   * propósito:** T-13 mueve de qué cuelga el proceso y no cuántos se abren.
-   * Que la apertura pase de derivación a propuesta —que el bufete fusione
-   * dos líneas en un expediente o saque una— es la otra mitad de la tarea,
-   * y hasta que exista el comportamiento observable es el de T-7.
-   *
-   * `concepto` es el título del proceso: es el texto que el abogado ya
-   * escribió para nombrar ese trabajo de cara al cliente, y pedirle que lo
-   * escriba otra vez al ganar sería pedirle dos nombres para una cosa.
-   *
-   * El orden es el de la cotización, así que los procesos nacen en el mismo
-   * orden en que el cliente leyó sus líneas.
+   * Lo que el servidor conserva es lo que sólo él puede sostener: que el
+   * cliente del proceso sea el de la cotización (I-3), que el tipo y el
+   * responsable sean de este bufete, y que el `origen` lo ponga quien
+   * escribe la fila. Eso está en `abrirProcesos`, más abajo.
    */
-  async function lineasQueAbrenTramite(
-    tenantId: string,
-    cotizacionId: string,
-  ): Promise<AperturaDeProceso[]> {
-    const { results } = await db
-      .prepare(
-        // `l.id` dejó de leerse con T-13 y por eso dejó de pedirse: la
-        // apertura ya no guarda la línea, guarda la cotización, que es el
-        // parámetro que esta función recibió. Una columna que se trae y no
-        // se usa es la pista falsa que el próximo va a seguir.
-        "SELECT l.tipo_proceso_id, l.concepto, q.cliente_id" +
-          " FROM cotizacion_linea l" +
-          " JOIN cotizacion q ON q.id = l.cotizacion_id" +
-          "   AND q.tenant_id = l.tenant_id" +
-          " WHERE l.tenant_id = ? AND l.cotizacion_id = ?" +
-          "   AND l.tipo_proceso_id IS NOT NULL" +
-          " ORDER BY l.orden",
-      )
-      .bind(tenantId, cotizacionId)
-      .all<{
-        tipo_proceso_id: string;
-        concepto: string;
-        cliente_id: string;
-      }>();
-
-    return results.map((linea) => ({
-      clienteId: linea.cliente_id,
-      tipoProcesoId: linea.tipo_proceso_id,
-      titulo: linea.concepto,
-      // Nadie lo asignó todavía: ganar una cotización cierra una venta, no
-      // reparte trabajo. Eso es una decisión aparte y visible.
-      responsableId: null,
-      cotizacionId,
-    }));
-  }
 
   /**
    * Ganar y perder, que son la misma escritura con dos destinos (T-5).
@@ -1107,20 +1116,6 @@ export function cotizacionesSobreD1(
       return { estado: "no_es_emitida", actual: actual.estado };
     }
 
-    // T-7: los procesos que este desenlace abre. Perder no abre ninguno, y
-    // por eso la lista se arma sólo para ganar: no es un filtro defensivo,
-    // es que la otra rama no tiene nada que abrir.
-    const aperturas =
-      destino === "ganada" ? await lineasQueAbrenTramite(tenantId, id) : [];
-    const porNacer = await aperturasDeProcesos(db, tenantId, aperturas, {
-      // La misma precondición que el `UPDATE` de abajo, evaluada dentro de
-      // la transacción. Ver el comentario del `mutar`.
-      sql:
-        "SELECT 1 FROM cotizacion" +
-        " WHERE tenant_id = ? AND id = ? AND estado = 'emitida'",
-      parametros: [tenantId, id],
-    });
-
     const efectos = await base.mutar(
       {
         entidad: "cotizacion",
@@ -1130,33 +1125,23 @@ export function cotizacionesSobreD1(
         // que identifica a la cotización de cara a una persona.
         detalle: actual.codigo,
       },
-      // Las aperturas van **antes** del `UPDATE`, y el orden es la guarda.
+      // **Una sola sentencia, y hasta T-13 eran N + 1.**
       //
-      // Cada `INSERT` cuelga de la misma precondición que el `UPDATE`: sólo
-      // entra si la cotización sigue `emitida`. Si fueran después, el
-      // `UPDATE` ya la habría dejado `ganada` dentro de esta misma
-      // transacción y la condición no podría distinguir nuestra escritura
-      // de la de otra petición.
+      // Antes, delante del `UPDATE` viajaban las aperturas de un proceso
+      // por cada línea con trámite, cada una colgada de la misma
+      // precondición `estado = 'emitida'` para que la petición que perdía
+      // la carrera no escribiera trámites por su cuenta. Esa guarda tenía
+      // asesino —la prueba de la carrera de `test/ciclo-api.spec.ts`, que
+      // provoca la ventana a mano con `servicioConIntruso`— y dejó de tener
+      // objeto cuando ganar dejó de abrir nada: no hay más escritura que
+      // proteger que la del propio estado, y de eso se encarga su `WHERE`.
       //
-      // ## Qué cierra eso, y por qué no es idempotencia de más
-      //
-      // Es la carrera: dos peticiones que leyeron `emitida` a la vez. La
-      // transición garantiza que **el estado** se escribe una sola vez —lo
-      // prueba por rechazo `test/ciclo-api.spec.ts`— pero no garantizaba
-      // nada sobre las aperturas, porque no colgaban de ella: el `UPDATE`
-      // que cambia cero filas no es un error, así que la petición perdedora
-      // escribía sus procesos igual y la cotización terminaba con los
-      // trámites abiertos dos veces. Con la condición puesta, la perdedora
-      // no escribe nada y contesta 409.
-      //
-      // Es una guarda y no un adorno porque **se puede matar**: quitarla
-      // mata la prueba de la carrera de `test/ciclo-api.spec.ts`, que
-      // provoca la ventana a mano con `servicioConIntruso`.
-      //
-      // No se atrapa nada: lo que decide es el **conteo** de filas que
-      // cambió el `UPDATE`, que es la última sentencia y por eso la que se
-      // mira.
-      ...porNacer.flatMap((proceso) => proceso.sentencias),
+      // Lo que no cambió es que la guarda se **cuenta y no se atrapa**: lo
+      // que decide es el conteo de filas que cambió el `UPDATE`. Desde
+      // `0007` la base también rechaza la transición ilegal
+      // —`cotizacion_el_estado_sigue_el_ciclo_de_vida`— pero lo hace
+      // abortando, o sea un 500; esto contesta un 409 que dice en qué
+      // quedó.
       sentencia(
         "UPDATE cotizacion SET estado = ?" +
           " WHERE tenant_id = ? AND id = ? AND estado = 'emitida'",
@@ -1166,7 +1151,6 @@ export function cotizacionesSobreD1(
       ),
     );
 
-    // El `UPDATE` es la última sentencia del lote, y es la que decide.
     const efecto = efectos[efectos.length - 1];
 
     if (efecto.meta.changes === 0) {
@@ -1184,12 +1168,7 @@ export function cotizacionesSobreD1(
     const cotizacion = await obtener(tenantId, id);
     if (cotizacion === null) return { estado: "no_encontrado" };
 
-    // Se cuentan las aperturas que viajaron, no se vuelve a consultar la
-    // base: el `UPDATE` cambió una fila, así que la condición de los
-    // `INSERT` era cierta y entraron todos. Un `SELECT count(*)` acá
-    // contestaría lo mismo pagando otro viaje, y mentiría distinto si
-    // alguna vez dejara de ser lo mismo.
-    return { estado: "guardado", cotizacion, procesosAbiertos: porNacer.length };
+    return { estado: "guardado", cotizacion };
   }
 
   return {
@@ -2301,6 +2280,124 @@ export function cotizacionesSobreD1(
 
     perder(tenantId, id) {
       return cerrar(tenantId, id, "perdida");
+    },
+
+    /**
+     * Abrir los procesos que el bufete confirmó (T-13 B).
+     *
+     * ## El orden de los tres rechazos, que es lo que esta función decide
+     *
+     *  1. **404 antes que todo.** Un cuerpo inválido contra una cotización
+     *     ajena contestaría 422 en vez de 404, y eso bastaría para saber
+     *     que ese identificador existe (I-8). Es la misma decisión que
+     *     toman el `PUT` del detalle y las rutas de líneas.
+     *  2. **409 antes que 422.** Lo que bloquea es el estado, no el
+     *     formulario: mandar a corregir una lista que no va a entrar igual
+     *     es trabajo tirado.
+     *  3. **422 al final**, que es el único de los tres que la persona
+     *     puede resolver escribiendo.
+     *
+     * ## La precondición no va dentro de la transacción, y se midió
+     *
+     * En `cerrar` sí va —ahí el estado se mueve y hay una ventana real
+     * entre leer y escribir—. Acá no la hay: `ganada` es **terminal** por
+     * `cotizacion_el_estado_sigue_el_ciclo_de_vida` de `0007`, que enumera
+     * las transiciones en positivo y no admite ninguna que salga de ahí.
+     * Ninguna mutación puede volver falsa esta comprobación entre la
+     * lectura y el `INSERT`, así que una cláusula `WHERE EXISTS` sobre el
+     * estado sería una guarda que **ninguna prueba puede matar**: la
+     * petición perdedora no existe porque no hay carrera que perder.
+     *
+     * Y dos peticiones simultáneas abren las dos sus procesos, que es lo
+     * correcto: abrir no es una transición, es aditivo, y el bufete pidió
+     * explícitamente poder abrir otro más tarde. No hay un juego de
+     * procesos «correcto» del que la segunda llamada sea una repetición.
+     *
+     * ## Una transacción por proceso, y no una sola para todos
+     *
+     * `mutar` admite **un evento por transacción**. Con los N procesos en
+     * un solo `batch`, N − 1 nacerían sin una línea de bitácora que diga
+     * quién los abrió, que es justamente el agujero que T-7 dejó anotado
+     * («el proceso recién nacido no tiene bitácora propia»). Allá era
+     * defendible: la decisión era una sola —ganar— y repetirla por línea
+     * habría sido ruido. Acá no: **cada fila de la propuesta es una
+     * decisión propia**, con su tipo, su título y su responsable elegidos a
+     * mano, y aplastarlas en un solo hecho sería decir menos de lo que pasó.
+     *
+     * Lo que se paga es la atomicidad **entre** procesos: si el tercero
+     * aborta contra un disparador, los dos primeros ya nacieron y la
+     * petición sale con el error crudo —no se atrapa nada—. Es el precio
+     * correcto, porque lo que de verdad tiene que ser atómico es cada
+     * proceso con su plan —«un proceso guardado sin su plan es peor que
+     * ninguno»— y eso cada `mutar` lo conserva entero. La pantalla relee la
+     * lista al volver, así que lo que sí nació se ve.
+     */
+    async abrirProcesos(tenantId, id, procesos) {
+      // Dentro del tenant: una cotización de otro bufete es, desde acá, una
+      // cotización que no existe.
+      const cotizacion = await obtener(tenantId, id);
+      if (cotizacion === null) return { estado: "no_encontrado" };
+
+      if (cotizacion.estado !== "ganada") {
+        return { estado: "no_es_ganada", actual: cotizacion.estado };
+      }
+
+      // Las llaves de **todas** las filas antes de escribir una sola: un
+      // rechazo a medias dejaría abiertos los procesos de arriba de la
+      // lista y negaría los de abajo, y quien mira la pantalla no tendría
+      // cómo saber cuáles.
+      const fallas: FallaDeValidacion[] = [];
+      for (const [indice, cada] of procesos.entries()) {
+        const suyas = await fallasDeLasLlavesDelProceso(db, tenantId, cada);
+        // La posición delante del campo, igual que `etapa-{i}` en el plan
+        // de un proceso: con la lista entera en pantalla, «ese tipo ya no
+        // existe» sin decir en cuál de las tres filas obliga a probarlas
+        // una por una.
+        for (const falla of suyas) {
+          fallas.push({ ...falla, campo: `proceso-${String(indice)}.${falla.campo}` });
+        }
+      }
+      if (fallas.length > 0) return { estado: "invalido", fallas };
+
+      const abiertos: string[] = [];
+
+      for (const cada of procesos) {
+        const [porNacer] = await aperturasDeProcesos(db, tenantId, [
+          {
+            // **I-3 sale de acá y no del cuerpo.** El proceso nacido de una
+            // cotización comparte cliente con ella, y la fila que lo dice
+            // es la que esta función ya leyó para contestar el 404. Que
+            // viniera de afuera sería ofrecer un camino hacia un 500 del
+            // disparador de `0011`.
+            clienteId: cotizacion.clienteId,
+            tipoProcesoId: cada.tipoProcesoId,
+            titulo: cada.titulo,
+            responsableId: cada.responsableId,
+            // Lo que vuelve `origen` igual a `'cotizacion'`: lo deriva
+            // `aperturasDeProcesos` de que acá haya una, en vez de
+            // recibirlo. Es lo que impide marcar como nacido de una
+            // cotización algo que no nació de ninguna.
+            cotizacionId: id,
+          },
+        ] satisfies AperturaDeProceso[]);
+
+        await base.mutar(
+          {
+            entidad: "proceso",
+            entidadId: porNacer.id,
+            accion: "creado",
+            // El título, igual que el alta a mano: es lo que identifica al
+            // proceso de cara a una persona, y es lo que el bufete acaba de
+            // escribir o confirmar en la propuesta.
+            detalle: cada.titulo,
+          },
+          ...porNacer.sentencias,
+        );
+
+        abiertos.push(porNacer.id);
+      }
+
+      return { estado: "abiertos", abiertos };
     },
 
     /**
