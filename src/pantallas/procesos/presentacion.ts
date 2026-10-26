@@ -64,6 +64,11 @@ export function ordenarProcesos(procesos: readonly Proceso[]): Proceso[] {
  *
  * Busca también por **la etapa que viene**, que es como alguien recuerda un
  * proceso cuando no se acuerda del título: «el que está en entrevista».
+ *
+ * Y desde T-15 por **el código de la cotización**, que es la otra forma en
+ * que alguien lo recuerda: «los dos que salieron de la 0001». Entra el
+ * código y no el identificador por lo mismo que el código es lo que viaja
+ * resuelto — nadie escribe un UUID en un buscador.
  */
 export function filtrarProcesos(
   procesos: readonly Proceso[],
@@ -81,6 +86,7 @@ export function filtrarProcesos(
         proceso.areaNombre,
         proceso.responsableNombre,
         proceso.etapaVigente,
+        proceso.cotizacionDeOrigen?.codigo ?? null,
       ]
         .filter((parte): parte is string => parte !== null)
         .join(" "),
@@ -228,4 +234,84 @@ export function resumenDeTrabajoVigente(
     : `El proceso está cerrado. Quedaron ${String(
         abiertos.length,
       )} pendientes sin cerrar.`;
+}
+
+/* ==========================================================================
+   T-15 · De dónde viene cada proceso
+
+   `Proceso.cotizacionDeOrigen` llega del cable ya resuelto: la cotización
+   que abrió este proceso, con su código al lado. Lo que vive acá es qué
+   dice la pantalla con eso.
+
+   **Las tres funciones leen ese campo y ninguna lee `origen`.** El contrato
+   garantiza que dicen lo mismo —el `CHECK` de `0008` no admite una fila
+   donde discrepen—, y justamente por eso mirar los dos sería tener dos
+   guardas para el mismo hecho: quitar cualquiera de las dos no rompería
+   nada, y ninguna quedaría verificada. Se mira la que además trae la
+   dirección que el enlace necesita.
+   ========================================================================== */
+
+/**
+ * El distintivo del listado: de qué cotización sale esta fila.
+ *
+ * Es corto a propósito. Va al lado del título, dentro de una celda que ya
+ * compite con el cliente, el tipo, el avance y lo que viene; una frase
+ * entera ahí empujaría la tabla y haría desaparecer justamente la columna
+ * que justifica la pantalla.
+ *
+ * El nulo **no es** «no se pudo resolver»: es que el proceso lo abrió una
+ * persona y no hay ninguna cotización detrás. Por eso la fila directa no
+ * lleva un distintivo apagado que diga «sin cotización» — eso sería gastar
+ * ancho en informar de una ausencia que es el caso corriente.
+ */
+export function etiquetaDeOrigen(proceso: Proceso): string | null {
+  const origen = proceso.cotizacionDeOrigen;
+  return origen === null ? null : `De ${origen.codigo}`;
+}
+
+/**
+ * La misma procedencia, dicha entera en el detalle.
+ *
+ * Es un texto aparte del distintivo y no el mismo con otro envoltorio: en
+ * el detalle hay lugar para una oración, y la oración es la que explica de
+ * dónde salió un proceso que nadie recuerda haber abierto a mano.
+ *
+ * **Este nulo es el que decide que no haya botón.** Un proceso directo no
+ * tiene cotización, así que un «Ver la cotización» ahí prometería una
+ * pantalla que el servidor contestaría con un 404 — y no se dibuja apagado,
+ * porque un control apagado sigue siendo la promesa de que existe algo
+ * detrás. Es la lección de la unidad B de T-2, la misma que gobierna
+ * `accionesDe` en `cotizaciones/ciclo.ts`.
+ */
+export function textoDeOrigen(proceso: Proceso): string | null {
+  const origen = proceso.cotizacionDeOrigen;
+  if (origen === null) return null;
+
+  return `Este proceso nace de la cotización «${origen.codigo}».`;
+}
+
+/** El rótulo del enlace que sube del proceso a su cotización. */
+export const ROTULO_DE_LA_COTIZACION = "Ver la cotización";
+
+/**
+ * Los procesos que abrió una cotización, sacados del listado completo.
+ *
+ * El filtro es **del lado del navegador**, igual que la búsqueda y el filtro
+ * por estado de esta misma pantalla: el servidor entrega la cartera entera
+ * en una respuesta y el bufete son dos personas. Es lo que evita una ruta
+ * nueva, una consulta nueva y un segundo lugar donde se decida qué procesos
+ * cuelgan de qué cotización.
+ *
+ * Compara por **identificador y no por código**: el código es texto de cara
+ * a una persona y lo que ata las dos filas es la llave.
+ *
+ * El arreglo que llega no se toca: puede ser estado de React.
+ */
+export function procesosDeCotizacion(
+  procesos: readonly Proceso[],
+  cotizacionId: string,
+): Proceso[] {
+  return procesos.filter(
+    (proceso) => proceso.cotizacionDeOrigen?.id === cotizacionId,
+  );
 }

@@ -25,6 +25,7 @@ import { cargarProcesos, textoDeProblema } from "./api";
 import {
   avanceDe,
   estadoLegible,
+  etiquetaDeOrigen,
   filtrarPorEstado,
   filtrarProcesos,
   ocultosPorEstado,
@@ -120,7 +121,7 @@ export function ListaDeProcesos() {
                 className="campo__control"
                 type="search"
                 value={consulta}
-                placeholder="Título, cliente, tipo o la etapa que viene"
+                placeholder="Título, cliente, tipo, etapa o cotización"
                 onChange={(evento) => {
                   setConsulta(evento.target.value);
                 }}
@@ -192,6 +193,26 @@ export function ListaDeProcesos() {
                           {" "}
                           <span className="etiqueta etiqueta--tenue">
                             {estadoLegible(proceso)}
+                          </span>
+                        </>
+                      )}
+                      {/* T-15 · De dónde viene, cuando viene de algún lado.
+
+                          Mismo criterio que el estado: **sólo se marca la
+                          excepción**. La mayoría de los procesos se abren a
+                          mano, y un «Directo» en todas las demás filas
+                          gastaría ancho en no decir nada.
+
+                          La clase es propia y no `etiqueta--tenue`, que es
+                          la del cerrado. No es cosmética: una prueba que
+                          cuenta distintivos sobre el documento entero
+                          mezclaría las dos cosas y dejaría de medir
+                          cualquiera de las dos. */}
+                      {etiquetaDeOrigen(proceso) !== null && (
+                        <>
+                          {" "}
+                          <span className="etiqueta etiqueta--origen">
+                            {etiquetaDeOrigen(proceso)}
                           </span>
                         </>
                       )}

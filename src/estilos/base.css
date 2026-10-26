@@ -184,3 +184,47 @@ canvas {
   background: transparent;
   font-style: italic;
 }
+
+/*
+ * T-15 · El distintivo de procedencia: de qué cotización nace un proceso.
+ *
+ * **Es una clase propia y no `etiqueta--tenue`**, y no por cómo se ve. Las
+ * dos pueden convivir en la misma celda —un proceso cerrado que además nace
+ * de una cotización lleva las dos— y una prueba que cuenta distintivos sobre
+ * el documento entero no podría distinguirlas con la clase compartida: el
+ * conteo mediría la suma de dos cosas y dejaría de medir cualquiera.
+ *
+ * Y se ve distinto a propósito, por lo mismo: el cerrado es una nota al pie
+ * —apagada, en cursiva— y la procedencia es un dato del proceso. Va con el
+ * tono del acento, que en esta paleta es lo que marca «esto lleva a algún
+ * lado».
+ */
+.etiqueta--origen {
+  border-color: var(--color-acento-tenue);
+  background: var(--color-acento-tenue);
+  color: var(--color-acento);
+}
+
+/*
+ * T-15 · El bloque de «en qué quedó esta cotización».
+ *
+ * Mismo envoltorio que los pendientes del proceso, y por el mismo motivo: es
+ * un bloque que contesta una pregunta propia, y sin borde se lee como una
+ * continuación de la ficha de arriba.
+ *
+ * `min-width: 0` no es adorno. Los títulos de proceso son largos —son el
+ * concepto que el abogado escribió en la línea de la cotización— y sin esto
+ * una caja flexible se niega a encoger por debajo de su contenido, que es la
+ * forma en que §9 se rompe.
+ */
+.procesos-abiertos {
+  min-width: 0;
+  padding: var(--espacio-s);
+  border: 1px solid var(--color-borde);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+}
+
+.procesos-abiertos__titulo {
+  font-size: var(--texto-m);
+}

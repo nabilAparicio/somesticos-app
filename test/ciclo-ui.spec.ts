@@ -26,7 +26,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { Cotizacion, EstadoDeCotizacion } from "../worker/contract";
+import type {
+  Cotizacion,
+  EstadoDeCotizacion,
+  Proceso,
+} from "../worker/contract";
 import { textoDeProblema } from "../src/api/peticiones";
 import {
   ROTULOS_DE_ACCION,
@@ -34,6 +38,7 @@ import {
   confirmacionDeEmitir,
   salidasEnProsa,
   textoDeProcedencia,
+  textoDeProcesosAbiertos,
   type AccionDeCiclo,
 } from "../src/pantallas/cotizaciones/ciclo";
 import { avisoDeNoEsBorrador } from "../src/pantallas/cotizaciones/presentacion";
@@ -330,5 +335,89 @@ describe("textoDeProblema, sobre `cotizacion_no_es_emitida`", () => {
 
     expect(texto).toContain("todavía no se mandó");
     expect(texto).toContain("ya cerraron");
+  });
+});
+
+/* ==========================================================================
+   T-15 · En qué quedó esta cotización
+
+   `procesosAbiertos` —el conteo que la respuesta de ganar trae desde T-7—
+   contesta la pregunta **en el instante** y se pierde al recargar. La
+   pregunta que una persona se hace de verdad es tres meses después: «esta
+   cotización, ¿en qué quedó?». Por eso el detalle lo lee del listado de
+   procesos cada vez que lo dibuja, y este texto es lo que encabeza esa
+   lista.
+
+   El cero **se dice**, con el mismo argumento con que el contrato decidió
+   que el conteo viajara aunque valga cero: una ganada sin ninguna línea con
+   tipo de proceso no abre nada, y eso es legítimo y corriente —una
+   consulta, un timbre, una mensajería—. «No abrió ninguno» y «no sé cuántos
+   abrió» se ven igual si el bloque desaparece, y la primera es información
+   mientras la segunda es un hueco.
+   ========================================================================== */
+
+const PROCESO_ID = "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f";
+
+function unProceso(ajustes: Partial<Proceso> = {}): Proceso {
+  return {
+    id: PROCESO_ID,
+    clienteId: CLIENTE_ID,
+    clienteNombre: "Carlos Pérez",
+    tipoProcesoId: "66666666-7777-4888-8999-aaaaaaaaaaaa",
+    tipoProcesoNombre: "Visa de trabajo",
+    areaNombre: "Migración y naturalización",
+    origen: "cotizacion",
+    titulo: "Visa de trabajo de Carlos Pérez",
+    estado: "abierto",
+    responsableId: null,
+    responsableNombre: null,
+    abiertoEn: "2026-10-22T14:03:00.000Z",
+    cerradoEn: null,
+    etapasCumplidas: 0,
+    etapasTotales: 3,
+    etapaVigente: "Recepción de documentos",
+    cotizacionDeOrigen: { id: ID, codigo: "COT-2026-0007" },
+    ...ajustes,
+  };
+}
+
+describe("qué abrió una cotización ganada", () => {
+  it("dice cuántos procesos abrió, en plural", () => {
+    expect(
+      textoDeProcesosAbiertos([
+        unProceso(),
+        unProceso({ id: "otro", titulo: "Permiso de residencia" }),
+      ]),
+    ).toBe("Esta cotización está ganada y abrió 2 procesos:");
+  });
+
+  it("y en singular cuando abrió uno solo", () => {
+    // El singular es el caso corriente —la mayoría de las cotizaciones
+    // llevan una sola línea con trámite— y «1 procesos» es exactamente la
+    // clase de detalle que delata una pantalla sin terminar.
+    expect(textoDeProcesosAbiertos([unProceso()])).toBe(
+      "Esta cotización está ganada y abrió 1 proceso:",
+    );
+  });
+
+  it("dice el cero en vez de callarse", () => {
+    expect(textoDeProcesosAbiertos([])).toBe(
+      "Esta cotización está ganada y no abrió ningún proceso: ninguna de sus" +
+        " líneas lleva tipo de proceso.",
+    );
+  });
+
+  it("la lectura que no salió no se confunde con el cero", () => {
+    // Las dos frases tienen que ser distinguibles **sin mirar el código**:
+    // «no abrió ninguno» es un hecho del negocio y «no se pudo leer» es un
+    // fallo de red, y confundirlos manda a alguien a buscar procesos que
+    // sí existen.
+    expect(textoDeProcesosAbiertos(null)).toBe(
+      "Esta cotización está ganada. Los procesos que abrió no se pudieron" +
+        " leer ahora.",
+    );
+    expect(textoDeProcesosAbiertos(null)).not.toBe(
+      textoDeProcesosAbiertos([]),
+    );
   });
 });

@@ -701,12 +701,41 @@ export interface RespuestaDeEtapas {
  * un `cotizacion` sin línea —o un `directo` con ella— es una fila que no se
  * puede escribir.
  *
- * `cotizacion_linea_id` **no viaja en este contrato**, y la ausencia es
- * deliberada: T-7 hace el fondo y la pantalla va aparte. El día que haya una
- * que quiera enlazar el proceso con la cotización que lo abrió, el campo que
- * le falta es ése.
+ * **`cotizacion_linea_id` sigue sin viajar, y ahora por otro motivo.** T-7
+ * lo dejó afuera porque todavía no había pantalla; T-15 la escribió y la
+ * medición dio lo contrario de lo que aquel comentario anticipaba: el campo
+ * que le faltaba **no era ése**. A ninguna pantalla le sirve la línea —nadie
+ * quiere abrir una línea—, y con sólo su identificador cada renglón del
+ * listado costaría dos lecturas más para llegar al código que la persona
+ * quiere leer. Lo que viaja es `Proceso.cotizacionDeOrigen`: la cotización
+ * ya resuelta, con su código al lado. La línea se queda donde siempre
+ * estuvo, que es la tabla.
  */
 export type OrigenDeProceso = "cotizacion" | "directo";
+
+/**
+ * La cotización de la que nace un proceso, resuelta en lectura (T-15).
+ *
+ * **Un objeto y no dos campos sueltos**, al revés que `clienteId` con
+ * `clienteNombre` y que `tipoProcesoId` con `tipoProcesoNombre`, y la
+ * diferencia es qué significa el nulo en cada caso. Allá el nombre en nulo
+ * quiere decir «la fila está pero no se pudo resolver» —cruzó la frontera
+ * del tenant—, y el identificador sigue siendo verdad. Acá el nulo quiere
+ * decir **que no hay cotización**, que es una cosa sola: con dos campos
+ * nullables el cable admitiría cuatro combinaciones de las que sólo dos son
+ * legales, y la pantalla tendría que elegir a cuál de los dos creerle para
+ * decidir si dibuja el enlace.
+ *
+ * Lo que se conserva del criterio de al lado es lo importante: **cada
+ * identificador viaja con su texto resuelto**. El `id` es para armar la
+ * dirección y el `codigo` es para escribirlo en la frase; un id sin su
+ * texto obliga a una segunda lectura por renglón, y en un listado eso es
+ * una lectura por fila.
+ */
+export interface CotizacionDeOrigen {
+  id: string;
+  codigo: string;
+}
 
 /** Cerrado en el par que el esquema admite. Cerrar un proceso es de T-7+. */
 export type EstadoDeProceso = "abierto" | "cerrado";
@@ -755,6 +784,20 @@ export interface Proceso {
   etapasTotales: number;
   /** El nombre de la próxima pendiente. Nulo si no falta ninguna. */
   etapaVigente: string | null;
+  /**
+   * La cotización que lo abrió, o nulo si lo abrió una persona (T-15).
+   *
+   * Nulo **exactamente** cuando `origen` es `directo`: las dos cosas salen
+   * de la misma fila y el `CHECK` de `0008` las obliga a decir lo mismo, así
+   * que no hay ningún proceso que traiga uno sin el otro.
+   *
+   * Que estén las dos no es redundancia que la pantalla pueda aprovechar al
+   * revés: **lo que decide si hay enlace es este campo y no `origen`**.
+   * Colgar el enlace de `origen` y la dirección de acá serían dos guardas
+   * resolviendo lo mismo por caminos distintos, y dos guardas así se anulan
+   * como garantía — quitar cualquiera de las dos no rompería nada visible.
+   */
+  cotizacionDeOrigen: CotizacionDeOrigen | null;
 }
 
 /** El proceso con su plan entero: lo que pide la pantalla de detalle. */

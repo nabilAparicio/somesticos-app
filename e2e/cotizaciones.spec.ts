@@ -301,6 +301,105 @@ const TIPOS_DE_PROCESO = [
   },
 ];
 
+/* --- T-15 · los procesos que abrió la ganada ----------------------------- */
+
+/**
+ * Los procesos del bufete, tal como los sirve `GET /api/procesos`.
+ *
+ * Son cuatro y **sólo dos son de la ganada**: uno nace de otra cotización y
+ * otro lo abrió una persona. El reparto es la medición. Con los cuatro
+ * colgando de la misma cotización, una pantalla que dibujara la lista que
+ * llegó sin elegir nada pasaría igual que una que elige bien —un doble
+ * coherente consigo mismo no distingue mostrar de calcular.
+ *
+ * El título del primero es largo a propósito, por lo mismo que la prosa
+ * cruda de la emitida: las nueve medidas de §9 sobre la ganada pasan por
+ * este bloque desde T-15, y con títulos cortos no medirían contención.
+ */
+const PROCESO_DE_LA_GANADA = "9f0f0b11-1111-4111-8111-00000000000a";
+const OTRO_DE_LA_GANADA = "9f0f0b11-1111-4111-8111-00000000000b";
+
+const PROCESOS = [
+  {
+    id: PROCESO_DE_LA_GANADA,
+    clienteId: OTRO_CLIENTE_ID,
+    clienteNombre: CLIENTES[1].nombre,
+    tipoProcesoId: TIPOS_DE_PROCESO[0].id,
+    tipoProcesoNombre: TIPOS_DE_PROCESO[0].nombre,
+    areaNombre: "Migración y naturalización",
+    origen: "cotizacion",
+    titulo:
+      "Permiso de residencia permanente por matrimonio con nacional para" +
+      " Inversiones y Desarrollos del Istmo, Sociedad Anónima",
+    estado: "abierto",
+    responsableId: null,
+    responsableNombre: null,
+    abiertoEn: "2026-10-22T14:03:00.000Z",
+    cerradoEn: null,
+    etapasCumplidas: 0,
+    etapasTotales: 3,
+    etapaVigente: "Recepción de documentos",
+    cotizacionDeOrigen: { id: GANADA_ID, codigo: GANADA.codigo },
+  },
+  {
+    id: OTRO_DE_LA_GANADA,
+    clienteId: OTRO_CLIENTE_ID,
+    clienteNombre: CLIENTES[1].nombre,
+    tipoProcesoId: TIPOS_DE_PROCESO[0].id,
+    tipoProcesoNombre: TIPOS_DE_PROCESO[0].nombre,
+    areaNombre: "Migración y naturalización",
+    origen: "cotizacion",
+    titulo: "Visa de trabajo del representante legal",
+    estado: "abierto",
+    responsableId: null,
+    responsableNombre: null,
+    abiertoEn: "2026-10-22T14:03:00.000Z",
+    cerradoEn: null,
+    etapasCumplidas: 1,
+    etapasTotales: 2,
+    etapaVigente: "Resolución",
+    cotizacionDeOrigen: { id: GANADA_ID, codigo: GANADA.codigo },
+  },
+  {
+    id: "9f0f0b11-1111-4111-8111-00000000000c",
+    clienteId: CLIENTE_ID,
+    clienteNombre: CLIENTES[0].nombre,
+    tipoProcesoId: TIPOS_DE_PROCESO[0].id,
+    tipoProcesoNombre: TIPOS_DE_PROCESO[0].nombre,
+    areaNombre: "Migración y naturalización",
+    origen: "cotizacion",
+    titulo: "Naturalización de otra cotización, que no es ésta",
+    estado: "abierto",
+    responsableId: null,
+    responsableNombre: null,
+    abiertoEn: "2026-10-22T14:03:00.000Z",
+    cerradoEn: null,
+    etapasCumplidas: 0,
+    etapasTotales: 1,
+    etapaVigente: "Apertura",
+    cotizacionDeOrigen: { id: PERDIDA_ID, codigo: "COT-2026-0010" },
+  },
+  {
+    id: "9f0f0b11-1111-4111-8111-00000000000d",
+    clienteId: CLIENTE_ID,
+    clienteNombre: CLIENTES[0].nombre,
+    tipoProcesoId: TIPOS_DE_PROCESO[0].id,
+    tipoProcesoNombre: TIPOS_DE_PROCESO[0].nombre,
+    areaNombre: "Migración y naturalización",
+    origen: "directo",
+    titulo: "Trámite abierto a mano, sin cotización detrás",
+    estado: "abierto",
+    responsableId: null,
+    responsableNombre: null,
+    abiertoEn: "2026-10-22T14:03:00.000Z",
+    cerradoEn: null,
+    etapasCumplidas: 0,
+    etapasTotales: 1,
+    etapaVigente: "Apertura",
+    cotizacionDeOrigen: null,
+  },
+];
+
 const CONCEPTO_UNO = "Gestión de la visa de trabajo";
 const CONCEPTO_DOS = "Tasa del Servicio Nacional de Migración";
 const CONCEPTO_TRES = "Revisión de antecedentes";
@@ -499,6 +598,12 @@ function cuerpoDe(pathname: string): Record<string, unknown> | null {
 
   if (pathname === "/api/cotizaciones") return { cotizaciones: COTIZACIONES };
   if (pathname === "/api/clientes") return { clientes: CLIENTES };
+
+  // T-15: el detalle de una ganada lee el listado entero de procesos y se
+  // queda con los suyos. Es una lectura más de una pantalla que ya hace
+  // tres, y no una ruta nueva: el filtro vive donde ya viven el buscador y
+  // el filtro por estado de la pantalla de procesos.
+  if (pathname === "/api/procesos") return { procesos: PROCESOS };
 
   // El detalle sirve las siete; el listado, sólo las tres de arriba. Ver
   // `DEL_CICLO`. `BORRADOR_EMITIDO` no está en ninguna de las dos listas:
@@ -2615,4 +2720,83 @@ test.describe("las cotizaciones del bufete", () => {
       ).toBeLessThanOrEqual(desborde.clientWidth);
     });
   }
+});
+
+/* ==========================================================================
+   T-15 · En qué quedó una cotización ganada
+
+   La frase y el reparto ya están probados como funciones en
+   `test/ciclo-ui.spec.ts` y `test/procesos-ui.spec.ts`. Lo que sólo se
+   puede comprobar acá es que el bloque esté dibujado, que cada enlace
+   apunte al proceso que dice, y que una cotización que no está ganada **no
+   lo tenga**: la ausencia y la presencia, en la misma suite.
+   ========================================================================== */
+
+test.describe("qué abrió una cotización ganada", () => {
+  test("la ganada dice cuántos procesos abrió y enlaza cada uno", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${GANADA_ID}`);
+
+    await expect(
+      page.getByText("Esta cotización está ganada y abrió 2 procesos:"),
+    ).toBeVisible();
+
+    // Los dos enlaces, con su dirección. El rótulo es el título del
+    // proceso, que es por lo que una persona lo reconoce.
+    const abiertos = page.locator(".procesos-abiertos a");
+    await expect(abiertos).toHaveCount(2);
+    await expect(abiertos.first()).toHaveAttribute(
+      "href",
+      `/procesos/${PROCESO_DE_LA_GANADA}`,
+    );
+    await expect(abiertos.last()).toHaveAttribute(
+      "href",
+      `/procesos/${OTRO_DE_LA_GANADA}`,
+    );
+
+    // El de otra cotización y el abierto a mano no entran. El banco sirve
+    // los cuatro, así que esto mide el filtro y no el banco.
+    await expect(
+      page.getByRole("link", {
+        name: "Naturalización de otra cotización, que no es ésta",
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", {
+        name: "Trámite abierto a mano, sin cotización detrás",
+      }),
+    ).toHaveCount(0);
+  });
+
+  test("una que no está ganada no tiene ese bloque", async ({ page }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${EMITIDA_ID}`);
+
+    // Se espera la pantalla dibujada antes de contar el cero.
+    await expect(
+      page.getByRole("button", { name: "Marcar ganada" }),
+    ).toBeVisible();
+
+    // `.count()` y no `toHaveCount(0)`: una aserción que reintenta no puede
+    // demostrar un «nunca».
+    expect(await page.locator(".procesos-abiertos").count()).toBe(0);
+  });
+
+  test("la perdida tampoco: perder no es una puerta hacia proceso", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${PERDIDA_ID}`);
+
+    await expect(
+      page.getByRole("button", { name: "Duplicar", exact: true }),
+    ).toBeVisible();
+
+    // Y es la medición que importa: el banco tiene un proceso colgando de
+    // esta misma cotización perdida. Un bloque colgado del simple «tiene
+    // procesos» en vez de «está ganada» lo dibujaría acá.
+    expect(await page.locator(".procesos-abiertos").count()).toBe(0);
+  });
 });

@@ -396,6 +396,8 @@ interface FilaDeProceso {
   etapas_cumplidas: number;
   etapas_totales: number;
   etapa_vigente: string | null;
+  cotizacion_id: string | null;
+  cotizacion_codigo: string | null;
 }
 
 interface FilaDeEtapa {
@@ -419,6 +421,26 @@ interface FilaDeEtapa {
  * `etapa_vigente` es **la próxima pendiente**, no la última cumplida. «Lo que
  * viene» es la mitad del valor de esta pantalla (`docs/diseno.md` §6): el
  * abogado abre un proceso para ver qué tiene por delante.
+ *
+ * ## Las dos uniones de T-15, y lo que costaron
+ *
+ * `cotizacion_linea` y `cotizacion` son el salto de la línea que la tabla
+ * guarda a la cotización que la pantalla quiere nombrar. Son dos y no una
+ * porque `proceso` apunta a la **línea**: no hay forma de llegar al código
+ * sin pasar por ella.
+ *
+ * **Se midió antes de ponerlas**, con el plan de SQLite sobre la base de
+ * demostración: las dos entran como `SEARCH … USING INDEX … (id=?)` sobre
+ * la llave primaria de cada tabla, igual que las cuatro que ya estaban. Ni
+ * un `SCAN`, ni una tabla temporal, ni un `GROUP BY` que deduplicar. Lo que
+ * agregan es una búsqueda indexada por fila y por unión, y lo que ahorran
+ * es lo que costaría lo contrario: con sólo el identificador en el cable,
+ * dibujar el listado serían dos lecturas más **por fila**.
+ *
+ * El filtro de tenencia se repite en los dos `ON`, como en las otras
+ * cuatro. Una línea o una cotización que cruzara la frontera devuelve
+ * `NULL` en lugar del código ajeno, y el proceso se dibuja sin procedencia
+ * en vez de con la de otro bufete.
  */
 const SELECCION =
   "SELECT p.id, p.cliente_id, c.nombre AS cliente_nombre," +
@@ -435,7 +457,8 @@ const SELECCION =
   " (SELECT e.nombre FROM proceso_etapa e" +
   "    WHERE e.proceso_id = p.id AND e.tenant_id = p.tenant_id" +
   "      AND e.alcanzada_en IS NULL" +
-  "    ORDER BY e.orden LIMIT 1) AS etapa_vigente" +
+  "    ORDER BY e.orden LIMIT 1) AS etapa_vigente," +
+  " q.id AS cotizacion_id, q.codigo AS cotizacion_codigo" +
   " FROM proceso p" +
   " LEFT JOIN cliente c ON c.id = p.cliente_id AND c.tenant_id = p.tenant_id" +
   " LEFT JOIN tipo_proceso tp ON tp.id = p.tipo_proceso_id" +
@@ -443,6 +466,10 @@ const SELECCION =
   " LEFT JOIN area a ON a.id = tp.area_id AND a.tenant_id = tp.tenant_id" +
   " LEFT JOIN usuario u ON u.id = p.responsable_id" +
   "   AND u.tenant_id = p.tenant_id" +
+  " LEFT JOIN cotizacion_linea cl ON cl.id = p.cotizacion_linea_id" +
+  "   AND cl.tenant_id = p.tenant_id" +
+  " LEFT JOIN cotizacion q ON q.id = cl.cotizacion_id" +
+  "   AND q.tenant_id = cl.tenant_id" +
   " WHERE p.tenant_id = ?";
 
 /**
@@ -450,6 +477,12 @@ const SELECCION =
  * migración los mantiene dentro del par válido, así que el estrechamiento es
  * una afirmación del esquema y no una validación: si la columna tuviera otra
  * cosa, el problema sería la base y no esta función.
+ *
+ * Lo mismo vale para el par de la cotización: las dos columnas salen de la
+ * **misma fila unida**, así que son nulas juntas o no lo son ninguna. Mirar
+ * las dos es estrechamiento de tipos y no una guarda —no hay forma de que
+ * discrepen—, y por eso no tiene prueba propia: tenerla sería afirmar que
+ * `LEFT JOIN` devuelve media fila.
  */
 function aProceso(fila: FilaDeProceso): Proceso {
   return {
@@ -469,6 +502,10 @@ function aProceso(fila: FilaDeProceso): Proceso {
     etapasCumplidas: fila.etapas_cumplidas,
     etapasTotales: fila.etapas_totales,
     etapaVigente: fila.etapa_vigente,
+    cotizacionDeOrigen:
+      fila.cotizacion_id === null || fila.cotizacion_codigo === null
+        ? null
+        : { id: fila.cotizacion_id, codigo: fila.cotizacion_codigo },
   };
 }
 

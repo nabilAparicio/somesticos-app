@@ -37,12 +37,22 @@
  *
  * ## Lo que este archivo NO hace
  *
- * No imprime (T-6), no abre procesos (T-7) y no mira el snapshot: lo que el
- * detalle muestra sale de las tablas vivas. Y no calcula nada — los totales
- * los trae el servidor con las líneas, en el mismo cuerpo que ellas.
+ * No imprime (T-6) y no mira el snapshot: lo que el detalle muestra sale de
+ * las tablas vivas. Y no calcula nada — los totales los trae el servidor con
+ * las líneas, en el mismo cuerpo que ellas.
+ *
+ * Decía además «no abre procesos (T-7)», y seguía siendo cierto cuando T-15
+ * lo borró: **abrir** procesos es del servidor y pasa dentro de la misma
+ * transacción que marca la cotización ganada. Lo que T-15 trajo acá es otra
+ * cosa — **decir cuáles abrió**, que es el final del ciclo visto desde la
+ * pantalla y por lo tanto exactamente de lo que este archivo habla.
  */
 
-import type { Cotizacion, EstadoDeCotizacion } from "../../../worker/contract";
+import type {
+  Cotizacion,
+  EstadoDeCotizacion,
+  Proceso,
+} from "../../../worker/contract";
 
 /**
  * Las cuatro cosas que se pueden pedir desde la pantalla.
@@ -212,4 +222,64 @@ export function textoDeProcedencia(origen: Cotizacion | null): string {
   }
 
   return `Nació duplicando «${origen.codigo}».`;
+}
+
+/**
+ * En qué quedó una cotización ganada (T-15).
+ *
+ * ## Por qué esto no vive en la respuesta de ganar
+ *
+ * `RespuestaDeCierre.procesosAbiertos` trae el conteo desde T-7, y contesta
+ * la pregunta **en el instante en que alguien aprieta el botón**. Pero la
+ * pregunta que una persona se hace de verdad es tres meses después, delante
+ * de una cotización que no recuerda: «ésta, ¿en qué quedó?». Una respuesta
+ * que se pierde al recargar no la contesta.
+ *
+ * Por eso el detalle lo lee del listado de procesos cada vez que se dibuja,
+ * y el conteo de la respuesta se queda como está: no hay dos lugares donde
+ * se decida cuántos procesos abrió una cotización, hay uno —las filas de
+ * `proceso` que apuntan a sus líneas— y dos momentos en que se lo mira.
+ *
+ * ## Los tres finales, y por qué son tres y no dos
+ *
+ *  - **Con procesos**, la frase termina en dos puntos porque abajo va la
+ *    lista. Es lo que ata el número a los enlaces: «abrió 2» sin la lista
+ *    debajo obliga a ir a buscarlos a otra pantalla.
+ *  - **Sin ninguno**, se dice igual, y además se dice *por qué*. Es el mismo
+ *    argumento con el que el contrato decidió que el conteo viajara aunque
+ *    valga cero: una ganada donde ninguna línea lleva tipo de proceso es
+ *    legítima y corriente —una consulta, un timbre, una mensajería— y «no
+ *    abrió ninguno» es información, mientras que un bloque que desaparece es
+ *    un hueco.
+ *  - **La lectura que no salió** es el tercero, y no se confunde con el
+ *    cero. Es el mismo criterio que `textoDeProcedencia` unos renglones más
+ *    arriba: un fallo de red dicho como «no abrió ninguno» manda a alguien a
+ *    concluir que no hay procesos que sí existen.
+ *
+ * El `null` es ese tercer caso. El arreglo vacío es el segundo. Que sean
+ * dos valores distintos y no uno solo es la diferencia entre las dos
+ * frases.
+ */
+export function textoDeProcesosAbiertos(
+  procesos: readonly Proceso[] | null,
+): string {
+  if (procesos === null) {
+    return (
+      "Esta cotización está ganada. Los procesos que abrió no se pudieron" +
+      " leer ahora."
+    );
+  }
+
+  if (procesos.length === 0) {
+    return (
+      "Esta cotización está ganada y no abrió ningún proceso: ninguna de sus" +
+      " líneas lleva tipo de proceso."
+    );
+  }
+
+  return procesos.length === 1
+    ? "Esta cotización está ganada y abrió 1 proceso:"
+    : `Esta cotización está ganada y abrió ${String(
+        procesos.length,
+      )} procesos:`;
 }

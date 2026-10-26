@@ -60,12 +60,15 @@ import {
   avanceDe,
   avisoDeProcesoCerrado,
   estadoLegible,
+  etiquetaDeOrigen,
   filtrarPorEstado,
   filtrarProcesos,
   ocultosPorEstado,
   ordenarProcesos,
+  procesosDeCotizacion,
   proximoPaso,
   resumenDeTrabajoVigente,
+  textoDeOrigen,
 } from "../src/pantallas/procesos/presentacion";
 import { enlaceDe, resolverRuta } from "../src/ruteo";
 
@@ -104,6 +107,11 @@ function proceso(ajustes: Partial<Proceso> = {}): Proceso {
     etapasCumplidas: 1,
     etapasTotales: 4,
     etapaVigente: "Presentación ante el Servicio Nacional de Migración",
+    // T-15: el caso corriente es el proceso abierto a mano, y lo escribe
+    // **el molde** en vez de dejarlo implícito. Un campo ausente del molde
+    // llega `undefined` y no `null`, y una aserción de ausencia contra
+    // `undefined` pasa sin que el código haya decidido nada.
+    cotizacionDeOrigen: null,
     ...ajustes,
   };
 }
@@ -874,5 +882,116 @@ describe("el trabajo vigente que cuenta la cabecera", () => {
     expect(resumenDeTrabajoVigente(cerrado(), [], "2026-10-23")).toContain(
       "cerrado",
     );
+  });
+});
+
+/* ==========================================================================
+   T-15 · De dónde viene cada proceso
+
+   `Proceso.cotizacionDeOrigen` llega del cable ya resuelto: la cotización
+   que lo abrió, con su código al lado. Lo que vive acá es qué **dice** la
+   pantalla con eso, escrito como función para afirmarlo sin montar un
+   navegador.
+
+   Cada cosa se afirma en **las dos direcciones**, y no es simetría
+   decorativa: una aserción de ausencia no mide nada sin su aserción de
+   presencia al lado. `etiquetaDeOrigen` cableada a `null` pasaría sola la
+   mitad que dice que un proceso directo no lleva distintivo.
+   ========================================================================== */
+
+const COTIZACION_ID = "cc111111-2222-4333-8444-555555555555";
+const OTRA_COTIZACION_ID = "cc111111-2222-4333-8444-555555555556";
+
+/** Un proceso nacido de una cotización ganada. */
+function nacido(ajustes: Partial<Proceso> = {}): Proceso {
+  return proceso({
+    origen: "cotizacion",
+    cotizacionDeOrigen: { id: COTIZACION_ID, codigo: "COT-2026-0001" },
+    ...ajustes,
+  });
+}
+
+describe("el distintivo de procedencia del listado", () => {
+  it("nombra la cotización de la que nace el proceso", () => {
+    expect(etiquetaDeOrigen(nacido())).toBe("De COT-2026-0001");
+  });
+
+  it("dice el código que trae, y no uno fijo", () => {
+    expect(
+      etiquetaDeOrigen(
+        nacido({ cotizacionDeOrigen: { id: OTRA_COTIZACION_ID, codigo: "COT-2024-0099" } }),
+      ),
+    ).toBe("De COT-2024-0099");
+  });
+
+  it("el proceso abierto a mano no lleva distintivo", () => {
+    expect(etiquetaDeOrigen(proceso())).toBeNull();
+  });
+});
+
+describe("la procedencia dicha en el detalle del proceso", () => {
+  it("nombra la cotización, entre comillas, en una frase", () => {
+    expect(textoDeOrigen(nacido())).toBe(
+      "Este proceso nace de la cotización «COT-2026-0001».",
+    );
+  });
+
+  it("el abierto a mano no tiene de dónde nacer, y no se le inventa una frase", () => {
+    // El `null` es lo que decide que **no haya botón**: un proceso directo
+    // no tiene cotización, así que ofrecerle el enlace sería prometer una
+    // pantalla que el servidor contestaría con un 404. Es la lección de la
+    // unidad B de T-2, y por eso la condición de la frase y la del enlace
+    // son **una sola lectura** y no dos guardas que puedan discrepar.
+    expect(textoDeOrigen(proceso())).toBeNull();
+  });
+});
+
+describe("los procesos que abrió una cotización", () => {
+  /*
+   * El montón mezcla tres procedencias a propósito. Un doble coherente
+   * consigo mismo —tres procesos y los tres de la misma cotización— no
+   * distingue **mostrar** la lista que llegó de **elegir** la que
+   * corresponde: las dos dan el mismo resultado.
+   */
+  const MONTON: readonly Proceso[] = [
+    nacido({ id: "p1", titulo: "Visa de trabajo" }),
+    proceso({ id: "p2", titulo: "Abierto a mano" }),
+    nacido({
+      id: "p3",
+      titulo: "De otra cotización",
+      cotizacionDeOrigen: { id: OTRA_COTIZACION_ID, codigo: "COT-2024-0099" },
+    }),
+    nacido({ id: "p4", titulo: "Permiso de residencia" }),
+  ];
+
+  it("son los que nacen de ella, y ninguno más", () => {
+    expect(
+      procesosDeCotizacion(MONTON, COTIZACION_ID).map((suyo) => suyo.id),
+    ).toEqual(["p1", "p4"]);
+  });
+
+  it("una cotización que no abrió ninguno devuelve la lista vacía", () => {
+    expect(procesosDeCotizacion(MONTON, "cc000000-0000-4000-8000-000000000000")).toEqual(
+      [],
+    );
+  });
+
+  it("no toca el arreglo que llega: puede ser estado de React", () => {
+    const entrada = [...MONTON];
+    procesosDeCotizacion(entrada, COTIZACION_ID);
+    expect(entrada.map((suyo) => suyo.id)).toEqual(["p1", "p2", "p3", "p4"]);
+  });
+});
+
+describe("el buscador del listado también encuentra por la cotización", () => {
+  it("encuentra el proceso escribiendo el código de la cotización", () => {
+    const lista = [nacido({ id: "p1" }), proceso({ id: "p2" })];
+    expect(filtrarProcesos(lista, "COT-2026-0001").map((suyo) => suyo.id)).toEqual(
+      ["p1"],
+    );
+  });
+
+  it("y el directo no aparece por un código que no tiene", () => {
+    expect(filtrarProcesos([proceso()], "COT-2026-0001")).toEqual([]);
   });
 });

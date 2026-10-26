@@ -67,6 +67,10 @@ const PROCESO = {
   etapasCumplidas: 2,
   etapasTotales: 4,
   etapaVigente: PENDIENTE_1,
+  // T-15: abierto a mano. Se escribe `null` y no se omite — un campo que
+  // falta llega `undefined`, y una pantalla que mirara `undefined` pasaría
+  // la mitad de ausencia de estas pruebas sin haber decidido nada.
+  cotizacionDeOrigen: null,
 };
 
 /** Un segundo proceso, para que el listado tenga de qué desbordar. */
@@ -100,6 +104,36 @@ const TERMINADO = {
   etapasCumplidas: 4,
   etapasTotales: 4,
   etapaVigente: null,
+};
+
+/* --- T-15 · el que nace de una cotización ganada ----------------------- */
+
+const COTIZACION_ID = "9c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e62";
+const CODIGO = "COT-2026-0001";
+
+/**
+ * Un cuarto proceso, éste nacido de una cotización.
+ *
+ * Es **uno solo entre cuatro**, y el reparto es la medición: con todas las
+ * filas viniendo de una cotización, un distintivo cableado a aparecer
+ * siempre pasaría igual. Lo que esta prueba tiene que poder ver es que la
+ * fila directa de al lado **no** lo lleva.
+ */
+const DESDE_COTIZACION = {
+  ...PROCESO,
+  id: "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e63",
+  clienteNombre: "Constructora del Istmo, S.A.",
+  titulo: "Visa de trabajo para el personal de Constructora del Istmo",
+  // Etapa propia, y no la de `PROCESO`: con las dos filas diciendo lo
+  // mismo, el `getByRole("cell", …)` de la prueba del listado deja de
+  // resolver a un solo elemento y falla por ambigüedad, no por el dato.
+  etapaVigente: "Cita en el consulado",
+  cotizacionDeOrigen: { id: COTIZACION_ID, codigo: CODIGO },
+};
+
+const DETALLE_DESDE_COTIZACION = {
+  proceso: DESDE_COTIZACION,
+  etapas: ETAPAS,
 };
 
 /** El mismo proceso de siempre, después de que alguien lo cierre. */
@@ -512,9 +546,11 @@ async function conProcesosCargados(page: Page): Promise<void> {
 
       const cuerpo: Record<string, unknown> | null =
         url.pathname === "/api/procesos"
-          ? { procesos: [PROCESO, OTRO, TERMINADO] }
+          ? { procesos: [PROCESO, OTRO, TERMINADO, DESDE_COTIZACION] }
           : url.pathname === `/api/procesos/${PROCESO_ID}`
             ? DETALLE
+            : url.pathname === `/api/procesos/${DESDE_COTIZACION.id}`
+              ? DETALLE_DESDE_COTIZACION
             : url.pathname === "/api/areas"
               ? { areas: AREAS }
               : url.pathname === "/api/usuarios"
@@ -569,8 +605,11 @@ test.describe("los procesos del bufete", () => {
       page.getByRole("cell", { name: "Sin plan todavía" }),
     ).toBeVisible();
 
+    // Tres y no dos desde T-15: el banco sirve cuatro procesos y el filtro
+    // arranca en «abiertos», así que queda afuera el cerrado y entra el que
+    // nace de una cotización.
     const filas = await page.locator("table tbody tr").count();
-    expect(filas, "el listado tiene que traer filas").toBe(2);
+    expect(filas, "el listado tiene que traer filas").toBe(3);
   });
 
   test("el detalle separa lo cumplido de lo que falta, en dos listas", async ({
@@ -1349,9 +1388,10 @@ test.describe("los procesos del bufete", () => {
     await page.goto("/procesos");
     await page.locator("table tbody tr").first().waitFor();
 
-    // Por defecto se ven los dos abiertos y no el terminado: eso es lo que
-    // el bufete abre a mirar.
-    await expect(page.locator("table tbody tr")).toHaveCount(2);
+    // Por defecto se ven los abiertos y no el terminado: eso es lo que el
+    // bufete abre a mirar. Tres desde T-15, que agregó al banco un cuarto
+    // proceso —abierto— nacido de una cotización.
+    await expect(page.locator("table tbody tr")).toHaveCount(3);
     await expect(
       page.getByRole("rowheader", { name: /Germán Arosemena/ }),
     ).toHaveCount(0);
@@ -1383,7 +1423,7 @@ test.describe("los procesos del bufete", () => {
     ).toBeVisible();
 
     await page.getByLabel("Estado").selectOption("todos");
-    await expect(page.locator("table tbody tr")).toHaveCount(3);
+    await expect(page.locator("table tbody tr")).toHaveCount(4);
   });
 
   test("el detalle dice el estado y cierra el proceso", async ({ page }) => {
@@ -1508,4 +1548,117 @@ test.describe("los procesos del bufete", () => {
       ).toBeLessThanOrEqual(desborde.clientWidth);
     });
   }
+});
+
+/* ==========================================================================
+   T-15 · De dónde viene cada proceso, dibujado
+
+   Lo que las funciones ya prueban en `test/procesos-ui.spec.ts` es **qué
+   texto sale**. Lo que sólo se puede comprobar acá es que ese texto esté
+   puesto, que el enlace apunte a donde dice, y —sobre todo— que sobre un
+   proceso directo **no exista ningún control**: ni apagado, ni escondido.
+
+   Las dos direcciones van juntas en cada caso. Una prueba que sólo
+   afirmara la ausencia pasaría con el distintivo borrado de la pantalla.
+   ========================================================================== */
+
+test.describe("de dónde viene cada proceso", () => {
+  test("el listado distingue el que nace de una cotización del que no", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto("/procesos");
+
+    /*
+     * Los dos conteos van **acotados a la tabla**, y la primera versión de
+     * esta prueba no lo estaba: falló contando 2 de `.etiqueta--tenue`
+     * sobre una tabla donde no había ninguna. Eran las dos de la
+     * navegación del esqueleto, que marca «pendiente» las secciones que
+     * todavía no existen y está dibujada en todas las páginas.
+     *
+     * Es la lección de la tajada otra vez, y del lado del que la escribe:
+     * un conteo de clases sobre el documento entero mide todo lo que
+     * comparte la clase, esté o no en la sección que la prueba cree estar
+     * mirando.
+     */
+    const tabla = page.locator("table");
+
+    // La presencia. El distintivo lleva el código, así que nombra **cuál**.
+    const distintivos = tabla.locator(".etiqueta--origen");
+    await expect(distintivos).toHaveCount(1);
+    await expect(distintivos).toHaveText(`De ${CODIGO}`);
+
+    // Y la ausencia, medida sobre la misma tabla: tres filas visibles y un
+    // solo distintivo quiere decir que las otras dos no lo llevan.
+    await expect(page.locator("table tbody tr")).toHaveCount(3);
+
+    // La clase es propia y no `etiqueta--tenue`, que es la del proceso
+    // cerrado: con la clase compartida, este conteo mezclaría las dos
+    // cosas y dejaría de medir ésta. Con el filtro en «abiertos» no hay
+    // ningún cerrado en la tabla, así que el cero es el de verdad.
+    expect(await tabla.locator(".etiqueta--tenue").count()).toBe(0);
+  });
+
+  test("el buscador encuentra el proceso por el código de su cotización", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto("/procesos");
+
+    await page.getByLabel("Buscar").fill(CODIGO);
+
+    await expect(page.locator("table tbody tr")).toHaveCount(1);
+    await expect(
+      page.getByRole("rowheader", { name: DESDE_COTIZACION.titulo }),
+    ).toBeVisible();
+  });
+
+  test("el detalle del que nace de una cotización ofrece el enlace a ella", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(`/procesos/${DESDE_COTIZACION.id}`);
+
+    await expect(
+      page.getByText(`Este proceso nace de la cotización «${CODIGO}».`),
+    ).toBeVisible();
+
+    const enlace = page.getByRole("link", { name: "Ver la cotización" });
+    await expect(enlace).toBeVisible();
+    await expect(enlace).toHaveAttribute(
+      "href",
+      `/cotizaciones/${COTIZACION_ID}`,
+    );
+  });
+
+  test("el detalle del abierto a mano no ofrece ninguno, ni apagado", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    // Se espera a que la pantalla esté dibujada antes de contar: un cero
+    // leído sobre una página a medio montar es un cero que no prueba nada.
+    await expect(page.getByRole("heading", { name: "Cumplido" })).toBeVisible();
+
+    // `.count()` y no `toHaveCount(0)`: una aserción que reintenta no puede
+    // demostrar un «nunca». Es la misma lección que `controlesDelCiclo` de
+    // `e2e/cotizaciones.spec.ts`.
+    expect(
+      await page.getByRole("link", { name: "Ver la cotización" }).count(),
+      "un proceso directo no tiene cotización que mostrar",
+    ).toBe(0);
+    expect(
+      await page.getByRole("button", { name: "Ver la cotización" }).count(),
+      "y tampoco un botón apagado, que es la misma promesa",
+    ).toBe(0);
+    expect(await page.locator("main .etiqueta--origen").count()).toBe(0);
+
+    // La presencia al lado de la ausencia, en la misma pantalla: el enlace
+    // al cliente sí está, así que lo que falta es la cotización y no el
+    // renglón entero.
+    await expect(
+      page.getByRole("link", { name: "Ver el cliente" }),
+    ).toBeVisible();
+  });
 });

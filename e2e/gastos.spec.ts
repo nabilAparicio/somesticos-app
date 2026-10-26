@@ -56,6 +56,11 @@ const PROCESO = {
   etapasCumplidas: 1,
   etapasTotales: 2,
   etapaVigente: "Presentación ante el Registro",
+  // Este proceso se abrió a mano. El campo va explícito y no ausente: el
+  // Worker siempre escribe la clave, así que un doble que la omita produce
+  // `undefined`, la guarda `!== null` lo deja pasar y la pantalla revienta
+  // leyendo el código. Es lo que paso con esta suite al agregar el campo.
+  cotizacionDeOrigen: null,
 };
 
 const DETALLE = { proceso: PROCESO, etapas: ETAPAS };

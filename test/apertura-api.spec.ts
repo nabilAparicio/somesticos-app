@@ -667,3 +667,169 @@ describe("la bitácora de la apertura", () => {
     }
   });
 });
+
+/* ==========================================================================
+   T-15 · La procedencia, en el cable
+
+   El fondo de T-7 dejó la procedencia **guardada** —`origen` y
+   `cotizacion_linea_id`, con el `CHECK` de `0008` obligándolos a decir lo
+   mismo— y el comentario de `worker/contract.ts` dejó anotado que no
+   viajaba: «el día que haya una pantalla que quiera enlazar el proceso con
+   la cotización que lo abrió, el campo que le falta es ése».
+
+   Esa pantalla es ésta, y lo que viaja **no es** `cotizacionLineaId`. A
+   ninguna pantalla le sirve la línea: lo que una persona quiere abrir es la
+   cotización, y lo que quiere leer es su código. Viaja entonces el par ya
+   resuelto, con el mismo criterio que el resto del contrato —`clienteId`
+   con `clienteNombre`, `tipoProcesoId` con `tipoProcesoNombre`—: **cada
+   identificador con su texto al lado**, porque un id sin su texto obliga a
+   una segunda lectura para dibujar un renglón.
+
+   Van juntos en un objeto y no sueltos en dos campos nullables, y la
+   diferencia se mide: dos nullables admiten cuatro combinaciones en el
+   cable de las cuales sólo dos son legales, y la pantalla tendría que
+   elegir a cuál de los dos creerle. Con el objeto, «hay cotización» y «hay
+   código» son el mismo hecho y no pueden contradecirse.
+
+   Las dos direcciones se afirman juntas, acá y en todas las suites de esta
+   tarea: una aserción de ausencia no mide nada sin su aserción de
+   presencia al lado. Un `cotizacionDeOrigen` cableado a `null` pasaría
+   sola la mitad que dice que un proceso directo no la trae.
+   ========================================================================== */
+
+/** El proceso tal como lo entrega la API, no como está en la tabla. */
+interface ProcesoEnElCable {
+  id: string;
+  titulo: string;
+  origen: string;
+  cotizacionDeOrigen: { id: string; codigo: string } | null;
+}
+
+async function procesosEnElCable(): Promise<ProcesoEnElCable[]> {
+  const respuesta = await comoAutor(peticion("/api/procesos"));
+  expect(respuesta.status, await respuesta.clone().text()).toBe(200);
+  const cuerpo = (await respuesta.json()) as { procesos: ProcesoEnElCable[] };
+  return cuerpo.procesos;
+}
+
+async function procesoEnElCable(id: string): Promise<ProcesoEnElCable> {
+  const respuesta = await comoAutor(peticion(`/api/procesos/${id}`));
+  expect(respuesta.status, await respuesta.clone().text()).toBe(200);
+  const cuerpo = (await respuesta.json()) as { proceso: ProcesoEnElCable };
+  return cuerpo.proceso;
+}
+
+/** Un proceso abierto a mano: el que **no** tiene cotización de dónde nacer. */
+async function abrirProcesoDirecto(titulo: string): Promise<ProcesoEnElCable> {
+  const respuesta = await comoAutor(
+    conCuerpo("/api/procesos", "POST", {
+      clienteId,
+      tipoProcesoId: tipoVisaId,
+      titulo,
+    }),
+  );
+  expect(respuesta.status, await respuesta.clone().text()).toBe(201);
+  return ((await respuesta.json()) as { proceso: ProcesoEnElCable }).proceso;
+}
+
+describe("de dónde viene cada proceso, dicho en el cable", () => {
+  it("el nacido de una cotización viaja con esa cotización y su código", async () => {
+    const cotizacion = await emitirConDosTramites();
+    expect((await ganar(cotizacion.id)).status).toBe(200);
+
+    const nacidos = await procesosDe(cotizacion.id);
+    expect(nacidos).toHaveLength(2);
+
+    const enElCable = await procesosEnElCable();
+    const mios = nacidos.map((fila) => {
+      const suyo = enElCable.find((proceso) => proceso.id === fila.id);
+      expect(suyo, "el proceso nacido tiene que estar en el listado").toBeDefined();
+      return suyo as ProcesoEnElCable;
+    });
+
+    for (const proceso of mios) {
+      expect(proceso.origen).toBe("cotizacion");
+      expect(proceso.cotizacionDeOrigen).toEqual({
+        id: cotizacion.id,
+        codigo: cotizacion.codigo,
+      });
+    }
+  });
+
+  it("lo que viaja es la cotización, no la línea que lo abrió", async () => {
+    // Es la decisión de forma, afirmada: `cotizacion_linea_id` es lo que la
+    // tabla guarda, y es justo lo que ninguna pantalla puede usar. Sin esta
+    // prueba, resolver mal el salto de línea a cotización —devolver el id
+    // de la línea con el código correcto al lado— pasaría inadvertido.
+    const cotizacion = await emitirConDosTramites();
+    expect((await ganar(cotizacion.id)).status).toBe(200);
+
+    const nacidos = await procesosDe(cotizacion.id);
+    const lineas = nacidos.map((fila) => fila.cotizacion_linea_id);
+    expect(lineas.filter((id) => id !== null)).toHaveLength(2);
+
+    const enElCable = await procesosEnElCable();
+    for (const fila of nacidos) {
+      const suyo = enElCable.find((proceso) => proceso.id === fila.id);
+      expect(suyo?.cotizacionDeOrigen?.id).toBe(cotizacion.id);
+      expect(lineas).not.toContain(suyo?.cotizacionDeOrigen?.id);
+    }
+  });
+
+  it("el abierto a mano viaja sin cotización ninguna", async () => {
+    const directo = await abrirProcesoDirecto(
+      "Visa de trabajo abierta a mano, sin cotización detrás",
+    );
+
+    expect(directo.origen).toBe("directo");
+    expect(directo.cotizacionDeOrigen).toBeNull();
+
+    const enElListado = (await procesosEnElCable()).find(
+      (proceso) => proceso.id === directo.id,
+    );
+    expect(enElListado?.cotizacionDeOrigen).toBeNull();
+  });
+
+  it("el detalle dice lo mismo que el listado, en las dos direcciones", async () => {
+    // El listado y el detalle salen de la misma `SELECCION`, y esta prueba
+    // es la que lo sostiene: el día que alguien resuelva la procedencia en
+    // una sola de las dos consultas, la pantalla de detalle y la de listado
+    // dirían cosas distintas del mismo proceso.
+    const cotizacion = await emitirConDosTramites();
+    expect((await ganar(cotizacion.id)).status).toBe(200);
+
+    const [nacido] = await procesosDe(cotizacion.id);
+    const directo = await abrirProcesoDirecto(
+      "Residencia abierta a mano para cotejar el detalle",
+    );
+
+    expect((await procesoEnElCable(nacido.id)).cotizacionDeOrigen).toEqual({
+      id: cotizacion.id,
+      codigo: cotizacion.codigo,
+    });
+    expect((await procesoEnElCable(directo.id)).cotizacionDeOrigen).toBeNull();
+  });
+
+  it("dos cotizaciones ganadas no se mezclan la procedencia", async () => {
+    // Un `JOIN` mal atado —por cliente, por tenant, o sin el `ON` de la
+    // línea— devolvería **una** cotización para todos los procesos, y con
+    // una sola cotización en la base eso pasaría igual.
+    const una = await emitirConDosTramites();
+    const otra = await emitirConDosTramites();
+    expect((await ganar(una.id)).status).toBe(200);
+    expect((await ganar(otra.id)).status).toBe(200);
+
+    const enElCable = await procesosEnElCable();
+    const codigoDe = (id: string) =>
+      enElCable.find((proceso) => proceso.id === id)?.cotizacionDeOrigen
+        ?.codigo;
+
+    for (const fila of await procesosDe(una.id)) {
+      expect(codigoDe(fila.id)).toBe(una.codigo);
+    }
+    for (const fila of await procesosDe(otra.id)) {
+      expect(codigoDe(fila.id)).toBe(otra.codigo);
+    }
+    expect(una.codigo).not.toBe(otra.codigo);
+  });
+});

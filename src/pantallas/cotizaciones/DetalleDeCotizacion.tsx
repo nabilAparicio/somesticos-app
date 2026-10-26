@@ -59,7 +59,7 @@
  */
 import { useEffect, useState } from "react";
 
-import type { Cotizacion } from "../../../worker/contract";
+import type { Cotizacion, Proceso } from "../../../worker/contract";
 import { hoyEnPanama } from "../../../worker/db/momentos";
 import { Aviso } from "../../layout/Aviso";
 import { Enlace } from "../../layout/Enlace";
@@ -69,6 +69,8 @@ import { Rejilla } from "../../layout/Rejilla";
 import { navegarA } from "../../navegacion";
 import { enlaceDe } from "../../ruteo";
 import { Bitacora, type EstadoDeBitacora } from "../Bitacora";
+import { cargarProcesos } from "../procesos/api";
+import { procesosDeCotizacion } from "../procesos/presentacion";
 import {
   cargarBitacoraDeCotizacion,
   cargarCotizacion,
@@ -86,6 +88,7 @@ import {
   accionesDe,
   confirmacionDeEmitir,
   textoDeProcedencia,
+  textoDeProcesosAbiertos,
   type AccionDeCiclo,
 } from "./ciclo";
 import { EditorDeLineas } from "./EditorDeLineas";
@@ -131,6 +134,25 @@ type Procedencia = {
   readonly cotizacion: Cotizacion | null;
 };
 
+/**
+ * En qué quedó esta cotización: los procesos que abrió al ganarse (T-15).
+ *
+ * `procesos` en nulo **no** quiere decir «no abrió ninguno» —eso es el
+ * arreglo vacío, y es un desenlace legítimo— sino que la lectura no salió.
+ * Las dos cosas se dicen distinto, por lo mismo que en `Procedencia`: un
+ * fallo de red disfrazado de cero manda a alguien a concluir que no hay
+ * procesos que sí existen.
+ *
+ * **`de` no es decoración**, igual que allá: es de cuál cotización se leyó.
+ * Duplicar navega a la copia sin desmontar este componente, así que sin el
+ * identificador adentro la lista de una ganada se quedaría dibujada debajo
+ * del borrador recién nacido.
+ */
+type Abiertos = {
+  readonly de: string;
+  readonly procesos: readonly Proceso[] | null;
+};
+
 function Dato({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
     <div className="definicion">
@@ -146,6 +168,7 @@ export function DetalleDeCotizacion({ id }: Props) {
     fase: "cargando",
   });
   const [procedencia, setProcedencia] = useState<Procedencia | null>(null);
+  const [abiertos, setAbiertos] = useState<Abiertos | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
   /*
@@ -198,6 +221,12 @@ export function DetalleDeCotizacion({ id }: Props) {
 
   const origenId = estado.fase === "listo" ? estado.cotizacion.duplicadaDeId : null;
 
+  /* El identificador **sólo mientras esté ganada**. Ver el efecto de abajo. */
+  const ganadaId =
+    estado.fase === "listo" && estado.cotizacion.estado === "ganada"
+      ? estado.cotizacion.id
+      : null;
+
   /**
    * La de arriba en la cadena de duplicación, y **sólo ella**.
    *
@@ -230,6 +259,53 @@ export function DetalleDeCotizacion({ id }: Props) {
       control.abort();
     };
   }, [origenId]);
+
+  /**
+   * Los procesos que esta cotización abrió, cuando está ganada (T-15).
+   *
+   * ## Por qué cuelga del estado y no sólo del identificador
+   *
+   * `ganadaId` es el identificador **sólo mientras la cotización esté
+   * ganada**, y nulo si no. Eso hace dos cosas de una: no se pide nada
+   * sobre un borrador —no hay nada que pedir—, y marcar ganada desde el
+   * botón de arriba dispara la lectura sola, porque `aplicar` reemplaza la
+   * cotización en `estado` y `ganadaId` pasa de nulo a tenerlo. Sin eso
+   * habría que recargar para ver qué abrió lo que uno acaba de ganar.
+   *
+   * ## Por qué lee el listado entero y no una ruta propia
+   *
+   * Porque la ruta propia no existe y no hace falta. El servidor ya
+   * entrega la cartera completa de procesos en una respuesta —es la misma
+   * decisión que toman el buscador y el filtro por estado de la pantalla
+   * de procesos, y el bufete son dos personas— y cada proceso trae su
+   * cotización de origen resuelta desde T-15. Una ruta nueva sería un
+   * segundo lugar donde se decide qué proceso cuelga de qué cotización.
+   *
+   * Es un efecto aparte y no una lectura encadenada, por el mismo motivo
+   * que la bitácora y la procedencia: un fallo de esta lectura no puede
+   * dejar la ficha en blanco.
+   */
+  useEffect(() => {
+    if (ganadaId === null) return;
+
+    const control = new AbortController();
+
+    void cargarProcesos(control.signal).then((resultado) => {
+      if (control.signal.aborted) return;
+
+      setAbiertos({
+        de: ganadaId,
+        procesos:
+          resultado.estado === "ok"
+            ? procesosDeCotizacion(resultado.valor, ganadaId)
+            : null,
+      });
+    });
+
+    return () => {
+      control.abort();
+    };
+  }, [ganadaId]);
 
   /**
    * Las cuatro escrituras del ciclo pasan por acá, y existe por el
@@ -502,6 +578,59 @@ export function DetalleDeCotizacion({ id }: Props) {
             Ver de dónde salió
           </Enlace>
         </p>
+      )}
+
+      {/*
+        T-15 · En qué quedó esta cotización.
+
+        Va **arriba de la ficha y del documento**, y debajo de la
+        procedencia: las dos contestan la misma clase de pregunta —de
+        dónde salió esto, adónde fue a parar— y la segunda es la que
+        alguien abre a buscar tres meses después, cuando ya no recuerda el
+        contenido.
+
+        Se dibuja **sólo sobre una ganada**, y la condición es `ganadaId`:
+        el mismo valor que decide la lectura. Colgarlo de «hay procesos»
+        lo dibujaría también sobre una perdida que comparta cliente con un
+        proceso cualquiera, y colgarlo de un segundo `estado === "ganada"`
+        escrito acá serían dos lecturas del mismo hecho.
+
+        El bloque aparece **antes** de que la lectura vuelva, diciendo la
+        frase del fallo. Es deliberado: un bloque que aparece y desaparece
+        obliga a preguntarse si no abrió ninguno o si no cargó, y esa duda
+        es exactamente lo que estas tres frases existen para no tener.
+      */}
+      {ganadaId !== null && (
+        <section className="procesos-abiertos" aria-labelledby="que-abrio">
+          <Pila espacio="ceñido">
+            <h2 id="que-abrio" className="procesos-abiertos__titulo">
+              Procesos que abrió
+            </h2>
+            <p>
+              {textoDeProcesosAbiertos(
+                abiertos !== null && abiertos.de === ganadaId
+                  ? abiertos.procesos
+                  : null,
+              )}
+            </p>
+            {abiertos !== null &&
+              abiertos.de === ganadaId &&
+              abiertos.procesos !== null &&
+              abiertos.procesos.length > 0 && (
+                <ul className="sin-viñetas">
+                  {abiertos.procesos.map((proceso) => (
+                    <li key={proceso.id}>
+                      <Enlace
+                        href={enlaceDe({ nombre: "proceso", id: proceso.id })}
+                      >
+                        {proceso.titulo}
+                      </Enlace>
+                    </li>
+                  ))}
+                </ul>
+              )}
+          </Pila>
+        </section>
       )}
 
       {vencida && (

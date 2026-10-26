@@ -134,11 +134,13 @@ import {
   type PasoDelPlan,
 } from "./plan";
 import {
+  ROTULO_DE_LA_COTIZACION,
   avanceDe,
   avisoDeProcesoCerrado,
   estadoLegible,
   proximoPaso,
   resumenDeTrabajoVigente,
+  textoDeOrigen,
 } from "./presentacion";
 
 type Props = {
@@ -722,6 +724,11 @@ export function DetalleDeProceso({ id }: Props) {
      alguien descubra la regla apretando. */
   const terminado = proceso.estado === "cerrado";
   const avisoDelCierre = avisoDeProcesoCerrado(proceso);
+  /* T-15: la cotización de la que nace, leída **una sola vez**. Es la que
+     decide si hay renglón, la que da el texto y la que da la dirección del
+     enlace: tres cosas de una lectura, que es lo que impide que la frase y
+     el botón puedan discrepar. */
+  const deCotizacion = proceso.cotizacionDeOrigen;
   /* El borrador tiene cambios sin guardar respecto de lo que está en la base. */
   const sinGuardar =
     JSON.stringify(aPeticionDePlan(plan)) !==
@@ -807,6 +814,34 @@ export function DetalleDeProceso({ id }: Props) {
           Ver el cliente
         </Enlace>
       </p>
+
+      {/* ---------------------------------------------------------------
+          T-15 · De dónde nace este proceso, y el botón para ir a verlo.
+
+          Va pegado al enlace del cliente porque son la misma clase de
+          cosa: las dos salidas de esta pantalla hacia la fila de la que
+          cuelga el proceso.
+
+          **La condición es una sola lectura**, y la frase y el enlace
+          cuelgan de ella. Colgar la frase de `textoDeOrigen` y el enlace
+          de `proceso.origen === "cotizacion"` serían dos guardas para el
+          mismo hecho: quitar cualquiera de las dos dejaría la pantalla
+          igual, y ninguna quedaría verificada.
+
+          Y sobre un proceso directo **no se dibuja nada**: ni el renglón,
+          ni un botón apagado. Un control apagado sigue siendo la promesa
+          de que hay algo detrás, y detrás no hay ninguna cotización —es
+          la lección de la unidad B de T-2—. */}
+      {deCotizacion !== null && (
+        <p className="texto-apagado">
+          {textoDeOrigen(proceso)}{" "}
+          <Enlace
+            href={enlaceDe({ nombre: "cotizacion", id: deCotizacion.id })}
+          >
+            {ROTULO_DE_LA_COTIZACION}
+          </Enlace>
+        </p>
+      )}
 
       {/* ---------------------------------------------------------------
           T-14 · Cerrar y reabrir.
