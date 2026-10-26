@@ -257,15 +257,32 @@
    * El armazón deja de ser una rejilla con lateral: sin la navegación, una
    * rejilla de dos columnas deja la primera vacía y el documento impreso
    * empieza a la mitad de la hoja.
+   *
+   * Y suelta la altura y el desbordamiento, que es lo que T-1 le puso. En
+   * pantalla el armazón mide `100svh` y el que scrollea es
+   * `.esqueleto__contenido`: eso es lo que deja quietos al encabezado y al
+   * lateral. En papel esa misma pareja de reglas recorta el documento a la
+   * altura de **una** ventana —lo que no entró queda del otro lado de un
+   * desbordamiento que la impresora no puede scrollear— y la hoja de
+   * `HojaDeCotizacion`, que son varias páginas, sale de una. El tope de
+   * ancho también se va: acá lo pone `@page`.
    */
   .esqueleto {
     display: block;
+    block-size: auto;
+    overflow: visible;
+    max-inline-size: none;
   }
 
   .esqueleto__contenido {
     padding: 0;
     margin: 0;
     max-inline-size: none;
+    /* La otra mitad de lo mismo: la región que scrollea en pantalla tiene
+       que dejar de ser una región que scrollea. Sin esto, soltar la altura
+       del armazón no alcanza —el recorte lo hace el hijo. */
+    block-size: auto;
+    overflow: visible;
   }
 
   /*

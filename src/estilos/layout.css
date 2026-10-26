@@ -14,6 +14,15 @@
  * que es el tamaño *mínimo del contenido*. Con eso, una tabla ancha o una URL
  * larga estiran su columna, la columna estira el armazón y el armazón estira
  * la página. Esa es, casi siempre, la causa real del scroll horizontal.
+ *
+ * Desde T-1 hay una segunda regla de la misma familia, y en el otro eje: **el
+ * armazón mide la ventana y el scroll se mueve hacia adentro**. El encabezado
+ * y el lateral no se fijan con `position: fixed` —eso obligaría a calcular a
+ * mano la altura del encabezado para compensarla en el contenido, que es
+ * exactamente la medida fija que §9 prohíbe, y se rompe el día que el
+ * encabezado envuelve en dos renglones—: siguen siendo pistas de una rejilla
+ * que no scrollea, y la única región con `overflow-y: auto` es el contenido.
+ * Nadie calcula la altura de nada.
  */
 
 /* ======================================================================
@@ -36,19 +45,46 @@
 .esqueleto {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /*
+   * `minmax(0, 1fr)` en la fila del contenido, y por la misma razón que el
+   * de la columna: una fila vale `auto`, o sea el alto *mínimo del
+   * contenido*. Con `auto`, una pantalla larga estiraría su fila, la fila
+   * estiraría el armazón más allá de las `100svh` y el que scrollearía
+   * volvería a ser la página —con el encabezado y el lateral adentro—, que
+   * es justo el defecto que T-1 arregla. Con `minmax(0, 1fr)` la fila se
+   * queda con el resto de la ventana y el desbordamiento se resuelve dentro
+   * de la región.
+   */
+  grid-template-rows: auto auto minmax(0, 1fr);
   grid-template-areas:
     "encabezado"
     "navegacion"
     "contenido";
   gap: var(--espacio-m);
-  align-content: start;
-  min-block-size: 100svh;
-  padding: var(--espacio-m);
+  /* La ventana, y `svh` y no `vh`: en un celular, `vh` cuenta la barra de
+     direcciones que todavía no se retrajo y deja el armazón más alto que lo
+     que se ve. */
+  block-size: 100svh;
+  /* El centrado. El tope va acá, en el armazón entero, y no en el contenido:
+     eso es lo que centra la aplicación —encabezado, lateral y contenido como
+     un bloque— en vez de centrar una columna debajo de un encabezado
+     estirado. Tope, nunca ancho: por debajo mide lo que mide la ventana. */
+  max-inline-size: var(--tope-armazon);
+  margin-inline: auto;
 }
 
+/*
+ * El padding de página se reparte **por región** y ya no vive en el armazón.
+ *
+ * No es gusto. Con una región que scrollea adentro, un padding en el armazón
+ * hace dos daños a la vez: mete la barra de scroll del contenido hacia
+ * adentro, lejos del borde de su propia región, y deja abajo una franja
+ * muerta de alto fijo que el contenido nunca alcanza y por la que se lo ve
+ * pasar. Cada región se paga su borde exterior.
+ */
 @container armazon (min-width: 48rem) {
   .esqueleto {
-    /* La lateral se mueve entre un mínimo y un máximo; el contenido se lleva
+    /* El lateral se mueve entre un mínimo y un máximo; el contenido se lleva
        el resto y puede encogerse hasta cero, que es lo que `minmax(0, 1fr)`
        autoriza y `auto` prohibiría. */
     grid-template-columns:
@@ -58,7 +94,6 @@
       "encabezado encabezado"
       "navegacion contenido";
     gap: var(--espacio-l) var(--espacio-xl);
-    padding: var(--espacio-l) var(--espacio-xl);
   }
 }
 
@@ -70,8 +105,14 @@
   align-items: baseline;
   gap: var(--espacio-xs) var(--espacio-m);
   min-width: 0;
-  padding-block-end: var(--espacio-s);
+  padding: var(--espacio-m) var(--espacio-m) var(--espacio-s);
   border-block-end: var(--borde-fino);
+}
+
+@container armazon (min-width: 48rem) {
+  .esqueleto__encabezado {
+    padding: var(--espacio-l) var(--espacio-xl) var(--espacio-s);
+  }
 }
 
 .marca {
@@ -118,6 +159,22 @@
 .esqueleto__navegacion {
   grid-area: navegacion;
   min-width: 0;
+  /* El lateral se scrollea solo. La lista de secciones va a crecer, y hasta
+     T-1 crecer significaba empujar la página entera: el armazón ya no
+     scrollea, así que cada región que pueda desbordar se hace cargo de su
+     propio desbordamiento. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* El borde exterior del armazón, que antes ponía el `padding` del armazón
+     entero y ahora paga cada región. */
+  padding-inline: var(--espacio-m);
+}
+
+@container armazon (min-width: 48rem) {
+  .esqueleto__navegacion {
+    padding-block-end: var(--espacio-l);
+    padding-inline: var(--espacio-xl) 0;
+  }
 }
 
 .navegacion__lista {
@@ -206,9 +263,42 @@
   /* Sin esto, un hijo ancho (una tabla, por ejemplo) estira la pista y con
      ella la página entera. */
   min-width: 0;
-  /* Tope, nunca ancho: a 320px mide 320px menos el padding. */
+  /*
+   * Tope, nunca ancho: a 320px mide 320px menos el padding. Sigue valiendo
+   * debajo de `--tope-armazon`, y donde se nota es con el lateral colapsado
+   * en ancho: ahí la región tiene más hueco que el tope y éste corta.
+   *
+   * Y **nada de `margin-inline: auto` acá** para centrar esa columna
+   * recortada, aunque sea lo que uno escribe de reflejo. Medido: un margen
+   * `auto` en un ítem de grid cancela el `justify-self: stretch` implícito y
+   * la región pasa a medirse por su contenido —a 1920px se midió en 649px en
+   * vez de los 1312 del tope—, o sea que deja de ser una región de ancho
+   * conocido y empieza a encogerse con lo que haya dentro. El centrado es
+   * del armazón; acá el tope solo corta.
+   */
   max-inline-size: var(--tope-contenido);
-  padding-block: var(--espacio-s);
+  /*
+   * **La única región que scrollea**, y es la mitad activa de T-1. El
+   * armazón mide la ventana, así que lo que no entra desborda acá adentro:
+   * el encabezado y el lateral se quedan quietos sin que nadie los fije ni
+   * calcule su altura para compensarla.
+   *
+   * `overscroll-behavior: contain` para que el gesto que llega al final de
+   * una lista no se contagie hacia afuera —ni a la página, ni al «volver
+   * atrás» por arrastre del navegador.
+   */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--espacio-s) var(--espacio-m) var(--espacio-xl);
+}
+
+@container armazon (min-width: 48rem) {
+  .esqueleto__contenido {
+    /* Del lado del lateral no hace falta padding: lo pone el `column-gap`
+       de la rejilla. Del lado de afuera sí, que es el borde del armazón. */
+    padding-block: var(--espacio-s) var(--espacio-xl);
+    padding-inline: 0 var(--espacio-xl);
+  }
 }
 
 /* ======================================================================
@@ -359,6 +449,33 @@
   vertical-align: top;
 }
 
+/*
+ * El `thead` pegajoso, y lo que T-1 fue a verificar acá.
+ *
+ * La pregunta era si, con el contenido vuelto región que scrollea, este
+ * encabezado iba a pegarse al techo de esa región. Se midió en el navegador,
+ * sobre el banco de pruebas a 1440px, y la respuesta es **no**: el scrollport
+ * más cercano no es `.esqueleto__contenido` sino `.tabla-contenedor`, que
+ * está acá arriba. Tiene `overflow-x: auto` y, por la regla de cálculo de
+ * CSS, el eje que quedaba en `visible` pasa a `auto` solo: el contenedor es
+ * scrollport en los dos ejes aunque solo se le haya pedido uno.
+ *
+ * Y ese contenedor no tiene tope de alto, así que nunca scrollea en
+ * vertical: medido, el `th` se va hacia arriba con su tabla —de 1791px a
+ * -196px, conservando sus 47px de distancia al borde de la tabla— en vez de
+ * quedarse clavado en el techo. O sea que esta regla **no hace nada en
+ * vertical, y tampoco lo hacía antes de T-1**: no «se pegaba a la página» y
+ * ahora «se pega a la región»; no se pegaba entonces y no se pega ahora.
+ *
+ * Se deja igual y sin tocar, por dos razones. La primera es que sí hace algo
+ * hoy: con el scroll horizontal de `.tabla-contenedor`, el fondo opaco y el
+ * `white-space: nowrap` son los que mantienen legible el encabezado mientras
+ * la tabla se corre de lado. La segunda es que el día que una tabla larga
+ * reciba un tope de alto propio, esta regla empieza a pegar de verdad sin que
+ * nadie tenga que acordarse de ponerla. Cambiarla para que se pegue al techo
+ * del contenido sería sacar el `overflow-x` de `.tabla-contenedor`, que es la
+ * regla que impide que una tabla ancha empuje la página entera.
+ */
 .tabla thead th {
   position: sticky;
   inset-block-start: 0;

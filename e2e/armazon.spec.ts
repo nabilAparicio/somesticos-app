@@ -1,0 +1,195 @@
+/**
+ * El armazón se comporta como una aplicación y no como un documento.
+ *
+ * Tres de los cuatro reclamos que abrieron esta tajada —no está centrado, el
+ * encabezado y el lateral scrollean con la página— son el mismo defecto:
+ * `src/layout/Esqueleto.tsx` estaba en flujo de página de punta a punta. Lo
+ * que esta suite sostiene es la forma nueva: el armazón mide la ventana y el
+ * scroll se mueve hacia adentro.
+ *
+ * ## Por qué de punta a punta y no en `test/`
+ *
+ * Porque **no hay nada que afirmar sin dibujar**. Lo que T-1 cambia es
+ * geometría: quién scrollea y quién se queda quieto cuando el contenido no
+ * entra. Una unitaria sobre `Esqueleto.tsx` solo podría afirmar que tal
+ * clase está puesta, que es exactamente la clase de prueba que pasa en verde
+ * mientras el layout está roto: la clase existe y la regla CSS que la hacía
+ * funcionar no. Acá se mide con `boundingBox` y `toBeVisible`, o sea con lo
+ * que la persona ve.
+ *
+ * ## Los controles de hostilidad
+ *
+ * Las dos pruebas de acá pasarían vacuamente y por eso llevan un contrapeso
+ * escrito antes de la aserción que importa:
+ *
+ *  - el centrado se mide en una ventana **más ancha que el tope**, porque un
+ *    armazón que llena la ventana está «centrado» por casualidad;
+ *  - el scroll se mide en una pantalla que **de verdad desborda** la región
+ *    de contenido, porque dos `boundingBox` iguales también significan «no
+ *    pasó nada».
+ *
+ * El tope del armazón se lee del documento y no se escribe acá: la fuente es
+ * `--tope-armazon` en `src/estilos/tokens.css`, y una prueba con el número
+ * copiado empieza a mentir el día que el token cambia.
+ */
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+/**
+ * La ventana de esta suite, deliberadamente mucho más ancha que
+ * `--tope-armazon`: es la única forma de que el centrado sea observable.
+ */
+const ANCHA = { width: 1920, height: 900 } as const;
+
+/**
+ * La pantalla con la que se mide el scroll: la misma que usa el criterio
+ * responsivo de T-4, y por la misma razón: junta a propósito el contenido
+ * que un layout mal hecho no soporta, y es alta de verdad.
+ */
+const BANCO = "/banco-de-pruebas";
+
+function armazon(page: Page): Locator {
+  return page.locator(".esqueleto");
+}
+
+function encabezado(page: Page): Locator {
+  return page.locator(".esqueleto__encabezado");
+}
+
+function lateral(page: Page): Locator {
+  return page.locator(".esqueleto__navegacion");
+}
+
+function contenido(page: Page): Locator {
+  return page.locator(".esqueleto__contenido");
+}
+
+/**
+ * La caja de un elemento, o una falla que dice «la prueba está rota».
+ *
+ * `boundingBox()` devuelve `null` cuando el elemento no se dibuja, y un
+ * `null` propagado adentro de una aritmética da `NaN`: la aserción falla con
+ * un mensaje sobre números y no sobre el elemento que no estaba.
+ */
+async function cajaDe(
+  elemento: Locator,
+  queEs: string,
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  const caja = await elemento.boundingBox();
+  if (caja === null) {
+    throw new Error(
+      `la prueba está rota: ${queEs} no tiene caja medible (no se dibujó)`,
+    );
+  }
+  return caja;
+}
+
+/** `--tope-armazon` en píxeles, leído del documento vivo. */
+async function topeDelArmazon(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const raiz = getComputedStyle(document.documentElement);
+    const enRem = Number.parseFloat(
+      raiz.getPropertyValue("--tope-armazon").trim(),
+    );
+    return enRem * Number.parseFloat(raiz.fontSize);
+  });
+}
+
+test.describe("el armazón centrado y quieto (T-1)", () => {
+  test("en un monitor ancho el armazón queda centrado y no pegado a un borde", async ({
+    page,
+  }) => {
+    await page.setViewportSize(ANCHA);
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+
+    const tope = await topeDelArmazon(page);
+
+    // Los dos contrapesos. Sin el primero, un token que no llegó al
+    // documento dejaría la prueba midiendo el ancho de la ventana; sin el
+    // segundo, la medición se haría en una ventana donde el armazón llena
+    // todo y los dos huecos valen cero por razones que no son el centrado.
+    expect(
+      tope,
+      "`--tope-armazon` no llegó al documento: esto es la prueba rota, no un" +
+        " armazón descentrado",
+    ).toBeGreaterThan(0);
+    expect(
+      ANCHA.width,
+      "la ventana de esta prueba tiene que ser bastante más ancha que" +
+        " `--tope-armazon` o el centrado no es observable",
+    ).toBeGreaterThan(tope + 200);
+
+    const caja = await cajaDe(armazon(page), "el armazón");
+    const izquierda = caja.x;
+    const derecha = ANCHA.width - (caja.x + caja.width);
+
+    expect(
+      izquierda,
+      "el armazón está pegado al borde izquierdo: el tope vive en el" +
+        " contenido y no en el armazón, que es el defecto de T-1",
+    ).toBeGreaterThan(50);
+    expect(
+      derecha,
+      "el armazón llega hasta el borde derecho: no tiene tope",
+    ).toBeGreaterThan(50);
+    expect(
+      Math.abs(izquierda - derecha),
+      `el armazón no está centrado: ${String(Math.round(izquierda))}px de un` +
+        ` lado y ${String(Math.round(derecha))}px del otro`,
+    ).toBeLessThanOrEqual(2);
+  });
+
+  test("el encabezado y el lateral no se mueven cuando el contenido scrollea", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 700 });
+    await page.goto(BANCO);
+    await page.evaluate(() => document.fonts.ready);
+    await page.locator(".tabla-contenedor").first().waitFor();
+
+    const region = contenido(page);
+
+    // El contrapeso: con una pantalla que entra en la ventana, los dos pares
+    // de `boundingBox` de abajo son iguales porque no se scrolleó nada, y la
+    // prueba pasaría con el armazón scrolleando como documento.
+    const alcance = await region.evaluate((nodo) => ({
+      scrollHeight: nodo.scrollHeight,
+      clientHeight: nodo.clientHeight,
+    }));
+    expect(
+      alcance.scrollHeight - alcance.clientHeight,
+      "el banco de pruebas tiene que desbordar la región de contenido o acá" +
+        " no hay scroll que medir: esto es la prueba rota",
+    ).toBeGreaterThan(200);
+
+    const encabezadoAntes = await cajaDe(encabezado(page), "el encabezado");
+    const lateralAntes = await cajaDe(lateral(page), "el lateral");
+
+    await region.evaluate((nodo) => {
+      nodo.scrollTo({ top: nodo.scrollHeight });
+    });
+
+    const desplazado = await region.evaluate((nodo) => nodo.scrollTop);
+    expect(
+      desplazado,
+      "la región de contenido no scrolleó: `overflow-y` no llegó a ella",
+    ).toBeGreaterThan(200);
+    expect(
+      await page.evaluate(() => window.scrollY),
+      "scrolleó la página entera y no la región de contenido: el armazón" +
+        " sigue en flujo de documento",
+    ).toBe(0);
+
+    const encabezadoDespues = await cajaDe(encabezado(page), "el encabezado");
+    const lateralDespues = await cajaDe(lateral(page), "el lateral");
+
+    expect(
+      Math.abs(encabezadoDespues.y - encabezadoAntes.y),
+      "el encabezado se movió con el scroll del contenido",
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(lateralDespues.y - lateralAntes.y),
+      "el lateral se movió con el scroll del contenido",
+    ).toBeLessThanOrEqual(1);
+  });
+});

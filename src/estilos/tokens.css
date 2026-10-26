@@ -67,6 +67,22 @@
   --borde-fino: 1px solid var(--color-borde);
 
   /* ---------- Medidas de layout: topes y mínimos, nunca anchos ---------- */
+  /*
+   * Tope del armazón **entero** —encabezado, lateral y contenido como un
+   * bloque—. Es lo que centra la aplicación en un monitor grande, en vez de
+   * centrar una columna de contenido debajo de un encabezado que sigue
+   * estirado de borde a borde, que es lo que pasaba hasta T-1.
+   *
+   * Tope y no ancho: por debajo de 88rem el armazón mide lo que mide la
+   * ventana y no sobra ni falta nada.
+   *
+   * El valor está elegido contra los dos extremos que importan. A 1440px
+   * (90rem) el armazón ya se despega de los dos bordes, que es el criterio
+   * escrito de la tajada; y con el lateral colapsado la región de contenido
+   * queda en unas 82.5rem, o sea que `--tope-contenido` sigue siendo el que
+   * corta y no quedó en letra muerta debajo de este tope.
+   */
+  --tope-armazon: 88rem;
   /* Tope de la columna de contenido. Más allá de esto el ojo se pierde
      recorriendo de un borde al otro de un monitor de 2560px. */
   --tope-contenido: 82rem;
