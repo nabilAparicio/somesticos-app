@@ -487,3 +487,63 @@ mensaje.
 Y en paralelo, lo que destraba el resto: el **corpus de cotizaciones previas** (para T-8), la
 decisión del **plan de pagos** (para T-11, recomendación **(c)** arriba) y el **ITBMS** (para
 T-12).
+
+---
+
+## T-13 · El proceso cuelga de la cotización, no de la línea
+
+**Decidido el 26 de octubre de 2026, por el usuario, mirando la aplicación andando.**
+Corrige un error de modelo de T-7.
+
+### El error
+
+T-7 abre **un proceso por cada línea con `tipo_proceso_id`**, y `proceso.cotizacion_linea_id`
+apunta a la línea. Eso **impone desde la estructura** una decisión que es del bufete.
+
+Palabras del usuario, que son el criterio:
+
+> «Los procesos no deben ir ligados a la línea sino a la cotización. Las líneas pueden compartir
+> un mismo proceso o simplemente no hacerlo. Por ejemplo crear una sociedad anónima puede ser
+> sólo crearla, o crearla y registrarla: desde el sistema serían 2 procesos, pero para el bufete
+> es lo mismo, es un solo proceso que luego tiene un paso extra. Es algo ambiguo pero que debe
+> quedar a criterio del bufete.»
+
+**La línea es una unidad de facturación; el proceso es una unidad de trabajo.** No tienen por qué
+ser lo mismo. Constituir y registrar se cobran aparte porque se tarifan aparte; que sean uno o
+dos expedientes no se sigue de eso.
+
+### Qué cambia
+
+- `proceso.cotizacion_linea_id` → **`proceso.cotizacion_id`**. Migración.
+- I-3 se simplifica: hoy va por la línea hasta la cotización; pasa a ser directo.
+- La apertura automática deja de ser una derivación y pasa a ser **una propuesta**.
+
+### La decisión del usuario: opción (b), proponer y confirmar
+
+Al marcar ganada, el sistema **propone** los procesos que infiere de los trámites de las líneas y
+los muestra **antes de crear nada**. El bufete saca uno, fusiona dos, cambia un tipo o agrega
+otro. Recién entonces nacen.
+
+Se descartó la opción (a) —abrir y que el bufete ajuste después— por el propio ejemplo de la
+sociedad anónima: el sistema infiere dos y el bufete quiere uno, así que nacería un expediente
+que hay que borrar, y borrar un proceso arrastra bitácora. **La ambigüedad se resuelve antes de
+que haya algo que deshacer.**
+
+### Lo que ya existe y no hay que construir
+
+Los pasos de un proceso **ya son editables**: `PUT /api/procesos/{id}/etapas` reemplaza el plan
+entero. «Un proceso con un paso extra» es algo que el bufete ya puede armar hoy. Lo que faltaba
+era que el sistema no le impusiera la partición antes.
+
+### Alcance medido
+
+Una migración y siete archivos. **No se toca** nada de cotizaciones, módulos, líneas, el
+congelado, el generador ni el dinero.
+
+### El caso que lo destapó
+
+`COT-2026-0007`, generada con la IA: nueve líneas, **ninguna con trámite**, cero procesos
+abiertos. Y el modelo **no se equivocó** — el catálogo del bufete ofrecía cuatro trámites y
+ninguno era «divorcio», así que dejó las líneas sin trámite en vez de forzar uno que mintiera.
+El defecto no era del modelo ni del código: era que el sistema no deja abrir un proceso cuyo
+trámite todavía no existía cuando se cotizó.
