@@ -541,7 +541,7 @@ describe("límites de la tajada 1", () => {
   // escribe entera: la opción (c), la cuota cuelga de la cotización o del
   // proceso con `CHECK` de exclusividad. Así que el límite que este mojón
   // vigilaba se cruzó, y el mojón no se borra: se da vuelta, igual que el de
-  // `proceso.cotizacion_linea_id` más abajo. Lo que hay que vigilar ahora es
+  // `proceso.cotizacion_id` más abajo. Lo que hay que vigilar ahora es
   // más fuerte que lo que vigilaba antes — que la tabla exista es la mitad
   // fácil; la que importa es **de qué cuelga**, porque una `cuota` que
   // hubiera salido con `proceso_id NOT NULL` sería la opción (a) implementada
@@ -585,26 +585,25 @@ describe("límites de la tajada 1", () => {
     expect(porNombre.get("tenant_id")).toBe(1);
   });
 
-  it("le pone a proceso la FK que 0001 difirió, y apunta a cotizacion_linea", async () => {
-    // **Esta prueba cambió de pregunta el 25 de octubre de 2026, y no es
-    // una prueba nueva.** Hasta `migrations/0008_procesos_desde_cotizacion.sql`
-    // afirmaba lo contrario: que `proceso` **no** tuviera
-    // `cotizacion_linea_id`, porque `0001` difirió esa columna a la tajada 2
-    // explícitamente —apuntaría a `cotizacion_linea`, que entonces no
-    // existía—. T-7 de la tajada 2 es la tarea que la trae, así que el
-    // límite que el mojón vigilaba se cruzó.
+  it("le pone a proceso la FK que 0001 difirió, y apunta a cotizacion", async () => {
+    // **Esta prueba cambió de pregunta por tercera vez, el 26 de octubre de
+    // 2026.** Hasta `0008` afirmaba que `proceso` **no** tuviera columna de
+    // procedencia, porque `0001` la difirió a la tajada 2; `0008` la dio
+    // vuelta y pasó a exigir `cotizacion_linea_id` apuntando a
+    // `cotizacion_linea`; y T-13 corrió la arista a la cotización, así que
+    // el mojón se corre con ella.
     //
-    // No se borra, se da vuelta: lo que hay que vigilar ahora es más fuerte
-    // que lo que vigilaba antes. Que la columna exista es la mitad fácil;
-    // la que importa es **adónde apunta**, porque una llave foránea hacia
-    // la tabla equivocada compila, migra y no se nota hasta que alguien
-    // sigue el enlace. Borrar el mojón dejaría ese hecho sin dueño.
+    // Nunca se borró y tampoco ahora: lo que hay que vigilar sigue siendo
+    // **adónde apunta**, porque una llave foránea hacia la tabla equivocada
+    // compila, migra y no se nota hasta que alguien sigue el enlace. Que la
+    // prueba haya cambiado tres veces de respuesta sin cambiar de pregunta
+    // es la señal de que el mojón está puesto donde sirve.
     const columnas = await env.DB.prepare(
       "SELECT name FROM pragma_table_info('proceso')",
     ).all<{ name: string }>();
 
     expect(columnas.results.map((fila) => fila.name)).toContain(
-      "cotizacion_linea_id",
+      "cotizacion_id",
     );
 
     const llaves = await env.DB.prepare(
@@ -613,8 +612,40 @@ describe("límites de la tajada 1", () => {
     ).all<{ destino: string; origen: string }>();
 
     expect(
-      llaves.results.find((llave) => llave.origen === "cotizacion_linea_id"),
-    ).toEqual({ destino: "cotizacion_linea", origen: "cotizacion_linea_id" });
+      llaves.results.find((llave) => llave.origen === "cotizacion_id"),
+    ).toEqual({ destino: "cotizacion", origen: "cotizacion_id" });
+  });
+
+  it("y la columna de la arista vieja ya no está, ni su llave foránea", async () => {
+    // **El contrapeso del mojón de arriba, y no es ceremonia.** Las dos
+    // columnas pueden convivir: `ADD COLUMN` no obliga a soltar nada, así
+    // que una migración que agregara `cotizacion_id` y se olvidara el
+    // `DROP COLUMN` pasaría la prueba anterior entera. Lo que quedaría es
+    // una tabla con dos procedencias, una de ellas sin `CHECK` que la ate a
+    // `origen` —el viejo se va con la columna—, y nadie se enteraría hasta
+    // que dos códigos distintos escribieran cada uno la suya.
+    //
+    // La llave foránea se afirma aparte de la columna porque son dos hechos
+    // y el segundo es el que decidía si había que reconstruir `proceso`: si
+    // el `DROP COLUMN` hubiera fallado y alguien hubiera parchado el
+    // esquema a mano, la columna podría estar ausente del `pragma_table_info`
+    // de una tabla reconstruida y la referencia haber sobrevivido en otra.
+    const columnas = await env.DB.prepare(
+      "SELECT name FROM pragma_table_info('proceso')",
+    ).all<{ name: string }>();
+
+    expect(columnas.results.map((fila) => fila.name)).not.toContain(
+      "cotizacion_linea_id",
+    );
+
+    const llaves = await env.DB.prepare(
+      "SELECT \"table\" AS destino, \"from\" AS origen" +
+        " FROM pragma_foreign_key_list('proceso')",
+    ).all<{ destino: string; origen: string }>();
+
+    expect(llaves.results.map((llave) => llave.origen)).not.toContain(
+      "cotizacion_linea_id",
+    );
   });
 });
 

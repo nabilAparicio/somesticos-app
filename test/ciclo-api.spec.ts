@@ -926,9 +926,7 @@ describe("perder la carrera contra el otro desenlace", () => {
     // El desenlace que quedó es el del intruso, y los procesos que quedaron
     // son los suyos: ninguno, porque el intruso escribió el estado a mano.
     const abiertos = await env.DB.prepare(
-      "SELECT count(*) AS n FROM proceso p" +
-        " JOIN cotizacion_linea l ON l.id = p.cotizacion_linea_id" +
-        " WHERE l.cotizacion_id = ?",
+      "SELECT count(*) AS n FROM proceso p WHERE p.cotizacion_id = ?",
     )
       .bind(cotizacion.id)
       .first<{ n: number }>();

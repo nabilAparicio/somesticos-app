@@ -59,10 +59,12 @@
 --     congeladas se siembran como borrador, se les cuelga todo, y recién
 --     entonces se emiten**: no hay otro orden posible, y es exactamente el
 --     que sigue `emitir` en `worker/cotizaciones/repositorio.ts`.
---   * **`el_origen_y_la_linea_dicen_lo_mismo`.** Los dos procesos nacidos de
---     la cotización ganada llevan `origen = 'cotizacion'` **y**
---     `cotizacion_linea_id`; los otros cinco llevan `origen = 'directo'` y la
---     columna en nulo.
+--   * **`el_origen_y_la_cotizacion_dicen_lo_mismo`.** Los dos procesos
+--     nacidos de la cotización ganada llevan `origen = 'cotizacion'` **y**
+--     `cotizacion_id`; los otros cinco llevan `origen = 'directo'` y la
+--     columna en nulo. Desde T-13 los dos apuntan a la **misma** cotización
+--     y no a dos líneas distintas, que es exactamente el cambio de modelo:
+--     la línea es lo que se factura y el proceso es lo que se trabaja.
 --   * **I-3.** Esos dos procesos comparten cliente con su cotización.
 --   * **Las cuatro exclusividades de `cuota`.** Cuelga de la cotización o del
 --     proceso; lleva monto o porcentaje; vence en fecha o contra un hito; y
@@ -466,17 +468,18 @@ UPDATE cotizacion SET estado = 'perdida'
 --
 -- Los seis primeros son los que la bitácora de la tajada 1 ya narra: sus
 -- identificadores, sus títulos y sus fechas salen de esas entradas, que no se
--- pueden reescribir. El séptimo es nuevo y nace de la segunda línea de la
--- cotización ganada.
+-- pueden reescribir. El séptimo es nuevo y nace, como el tercero, de la
+-- cotización ganada: desde T-13 los dos cuelgan de ella y no de una línea
+-- cada uno.
 
-INSERT INTO proceso (id, tenant_id, cliente_id, tipo_proceso_id, origen, titulo, estado, responsable_id, abierto_en, cerrado_en, cotizacion_linea_id) VALUES
+INSERT INTO proceso (id, tenant_id, cliente_id, tipo_proceso_id, origen, titulo, estado, responsable_id, abierto_en, cerrado_en, cotizacion_id) VALUES
  ('d1000000-0000-4000-8000-000000000001', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'c1000000-0000-4000-8000-000000000004', '35f8c072-9b41-4d6a-8e25-0c73a1f6b584', 'directo',    'Visa de trabajo — J. Whitfield (Agropecuaria Chiriquí)',   'abierto', '6f1a4c20-9b3e-4d51-8a77-2c0e5f8b1d44', '2026-08-04T14:00:00.000Z', NULL,                       NULL),
  ('d1000000-0000-4000-8000-000000000002', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'c1000000-0000-4000-8000-000000000005', '7a2e6b19-c834-4d05-9d71-6e48b05c3a27', 'directo',    'Visa de pensionado — H. Müller',                          'abierto', 'b28d7e13-5c46-4a92-9f03-7d61e4a8c5b2', '2026-08-27T15:30:00.000Z', NULL,                       NULL),
- ('d1000000-0000-4000-8000-000000000003', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'c1000000-0000-4000-8000-000000000002', '9c13d748-0e62-4b85-a37f-28d61c90e4b3', 'cotizacion', 'Compraventa — Lote 14, Punta Pacífica',                    'abierto', '6f1a4c20-9b3e-4d51-8a77-2c0e5f8b1d44', '2026-07-22T13:40:00.000Z', NULL,                       '87000000-0000-4000-8000-000000000101'),
+ ('d1000000-0000-4000-8000-000000000003', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'c1000000-0000-4000-8000-000000000002', '9c13d748-0e62-4b85-a37f-28d61c90e4b3', 'cotizacion', 'Compraventa — Lote 14, Punta Pacífica',                    'abierto', '6f1a4c20-9b3e-4d51-8a77-2c0e5f8b1d44', '2026-07-22T13:40:00.000Z', NULL,                       'b5000000-0000-4000-8000-000000000001'),
  ('d1000000-0000-4000-8000-000000000004', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'c1000000-0000-4000-8000-000000000006', '9c13d748-0e62-4b85-a37f-28d61c90e4b3', 'directo',    'Compraventa — Casa en Villa Lucre',                       'cerrado', 'b28d7e13-5c46-4a92-9f03-7d61e4a8c5b2', '2026-07-03T14:10:00.000Z', '2026-09-18T21:05:00.000Z', NULL),
  ('d1000000-0000-4000-8000-000000000005', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'c1000000-0000-4000-8000-000000000001', '4e87b250-3a19-4c76-85d0-9f12e6a07c48', 'directo',    'Pensión alimenticia — M. E. Quintero',                    'abierto', 'b28d7e13-5c46-4a92-9f03-7d61e4a8c5b2', '2026-07-15T16:00:00.000Z', NULL,                       NULL),
  ('d1000000-0000-4000-8000-000000000006', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'c1000000-0000-4000-8000-000000000007', '35f8c072-9b41-4d6a-8e25-0c73a1f6b584', 'directo',    'Visa de trabajo — voluntaria holandesa (Manglar Vivo)',    'abierto', '6f1a4c20-9b3e-4d51-8a77-2c0e5f8b1d44', '2026-10-01T14:25:00.000Z', NULL,                       NULL),
- ('d1000000-0000-4000-8000-000000000007', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'c1000000-0000-4000-8000-000000000002', '9c13d748-0e62-4b85-a37f-28d61c90e4b3', 'cotizacion', 'Compraventa — Local comercial, Avenida B',                 'abierto', 'b28d7e13-5c46-4a92-9f03-7d61e4a8c5b2', '2026-07-22T13:45:00.000Z', NULL,                       '87000000-0000-4000-8000-000000000102');
+ ('d1000000-0000-4000-8000-000000000007', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'c1000000-0000-4000-8000-000000000002', '9c13d748-0e62-4b85-a37f-28d61c90e4b3', 'cotizacion', 'Compraventa — Local comercial, Avenida B',                 'abierto', 'b28d7e13-5c46-4a92-9f03-7d61e4a8c5b2', '2026-07-22T13:45:00.000Z', NULL,                       'b5000000-0000-4000-8000-000000000001');
 
 -- ---------------------------------------------------------------------------
 -- Etapas: el plan completo, con `alcanzada_en` nulo en lo que falta

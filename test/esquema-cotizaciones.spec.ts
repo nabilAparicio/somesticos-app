@@ -1977,16 +1977,25 @@ describe("0007 · M-2 · la procedencia se fija al nacer", () => {
    `0008` · La arista entre las dos mitades, y I-3 (T-7)
    ========================================================================== */
 
-/** El `RAISE(ABORT, …)` de los tres disparadores de I-3 de `0008`. */
+/**
+ * El `RAISE(ABORT, …)` de los tres disparadores de I-3, que `0008` escribió
+ * y `0011` volvió a escribir contra la arista nueva. El mensaje se conserva
+ * textual: el invariante no cambió, cambió el camino para comprobarlo.
+ */
 const I3 = /I-3/;
 
-/** El nombre del `CHECK` de coherencia de `0008`, que es su mensaje. */
-const ORIGEN_INCOHERENTE = /el_origen_y_la_linea_dicen_lo_mismo/;
+/** El nombre del `CHECK` de coherencia de `0011`, que es su mensaje. */
+const ORIGEN_INCOHERENTE = /el_origen_y_la_cotizacion_dicen_lo_mismo/;
 
 /**
  * Siembra una línea con tipo de proceso dentro de la cotización del
- * contexto, que es lo que `0008` necesita para que la arista sea
- * expresable.
+ * contexto.
+ *
+ * **Desde T-13 ya no hace falta para que la arista sea expresable** —el
+ * proceso cuelga de la cotización, que el contexto siembra— y por eso la
+ * usan muchas menos pruebas que antes. Queda para la única que sigue
+ * necesitando una línea de verdad: la que mide que una línea cotizada
+ * volvió a ser borrable.
  */
 async function sembrarLinea(ctx: Contexto): Promise<string> {
   const id = nuevoId();
@@ -2014,13 +2023,13 @@ function unProceso(ctx: Contexto, ajustes: Fila = {}): Fila {
     titulo: "Un trámite",
     estado: "abierto",
     abierto_en: ahoraIso(),
-    cotizacion_linea_id: null,
+    cotizacion_id: null,
     ...ajustes,
   };
 }
 
-describe("M-1 · `origen` y la línea dicen lo mismo, o la fila miente", () => {
-  it("un proceso directo sin línea entra: es el contrapeso", async () => {
+describe("M-5 · `origen` y la cotización dicen lo mismo, o la fila miente", () => {
+  it("un proceso directo sin cotización entra: es el contrapeso", async () => {
     // Sin esto, un `CHECK` invertido —que rechazara todo— pasaría las tres
     // pruebas de rechazo de abajo sin que nada avisara.
     const ctx = await sembrarContexto();
@@ -2028,19 +2037,21 @@ describe("M-1 · `origen` y la línea dicen lo mismo, o la fila miente", () => {
     await expect(insertar("proceso", unProceso(ctx))).resolves.toBeDefined();
   });
 
-  it("y un proceso de cotización con su línea también", async () => {
+  it("y un proceso de cotización con su cotización también", async () => {
     const ctx = await sembrarContexto();
-    const lineaId = await sembrarLinea(ctx);
 
     await expect(
       insertar(
         "proceso",
-        unProceso(ctx, { origen: "cotizacion", cotizacion_linea_id: lineaId }),
+        unProceso(ctx, {
+          origen: "cotizacion",
+          cotizacion_id: ctx.cotizacionId,
+        }),
       ),
     ).resolves.toBeDefined();
   });
 
-  it("rechaza `origen = 'cotizacion'` con la línea en nulo", async () => {
+  it("rechaza `origen = 'cotizacion'` con la cotización en nulo", async () => {
     // Dice «vengo de una cotización» y no sabe de cuál.
     const ctx = await sembrarContexto();
 
@@ -2049,15 +2060,14 @@ describe("M-1 · `origen` y la línea dicen lo mismo, o la fila miente", () => {
     ).rejects.toThrow(ORIGEN_INCOHERENTE);
   });
 
-  it("rechaza `origen = 'directo'` con una línea colgada", async () => {
+  it("rechaza `origen = 'directo'` con una cotización colgada", async () => {
     // Dice «me abrieron a mano» y tiene el recibo de lo contrario.
     const ctx = await sembrarContexto();
-    const lineaId = await sembrarLinea(ctx);
 
     await expect(
       insertar(
         "proceso",
-        unProceso(ctx, { origen: "directo", cotizacion_linea_id: lineaId }),
+        unProceso(ctx, { origen: "directo", cotizacion_id: ctx.cotizacionId }),
       ),
     ).rejects.toThrow(ORIGEN_INCOHERENTE);
   });
@@ -2067,30 +2077,45 @@ describe("M-1 · `origen` y la línea dicen lo mismo, o la fila miente", () => {
     // razón por la que esto no es un disparador: haría falta uno por
     // operación y los dos podrían separarse.
     const ctx = await sembrarContexto();
-    const lineaId = await sembrarLinea(ctx);
     const fila = unProceso(ctx, {
       origen: "cotizacion",
-      cotizacion_linea_id: lineaId,
+      cotizacion_id: ctx.cotizacionId,
     });
     await insertar("proceso", fila);
 
     await expect(
-      env.DB.prepare(
-        "UPDATE proceso SET cotizacion_linea_id = NULL WHERE id = ?",
-      )
+      env.DB.prepare("UPDATE proceso SET cotizacion_id = NULL WHERE id = ?")
         .bind(fila.id)
         .run(),
     ).rejects.toThrow(ORIGEN_INCOHERENTE);
   });
+
+  it("y el `CHECK` viejo de la arista por la línea ya no existe", async () => {
+    // **La mitad que demuestra que `0011` soltó la columna y no la dejó
+    // conviviendo con la nueva.** Un `ADD COLUMN` no obliga a soltar nada:
+    // una migración que agregara `cotizacion_id` y se olvidara el
+    // `DROP COLUMN` pasaría las cinco pruebas de arriba enteras, y la tabla
+    // quedaría con dos procedencias.
+    //
+    // Se mide sobre la DDL y no por rechazo, y es la excepción deliberada a
+    // la regla del proyecto: lo que se afirma es que una restricción **no
+    // está**, y una restricción que no está no rechaza nada que se pueda
+    // observar. El hecho queda igual con dueño.
+    const fila = await env.DB.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'proceso'",
+    ).first<{ sql: string }>();
+
+    expect(fila?.sql).toContain("el_origen_y_la_cotizacion_dicen_lo_mismo");
+    expect(fila?.sql).not.toContain("el_origen_y_la_linea_dicen_lo_mismo");
+  });
 });
 
-describe("M-2 · I-3 · el proceso nacido de una cotización comparte cliente", () => {
-  it("rechaza el proceso de otro cliente colgado de la línea", async () => {
+describe("M-8 · I-3 · el proceso nacido de una cotización comparte cliente", () => {
+  it("rechaza el proceso de otro cliente colgado de la cotización", async () => {
     // **El invariante de la tajada 1 que no era expresable hasta ahora.**
     // Un proceso del cliente equivocado colgado de una cotización no se
     // nota hasta que alguien factura.
     const ctx = await sembrarContexto();
-    const lineaId = await sembrarLinea(ctx);
 
     const otroCliente = nuevoId();
     await insertar("cliente", {
@@ -2107,7 +2132,7 @@ describe("M-2 · I-3 · el proceso nacido de una cotización comparte cliente", 
         unProceso(ctx, {
           cliente_id: otroCliente,
           origen: "cotizacion",
-          cotizacion_linea_id: lineaId,
+          cotizacion_id: ctx.cotizacionId,
         }),
       ),
     ).rejects.toThrow(I3);
@@ -2117,10 +2142,9 @@ describe("M-2 · I-3 · el proceso nacido de una cotización comparte cliente", 
     // El disparador de `UPDATE` tiene su propio agujero: sin él, el proceso
     // nace bien y se muda después con una sentencia.
     const ctx = await sembrarContexto();
-    const lineaId = await sembrarLinea(ctx);
     const fila = unProceso(ctx, {
       origen: "cotizacion",
-      cotizacion_linea_id: lineaId,
+      cotizacion_id: ctx.cotizacionId,
     });
     await insertar("proceso", fila);
 
@@ -2140,11 +2164,16 @@ describe("M-2 · I-3 · el proceso nacido de una cotización comparte cliente", 
     ).rejects.toThrow(I3);
   });
 
-  it("rechaza el proceso colgado de una línea que no existe", async () => {
+  it("rechaza el proceso colgado de una cotización que no existe", async () => {
     // La mitad que el `IS NOT` sostiene y `<>` no: con `<>`, la
     // subconsulta nula daría NULL, el `WHEN` daría falso y la fila entraría
-    // colgada de una línea fantasma, con el rechazo en manos de una llave
-    // foránea que un `PRAGMA` apaga.
+    // colgada de una cotización fantasma, con el rechazo en manos de una
+    // llave foránea que un `PRAGMA` apaga.
+    //
+    // Era uno de **dos** modos de falla hasta `0010` —la línea no existe, o
+    // existe pero su cotización no—. Con un salto de menos queda uno solo,
+    // y es éste. Que la guarda siga siendo la misma con la mitad de los
+    // caminos es lo que hace que el `IS NOT` no se pueda relajar.
     const ctx = await sembrarContexto();
 
     await expect(
@@ -2152,7 +2181,7 @@ describe("M-2 · I-3 · el proceso nacido de una cotización comparte cliente", 
         "proceso",
         unProceso(ctx, {
           origen: "cotizacion",
-          cotizacion_linea_id: nuevoId(),
+          cotizacion_id: nuevoId(),
         }),
       ),
     ).rejects.toThrow(I3);
@@ -2168,8 +2197,15 @@ describe("M-2 · I-3 · el proceso nacido de una cotización comparte cliente", 
     //
     // Lo que esta prueba afirma es que la arista cruzada **ya está
     // cerrada**, y el mensaje dice por cuál de las dos: es el de I-3.
+    //
+    // **Y dentro de I-3, la cierra la comparación de clientes y no el
+    // filtro de tenencia de la subconsulta.** Se midió: quitando
+    // `AND q.tenant_id = NEW.tenant_id` esta prueba sigue verde, porque la
+    // subconsulta sin filtro devuelve el cliente de acá y `el de acá IS NOT
+    // el del vecino` aborta igual. El filtro queda escrito, pero `0011`
+    // lo documenta como lo que es: defensa contra una base ya corrompida,
+    // no una guarda que una mutación pueda matar.
     const ctx = await sembrarContexto();
-    const lineaId = await sembrarLinea(ctx);
     const vecino = await sembrarVecino();
 
     await expect(
@@ -2182,27 +2218,29 @@ describe("M-2 · I-3 · el proceso nacido de una cotización comparte cliente", 
         titulo: "Un trámite del vecino",
         estado: "abierto",
         abierto_en: ahoraIso(),
-        cotizacion_linea_id: lineaId,
+        cotizacion_id: ctx.cotizacionId,
       }),
     ).rejects.toThrow(I3);
   });
 });
 
-describe("M-3 · I-3 también se rompía desde el otro lado de la arista", () => {
+describe("M-8 · I-3 también se rompe desde el otro lado de la arista", () => {
   it("no se le cambia el cliente a un BORRADOR que ya abrió procesos", async () => {
     // **La prueba tiene que usar un borrador, y eso no es un detalle.**
     // Sobre una emitida, una ganada o una perdida, este `UPDATE` lo mata
     // `cotizacion_emitida_no_se_edita` de `0006`, que ya vigila
     // `cliente_id` entre sus nueve columnas: la prueba pasaría con el
-    // disparador de `0008` borrado y no estaría probando nada.
+    // disparador de `0011` borrado y no estaría probando nada.
     //
     // El borrador es la única fila de la tabla de combinaciones donde esta
     // guarda es la única que corre. Medido quitándola: el `UPDATE` entra.
     const ctx = await sembrarContexto();
-    const lineaId = await sembrarLinea(ctx);
     await insertar(
       "proceso",
-      unProceso(ctx, { origen: "cotizacion", cotizacion_linea_id: lineaId }),
+      unProceso(ctx, {
+        origen: "cotizacion",
+        cotizacion_id: ctx.cotizacionId,
+      }),
     );
 
     const otroCliente = nuevoId();
@@ -2244,28 +2282,61 @@ describe("M-3 · I-3 también se rompía desde el otro lado de la arista", () =>
   });
 });
 
-describe("la llave foránea de `0008` vuelve indeleble a la línea que abrió un trámite", () => {
-  it("no se borra una línea con un proceso colgado", async () => {
-    // Una arista más de las que hacen indeleble a una cotización que salió.
-    // La de `0006` impedía tocar las líneas de una congelada; ésta agrega
-    // que tampoco se borra una que tiene trámite abierto, y vale incluso
-    // sobre un borrador, donde aquélla no corre.
+describe("la llave foránea de `0011` vuelve indeleble a la cotización que abrió un trámite", () => {
+  // **Esta prueba cambió de dueño, no de intención.** Hasta `0010` la
+  // indeleble era la línea, porque de ella colgaba el proceso. T-13 sube la
+  // arista un nivel y con ella la guarda, y subirla la mejora: lo que ahora
+  // no se puede borrar mientras haya trabajo colgando es el documento que el
+  // cliente firmó, que es lo que de verdad no debe desaparecer.
+  it("no se borra una cotización con un proceso colgado", async () => {
+    const ctx = await sembrarContexto();
+    await insertar(
+      "proceso",
+      unProceso(ctx, {
+        origen: "cotizacion",
+        cotizacion_id: ctx.cotizacionId,
+      }),
+    );
+
+    await expect(
+      env.DB.prepare("DELETE FROM cotizacion WHERE id = ?")
+        .bind(ctx.cotizacionId)
+        .run(),
+    ).rejects.toThrow(/FOREIGN KEY constraint failed/);
+  });
+
+  it("y la línea que lo cotizó vuelve a borrarse, que es lo que `0008` había roto sin querer", async () => {
+    // **El efecto lateral que T-13 deshizo, dicho en una prueba.** La llave
+    // foránea de `0008` volvía indeleble a cualquier línea con trámite
+    // abierto, y eso no era una regla que alguien hubiera querido: era una
+    // consecuencia de que el proceso colgara de la línea. Borrar una línea
+    // de un borrador —corregir un concepto, partir un honorario en dos— es
+    // exactamente lo que un borrador tiene que admitir.
+    //
+    // Lo que sigue protegido es lo que `0006` protege de verdad: las líneas
+    // de una cotización que salió del borrador, y eso lo prueban las siete
+    // guardas de I-4 más arriba. Esta prueba vive en un borrador por el
+    // mismo motivo que la de M-8: sobre cualquier otro estado la mataría
+    // `cotizacion_linea_no_sale_de_una_congelada` y no mediría nada.
     const ctx = await sembrarContexto();
     const lineaId = await sembrarLinea(ctx);
     await insertar(
       "proceso",
-      unProceso(ctx, { origen: "cotizacion", cotizacion_linea_id: lineaId }),
+      unProceso(ctx, {
+        origen: "cotizacion",
+        cotizacion_id: ctx.cotizacionId,
+      }),
     );
 
     await expect(
       env.DB.prepare("DELETE FROM cotizacion_linea WHERE id = ?")
         .bind(lineaId)
         .run(),
-    ).rejects.toThrow(/FOREIGN KEY constraint failed/);
+    ).resolves.toBeDefined();
   });
 });
 
-describe("los disparadores de 0004, 0006, 0007 y 0008 están todos y no hay ninguno de más", () => {
+describe("los disparadores de 0004, 0006, 0007 y 0011 están todos y no hay ninguno de más", () => {
   // La lista va exacta y no por `toContain` a propósito. Un disparador de
   // más sería código muerto —`cotizacion_modulo` no lleva el de `UPDATE` de
   // tenencia porque sus dos únicas columnas comparables son inmutables,
@@ -2282,7 +2353,9 @@ describe("los disparadores de 0004, 0006, 0007 y 0008 están todos y no hay ning
       /* `0007`: el ciclo de vida y la cadena de duplicación. */
       "cotizacion_el_estado_sigue_el_ciclo_de_vida",
       "cotizacion_duplicada_de_inmutable",
-      /* `0008`: la otra mitad de I-3, la que se rompe desde este lado. */
+      /* `0011`: la otra mitad de I-3, la que se rompe desde este lado.
+         Lo escribió `0008` por la línea y `0011` lo reescribió directo,
+         con el mismo nombre: el invariante no cambió. */
       "cotizacion_no_se_lleva_el_cliente_de_sus_procesos",
     ],
     cotizacion_modulo: [
@@ -2311,10 +2384,17 @@ describe("los disparadores de 0004, 0006, 0007 y 0008 están todos y no hay ning
      * El motivo es el que `0005` dejó documentado al pagar una
      * reconstrucción: un `DROP TABLE` se lleva en silencio todo lo que
      * cuelga de la tabla, incluidos los disparadores que escribió otro
-     * archivo. `0008` **no** reconstruye `proceso` —no hace falta, porque
-     * `ALTER TABLE … ADD COLUMN` admite una llave foránea nullable— y ésta
-     * es la prueba que lo afirma: si alguna vez alguien la reconstruye y
-     * se olvida uno de los cinco, acá se ve.
+     * archivo. Ni `0008` ni `0011` reconstruyen `proceso`, y ésta es la
+     * prueba que lo afirma.
+     *
+     * **Con `0011` la prueba vale más que antes, y conviene decir por qué.**
+     * `0008` sólo agregaba; `0011` **borra tres disparadores y los vuelve a
+     * escribir**, porque los tres nombraban la columna vieja y mientras la
+     * nombraran el `DROP COLUMN` se negaba. Un archivo que borra y recrea
+     * tiene una forma de fallar que uno que sólo agrega no tiene: dejar
+     * caído lo que borró. Los cinco de `0003` siguen acá sin que `0011`
+     * tenga que saber cómo estaban escritos, que es justamente lo que la
+     * reconstrucción habría cobrado.
      */
     proceso: [
       /* `0003`: tenencia, inmutabilidad del tenant y coherencia de cierre. */
@@ -2323,7 +2403,7 @@ describe("los disparadores de 0004, 0006, 0007 y 0008 están todos y no hay ning
       "proceso_tenant_inmutable",
       "proceso_cierre_coherente_al_insertar",
       "proceso_cierre_coherente_al_actualizar",
-      /* `0008`: I-3, una por operación. */
+      /* `0011`: I-3, una por operación, reescritos contra la cotización. */
       "proceso_comparte_cliente_con_su_cotizacion_al_insertar",
       "proceso_comparte_cliente_con_su_cotizacion_al_actualizar",
     ],
@@ -2537,21 +2617,32 @@ describe("lo que 0007 declara está todo en la base", () => {
   });
 });
 
-describe("lo que 0008 declara está todo en la base", () => {
-  // La misma mitad verificable que las de `0004`, `0006` y `0007`, para la
-  // migración que trae la arista entre las dos mitades del sistema y con
-  // ella I-3. Un `CREATE TRIGGER` que quedara adentro de un comentario —el
-  // encabezado de `0008` nombra varios en prosa— o un punto y coma de menos
-  // se ven acá y no en producción.
-  const MIGRACION = "0008_procesos_desde_cotizacion.sql";
+describe("lo que 0011 declara está todo en la base", () => {
+  // **Este bloque era el de `0008` y cambió de migración, no de pregunta.**
+  // De lo que `0008` declaraba no sobrevive nada en el esquema: su índice
+  // `proceso_cotizacion_linea` lo borra `0011`, y sus tres disparadores los
+  // borra y los vuelve a escribir contra la arista nueva. Seguir afirmando
+  // que «lo que `0008` declara está en la base» sería afirmar algo falso;
+  // lo que corresponde es correr el bloque a la migración que ahora es
+  // dueña de esos objetos, y agregarle la mitad que `0008` no necesitaba:
+  // que lo viejo **no** esté.
+  //
+  // La mitad heredada es la misma que la de `0004`, `0006` y `0007`: un
+  // `CREATE TRIGGER` que quedara adentro de un comentario —el encabezado de
+  // `0011` habla de disparadores en prosa— o un punto y coma de menos se ven
+  // acá y no en producción.
+  const MIGRACION = "0011_el_proceso_cuelga_de_la_cotizacion.sql";
 
   /**
-   * La tabla de la verificación previa, que el propio archivo borra. Se
-   * excluye por nombre y no con una expresión regular más floja, para que
-   * la exclusión sea una decisión visible — es el mismo criterio con el que
-   * el bloque de `0006` excluye `bitacora_nueva`.
+   * Las dos tablas de andamio, que el propio archivo borra: la de la
+   * verificación previa y la que guarda el enlace resuelto mientras la
+   * columna vieja desaparece y la nueva nace.
+   *
+   * Se excluyen por nombre y no con una expresión regular más floja, para
+   * que la exclusión sea una decisión visible — es el mismo criterio con el
+   * que el bloque de `0006` excluye `bitacora_nueva`.
    */
-  const EFIMERA = "verificacion_previa_origen";
+  const EFIMERAS = ["verificacion_previa_enlace", "enlace_de_procesos"];
 
   function sinComentarios(): string[] {
     const migracion = env.TEST_MIGRATIONS.find(
@@ -2584,22 +2675,25 @@ describe("lo que 0008 declara está todo en la base", () => {
     });
   }
 
-  it("declara tres disparadores, un índice y la tabla de la verificación previa", () => {
+  it("declara tres disparadores, un índice y las dos tablas de andamio", () => {
     // El contrapeso de siempre: si la expresión regular dejara de encontrar
     // nada, las pruebas de abajo pasarían comparando listas vacías.
     const declarados = objetosQueCrea();
 
     expect(declarados.filter((objeto) => objeto.clase === "TRIGGER")).toHaveLength(3);
     expect(declarados.filter((objeto) => objeto.clase === "INDEX")).toHaveLength(1);
-    expect(declarados.filter((objeto) => objeto.clase === "TABLE")).toEqual([
-      { clase: "TABLE", nombre: EFIMERA },
-    ]);
+    expect(
+      declarados
+        .filter((objeto) => objeto.clase === "TABLE")
+        .map((objeto) => objeto.nombre)
+        .sort(),
+    ).toEqual([...EFIMERAS].sort());
   });
 
   it("y todos los permanentes existen en la base", async () => {
     const nombres = objetosQueCrea()
       .map((objeto) => objeto.nombre)
-      .filter((nombre) => nombre !== EFIMERA);
+      .filter((nombre) => !EFIMERAS.includes(nombre));
 
     const { results } = await env.DB.prepare(
       `SELECT name FROM sqlite_master WHERE name IN (${nombres
@@ -2612,43 +2706,90 @@ describe("lo que 0008 declara está todo en la base", () => {
     expect(results.map((fila) => fila.name).sort()).toEqual([...nombres].sort());
   });
 
-  it("la verificación previa se borra a sí misma y no queda en el esquema", async () => {
-    // La mitad que se puede afirmar sin desarmar la migración: la tabla
-    // efímera se declara y se borra en el mismo archivo. Si el `DROP` se
-    // perdiera, quedaría una tabla de andamio viva en producción.
-    expect(sinComentarios().join("\n")).toMatch(
-      new RegExp(`DROP\\s+TABLE\\s+${EFIMERA}`, "i"),
-    );
+  it("las dos tablas de andamio se borran a sí mismas y no quedan en el esquema", async () => {
+    // La mitad que se puede afirmar sin desarmar la migración. Si un `DROP`
+    // se perdiera, quedaría una tabla de andamio viva en producción, que es
+    // la clase de resto que nadie se anima a borrar seis meses después.
+    const declarado = sinComentarios().join("\n");
 
-    const fila = await env.DB.prepare(
-      "SELECT name FROM sqlite_master WHERE name = ?",
-    )
-      .bind(EFIMERA)
-      .first<{ name: string }>();
+    for (const efimera of EFIMERAS) {
+      expect(declarado).toMatch(new RegExp(`DROP\\s+TABLE\\s+${efimera}`, "i"));
 
-    expect(fila).toBeNull();
+      const fila = await env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE name = ?",
+      )
+        .bind(efimera)
+        .first<{ name: string }>();
+
+      expect(fila).toBeNull();
+    }
   });
 
-  it("y su restricción va nombrada, porque el nombre es el mensaje de error", async () => {
-    // **Por qué `0008` lleva verificación previa y `0004` no.** La regla
-    // que T-1 dejó escrita: hace falta cuando la guarda cae sobre filas que
-    // ya podían existir. Acá el `CHECK` de M-1 cae sobre `proceso`, que
-    // nace en `0001`, y una fila vieja con `origen = 'cotizacion'` pasaría
-    // a mentir en cuanto la columna nueva entrara en nulo.
+  it("y la restricción de la verificación previa va nombrada, porque el nombre es el mensaje", async () => {
+    // **Por qué `0011` lleva verificación previa, y acá no es ceremonia.**
+    // La regla que T-1 dejó escrita —hace falta cuando la guarda cae sobre
+    // filas que ya podían existir— se cumple, pero lo que la vuelve
+    // imprescindible es propio de esta migración: el relleno de M-2 resuelve
+    // la cotización con un `JOIN`, y un `JOIN` que no encuentra nada no
+    // grita, devuelve nada.
     //
-    // Los disparadores de M-2 y M-3 **no** la necesitan, y es la otra mitad
-    // de la misma regla: su condición exige `cotizacion_linea_id` no nulo,
-    // y la columna nace nula en todas las filas.
+    // Un proceso colgado de una línea huérfana no traería fila, M-3 lo
+    // bajaría a `directo` como a todos y M-6 no lo encontraría para
+    // devolverlo: terminaría la migración **diciendo que lo abrieron a
+    // mano**, sin error y sin forma de reconstruirlo, porque la columna que
+    // sabía de dónde venía ya no existe. Medido sobre la base local con un
+    // proceso apuntado a una línea inexistente: con M-0 la migración aborta
+    // nombrando la restricción; sin M-0 entra con salida 0 y el proceso
+    // queda `directo`.
     //
-    // El nombre no es cosmética: se midió que `ALTER TABLE … ADD COLUMN …
-    // CHECK (…)` revalida las filas existentes y aborta, pero con «CHECK
-    // constraint failed» a secas, sin nombrar la restricción. La tabla
-    // temporal existe para que el operador lea qué pasó.
+    // El nombre no es cosmética. `0008` midió que un `CHECK` que aborta lo
+    // hace con «CHECK constraint failed» a secas, sin nombrar la
+    // restricción; la tabla temporal existe para que el operador lea qué
+    // pasó.
+    //
+    // **Esta guarda no se puede probar por rechazo acá, y hay que decirlo
+    // en vez de fingir que sí.** La base de esta suite se migra vacía, así
+    // que no existe la fila vieja que M-0 vigila, y la llave foránea de
+    // `0008` impedía fabricarla sin apagar un `PRAGMA`. Lo que se afirma es
+    // lo verificable desde adentro: que la verificación esté escrita y que
+    // busque lo que tiene que buscar. La consulta se afirma además de la
+    // restricción porque sin eso bastaría con vaciar el `INSERT` para que
+    // la prueba siguiera verde con la guarda muerta.
     const declarado = sinComentarios().join("\n");
 
     expect(declarado).toMatch(
-      /CONSTRAINT\s+la_base_ya_tiene_procesos_que_dicen_venir_de_una_cotizacion/,
+      /CONSTRAINT\s+hay_procesos_colgados_de_una_linea_que_no_lleva_a_ninguna_cotizacion/,
     );
-    expect(declarado).toMatch(/FROM proceso WHERE origen = 'cotizacion'/);
+    expect(declarado).toMatch(/EXISTS\s+\(SELECT 1 FROM proceso p/);
+    expect(declarado).toMatch(
+      /NOT EXISTS\s+\(SELECT 1 FROM cotizacion_linea l/,
+    );
+  });
+
+  it("y suelta lo que `0008` había puesto: la columna, su índice y su `CHECK`", async () => {
+    // **La mitad nueva, y la que de verdad distingue esta migración de una
+    // que sólo agregara.** `ADD COLUMN` no obliga a soltar nada: sin el
+    // `DROP COLUMN`, `proceso` quedaría con dos procedencias y la vieja sin
+    // `CHECK` que la ate a `origen`, porque el viejo se va con la columna.
+    //
+    // Y el índice es el hecho que decidía si había que reconstruir la
+    // tabla: mientras `proceso_cotizacion_linea` existiera, el `DROP COLUMN`
+    // se negaba. Que no esté es la prueba de que la secuencia corrió entera
+    // y en orden.
+    const declarado = sinComentarios().join("\n");
+
+    expect(declarado).toMatch(/DROP\s+INDEX\s+proceso_cotizacion_linea/i);
+    expect(declarado).toMatch(
+      /ALTER\s+TABLE\s+proceso\s+DROP\s+COLUMN\s+cotizacion_linea_id/i,
+    );
+
+    const { results } = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE name IN" +
+        " ('proceso_cotizacion_linea', 'proceso_cotizacion')",
+    ).all<{ name: string }>();
+
+    // El contrapeso al lado de la ausencia: sin afirmar que el índice nuevo
+    // sí está, una base sin ninguno de los dos pasaría la mitad de arriba.
+    expect(results.map((fila) => fila.name)).toEqual(["proceso_cotizacion"]);
   });
 });

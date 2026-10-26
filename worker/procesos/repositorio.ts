@@ -141,19 +141,23 @@ import { ahoraIso } from "../db/momentos";
  * Lo que hace falta para abrir un proceso, venga de donde venga.
  *
  * **No lleva `origen`**, y la ausencia es la decisión: se deriva de
- * `cotizacionLineaId` más abajo. Recibirlo abriría la posibilidad de escribir
- * `'directo'` sobre una fila que trae línea, que es exactamente la fila que
- * miente y que `el_origen_y_la_linea_dicen_lo_mismo` rechaza en la base. Es
- * el mismo criterio con el que `cerrar`, en el repositorio de cotizaciones,
- * deriva el verbo de bitácora del destino en vez de recibirlo.
+ * `cotizacionId` más abajo. Recibirlo abriría la posibilidad de escribir
+ * `'directo'` sobre una fila que trae cotización, que es exactamente la fila
+ * que miente y que `el_origen_y_la_cotizacion_dicen_lo_mismo` rechaza en la
+ * base. Es el mismo criterio con el que `cerrar`, en el repositorio de
+ * cotizaciones, deriva el verbo de bitácora del destino en vez de recibirlo.
+ *
+ * La razón no cambió con T-13; lo que cambió es de qué cuelga el proceso.
+ * Hasta `0010` era la línea, y eso ataba una unidad de trabajo a una unidad
+ * de facturación.
  */
 export interface AperturaDeProceso {
   readonly clienteId: string;
   readonly tipoProcesoId: string;
   readonly titulo: string;
   readonly responsableId: string | null;
-  /** La línea que lo abrió, o nulo si lo abrió una persona. */
-  readonly cotizacionLineaId: string | null;
+  /** La cotización que lo abrió, o nulo si lo abrió una persona. */
+  readonly cotizacionId: string | null;
 }
 
 /** Un proceso por nacer: su identificador y las sentencias que lo escriben. */
@@ -287,19 +291,19 @@ export async function aperturasDeProcesos(
             "estado",
             "responsable_id",
             "abierto_en",
-            "cotizacion_linea_id",
+            "cotizacion_id",
           ],
           [
             id,
             tenantId,
             apertura.clienteId,
             apertura.tipoProcesoId,
-            apertura.cotizacionLineaId === null ? "directo" : "cotizacion",
+            apertura.cotizacionId === null ? "directo" : "cotizacion",
             apertura.titulo,
             "abierto",
             apertura.responsableId,
             abierto,
-            apertura.cotizacionLineaId,
+            apertura.cotizacionId,
           ],
         ),
         ...etapas.map((nombre, orden) =>
@@ -422,25 +426,28 @@ interface FilaDeEtapa {
  * viene» es la mitad del valor de esta pantalla (`docs/diseno.md` §6): el
  * abogado abre un proceso para ver qué tiene por delante.
  *
- * ## Las dos uniones de T-15, y lo que costaron
+ * ## La unión de la procedencia: era de dos saltos y T-13 la dejó en uno
  *
- * `cotizacion_linea` y `cotizacion` son el salto de la línea que la tabla
- * guarda a la cotización que la pantalla quiere nombrar. Son dos y no una
- * porque `proceso` apunta a la **línea**: no hay forma de llegar al código
- * sin pasar por ella.
+ * T-15 había puesto **dos** uniones, `cotizacion_linea` y después
+ * `cotizacion`, y no por gusto: `proceso` apuntaba a la línea, así que no
+ * había forma de llegar al código de la cotización sin pasar por ella. Con
+ * la arista corrida a la cotización, la unión intermedia deja de tener nada
+ * que aportar — la línea nunca se leía, era un peaje — y se va entera. Una
+ * unión que sólo existe para alcanzar a la siguiente desaparece el día que
+ * la siguiente queda al alcance; dejarla sería pagar una búsqueda por fila
+ * para no tocar una línea de SQL.
  *
- * **Se midió antes de ponerlas**, con el plan de SQLite sobre la base de
- * demostración: las dos entran como `SEARCH … USING INDEX … (id=?)` sobre
- * la llave primaria de cada tabla, igual que las cuatro que ya estaban. Ni
- * un `SCAN`, ni una tabla temporal, ni un `GROUP BY` que deduplicar. Lo que
- * agregan es una búsqueda indexada por fila y por unión, y lo que ahorran
- * es lo que costaría lo contrario: con sólo el identificador en el cable,
- * dibujar el listado serían dos lecturas más **por fila**.
+ * Lo que T-15 midió sobre la que queda sigue valiendo, y es lo que la
+ * justifica: entra como `SEARCH … USING INDEX … (id=?)` sobre la llave
+ * primaria, igual que las cuatro que ya estaban. Ni un `SCAN`, ni una tabla
+ * temporal, ni un `GROUP BY` que deduplicar. Lo que ahorra es lo que
+ * costaría no tenerla: con sólo el identificador en el cable, dibujar el
+ * listado sería una lectura más **por fila**.
  *
- * El filtro de tenencia se repite en los dos `ON`, como en las otras
- * cuatro. Una línea o una cotización que cruzara la frontera devuelve
- * `NULL` en lugar del código ajeno, y el proceso se dibuja sin procedencia
- * en vez de con la de otro bufete.
+ * El filtro de tenencia se repite en su `ON`, como en las otras cuatro. Una
+ * cotización que cruzara la frontera devuelve `NULL` en lugar del código
+ * ajeno, y el proceso se dibuja sin procedencia en vez de con la de otro
+ * bufete.
  */
 const SELECCION =
   "SELECT p.id, p.cliente_id, c.nombre AS cliente_nombre," +
@@ -466,10 +473,8 @@ const SELECCION =
   " LEFT JOIN area a ON a.id = tp.area_id AND a.tenant_id = tp.tenant_id" +
   " LEFT JOIN usuario u ON u.id = p.responsable_id" +
   "   AND u.tenant_id = p.tenant_id" +
-  " LEFT JOIN cotizacion_linea cl ON cl.id = p.cotizacion_linea_id" +
-  "   AND cl.tenant_id = p.tenant_id" +
-  " LEFT JOIN cotizacion q ON q.id = cl.cotizacion_id" +
-  "   AND q.tenant_id = cl.tenant_id" +
+  " LEFT JOIN cotizacion q ON q.id = p.cotizacion_id" +
+  "   AND q.tenant_id = p.tenant_id" +
   " WHERE p.tenant_id = ?";
 
 /**
@@ -851,7 +856,7 @@ export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
       const fallas = await validarLlaves(tenantId, datos);
       if (fallas.length > 0) return { estado: "invalido", fallas };
 
-      // El alta a mano es una apertura **sin línea**, y por eso nace
+      // El alta a mano es una apertura **sin cotización**, y por eso nace
       // `'directo'`: el origen lo deriva `aperturasDeProcesos`, que es la
       // única que sabe escribir esa fila desde T-7. Antes la siembra estaba
       // acá; se movió para que la apertura desde una cotización ganada no
@@ -862,7 +867,7 @@ export function procesosSobreD1(base: BaseDeDatos): ServicioDeProcesos {
           tipoProcesoId: datos.tipoProcesoId,
           titulo: datos.titulo,
           responsableId: datos.responsableId,
-          cotizacionLineaId: null,
+          cotizacionId: null,
         },
       ]);
 

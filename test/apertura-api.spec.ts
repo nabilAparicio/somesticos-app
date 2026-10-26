@@ -10,10 +10,10 @@
  *
  * **Los invariantes de la base no se prueban acá.** I-3 —el proceso nacido de
  * una cotización comparte cliente con ella—, la coherencia entre `origen` y
- * `cotizacion_linea_id`, y la guarda que impide mudarle el cliente a una
+ * `cotizacion_id`, y la guarda que impide mudarle el cliente a una
  * cotización que ya abrió procesos viven en
- * `migrations/0008_procesos_desde_cotizacion.sql` y se prueban **por rechazo**
- * en `test/esquema-cotizaciones.spec.ts`, que es su dueño.
+ * `migrations/0011_el_proceso_cuelga_de_la_cotizacion.sql` y se prueban **por
+ * rechazo** en `test/esquema-cotizaciones.spec.ts`, que es su dueño.
  *
  * Acá se prueba lo que la base no puede sostener:
  *
@@ -39,13 +39,23 @@
  * propiedad sobre las escrituras de T-7 —ganar dos veces no abre los
  * procesos dos veces—, que es un hecho distinto del que prueba T-5.
  *
+ * ## Qué cambió con T-13, y qué deliberadamente no
+ *
+ * El proceso pasó a colgar de la **cotización** y no de la línea, porque la
+ * línea es una unidad de facturación y el proceso una unidad de trabajo. Lo
+ * que esta suite mide **no cambia con eso**: se sigue abriendo un proceso por
+ * cada línea con `tipo_proceso_id`, en el mismo orden y con el mismo plan.
+ * Que la apertura pase de derivación a propuesta es la otra mitad de T-13 y
+ * tiene sus propias pruebas; mientras no exista, el comportamiento observable
+ * es el de T-7 y esta suite es la que lo sostiene.
+ *
  * ## No hay limpieza entre pruebas
  *
  * Desde `0006` una cotización que salió del borrador y sus hijas son
- * indelebles, y desde `0008` los procesos nacidos de una línea congelada
- * agregan otra arista: la llave foránea `proceso.cotizacion_linea_id` deja a
- * la línea sin poder borrarse. El almacenamiento está aislado por archivo y
- * cada prueba trabaja con identificadores nuevos.
+ * indelebles, y desde `0011` los procesos nacidos de ella agregan otra
+ * arista: la llave foránea `proceso.cotizacion_id` deja a la cotización sin
+ * poder borrarse. El almacenamiento está aislado por archivo y cada prueba
+ * trabaja con identificadores nuevos.
  *
  * Los valores esperados se escriben a mano y no salen de ninguna función del
  * Worker (restricción 6 de la tajada).
@@ -99,7 +109,7 @@ interface FilaDeProceso {
   titulo: string;
   estado: string;
   responsable_id: string | null;
-  cotizacion_linea_id: string | null;
+  cotizacion_id: string | null;
 }
 
 let autorId: string;
@@ -195,12 +205,27 @@ async function procesosAbiertosDe(respuesta: Response): Promise<unknown> {
   return cuerpo.procesosAbiertos;
 }
 
-/** Los procesos nacidos de las líneas de una cotización, por orden de línea. */
+/**
+ * Los procesos nacidos de una cotización, en el orden en que nacieron.
+ *
+ * **Con T-13 el salto por la línea desapareció y el orden cambió de
+ * fuente**, y eso no es cosmética: antes el `ORDER BY l.orden` leía el orden
+ * de las líneas, y ahora no hay línea de la que leerlo. Se ordena por
+ * `abierto_en` y, para desempatar dentro del mismo instante —la apertura
+ * entera ocurre en un `batch`, así que los dos procesos comparten el momento
+ * al milisegundo—, por `rowid`, que es el orden en que las sentencias
+ * entraron. Y ése es exactamente el orden de las líneas: `aperturasDeProcesos`
+ * conserva el que `lineasQueAbrenTramite` le pasa.
+ *
+ * El contrapeso de esa afirmación está en la prueba del reparto, que compara
+ * los tipos de proceso contra los de las líneas con trámite **en su orden**:
+ * si el orden de esta función dejara de ser el de la cotización, esa prueba
+ * se pone roja.
+ */
 async function procesosDe(cotizacionId: string): Promise<FilaDeProceso[]> {
   const { results } = await env.DB.prepare(
     "SELECT p.* FROM proceso p" +
-      " JOIN cotizacion_linea l ON l.id = p.cotizacion_linea_id" +
-      " WHERE l.cotizacion_id = ? ORDER BY l.orden",
+      " WHERE p.cotizacion_id = ? ORDER BY p.abierto_en, p.rowid",
   )
     .bind(cotizacionId)
     .all<FilaDeProceso>();
@@ -382,7 +407,17 @@ describe("una ganada abre un proceso por cada línea con tipo de proceso", () =>
     ]);
   });
 
-  it("cada proceso apunta a la línea que lo abrió", async () => {
+  it("cada proceso apunta a la cotización que lo abrió, y todos a la misma", async () => {
+    // **Esta prueba cambió de respuesta con T-13 y la de antes es el
+    // argumento de la tarea.** Hasta `0010` afirmaba que cada proceso
+    // apuntara a **su** línea, una distinta por proceso, y eso era
+    // exactamente la decisión que el modelo imponía sin que nadie la
+    // tomara: dos líneas cotizadas tenían que ser dos expedientes.
+    //
+    // Ahora los dos apuntan a la misma cotización, y que sean dos lo decide
+    // el reparto de la prueba de arriba y no la estructura. La aserción de
+    // que son **todos** la misma es la mitad que mide el cambio: con la
+    // arista vieja habrían sido dos valores distintos.
     const cotizacion = await emitirConDosTramites();
     expect((await ganar(cotizacion.id)).status).toBe(200);
 
@@ -390,8 +425,11 @@ describe("una ganada abre un proceso por cada línea con tipo de proceso", () =>
     const conTipo = lineas.filter((linea) => linea.tipoProcesoId !== null);
     const procesos = await procesosDe(cotizacion.id);
 
-    expect(procesos.map((fila) => fila.cotizacion_linea_id)).toEqual(
-      conTipo.map((linea) => linea.id),
+    // Uno por línea con trámite, que es lo que T-13 deliberadamente no
+    // cambia: lo que se movió es de qué cuelgan, no cuántos son.
+    expect(procesos).toHaveLength(conTipo.length);
+    expect(procesos.map((fila) => fila.cotizacion_id)).toEqual(
+      conTipo.map(() => cotizacion.id),
     );
   });
 
@@ -652,7 +690,7 @@ describe("la bitácora de la apertura", () => {
     // veces como líneas tenga la cotización.
     //
     // La procedencia no se pierde: cambia de lugar. «¿De dónde salió este
-    // proceso?» lo contestan `origen` y `cotizacion_linea_id`, que son
+    // proceso?» lo contestan `origen` y `cotizacion_id`, que son
     // estructura y no narración; «¿quién lo abrió?» lo contesta la bitácora
     // de la cotización, que es donde ocurrió la decisión.
     const cotizacion = await emitirConDosTramites();
@@ -663,7 +701,7 @@ describe("la bitácora de la apertura", () => {
       // Y acá está la respuesta que la pantalla tendrá que leer el día que
       // dibuje ese registro en blanco.
       expect(proceso.origen).toBe("cotizacion");
-      expect(proceso.cotizacion_linea_id).not.toBeNull();
+      expect(proceso.cotizacion_id).not.toBeNull();
     }
   });
 });
@@ -671,19 +709,25 @@ describe("la bitácora de la apertura", () => {
 /* ==========================================================================
    T-15 · La procedencia, en el cable
 
-   El fondo de T-7 dejó la procedencia **guardada** —`origen` y
-   `cotizacion_linea_id`, con el `CHECK` de `0008` obligándolos a decir lo
+   El fondo de T-7 dejó la procedencia **guardada** —`origen` y la columna
+   de procedencia, con el `CHECK` de la migración obligándolos a decir lo
    mismo— y el comentario de `worker/contract.ts` dejó anotado que no
    viajaba: «el día que haya una pantalla que quiera enlazar el proceso con
    la cotización que lo abrió, el campo que le falta es ése».
 
-   Esa pantalla es ésta, y lo que viaja **no es** `cotizacionLineaId`. A
-   ninguna pantalla le sirve la línea: lo que una persona quiere abrir es la
-   cotización, y lo que quiere leer es su código. Viaja entonces el par ya
-   resuelto, con el mismo criterio que el resto del contrato —`clienteId`
-   con `clienteNombre`, `tipoProcesoId` con `tipoProcesoNombre`—: **cada
-   identificador con su texto al lado**, porque un id sin su texto obliga a
-   una segunda lectura para dibujar un renglón.
+   Esa pantalla es ésta, y lo que viaja es la cotización resuelta con su
+   código al lado, con el mismo criterio que el resto del contrato
+   —`clienteId` con `clienteNombre`, `tipoProcesoId` con
+   `tipoProcesoNombre`—: **cada identificador con su texto al lado**, porque
+   un id sin su texto obliga a una segunda lectura para dibujar un renglón.
+
+   **T-13 le dio la razón a esa decisión por un camino que nadie previó.**
+   El argumento de T-15 para no mandar el identificador de la línea era que
+   a ninguna pantalla le sirve una línea; el de T-13 es que el proceso no
+   debería colgar de una, y los dos llegaron al mismo lugar desde lados
+   distintos. Cuando dos razones independientes piden el mismo corte, el
+   corte suele estar bien puesto. Hoy la tabla ya guarda la cotización, así
+   que lo que viaja y lo que se guarda coinciden.
 
    Van juntos en un objeto y no sueltos en dos campos nullables, y la
    diferencia se mide: dos nullables admiten cuatro combinaciones en el
@@ -756,23 +800,31 @@ describe("de dónde viene cada proceso, dicho en el cable", () => {
     }
   });
 
-  it("lo que viaja es la cotización, no la línea que lo abrió", async () => {
-    // Es la decisión de forma, afirmada: `cotizacion_linea_id` es lo que la
-    // tabla guarda, y es justo lo que ninguna pantalla puede usar. Sin esta
-    // prueba, resolver mal el salto de línea a cotización —devolver el id
-    // de la línea con el código correcto al lado— pasaría inadvertido.
+  it("lo que viaja es lo que la tabla guarda, y no otro identificador de la fila", async () => {
+    // **Esta prueba perdió la mitad de su objeto con T-13, y hay que
+    // decirlo en vez de dejarla fingiendo que mide lo de antes.** Lo que
+    // vigilaba era el salto de línea a cotización: resolverlo mal
+    // —devolver el id de la línea con el código correcto al lado— pasaba
+    // inadvertido. Ese salto ya no existe, y con él se fue ese modo de
+    // falla.
+    //
+    // Lo que queda sigue valiendo y es lo que la prueba afirma ahora: el
+    // identificador del cable es **el de la columna**, no cualquier otro
+    // identificador que la misma fila tiene a mano. Devolver `p.id` o
+    // `p.cliente_id` con el código correcto al lado es el error que sigue
+    // siendo posible, y acá muere.
     const cotizacion = await emitirConDosTramites();
     expect((await ganar(cotizacion.id)).status).toBe(200);
 
     const nacidos = await procesosDe(cotizacion.id);
-    const lineas = nacidos.map((fila) => fila.cotizacion_linea_id);
-    expect(lineas.filter((id) => id !== null)).toHaveLength(2);
+    expect(nacidos).toHaveLength(2);
 
     const enElCable = await procesosEnElCable();
     for (const fila of nacidos) {
       const suyo = enElCable.find((proceso) => proceso.id === fila.id);
-      expect(suyo?.cotizacionDeOrigen?.id).toBe(cotizacion.id);
-      expect(lineas).not.toContain(suyo?.cotizacionDeOrigen?.id);
+      expect(suyo?.cotizacionDeOrigen?.id).toBe(fila.cotizacion_id);
+      expect(suyo?.cotizacionDeOrigen?.id).not.toBe(fila.id);
+      expect(suyo?.cotizacionDeOrigen?.id).not.toBe(fila.cliente_id);
     }
   });
 

@@ -547,3 +547,104 @@ abiertos. Y el modelo **no se equivocó** — el catálogo del bufete ofrecía c
 ninguno era «divorcio», así que dejó las líneas sin trámite en vez de forzar uno que mintiera.
 El defecto no era del modelo ni del código: era que el sistema no deja abrir un proceso cuyo
 trámite todavía no existía cuando se cotizó.
+
+### Unidad A · El refactor de la relación, cerrada
+
+**Qué entró:** `migrations/0011_el_proceso_cuelga_de_la_cotizacion.sql` y siete archivos.
+`proceso.cotizacion_linea_id` → `proceso.cotizacion_id`, I-3 reescrito directo, y **nada del
+comportamiento observable cambia**: ganar una cotización sigue abriendo exactamente los mismos
+procesos que antes, uno por cada línea con `tipo_proceso_id`. La propuesta previa, las rutas
+nuevas y las pantallas son la unidad B.
+
+**Checks observados:** `typecheck` 0, `test` 0 (2108, eran 2104), `lint` 0, `build` 0,
+`test:e2e` 0 (373, sin tocar `e2e/`).
+
+#### El hallazgo que evitó reconstruir `proceso`, y que vale para la próxima
+
+`ALTER TABLE … DROP COLUMN` se niega cuando la columna aparece en un `CHECK` **de tabla**.
+`cotizacion_linea_id` aparecía en uno —`el_origen_y_la_linea_dicen_lo_mismo`, de `0008`— y eso
+parecía condenar la migración a reconstruir la tabla, con el costo que `0005` dejó medido: los
+tres índices y los **siete** disparadores de `proceso` (cinco de `0003`, dos de `0008`) habría
+que recrearlos letra por letra en un archivo que no es el suyo.
+
+**No hizo falta, y la distinción es fina:** ese `CHECK` entró como restricción **de columna**,
+dentro del `ADD COLUMN` que creó la columna, y una restricción de columna **se va con su
+columna**. Lo que bloquea el `DROP COLUMN` es un `CHECK` de tabla que la nombre, que es otra cosa
+aunque se escriba con la misma palabra.
+
+Medido sobre la base real migrada —no sobre una reproducción, que es la regla que `0007` nos
+dejó—: con los siete procesos de la base local, dos de cotización y cinco directos, la secuencia
+entra con salida 0, la DDL resultante queda sin la columna **y sin su restricción**, y los cinco
+disparadores de `0003` sobreviven sin que `0011` tenga que saber cómo estaban escritos.
+
+#### El orden de los nueve pasos es la guarda
+
+Dos `CHECK` en juego —el viejo y el nuevo— obligan a que `origen` y la columna de procedencia
+digan lo mismo, y de ahí salen las dos reglas que explican por qué son nueve pasos y no tres:
+
+1. **Las dos columnas se mueven siempre en la misma sentencia** (M-3 y M-6). El `CHECK` se evalúa
+   por fila al terminar la sentencia, no al terminar la transacción, así que no hay orden de dos
+   sentencias que funcione.
+2. **`ADD COLUMN … CHECK` revalida las filas existentes**, cosa que `0008` ya había medido. Por
+   eso M-5 sólo puede entrar después de que M-3 haya dejado cero filas con `origen = 'cotizacion'`.
+   El enlace se guarda antes, en una tabla de andamio, y se devuelve después.
+
+#### M-0 hace falta de verdad, y se midió por los dos lados
+
+El relleno resuelve la cotización con un `JOIN`, y **un `JOIN` que no encuentra nada no grita,
+devuelve nada**: un proceso colgado de una línea huérfana pasaría por M-3 como `directo` y
+terminaría la migración diciendo que lo abrieron a mano, sin error y sin forma de reconstruirlo.
+Verificado sobre una copia de la base local con un proceso apuntado a una línea inexistente: con
+M-0 la migración aborta nombrando la restricción; **sin M-0 entra con salida 0 y el proceso queda
+`directo`.**
+
+La verificación previa no se puede probar por rechazo desde la suite —la base de prueba se migra
+vacía— y eso quedó escrito en la prueba en vez de disimulado: lo que se afirma es que la
+verificación esté escrita y que busque lo que tiene que buscar, consulta incluida, para que
+vaciar el `INSERT` ponga algo en rojo.
+
+#### Un filtro de tenencia que no es una guarda, y se dice
+
+`AND q.tenant_id = NEW.tenant_id` dentro de la subconsulta de I-3 **no mata ninguna prueba**.
+Medido con la mutación: borrado de los dos disparadores, las 191 pruebas del archivo siguen
+verdes, la del proceso del vecino incluida — la subconsulta sin filtro devuelve el cliente de acá
+y `el de acá IS NOT el del vecino` aborta igual.
+
+Y la fila donde el filtro sería la única guarda **no se puede construir**: haría falta un proceso
+del bufete B cuyo cliente fuera el de una cotización del bufete A, y los disparadores de tenencia
+de `0003` y `0004` lo impiden porque un cliente tiene un solo tenant. Se conserva como defensa
+contra una base ya corrompida, documentado como lo que es. Es la misma distinción que la tajada
+viene asentando desde `0005`, aplicada esta vez a una cláusula entera y no a un operador.
+
+#### Lo que la arista vieja se llevaba de arrastre, y se recuperó
+
+`0008` volvía **indeleble a cualquier línea con trámite abierto**, y eso no era una regla que
+alguien hubiera querido: era un efecto lateral de que el proceso colgara de la línea. Con la
+arista arriba, borrar una línea de un borrador vuelve a poder hacerse —corregir un concepto,
+partir un honorario en dos— y lo indeleble pasa a ser la **cotización**, que es lo que de verdad
+no debe desaparecer mientras haya trabajo colgando. Las dos mitades quedaron probadas por
+rechazo y por aceptación.
+
+#### Las pruebas cambiaron de pregunta, no se borraron
+
+- El mojón de `test/esquema.spec.ts` va por su **tercera** respuesta —no existe, apunta a
+  `cotizacion_linea`, apunta a `cotizacion`— sin cambiar de pregunta, y se le sumó el contrapeso
+  que `0008` no necesitaba: que la columna vieja y su llave foránea **no** estén. `ADD COLUMN` no
+  obliga a soltar nada, así que sin eso una migración que agregara la nueva y se olvidara el
+  `DROP COLUMN` pasaría entera.
+- El bloque «lo que `0008` declara está todo en la base» pasó a ser el de `0011`, porque de lo que
+  `0008` declaraba **no sobrevive nada**: su índice se borra y sus tres disparadores se reescriben.
+  Seguir afirmando lo de antes habría sido afirmar algo falso.
+- La prueba de la procedencia en el cable **perdió la mitad de su objeto** y lo dice: vigilaba que
+  el salto de línea a cotización se resolviera bien, y ese salto ya no existe. Lo que queda y
+  sigue valiendo es que el identificador del cable sea el de la columna y no otro de la misma fila.
+
+#### Dos notas de entorno
+
+1. **La base local no se migra con `wrangler d1 migrations apply`.** Su tabla `d1_migrations` está
+   vacía, así que wrangler intenta aplicar las once desde cero y muere en `0001` con
+   «table tenant already exists». Se migró a mano con `sqlite3 "$DB" ".read migrations/0011_…"`,
+   que es el mismo camino que documenta `scripts/semilla-demo.sql`. Queda el respaldo
+   `…sqlite.antes-de-0011` al lado.
+2. **El `pnpm dev` del puerto 5173 quedó bajado** para liberar la base. Las de punta a punta usan
+   el 5174 con `--strictPort` y levantaron el suyo.

@@ -166,9 +166,12 @@ Motor: **Cloudflare D1** (SQLite). Notas de portabilidad respecto al diseño Pos
 
 **Proceso**
 
-- `proceso` — `id`, `tenant_id`, `cliente_id` NOT NULL, `tipo_proceso_id`, `cotizacion_linea_id`
+- `proceso` — `id`, `tenant_id`, `cliente_id` NOT NULL, `tipo_proceso_id`, `cotizacion_id`
   (nullable), `origen` (`cotizacion|directo`), `titulo`, `estado`, `responsable_id`, `abierto_en`,
-  `cerrado_en`.
+  `cerrado_en`. El proceso cuelga de la **cotización** y no de una de sus líneas: la línea es una
+  unidad de facturación y el proceso una unidad de trabajo, y atarlas imponía desde la estructura
+  una decisión que es del bufete —constituir y registrar una sociedad se tarifan aparte y pueden
+  ser un solo expediente—. I-3 se comprueba por esa arista, en un salto.
 - `proceso_etapa` — `id`, `proceso_id`, `nombre`, `orden`, `alcanzada_en`. Copiadas de la
   plantilla al crear el proceso, para que cambiar la plantilla no reescriba la historia.
 - `nota` — `id`, `proceso_id`, `proceso_etapa_id`, `texto`, `autor_id`, `creada_en`.

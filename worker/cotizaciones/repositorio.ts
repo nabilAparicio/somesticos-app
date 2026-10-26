@@ -1007,10 +1007,19 @@ export function cotizacionesSobreD1(
    * nullable. Por eso el filtro es un `WHERE` y no una validación: no hay
    * nada que reportar.
    *
-   * El cliente sale de la **cotización** y no de la línea, porque la línea
-   * no tiene cliente propio. Es la mitad de I-3 que el código aporta; la
-   * otra, la que no depende de que el código se porte bien, es el
-   * disparador de `0008`.
+   * El cliente sale de la **cotización**, que desde T-13 es también de
+   * quien cuelga el proceso: la frase de T-7 sobre que la línea no tiene
+   * cliente propio sigue siendo cierta y ahora es más directa, porque la
+   * cotización dejó de ser un dato que había que ir a buscar y pasó a ser
+   * el padre. Es la mitad de I-3 que el código aporta; la otra, la que no
+   * depende de que el código se porte bien, es el disparador de
+   * `0011_el_proceso_cuelga_de_la_cotizacion.sql`.
+   *
+   * **Sigue saliendo una apertura por línea con trámite, y eso es a
+   * propósito:** T-13 mueve de qué cuelga el proceso y no cuántos se abren.
+   * Que la apertura pase de derivación a propuesta —que el bufete fusione
+   * dos líneas en un expediente o saque una— es la otra mitad de la tarea,
+   * y hasta que exista el comportamiento observable es el de T-7.
    *
    * `concepto` es el título del proceso: es el texto que el abogado ya
    * escribió para nombrar ese trabajo de cara al cliente, y pedirle que lo
@@ -1025,7 +1034,11 @@ export function cotizacionesSobreD1(
   ): Promise<AperturaDeProceso[]> {
     const { results } = await db
       .prepare(
-        "SELECT l.id, l.tipo_proceso_id, l.concepto, q.cliente_id" +
+        // `l.id` dejó de leerse con T-13 y por eso dejó de pedirse: la
+        // apertura ya no guarda la línea, guarda la cotización, que es el
+        // parámetro que esta función recibió. Una columna que se trae y no
+        // se usa es la pista falsa que el próximo va a seguir.
+        "SELECT l.tipo_proceso_id, l.concepto, q.cliente_id" +
           " FROM cotizacion_linea l" +
           " JOIN cotizacion q ON q.id = l.cotizacion_id" +
           "   AND q.tenant_id = l.tenant_id" +
@@ -1035,7 +1048,6 @@ export function cotizacionesSobreD1(
       )
       .bind(tenantId, cotizacionId)
       .all<{
-        id: string;
         tipo_proceso_id: string;
         concepto: string;
         cliente_id: string;
@@ -1048,7 +1060,7 @@ export function cotizacionesSobreD1(
       // Nadie lo asignó todavía: ganar una cotización cierra una venta, no
       // reparte trabajo. Eso es una decisión aparte y visible.
       responsableId: null,
-      cotizacionLineaId: linea.id,
+      cotizacionId,
     }));
   }
 

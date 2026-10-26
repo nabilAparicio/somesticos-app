@@ -885,10 +885,18 @@ describe("el alta de un proceso rechaza lo que no se puede guardar", () => {
     expect(detalle.proceso.responsableNombre).toBe("Ricardo");
   });
 
-  it("el origen es siempre `directo` en esta tajada", async () => {
-    // `cotizacion` no está implementado: la tabla a la que apuntaría
-    // `cotizacion_linea_id` no existe todavía (tajada 2). Que el cliente lo
-    // pida no lo cambia.
+  it("el origen es siempre `directo` en esta ruta", async () => {
+    // **El comentario de la tajada 1 ya no es el motivo, y el hecho sigue
+    // en pie.** Decía que `cotizacion` no estaba implementado porque la
+    // tabla a la que apuntaba la columna no existía. Existe desde `0004`, y
+    // desde T-13 la columna apunta directo a `cotizacion`.
+    //
+    // Lo que sostiene el hecho ahora es el diseño del alta: `crear` arma
+    // una apertura **sin cotización**, y `aperturasDeProcesos` deriva el
+    // origen de ahí en vez de recibirlo, justamente para que no se pueda
+    // escribir `'cotizacion'` sobre una fila que no viene de ninguna. La
+    // única puerta hacia un proceso de cotización es ganar una. Que el
+    // cliente lo pida no lo cambia.
     const proceso = await crearProceso({
       clienteId,
       tipoProcesoId: tipoResidenciaId,

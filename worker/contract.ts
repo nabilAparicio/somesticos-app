@@ -696,20 +696,26 @@ export interface RespuestaDeEtapas {
  *
  * Los dos valores están implementados desde T-7 de la tajada 2: `directo` es
  * el alta a mano y `cotizacion` es el que abrió una cotización ganada. **No
- * es una etiqueta suelta**: desde `migrations/0008_procesos_desde_cotizacion.sql`
- * la base exige que diga lo mismo que `proceso.cotizacion_linea_id`, así que
- * un `cotizacion` sin línea —o un `directo` con ella— es una fila que no se
- * puede escribir.
+ * es una etiqueta suelta**: desde
+ * `migrations/0011_el_proceso_cuelga_de_la_cotizacion.sql` la base exige que
+ * diga lo mismo que `proceso.cotizacion_id`, así que un `cotizacion` sin
+ * cotización —o un `directo` con una— es una fila que no se puede escribir.
  *
- * **`cotizacion_linea_id` sigue sin viajar, y ahora por otro motivo.** T-7
- * lo dejó afuera porque todavía no había pantalla; T-15 la escribió y la
- * medición dio lo contrario de lo que aquel comentario anticipaba: el campo
- * que le faltaba **no era ése**. A ninguna pantalla le sirve la línea —nadie
- * quiere abrir una línea—, y con sólo su identificador cada renglón del
- * listado costaría dos lecturas más para llegar al código que la persona
- * quiere leer. Lo que viaja es `Proceso.cotizacionDeOrigen`: la cotización
- * ya resuelta, con su código al lado. La línea se queda donde siempre
- * estuvo, que es la tabla.
+ * **De qué cuelga el proceso cambió en T-13, y el cambio es de modelo.**
+ * Hasta `0010` la columna era `cotizacion_linea_id` y el proceso colgaba de
+ * una línea. Eso imponía desde la estructura una decisión que es del bufete:
+ * **la línea es una unidad de facturación y el proceso es una unidad de
+ * trabajo**, y no tienen por qué ser la misma cosa. Constituir una sociedad
+ * y registrarla se cotizan aparte porque se tarifan aparte; que sean uno o
+ * dos expedientes no se sigue de eso, y lo decide quien hace el trabajo.
+ * Ahora el proceso cuelga de la cotización, que es lo que el cliente firmó.
+ *
+ * **Lo que viaja sigue siendo `Proceso.cotizacionDeOrigen` y no el
+ * identificador suelto**, por la medición de T-15 que no cambió con la
+ * arista: con sólo el id, cada renglón del listado costaría una lectura más
+ * para llegar al código que la persona quiere leer. Lo que se simplificó es
+ * el camino para resolverlo: antes había que saltar de la línea a la
+ * cotización, y ahora la columna ya es la cotización.
  */
 export type OrigenDeProceso = "cotizacion" | "directo";
 
