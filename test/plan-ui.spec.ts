@@ -21,7 +21,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { Cuota } from "../worker/contract";
+import type { Cuota, PlanDePagos } from "../worker/contract";
 import { PUNTOS_BASICOS_DEL_CIEN_POR_CIENTO } from "../worker/cuotas/dominio";
 import {
   AVISO_EL_PLAN_NO_REGISTRA_COBROS,
@@ -61,6 +61,23 @@ function cuota(parcial: Partial<Cuota>): Cuota {
     hito: "A la firma",
     importe: 150_000,
     creadaEn: "2026-10-25T15:00:00.000Z",
+    ...parcial,
+  };
+}
+
+/**
+ * Un plan como el que manda el servidor: **entero**, con sus cuotas al lado
+ * de su total y de su base.
+ *
+ * El ayudante trae una cuota por omisión a propósito. El cotejo depende de
+ * si hay plan, así que un plan de referencia sin cuotas haría que cada
+ * prueba del cotejo midiera, sin decirlo, el caso vacío.
+ */
+function plan(parcial: Partial<PlanDePagos>): PlanDePagos {
+  return {
+    cuotas: [cuota({})],
+    total: TRES_TERCIOS,
+    base: MIL_DOLARES,
     ...parcial,
   };
 }
@@ -214,11 +231,11 @@ describe("porcentajeEditable y porcentajeLegible · de la unidad que se guarda a
 
 describe("cotejoDelPlan · el plan contra el total de la cotización", () => {
   it("dice que cierra cuando las dos cifras son la misma", () => {
-    const cotejo = cotejoDelPlan(MIL_DOLARES, MIL_DOLARES);
+    const cotejo = cotejoDelPlan(plan({ total: MIL_DOLARES, base: MIL_DOLARES }));
 
-    expect(cotejo.estado).toBe("exacto");
-    expect(cotejo.sumaLegible).toBe("1,000.00");
-    expect(cotejo.baseLegible).toBe("1,000.00");
+    expect(cotejo?.estado).toBe("exacto");
+    expect(cotejo?.sumaLegible).toBe("1,000.00");
+    expect(cotejo?.baseLegible).toBe("1,000.00");
   });
 
   /**
@@ -232,52 +249,92 @@ describe("cotejoDelPlan · el plan contra el total de la cotización", () => {
    * que se dibuja es la que llegó.
    */
   it("muestra el residuo con las dos cifras, y no lo redondea", () => {
-    const cotejo = cotejoDelPlan(TRES_TERCIOS, MIL_DOLARES);
+    const cotejo = cotejoDelPlan(plan({}));
 
-    expect(cotejo.estado).toBe("incompleto");
-    expect(cotejo.sumaLegible).toBe("999.90");
-    expect(cotejo.baseLegible).toBe("1,000.00");
+    expect(cotejo?.estado).toBe("incompleto");
+    expect(cotejo?.sumaLegible).toBe("999.90");
+    expect(cotejo?.baseLegible).toBe("1,000.00");
     // Y la explicación nombra el truncamiento: sin eso, «no cierra» manda a
     // buscar una cuota que falta cuando lo que falta es un centavo.
-    expect(cotejo.explicacion).toContain("33,33 %");
-    expect(cotejo.explicacion).toContain("trunca");
+    expect(cotejo?.explicacion).toContain("33,33 %");
+    expect(cotejo?.explicacion).toContain("trunca");
   });
 
   it("y dice que el sistema no reparte ese resto solo", () => {
     // La otra mitad: un sistema que redondea en silencio para que cuadre es
     // un sistema en el que nadie sabe cuánto va a pagar el cliente.
-    expect(cotejoDelPlan(TRES_TERCIOS, MIL_DOLARES).explicacion).toContain(
-      "no reparte",
-    );
+    expect(cotejoDelPlan(plan({}))?.explicacion).toContain("no reparte");
   });
 
   it("avisa cuando el plan se pasa del total", () => {
-    const cotejo = cotejoDelPlan(110_000, MIL_DOLARES);
+    const cotejo = cotejoDelPlan(plan({ total: 110_000, base: MIL_DOLARES }));
 
-    expect(cotejo.estado).toBe("excedido");
-    expect(cotejo.sumaLegible).toBe("1,100.00");
-    expect(cotejo.baseLegible).toBe("1,000.00");
+    expect(cotejo?.estado).toBe("excedido");
+    expect(cotejo?.sumaLegible).toBe("1,100.00");
+    expect(cotejo?.baseLegible).toBe("1,000.00");
   });
 
   it("sin base no hay cotejo, y la suma viaja igual", () => {
-    const cotejo = cotejoDelPlan(90_000, null);
+    const cotejo = cotejoDelPlan(plan({ total: 90_000, base: null }));
 
-    expect(cotejo.estado).toBe("sin_base");
-    expect(cotejo.sumaLegible).toBe("900.00");
-    expect(cotejo.baseLegible).toBeNull();
+    expect(cotejo?.estado).toBe("sin_base");
+    expect(cotejo?.sumaLegible).toBe("900.00");
+    expect(cotejo?.baseLegible).toBeNull();
   });
 
-  it("un plan vacío sin cuotas cierra contra una cotización sin líneas", () => {
-    expect(cotejoDelPlan(0, 0).estado).toBe("exacto");
+  /* ------------------------------------------------------------------
+     El plan que no existe todavía
+
+     **Un plan vacío no es un plan que no cierra.** Hasta T-16 el cotejo se
+     armaba igual sobre un borrador sin ninguna cuota: contra una cotización
+     de mil dólares, la suma de cero daba «El plan no llega al total», con el
+     párrafo del truncamiento de los porcentajes explicando un resto que
+     nadie había producido. Era un aviso de desajuste sobre un acuerdo que
+     no se había empezado a escribir.
+
+     Las dos pruebas van juntas y ninguna sirve sola: la de ausencia la
+     pasaría un cotejo que no se dibujara nunca, y es la de presencia la que
+     lo impide.
+     ------------------------------------------------------------------ */
+
+  it("un plan sin ninguna cuota no tiene cotejo, porque no hay plan que cotejar", () => {
+    expect(cotejoDelPlan(plan({ cuotas: [], total: 0 }))).toBeNull();
+  });
+
+  it("pero un plan con cuotas que no cierran sí lo tiene", () => {
+    // La aserción de presencia al lado de la de ausencia: sin ésta, «no
+    // devolver nunca un cotejo» pasaría la de arriba.
+    const cotejo = cotejoDelPlan(plan({}));
+
+    expect(cotejo).not.toBeNull();
+    expect(cotejo?.estado).toBe("incompleto");
+  });
+
+  it("sin cuotas tampoco hay cotejo cuando no hay base contra la que comparar", () => {
+    // El plan de un trámite suelto, todavía sin acordar: la ausencia de base
+    // no es lo que decide, la ausencia de cuotas sí.
+    expect(cotejoDelPlan(plan({ cuotas: [], total: 0, base: null }))).toBeNull();
+  });
+
+  it("y lo que decide es que no haya cuotas, no que la suma dé cero", () => {
+    // La guarda se escribe sobre `cuotas`, no sobre `total`. Un plan con una
+    // cuota de importe cero contra una cotización sin líneas **sí** es un
+    // plan, y cierra exacto.
+    const cotejo = cotejoDelPlan(
+      plan({ cuotas: [cuota({ monto: 0, importe: 0 })], total: 0, base: 0 }),
+    );
+
+    expect(cotejo).not.toBeNull();
+    expect(cotejo?.estado).toBe("exacto");
   });
 
   it("no clasifica lo que no es un importe en centavos enteros", () => {
     // La misma guarda que `lecturaDelSaldo` y por el mismo motivo: la
     // comparación es exacta **porque los dos son enteros**. Con un flotante
     // en el medio, dos cifras que valen lo mismo compararían distinto.
-    expect(cotejoDelPlan(1_000.5, MIL_DOLARES).estado).toBe("ilegible");
-    expect(cotejoDelPlan(MIL_DOLARES, 1_000.5).estado).toBe("ilegible");
-    expect(cotejoDelPlan(Number.NaN, MIL_DOLARES).estado).toBe("ilegible");
+    expect(cotejoDelPlan(plan({ total: 1_000.5 }))?.estado).toBe("ilegible");
+    expect(cotejoDelPlan(plan({ base: 1_000.5 }))?.estado).toBe("ilegible");
+    expect(cotejoDelPlan(plan({ total: Number.NaN }))?.estado).toBe("ilegible");
   });
 
   /**
@@ -293,10 +350,10 @@ describe("cotejoDelPlan · el plan contra el total de la cotización", () => {
    * aparecer, aparecen.
    */
   it("no escribe ninguna cifra que no haya llegado del servidor", () => {
-    const cotejo = cotejoDelPlan(TRES_TERCIOS, MIL_DOLARES);
-    const todo = `${cotejo.titular} ${cotejo.sumaLegible} ${String(
-      cotejo.baseLegible,
-    )} ${cotejo.explicacion}`;
+    const cotejo = cotejoDelPlan(plan({}));
+    const todo = `${String(cotejo?.titular)} ${String(
+      cotejo?.sumaLegible,
+    )} ${String(cotejo?.baseLegible)} ${String(cotejo?.explicacion)}`;
 
     expect(todo).toContain("999.90");
     expect(todo).toContain("1,000.00");

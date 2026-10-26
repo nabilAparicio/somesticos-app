@@ -89,6 +89,7 @@ import type {
   DatosDeCuota,
   FallaDeValidacion,
   MotivoDeFalla,
+  PlanDePagos,
 } from "../../../worker/contract";
 import { PUNTOS_BASICOS_DEL_CIEN_POR_CIENTO } from "../../../worker/cuotas/dominio";
 import { esDiaValido } from "../../../worker/gastos/dominio";
@@ -383,10 +384,35 @@ const EXPLICACIONES = {
  * compararían distinto y el cotejo diría que el plan no cierra cuando cierra
  * exacto. Lo que no es un entero seguro no se clasifica.
  */
-export function cotejoDelPlan(
-  total: number,
-  base: number | null,
-): CotejoDelPlan {
+export function cotejoDelPlan(plan: PlanDePagos): CotejoDelPlan | null {
+  /*
+   * **Un plan vacío no es un plan que no cierra.**
+   *
+   * Es la guarda que faltaba hasta T-16, y la ausencia se veía: sobre un
+   * borrador sin ninguna cuota la sección decía «todavía no tiene plan de
+   * pagos» y acto seguido dibujaba el recuadro del cotejo con «El plan no
+   * llega al total · Suma del plan 0.00» y el párrafo que explica el
+   * truncamiento de los porcentajes. Un plan que no existe no puede estar
+   * desajustado, y ese párrafo le hablaba de un problema que nadie tenía.
+   *
+   * Es `null` y no un sexto estado del cotejo por lo mismo que `PLAN_VACIO`
+   * no es un titular: lo que hay que dibujar en ese caso ya está dicho
+   * donde iría el cronograma, y un estado más sería una segunda frase para
+   * el mismo hueco.
+   *
+   * **La guarda se escribe sobre `cuotas` y no sobre `total`.** Un plan con
+   * una sola cuota de importe cero contra una cotización sin líneas sí es
+   * un plan, y cierra exacto; colgarla de `total === 0` lo dejaría mudo.
+   *
+   * Y por eso esta función recibe el plan **entero** en vez de sus dos
+   * cifras sueltas: la decisión depende de las tres cosas que el servidor
+   * manda juntas, y pedirlas por separado era exactamente lo que dejaba
+   * tomar la decisión sin mirar las cuotas.
+   */
+  if (plan.cuotas.length === 0) return null;
+
+  const { total, base } = plan;
+
   const enteros =
     Number.isSafeInteger(total) && (base === null || Number.isSafeInteger(base));
 

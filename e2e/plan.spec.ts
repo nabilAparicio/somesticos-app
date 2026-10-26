@@ -368,6 +368,44 @@ test.describe("el plan de pagos de una cotización", () => {
     await expect(plan).toContainText("todavía no tiene plan de pagos");
   });
 
+  /**
+   * **Y no dibuja el cotejo, que es lo que T-16 vino a arreglar.**
+   *
+   * Hasta acá, debajo de «todavía no tiene plan de pagos» aparecía el
+   * recuadro entero: «El plan no llega al total · Suma del plan 0.00», con
+   * el párrafo del truncamiento explicando que tres cuotas del 33,33 %
+   * suman 99,99 %. Un plan vacío no es un plan que no cierra, y ese párrafo
+   * le hablaba de un problema que nadie tenía.
+   *
+   * El localizador cuelga de `seccion(page)` y no del documento: el cotejo
+   * se cuenta dentro de la sección del plan, que es donde vive.
+   */
+  test("una cotización sin cuotas no dibuja el cotejo", async ({ page }) => {
+    await conElPlanCargado(page, { plan: PLAN_VACIO });
+    await page.goto(DETALLE_URL);
+
+    const plan = seccion(page);
+    // La sección ya cargó: sin esto, el cotejo ausente podría ser la
+    // pantalla que todavía dice «Consultando…».
+    await expect(plan).toContainText("todavía no tiene plan de pagos");
+
+    await expect(bloqueDelCotejo(page)).toHaveCount(0);
+    await expect(plan).not.toContainText("El plan no llega al total");
+    await expect(plan).not.toContainText("se trunca hacia abajo");
+  });
+
+  test("y con cuotas que no cierran sí lo dibuja", async ({ page }) => {
+    // La aserción de presencia al lado de la de ausencia: sin ésta, una
+    // pantalla que no dibujara nunca el cotejo pasaría la de arriba.
+    await conElPlanCargado(page);
+    await page.goto(DETALLE_URL);
+
+    await expect(bloqueDelCotejo(page)).toHaveCount(1);
+    await expect(bloqueDelCotejo(page)).toContainText(
+      "El plan no llega al total",
+    );
+  });
+
   test("avisa que el plan no registra cobros", async ({ page }) => {
     // Es el reverso de una decisión del fondo: `cuota` no tiene `pagada_en`.
     // Sin este aviso, una lista de cuotas se lee como un estado de cuenta.

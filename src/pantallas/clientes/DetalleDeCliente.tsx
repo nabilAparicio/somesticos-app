@@ -14,10 +14,20 @@
  * **solo los hechos de la ficha** —quién la dio de alta, quién la editó—; lo
  * que pasó en cada proceso vive en la bitácora de ese proceso, porque un
  * hecho se registra una sola vez, bajo la entidad de la que es.
+ *
+ * Y desde T-16 cuelgan sus cotizaciones, que era el agujero de esta
+ * pantalla: la ficha mostraba procesos, bitácora y notas, y desde el cliente
+ * que había encargado una cotización ganada no había forma de llegar a ella.
+ * Se pide igual que las otras dos —por separado, para que un fallo no deje
+ * la ficha en blanco— pero con una diferencia: **lo que se pide es el
+ * listado entero y el filtro corre acá**, porque `GET /api/cotizaciones` no
+ * tiene un `?clienteId=` como sí lo tiene el de procesos. Es el mismo
+ * camino que toma el detalle de la cotización con los procesos que abrió, y
+ * el argumento está en `cotizacionesDeCliente`.
  */
 import { useEffect, useState } from "react";
 
-import type { Cliente, Proceso } from "../../../worker/contract";
+import type { Cliente, Cotizacion, Proceso } from "../../../worker/contract";
 import { Aviso } from "../../layout/Aviso";
 import { Enlace } from "../../layout/Enlace";
 import { Fila } from "../../layout/Fila";
@@ -31,13 +41,28 @@ import {
   textoDeProblema as textoDeProblemaDeProceso,
 } from "../procesos/api";
 import { avanceDe, ordenarProcesos, proximoPaso } from "../procesos/presentacion";
+import {
+  cargarCotizaciones,
+  textoDeProblema as textoDeProblemaDeCotizacion,
+} from "../cotizaciones/api";
+import {
+  estadoLegible,
+  ordenarCotizaciones,
+  vencimientoDe,
+} from "../cotizaciones/presentacion";
 import { Bitacora, type EstadoDeBitacora } from "../Bitacora";
 import {
   cargarBitacoraDeCliente,
   cargarCliente,
   textoDeProblema,
 } from "./api";
-import { VACIO, documentoDe, fechaLegible, tipoDe } from "./presentacion";
+import {
+  VACIO,
+  cotizacionesDeCliente,
+  documentoDe,
+  fechaLegible,
+  tipoDe,
+} from "./presentacion";
 
 type Props = {
   readonly id: string;
@@ -62,9 +87,17 @@ type EstadoDeProcesos =
   | { fase: "listo"; procesos: Proceso[] }
   | { fase: "problema"; mensaje: string };
 
+type EstadoDeCotizaciones =
+  | { fase: "cargando" }
+  | { fase: "listo"; cotizaciones: Cotizacion[] }
+  | { fase: "problema"; mensaje: string };
+
 export function DetalleDeCliente({ id }: Props) {
   const [estado, setEstado] = useState<Estado>({ fase: "cargando" });
   const [procesos, setProcesos] = useState<EstadoDeProcesos>({
+    fase: "cargando",
+  });
+  const [cotizaciones, setCotizaciones] = useState<EstadoDeCotizaciones>({
     fase: "cargando",
   });
   const [bitacora, setBitacora] = useState<EstadoDeBitacora>({
@@ -93,6 +126,32 @@ export function DetalleDeCliente({ id }: Props) {
           : {
               fase: "problema",
               mensaje: textoDeProblemaDeProceso(resultado, "ese proceso"),
+            },
+      );
+    });
+
+    /*
+     * El listado entero, y el filtro en la línea de abajo.
+     *
+     * `cargarCotizaciones` se importa de `../cotizaciones/api` en vez de
+     * declararse acá, por lo mismo que aquel archivo importa el listado de
+     * clientes del de clientes: una segunda forma de pedir la misma ruta es
+     * la que se queda sin el `AbortSignal` el día que alguien la toque.
+     */
+    void cargarCotizaciones(control.signal).then((resultado) => {
+      if (control.signal.aborted) return;
+
+      setCotizaciones(
+        resultado.estado === "ok"
+          ? {
+              fase: "listo",
+              cotizaciones: ordenarCotizaciones(
+                cotizacionesDeCliente(resultado.valor, id),
+              ),
+            }
+          : {
+              fase: "problema",
+              mensaje: textoDeProblemaDeCotizacion(resultado),
             },
       );
     });
@@ -224,6 +283,88 @@ export function DetalleDeCliente({ id }: Props) {
               </tbody>
             </ContenedorDeTabla>
           )}
+        </Pila>
+      </section>
+
+      {/* ---------------------------------------------------------------
+          Las cotizaciones del cliente (T-16).
+
+          Va debajo de los procesos y no arriba, aunque en el ciclo la
+          cotización venga primero: lo que el bufete abre a mirar es en qué
+          va el cliente, y eso lo contestan los procesos.
+
+          **Misma forma que los procesos**: tabla con el documento
+          enlazado en la celda de cabecera de fila. Y el estado en su
+          propia columna, porque un borrador y una ganada no se leen igual
+          y abrir tres fichas para enterarse es lo que esta sección existe
+          para evitar.
+
+          El rótulo es «Cotizaciones» pelado y el de la tabla lleva el
+          nombre del cliente, igual que el de procesos. Los dos son
+          regiones con nombre, así que apuntar a la sección desde una
+          prueba pide coincidencia exacta: los localizadores de Playwright
+          buscan por subcadena y «Cotizaciones» también resuelve
+          «Cotizaciones de …».
+          --------------------------------------------------------------- */}
+      <section aria-labelledby="cotizaciones-del-cliente">
+        <Pila>
+          {/*
+            **Sin botón de alta**, al revés que la sección de procesos. El
+            de allá pasa `clienteId` y la pantalla abre con el cliente ya
+            elegido; `cotizacion-nueva` no admite ese parámetro, así que un
+            botón acá mandaría a un formulario en blanco donde hay que
+            volver a buscar al cliente que se estaba mirando. Esta sección
+            es para llegar a lo que ya existe.
+          */}
+          <h2 id="cotizaciones-del-cliente">Cotizaciones</h2>
+
+          {cotizaciones.fase === "cargando" && <p>Consultando…</p>}
+
+          {cotizaciones.fase === "problema" && (
+            <Aviso tono="error">{cotizaciones.mensaje}</Aviso>
+          )}
+
+          {cotizaciones.fase === "listo" &&
+            cotizaciones.cotizaciones.length === 0 && (
+              <Aviso>
+                Este cliente todavía no tiene ninguna cotización.
+              </Aviso>
+            )}
+
+          {cotizaciones.fase === "listo" &&
+            cotizaciones.cotizaciones.length > 0 && (
+              <ContenedorDeTabla rotulo={`Cotizaciones de ${cliente.nombre}`}>
+                <thead>
+                  <tr>
+                    <th scope="col">Código</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Vence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cotizaciones.cotizaciones.map((cotizacion) => (
+                    <tr key={cotizacion.id}>
+                      <th scope="row">
+                        <Enlace
+                          href={enlaceDe({
+                            nombre: "cotizacion",
+                            id: cotizacion.id,
+                          })}
+                        >
+                          {cotizacion.codigo}
+                        </Enlace>
+                      </th>
+                      <td>
+                        <span className="etiqueta">
+                          {estadoLegible(cotizacion)}
+                        </span>
+                      </td>
+                      <td>{vencimientoDe(cotizacion)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </ContenedorDeTabla>
+            )}
         </Pila>
       </section>
 

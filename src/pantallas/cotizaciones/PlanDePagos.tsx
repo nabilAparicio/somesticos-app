@@ -29,6 +29,10 @@
  * dos renglones, y no hay ningún número que esta pantalla haya inventado:
  * el argumento entero está en `cotejoDelPlan`.
  *
+ * **Sobre un plan sin cuotas el cotejo no se dibuja**, porque no hay plan
+ * que cotejar. Quien lo decide es `cotejoDelPlan`, que devuelve `null`;
+ * acá no hay una segunda condición que lo repita.
+ *
  * ## Las dos clases se eligen con radios y no con un desplegable
  *
  * Y no es estética. Las dos opciones **cambian qué campo se dibuja debajo**
@@ -227,7 +231,7 @@ export function PlanDePagos({ cotizacionId }: Props) {
   }
 
   const renglones = renglonesDelPlan(plan.cuotas);
-  const cotejo = cotejoDelPlan(plan.total, plan.base);
+  const cotejo = cotejoDelPlan(plan);
   const clases = clasesDeCuotaDisponibles(plan.base);
 
   return (
@@ -314,30 +318,42 @@ export function PlanDePagos({ cotizacionId }: Props) {
                 Ningún color distingue los tres estados: lo dice el titular,
                 que sobrevive a una impresora que no imprime fondos y a un
                 lector de pantalla.
+
+                **Y no se dibuja cuando no hay plan.** `cotejoDelPlan`
+                devuelve `null` sobre un plan sin ninguna cuota, y esto se
+                limita a escribir lo que devolvió: la decisión vive allá,
+                donde se prueba sin navegador. Una segunda condición acá
+                —«si hay renglones»— sería la otra mitad de la misma guarda,
+                y entonces quitar cualquiera de las dos no mataría ninguna
+                prueba.
                 --------------------------------------------------------- */}
-            <section aria-labelledby="cotejo-del-plan" className="cotejo">
-              <Pila espacio="ceñido">
-                <h3 id="cotejo-del-plan" className="cotejo__titulo">
-                  {cotejo.titular}
-                </h3>
+            {cotejo !== null && (
+              <section aria-labelledby="cotejo-del-plan" className="cotejo">
+                <Pila espacio="ceñido">
+                  <h3 id="cotejo-del-plan" className="cotejo__titulo">
+                    {cotejo.titular}
+                  </h3>
 
-                <p className="cotejo__cifra cotejo__cifra--suma">
-                  <span className="cotejo__rotulo">{ROTULO_DE_LA_SUMA}</span>
-                  <span className="cotejo__importe">{cotejo.sumaLegible}</span>
-                </p>
-
-                {cotejo.baseLegible !== null && (
-                  <p className="cotejo__cifra">
-                    <span className="cotejo__rotulo">{ROTULO_DE_LA_BASE}</span>
-                    <span className="cotejo__importe">{cotejo.baseLegible}</span>
+                  <p className="cotejo__cifra cotejo__cifra--suma">
+                    <span className="cotejo__rotulo">{ROTULO_DE_LA_SUMA}</span>
+                    <span className="cotejo__importe">{cotejo.sumaLegible}</span>
                   </p>
-                )}
 
-                <Prosa como="p" className="texto-apagado">
-                  {cotejo.explicacion}
-                </Prosa>
-              </Pila>
-            </section>
+                  {cotejo.baseLegible !== null && (
+                    <p className="cotejo__cifra">
+                      <span className="cotejo__rotulo">{ROTULO_DE_LA_BASE}</span>
+                      <span className="cotejo__importe">
+                        {cotejo.baseLegible}
+                      </span>
+                    </p>
+                  )}
+
+                  <Prosa como="p" className="texto-apagado">
+                    {cotejo.explicacion}
+                  </Prosa>
+                </Pila>
+              </section>
+            )}
 
             <Aviso>{AVISO_LA_CUOTA_NO_SE_EDITA}</Aviso>
 

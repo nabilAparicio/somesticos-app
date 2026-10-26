@@ -19,7 +19,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { Cliente, TipoCliente } from "../worker/contract";
+import type { Cliente, Cotizacion, TipoCliente } from "../worker/contract";
 import {
   BORRADOR_VACIO,
   aPeticion,
@@ -30,6 +30,7 @@ import {
 } from "../src/pantallas/clientes/formulario";
 import {
   contactoDe,
+  cotizacionesDeCliente,
   documentoDe,
   filtrarClientes,
   ordenarPorNombre,
@@ -54,6 +55,24 @@ function cliente(ajustes: Partial<Cliente> = {}): Cliente {
     creadoPor: "7335d417-61da-459d-899c-0a01c76a2f94",
     creadoPorNombre: "Itzel",
     creadoEn: "2026-10-22T14:03:00.000Z",
+    ...ajustes,
+  };
+}
+
+function cotizacion(ajustes: Partial<Cotizacion> = {}): Cotizacion {
+  return {
+    id: "c1",
+    codigo: "COT-2026-0001",
+    estado: "borrador",
+    clienteId: ID,
+    clienteNombre: "Carlos Pérez",
+    fecha: "2026-10-22T14:03:00.000Z",
+    venceEn: null,
+    moneda: "USD",
+    duplicadaDeId: null,
+    creadaPor: "7335d417-61da-459d-899c-0a01c76a2f94",
+    creadaPorNombre: "Itzel",
+    creadaEn: "2026-10-22T14:03:00.000Z",
     ...ajustes,
   };
 }
@@ -436,5 +455,63 @@ describe("derivados de presentación", () => {
     // El contrapeso de la de arriba: un filtro que devolviera siempre la
     // lista entera pasaría todas las afirmaciones de coincidencia.
     expect(filtrarClientes([cliente({ nombre: "Zapata" })], "xyz")).toEqual([]);
+  });
+});
+
+/* ==========================================================================
+   Las cotizaciones del cliente (T-16)
+
+   El detalle del cliente mostraba procesos, bitácora y notas, y **no sus
+   cotizaciones**: desde la ficha de un cliente con una cotización ganada no
+   había forma de llegar a ella.
+
+   El filtro corre en el navegador sobre el listado entero, que es lo que ya
+   hace `procesosDeCotizacion` para los procesos que abrió una cotización.
+   `GET /api/cotizaciones` devuelve cada fila con su `clienteId`, así que no
+   hizo falta ni una ruta nueva ni un parámetro nuevo.
+   ========================================================================== */
+
+describe("cotizacionesDeCliente", () => {
+  const OTRO = "0e2c4c1f-9a6b-4d8a-9c5e-7b904a3f1d0e";
+
+  it("se queda con las del cliente y deja afuera las de los demás", () => {
+    const lista = [
+      cotizacion({ id: "1", clienteId: ID }),
+      cotizacion({ id: "2", clienteId: OTRO }),
+      cotizacion({ id: "3", clienteId: ID }),
+    ];
+
+    expect(cotizacionesDeCliente(lista, ID).map((c) => c.id)).toEqual([
+      "1",
+      "3",
+    ]);
+  });
+
+  it("un cliente sin ninguna cotización no se queda con las ajenas", () => {
+    // El contrapeso: un filtro que devolviera la lista entera pasaría la
+    // afirmación de arriba sobre el cliente que sí tiene.
+    const lista = [cotizacion({ id: "2", clienteId: OTRO })];
+
+    expect(cotizacionesDeCliente(lista, ID)).toEqual([]);
+  });
+
+  it("compara por identificador y no por nombre", () => {
+    // El nombre es texto de cara a una persona y puede repetirse entre dos
+    // fichas; lo que ata las dos filas es la llave.
+    const lista = [
+      cotizacion({ id: "1", clienteId: OTRO, clienteNombre: "Carlos Pérez" }),
+    ];
+
+    expect(cotizacionesDeCliente(lista, ID)).toEqual([]);
+  });
+
+  it("no muta el arreglo que recibe", () => {
+    const original = [
+      cotizacion({ id: "1", clienteId: ID }),
+      cotizacion({ id: "2", clienteId: OTRO }),
+    ];
+    cotizacionesDeCliente(original, ID);
+
+    expect(original.map((c) => c.id)).toEqual(["1", "2"]);
   });
 });
