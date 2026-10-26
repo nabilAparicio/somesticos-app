@@ -249,6 +249,7 @@
    */
   .esqueleto__encabezado,
   .esqueleto__navegacion,
+  .esqueleto__velo,
   .solo-pantalla {
     display: none;
   }

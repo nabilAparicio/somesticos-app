@@ -142,13 +142,13 @@ otro).
 
 ### T-2 · El lateral colapsa, crece y tapa
 
-- [ ] Botón de alternar en el encabezado, con `aria-expanded` y
+- [x] Botón de alternar en el encabezado, con `aria-expanded` y
       `aria-controls` sobre el `<nav>`.
-- [ ] El estado y el umbral vivos; `Escape` e `inert` solo en modo cajón.
-- [ ] Velo: elemento propio, oculto por `@container` en ancho, así que en
+- [x] El estado y el umbral vivos; `Escape` e `inert` solo en modo cajón.
+- [x] Velo: elemento propio, oculto por `@container` en ancho, así que en
       ancho no hay clic posible que cerrar.
-- [ ] Transición con `prefers-reduced-motion: reduce` respetado.
-- [ ] **El menú se queda en el DOM cuando está cerrado**, escondido por
+- [x] Transición con `prefers-reduced-motion: reduce` respetado.
+- [x] **El menú se queda en el DOM cuando está cerrado**, escondido por
       `transform`. `e2e/navegacion.spec.ts` lee `.navegacion__lista a` con
       `toBeAttached()`: renderizarlo condicionalmente mataría las tres
       pruebas del invariante «toda pantalla es alcanzable desde el menú».
@@ -224,7 +224,38 @@ commits ya están partidos por tarea.
   horizontal de la tabla, y empieza a pegar sola el día que una tabla reciba
   un tope de alto— y el hallazgo quedó escrito al lado de ella en
   `layout.css`.
-- Próximo paso: T-2, el lateral que colapsa, crece y tapa.
+- **T-2 cerrada.** El lateral es columna en ancho —abierta por defecto, y el
+  botón saca la pista entera del grid— y cajón con velo en angosto, cerrado
+  por defecto, que se cierra con el velo, con `Escape` y con el botón. El
+  cajón cerrado se queda en el árbol, corrido con `transform` y fuera de
+  alcance con `visibility` y `pointer-events`: `e2e/navegacion.spec.ts` sigue
+  en verde. Los tokens nuevos —`--color-velo`, `--z-velo`, `--z-cajon`,
+  `--sombra-cajon`— van en `tokens.css` para que no quede ningún `z-index`
+  suelto adentro de una regla.
+- **El `inert` va en el contenido y no en el encabezado, y es una corrección
+  a lo escrito arriba.** «El contenido y el encabezado reciben `inert`» no se
+  puede cumplir junto con «se cierra con el propio botón»: un encabezado
+  inerte es un botón que no puede cerrar lo que abrió, ni con el mouse ni con
+  el teclado. La salida es geométrica y no una excepción: el cajón y el velo
+  se posicionan contra el **área de contenido de la rejilla**
+  (`grid-area: contenido` más `position: absolute`), así que el encabezado
+  queda afuera del velo por construcción. El overlay sigue siendo overlay de
+  verdad —el foco no entra al contenido—, y la barra de arriba es lo único
+  del armazón que nunca se apaga. Cuando T-3 ponga «Salir» en el encabezado,
+  ese enlace va a quedar alcanzable con el cajón abierto; es la consecuencia
+  de esta decisión y queda anotada.
+- **Dos cosas que el escritor encontró al medir.** Primera: `margin-inline:
+  auto` sobre un ítem de grid cancela el `justify-self: stretch` implícito, y
+  la región de contenido pasó a medirse por su contenido (649px donde tenían
+  que ser 1312). No está, y el porqué quedó escrito en `layout.css`. Segunda:
+  el botón no lleva la clase `.boton`, porque `e2e/cotizaciones.spec.ts`
+  cuenta `header button.boton` para medir la barra de acciones de una
+  cotización y el control del armazón no es una acción de pantalla —con
+  `.boton` puesto, quince pruebas de esa suite se caían—.
+- La lista de secciones pasa a ser vertical en los dos modos: dentro de un
+  cajón de 17rem, una franja que envuelve mete tres rótulos en un renglón y
+  dos en el siguiente.
+- Próximo paso: T-3, quién entró y cómo salir. Sigue sin empezar.
 
 ## Deuda que esta tajada deja anotada
 

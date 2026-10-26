@@ -16,6 +16,11 @@
   /* ---------- Color ---------- */
   /* Papel, no blanco puro: una pantalla de texto todo el día cansa menos. */
   --color-fondo: #f6f5f2;
+  /* El velo del cajón de navegación (T-2): la misma tinta del texto,
+     translúcida. No es negro puro a propósito —el papel de abajo tiene que
+     seguir leyéndose como papel apagado y no como una pantalla rota— ni es
+     un gris nuevo, que sería un color que nadie eligió. */
+  --color-velo: rgb(29 27 23 / 45%);
   --color-superficie: #ffffff;
   --color-superficie-tenue: #efece6;
   --color-borde: #dedad1;
@@ -95,6 +100,29 @@
   --umbral-lateral: 48rem;
   /* Tope por defecto de una columna de prosa, en caracteres (§9). */
   --prosa-tope: 68ch;
+
+  /* ---------- Capas: el orden del eje Z, enumerado en un solo lugar ------ */
+  /*
+   * Dos números y ninguno suelto en una regla. Un `z-index: 20` escrito
+   * dentro de un selector no dice contra quién compite, y el tercero que
+   * aparezca va a ser un 999 puesto a probar hasta que se vea bien; acá se
+   * lee el orden completo de un tirón.
+   *
+   * El orden es el del cajón de navegación de T-2: el cajón encima de su
+   * velo, el velo encima del contenido. El contenido no declara capa
+   * ninguna, y eso también es información: no compite con nada.
+   */
+  --z-velo: 10;
+  --z-cajon: 20;
+
+  /* ---------- Sombras ---------- */
+  /*
+   * La única sombra del sistema, y no es decoración: existe por una razón de
+   * layout. El cajón de navegación se dibuja encima del contenido y las dos
+   * superficies son del mismo papel, así que sin un canto que las separe se
+   * leen como una sola hoja con el texto cortado.
+   */
+  --sombra-cajon: 0 0 2rem rgb(29 27 23 / 18%);
 
   /* La excepción declarada de §9: un ícono tiene tamaño propio. */
   --tamano-icono: 1.5rem;

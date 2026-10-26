@@ -42,8 +42,22 @@
   container: armazon / inline-size;
 }
 
+/*
+ * El armazón.
+ *
+ * En angosto son dos filas —encabezado y contenido— y el lateral no ocupa
+ * ninguna: ahí es un cajón fuera de pantalla y sale del flujo. En ancho la
+ * consulta de contenedor de abajo le devuelve su columna.
+ *
+ * `position: relative` no es decoración: es lo que hace que el cajón y el
+ * velo, que son hijos posicionados con `grid-area: contenido`, tomen como
+ * caja contenedora **el área de contenido de la rejilla** y no la ventana.
+ * Eso es lo que deja al encabezado afuera del velo, y el encabezado tiene
+ * que quedar afuera porque ahí vive el botón que cierra el cajón.
+ */
 .esqueleto {
   display: grid;
+  position: relative;
   grid-template-columns: minmax(0, 1fr);
   /*
    * `minmax(0, 1fr)` en la fila del contenido, y por la misma razón que el
@@ -55,10 +69,9 @@
    * queda con el resto de la ventana y el desbordamiento se resuelve dentro
    * de la región.
    */
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     "encabezado"
-    "navegacion"
     "contenido";
   gap: var(--espacio-m);
   /* La ventana, y `svh` y no `vh`: en un celular, `vh` cuenta la barra de
@@ -94,6 +107,19 @@
       "encabezado encabezado"
       "navegacion contenido";
     gap: var(--espacio-l) var(--espacio-xl);
+  }
+
+  /*
+   * Colapsado en ancho **es la columna ausente**, y no un rail de iconos:
+   * las secciones son rótulos de texto, así que un rail obligaría a inventar
+   * un set de iconos entero dentro de una tajada de layout. El contenido se
+   * queda con todo el ancho, que es para lo que alguien aprieta el botón.
+   */
+  .esqueleto--sin-navegacion {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "encabezado"
+      "contenido";
   }
 }
 
@@ -156,41 +182,209 @@
   }
 }
 
+/*
+ * El botón que alterna el lateral.
+ *
+ * Va **primero** en la franja del encabezado y no al final: es el único
+ * control del armazón, es donde la mano lo busca, y en modo cajón es además
+ * lo primero que recibe el foco al entrar a una pantalla —o sea que se llega
+ * al menú con una tabulación y no con veinte.
+ *
+ * **No lleva la clase `.boton`**, y eso cuesta las siete declaraciones de
+ * abajo, así que vale decir por qué. Varias pruebas de punta a punta de
+ * cotizaciones miden la barra de acciones de una pantalla contando
+ * `header button.boton` —cuántos botones ofrece el estado de una cotización,
+ * y cuáles—. El armazón no es una acción de la pantalla y no tiene por qué
+ * aparecer en ese conteo: con `.boton` puesto, el botón de secciones se
+ * contaba como si «Emitir» hubiera crecido en uno. La forma sale igual de
+ * los mismos tokens que `.boton--tenue`, así que no hay un estilo nuevo
+ * suelto: hay un control del armazón que no se disfraza de control de
+ * pantalla.
+ */
+.esqueleto__alternar {
+  flex: 0 0 auto;
+  /* La franja alinea por línea de base, que para un botón con borde deja el
+     rótulo flotando por encima del sello de la marca. */
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espacio-xs);
+  padding: var(--espacio-xs) var(--espacio-s);
+  border: 1px solid transparent;
+  border-radius: var(--radio-m);
+  background: transparent;
+  color: var(--color-tinta-apagada);
+  font: inherit;
+  font-size: var(--texto-s);
+  font-weight: var(--peso-medio);
+  line-height: var(--linea-ajustada);
+  cursor: pointer;
+}
+
+.esqueleto__alternar:hover {
+  background: var(--color-superficie-tenue);
+  color: var(--color-tinta);
+}
+
+.esqueleto__alternar-glifo {
+  font-size: var(--texto-m);
+  line-height: 1;
+}
+
+/* ======================================================================
+   El lateral: cajón en angosto, columna en ancho (T-2)
+
+   Lo que está escrito sin consulta de ninguna clase —el estado base— es el
+   **cajón**: fuera del flujo, encima del contenido y cerrado por defecto.
+   Es el modo más restringido, y escribirlo primero es lo que permite que la
+   consulta de contenedor solo *agregue* la columna cuando hay espacio, en
+   vez de deshacer un cajón que ya se dibujó.
+
+   Y el cajón cerrado **sigue en el árbol**. No se renderiza
+   condicionalmente ni se apaga con `display: none`: se corre con
+   `transform` y se saca del alcance con `visibility` y `pointer-events`.
+   `e2e/navegacion.spec.ts` lee `.navegacion__lista a.navegacion__item` para
+   sostener que toda pantalla es alcanzable desde el menú; un menú que
+   desaparece del árbol mataría sus tres pruebas en cualquier ventana
+   angosta, y lo haría con el mensaje equivocado: «falta una sección».
+   ====================================================================== */
+
 .esqueleto__navegacion {
-  grid-area: navegacion;
+  /*
+   * `grid-area: contenido` junto con `position: absolute` no coloca nada en
+   * esa pista: lo que hace es que la **caja contenedora** del cajón sea el
+   * área de contenido de la rejilla. O sea que el cajón tapa exactamente lo
+   * que tiene que tapar, y ni un píxel del encabezado.
+   */
+  grid-area: contenido;
+  position: absolute;
+  z-index: var(--z-cajon);
+  inset-block: 0;
+  inset-inline-start: 0;
+  /* Nunca la pantalla entera: queda una franja de contenido a la vista, y
+     esa franja es lo que dice que hay algo debajo y que el velo se toca. */
+  inline-size: min(var(--lateral-max), 80%);
   min-width: 0;
   /* El lateral se scrollea solo. La lista de secciones va a crecer, y hasta
-     T-1 crecer significaba empujar la página entera: el armazón ya no
-     scrollea, así que cada región que pueda desbordar se hace cargo de su
-     propio desbordamiento. */
+     T-1 crecer significaba empujar la página entera. */
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* El borde exterior del armazón, que antes ponía el `padding` del armazón
-     entero y ahora paga cada región. */
-  padding-inline: var(--espacio-m);
+  padding: var(--espacio-m);
+  border-inline-end: var(--borde-fino);
+  background: var(--color-superficie);
+  box-shadow: var(--sombra-cajon);
+  transition:
+    transform 180ms ease,
+    visibility 180ms ease;
+}
+
+/*
+ * Cerrado. Las tres declaraciones son una sola idea y ninguna sobra:
+ * `transform` sin `visibility` deja un cajón invisible que igual recibe
+ * tabulaciones, y `visibility` sin `pointer-events` deja una franja que
+ * igual se come el clic mientras la transición corre.
+ */
+.esqueleto--sin-navegacion .esqueleto__navegacion {
+  transform: translateX(-100%);
+  visibility: hidden;
+  pointer-events: none;
 }
 
 @container armazon (min-width: 48rem) {
-  .esqueleto__navegacion {
-    padding-block-end: var(--espacio-l);
+  /*
+   * Abierto y con espacio: el cajón vuelve a ser una pista de la rejilla.
+   *
+   * El selector lleva el `:not()` porque el estado cerrado en ancho es el
+   * mismo que en angosto —el cajón corrido y fuera de alcance— y así se
+   * escribe una sola vez, en lugar de deshacer la columna y rehacer el
+   * cajón con un segundo juego de reglas que se desincroniza del primero.
+   */
+  .esqueleto:not(.esqueleto--sin-navegacion) .esqueleto__navegacion {
+    grid-area: navegacion;
+    position: static;
+    z-index: auto;
+    inline-size: auto;
+    padding-block: 0 var(--espacio-l);
     padding-inline: var(--espacio-xl) 0;
+    border-inline-end: none;
+    background: none;
+    box-shadow: none;
+  }
+}
+
+/* ======================================================================
+   El velo
+   ====================================================================== */
+
+/*
+ * Es un `<button>` y no un `<div>` con `onClick`, y por eso hay que
+ * desvestirlo acá. Un `div` que se puede tocar y no se puede enfocar es un
+ * control que existe solo para el mouse; con un botón de verdad, «cerrar»
+ * tiene nombre accesible y se anuncia como lo que es.
+ */
+.esqueleto__velo {
+  /* Misma caja contenedora que el cajón: tapa el contenido y deja el
+     encabezado afuera, porque en el encabezado está el botón que cierra
+     esto. Un velo que tapara también el botón dejaría al cajón sin la
+     tercera forma de cerrarse. */
+  grid-area: contenido;
+  position: absolute;
+  z-index: var(--z-velo);
+  inset: 0;
+  appearance: none;
+  border: none;
+  padding: 0;
+  background: var(--color-velo);
+  cursor: pointer;
+  transition: opacity 180ms ease;
+}
+
+/* Con el cajón cerrado no hay nada que tapar, y un velo que siguiera ahí
+   —aunque fuera transparente— se comería todos los clics del contenido. */
+.esqueleto--sin-navegacion .esqueleto__velo {
+  display: none;
+}
+
+@container armazon (min-width: 48rem) {
+  /*
+   * En ancho el velo no existe, y lo decide la consulta de contenedor y no
+   * JavaScript. Dos razones, y las dos son del documento de la tajada: el
+   * modo lo decide el espacio (§9), y así en ancho **no hay clic posible
+   * que interceptar** ni un estado de velo que mantener sincronizado con el
+   * del cajón. Tapar la tabla que alguien está leyendo para mostrarle un
+   * menú que cabía al lado no es un servicio.
+   */
+  .esqueleto__velo {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Quien pidió menos movimiento pidió menos movimiento. El cajón sigue
+     apareciendo y desapareciendo; lo que se va es el deslizamiento. */
+  .esqueleto__navegacion,
+  .esqueleto__velo {
+    transition: none;
   }
 }
 
 .navegacion__lista {
-  /* Franja unidimensional: flexbox. En angosto envuelve; en la columna
-     lateral se vuelve vertical. */
+  /*
+   * Franja unidimensional: flexbox. Y vertical **en los dos modos** desde
+   * T-2, que es un cambio respecto de antes y tiene su razón.
+   *
+   * Hasta T-2, en angosto la navegación era una franja horizontal arriba del
+   * contenido, y envolver era lo correcto. Ahora en angosto es un cajón de
+   * 17rem de ancho: la misma lista que envuelve mete «Inicio Clientes
+   * Catálogos» en un renglón y «Procesos Cotizaciones» en el siguiente, o
+   * sea una grilla de rótulos donde se espera una lista de secciones. El
+   * lateral es vertical en los dos modos porque en los dos modos es una
+   * columna; lo que cambia entre modos es dónde se dibuja, no qué es.
+   */
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--espacio-3xs) var(--espacio-xs);
-}
-
-@container armazon (min-width: 48rem) {
-  .navegacion__lista {
-    flex-direction: column;
-    flex-wrap: nowrap;
-    gap: var(--espacio-3xs);
-  }
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: var(--espacio-3xs);
 }
 
 .navegacion__item {
@@ -298,6 +492,13 @@
        de la rejilla. Del lado de afuera sí, que es el borde del armazón. */
     padding-block: var(--espacio-s) var(--espacio-xl);
     padding-inline: 0 var(--espacio-xl);
+  }
+
+  /* Sin la columna del lateral, el `column-gap` ya no tiene a quién separar
+     y el contenido queda pegado al borde del armazón: ahí ese lado sí
+     necesita su padding. */
+  .esqueleto--sin-navegacion .esqueleto__contenido {
+    padding-inline-start: var(--espacio-xl);
   }
 }
 

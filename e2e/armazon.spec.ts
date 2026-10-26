@@ -1,32 +1,36 @@
 /**
  * El armazón se comporta como una aplicación y no como un documento.
  *
- * Tres de los cuatro reclamos que abrieron esta tajada —no está centrado, el
- * encabezado y el lateral scrollean con la página— son el mismo defecto:
- * `src/layout/Esqueleto.tsx` estaba en flujo de página de punta a punta. Lo
- * que esta suite sostiene es la forma nueva: el armazón mide la ventana y el
- * scroll se mueve hacia adentro.
+ * Los cuatro reclamos que abrieron esta tajada —no está centrado, el lateral
+ * no colapsa, el encabezado y el lateral scrollean con la página— son el
+ * mismo defecto: `src/layout/Esqueleto.tsx` estaba en flujo de página de
+ * punta a punta. Lo que esta suite sostiene es la forma nueva: el armazón
+ * mide la ventana, el scroll se mueve hacia adentro, y el lateral es columna
+ * en ancho y cajón con velo en angosto.
  *
  * ## Por qué de punta a punta y no en `test/`
  *
- * Porque **no hay nada que afirmar sin dibujar**. Lo que T-1 cambia es
- * geometría: quién scrollea y quién se queda quieto cuando el contenido no
- * entra. Una unitaria sobre `Esqueleto.tsx` solo podría afirmar que tal
- * clase está puesta, que es exactamente la clase de prueba que pasa en verde
- * mientras el layout está roto: la clase existe y la regla CSS que la hacía
- * funcionar no. Acá se mide con `boundingBox` y `toBeVisible`, o sea con lo
+ * Porque **no hay nada que afirmar sin dibujar**. Lo que T-1 y T-2 cambian
+ * es geometría: quién scrollea, quién se queda quieto, cuánto ancho gana el
+ * contenido cuando la columna se va, si el cajón tapa o empuja. Una unitaria
+ * sobre `Esqueleto.tsx` solo podría afirmar que tal clase está puesta, que
+ * es exactamente la clase de prueba que pasa en verde mientras el layout
+ * está roto: la clase existe y la regla CSS que la hacía funcionar no. Acá
+ * se mide con `boundingBox`, `toBeVisible` y `toBeInViewport`, o sea con lo
  * que la persona ve.
  *
  * ## Los controles de hostilidad
  *
- * Las dos pruebas de acá pasarían vacuamente y por eso llevan un contrapeso
+ * Tres de estas pruebas pasarían vacuamente y por eso llevan un contrapeso
  * escrito antes de la aserción que importa:
  *
  *  - el centrado se mide en una ventana **más ancha que el tope**, porque un
  *    armazón que llena la ventana está «centrado» por casualidad;
  *  - el scroll se mide en una pantalla que **de verdad desborda** la región
  *    de contenido, porque dos `boundingBox` iguales también significan «no
- *    pasó nada».
+ *    pasó nada»;
+ *  - el velo se comprueba **visible en angosto y ausente en ancho**, porque
+ *    un velo que no existe nunca también «no tapa» la tabla.
  *
  * El tope del armazón se lee del documento y no se escribe acá: la fuente es
  * `--tope-armazon` en `src/estilos/tokens.css`, y una prueba con el número
@@ -34,11 +38,17 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { medirDesborde, porQueSeSale } from "./desborde";
+
 /**
- * La ventana de esta suite, deliberadamente mucho más ancha que
- * `--tope-armazon`: es la única forma de que el centrado sea observable.
+ * Las dos ventanas de esta suite, una a cada lado del único punto de cambio
+ * del armazón (`--umbral-lateral: 48rem`, o sea 768px).
+ *
+ * La ancha es deliberadamente mucho más ancha que `--tope-armazon`: es la
+ * única forma de que el centrado sea observable.
  */
 const ANCHA = { width: 1920, height: 900 } as const;
+const ANGOSTA = { width: 390, height: 844 } as const;
 
 /**
  * La pantalla con la que se mide el scroll: la misma que usa el criterio
@@ -61,6 +71,21 @@ function lateral(page: Page): Locator {
 
 function contenido(page: Page): Locator {
   return page.locator(".esqueleto__contenido");
+}
+
+function velo(page: Page): Locator {
+  return page.locator(".esqueleto__velo");
+}
+
+/**
+ * El botón que alterna el lateral, pedido por su nombre accesible.
+ *
+ * `exact: true` no es higiene: el velo también es un botón y se llama
+ * «Cerrar las secciones», así que sin la coincidencia exacta este localizador
+ * devuelve los dos y la prueba falla por modo estricto en vez de medir algo.
+ */
+function alternar(page: Page): Locator {
+  return page.getByRole("button", { name: "Secciones", exact: true });
 }
 
 /**
@@ -192,4 +217,291 @@ test.describe("el armazón centrado y quieto (T-1)", () => {
       "el lateral se movió con el scroll del contenido",
     ).toBeLessThanOrEqual(1);
   });
+});
+
+test.describe("el lateral en ancho: columna que se saca y se devuelve (T-2)", () => {
+  test("arranca abierto y el botón lo dice", async ({ page }) => {
+    await page.setViewportSize(ANCHA);
+    await page.goto("/");
+
+    await expect(
+      lateral(page),
+      "en ancho el lateral tiene que arrancar abierto: hay lugar para los dos",
+    ).toBeVisible();
+    await expect(alternar(page)).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("el botón saca la columna y el contenido gana el ancho", async ({
+    page,
+  }) => {
+    await page.setViewportSize(ANCHA);
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+
+    const boton = alternar(page);
+    const anchoCon = (await cajaDe(contenido(page), "la región de contenido"))
+      .width;
+
+    await boton.click();
+
+    await expect(
+      lateral(page),
+      "el botón no sacó el lateral de la pantalla",
+    ).not.toBeVisible();
+    await expect(boton).toHaveAttribute("aria-expanded", "false");
+
+    const anchoSin = (await cajaDe(contenido(page), "la región de contenido"))
+      .width;
+    expect(
+      anchoSin,
+      `sacar el lateral no le dio ancho al contenido (${String(
+        Math.round(anchoCon),
+      )}px antes, ${String(Math.round(anchoSin))}px después): la columna se` +
+        " escondió pero la pista del grid sigue ocupando su lugar",
+    ).toBeGreaterThan(anchoCon + 100);
+  });
+
+  test("y el botón lo devuelve", async ({ page }) => {
+    // La vuelta. Un colapso de ida nada más deja la aplicación sin menú y es
+    // peor que no colapsar.
+    await page.setViewportSize(ANCHA);
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+
+    const boton = alternar(page);
+    const anchoOriginal = (
+      await cajaDe(contenido(page), "la región de contenido")
+    ).width;
+
+    await boton.click();
+    await expect(lateral(page)).not.toBeVisible();
+    await boton.click();
+
+    await expect(
+      lateral(page),
+      "el botón no devolvió el lateral",
+    ).toBeVisible();
+    await expect(boton).toHaveAttribute("aria-expanded", "true");
+    expect(
+      (await cajaDe(contenido(page), "la región de contenido")).width,
+      "el lateral volvió pero el contenido no devolvió el ancho",
+    ).toBeCloseTo(anchoOriginal, 0);
+  });
+
+  test("en ancho no hay velo: nadie tapa la tabla que se está leyendo", async ({
+    page,
+  }) => {
+    await page.setViewportSize(ANCHA);
+    await page.goto("/");
+
+    await expect(
+      velo(page),
+      "en ancho el velo no tiene que verse ni con el lateral abierto",
+    ).toBeHidden();
+
+    await alternar(page).click();
+    await expect(
+      velo(page),
+      "en ancho el velo no tiene que verse ni con el lateral cerrado",
+    ).toBeHidden();
+  });
+
+  test("en ancho el contenido nunca queda inerte", async ({ page }) => {
+    await page.setViewportSize(ANCHA);
+    await page.goto("/");
+
+    expect(
+      await contenido(page).evaluate((nodo) => (nodo as HTMLElement).inert),
+      "en ancho el lateral es una columna y no un modal: dejar el contenido" +
+        " inerte sería una aplicación que no se puede usar",
+    ).toBe(false);
+  });
+});
+
+test.describe("el lateral en angosto: cajón con velo (T-2)", () => {
+  test("arranca cerrado", async ({ page }) => {
+    await page.setViewportSize(ANGOSTA);
+    await page.goto("/");
+
+    await expect(
+      lateral(page),
+      "en angosto el cajón tiene que arrancar cerrado: ocupa toda la pantalla",
+    ).not.toBeInViewport();
+    await expect(velo(page)).toBeHidden();
+    await expect(alternar(page)).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("el menú sigue en el DOM con el cajón cerrado", async ({ page }) => {
+    /*
+     * El invariante de `e2e/navegacion.spec.ts` visto desde acá: ese archivo
+     * lee `.navegacion__lista a.navegacion__item` con `toBeAttached()` para
+     * sostener que toda pantalla es alcanzable desde el menú. Un cajón
+     * «cerrado» renderizado condicionalmente mataría sus tres pruebas en
+     * cualquier ventana angosta, y lo haría diciendo «falta una sección».
+     * Se esconde con `transform`, que es lo que el documento de la tajada
+     * decidió, y esta prueba es la que lo ancla.
+     */
+    await page.setViewportSize(ANGOSTA);
+    await page.goto("/");
+
+    const anclas = page.locator(".navegacion__lista a.navegacion__item");
+    await expect(anclas.first()).toBeAttached();
+    expect(
+      await anclas.count(),
+      "el menú no está en el DOM con el cajón cerrado: se renderizó" +
+        " condicionalmente",
+    ).toBeGreaterThanOrEqual(4);
+  });
+
+  test("el botón abre el cajón encima del contenido, con velo", async ({
+    page,
+  }) => {
+    await page.setViewportSize(ANGOSTA);
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+
+    const anchoAntes = (await cajaDe(contenido(page), "la región de contenido"))
+      .width;
+
+    await alternar(page).click();
+
+    await expect(lateral(page)).toBeInViewport({ ratio: 0.9 });
+    await expect(
+      velo(page),
+      "el cajón se abrió sin velo: un cajón sobre el contenido sin velo deja" +
+        " la pantalla de abajo pareciendo usable",
+    ).toBeVisible();
+    await expect(alternar(page)).toHaveAttribute("aria-expanded", "true");
+
+    expect(
+      (await cajaDe(contenido(page), "la región de contenido")).width,
+      "el cajón empujó el contenido en vez de taparlo: en angosto no hay" +
+        " ancho para las dos cosas",
+    ).toBeCloseTo(anchoAntes, 0);
+  });
+
+  test("con el cajón abierto el contenido queda inerte", async ({ page }) => {
+    // Un velo que solo oscurece deja el foco tabulando por debajo: se llega
+    // con el teclado a controles que no se ven. `inert` es la mitad que
+    // convierte el velo en overlay de verdad.
+    await page.setViewportSize(ANGOSTA);
+    await page.goto("/");
+
+    expect(
+      await contenido(page).evaluate((nodo) => (nodo as HTMLElement).inert),
+      "el contenido arrancó inerte con el cajón cerrado",
+    ).toBe(false);
+
+    await alternar(page).click();
+    await expect(velo(page)).toBeVisible();
+
+    expect(
+      await contenido(page).evaluate((nodo) => (nodo as HTMLElement).inert),
+      "con el cajón abierto el contenido tiene que quedar inerte: sin eso el" +
+        " teclado entra por debajo del velo",
+    ).toBe(true);
+  });
+
+  test("el velo cierra el cajón", async ({ page }) => {
+    await page.setViewportSize(ANGOSTA);
+    await page.goto("/");
+
+    await alternar(page).click();
+    await expect(velo(page)).toBeVisible();
+
+    await velo(page).click();
+
+    await expect(
+      lateral(page),
+      "el velo no cerró el cajón: tocar afuera es la forma más corta de salir",
+    ).not.toBeInViewport();
+    await expect(velo(page)).toBeHidden();
+    await expect(alternar(page)).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("`Escape` cierra el cajón", async ({ page }) => {
+    await page.setViewportSize(ANGOSTA);
+    await page.goto("/");
+
+    await alternar(page).click();
+    await expect(velo(page)).toBeVisible();
+
+    await page.keyboard.press("Escape");
+
+    await expect(
+      lateral(page),
+      "`Escape` no cerró el cajón: es lo que cierra cualquier cosa modal",
+    ).not.toBeInViewport();
+    await expect(alternar(page)).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("el botón cierra el cajón que abrió", async ({ page }) => {
+    await page.setViewportSize(ANGOSTA);
+    await page.goto("/");
+
+    const boton = alternar(page);
+
+    await boton.click();
+    await expect(velo(page)).toBeVisible();
+
+    await boton.click();
+
+    await expect(
+      lateral(page),
+      "el botón abre y no cierra: el encabezado queda fuera del velo" +
+        " justamente para que pueda cerrar lo que abrió",
+    ).not.toBeInViewport();
+    await expect(boton).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+test.describe("y nada de esto trae scroll horizontal", () => {
+  /*
+   * El criterio de T-4 sobre lo que T-2 agrega. No se redefine la medición:
+   * `medirDesborde` de `e2e/desborde.ts` ya es **la** definición de «la
+   * página no scrollea en horizontal», y una segunda copia acá sería una
+   * segunda definición que se relaja sola.
+   *
+   * Lo que acá se agrega son los estados que `sin-scroll-horizontal.spec.ts`
+   * no puede ver, porque son estados y no anchos: el cajón abierto, que es
+   * un elemento de 80% del ancho dibujado encima, y el lateral colapsado en
+   * ancho, que cambia las pistas del grid.
+   */
+  for (const ancho of [320, 390, 767] as const) {
+    test(`con el cajón abierto a ${String(ancho)}px de ancho`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: ancho, height: 844 });
+      await page.goto(BANCO);
+      await page.evaluate(() => document.fonts.ready);
+
+      await alternar(page).click();
+      await expect(velo(page)).toBeVisible();
+
+      const desborde = await medirDesborde(page);
+      expect(
+        desborde.scrollWidth,
+        porQueSeSale(ancho, desborde),
+      ).toBeLessThanOrEqual(desborde.clientWidth);
+    });
+  }
+
+  for (const ancho of [1440, 2560] as const) {
+    test(`con el lateral colapsado a ${String(ancho)}px de ancho`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: ancho, height: 900 });
+      await page.goto(BANCO);
+      await page.evaluate(() => document.fonts.ready);
+
+      await alternar(page).click();
+      await expect(lateral(page)).not.toBeVisible();
+
+      const desborde = await medirDesborde(page);
+      expect(
+        desborde.scrollWidth,
+        porQueSeSale(ancho, desborde),
+      ).toBeLessThanOrEqual(desborde.clientWidth);
+    });
+  }
 });

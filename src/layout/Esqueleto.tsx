@@ -6,12 +6,20 @@
  * Flexbox para acomodar el contenido dentro de una franja»). Tres regiones:
  * encabezado, navegación y contenido.
  *
- * En angosto las tres se apilan; en ancho la navegación pasa a ser una
- * columna lateral. Ese cambio lo decide una **consulta de contenedor** sobre
- * el hueco real del armazón, no una `@media` del viewport: el día que esto se
- * embeba en algo más angosto que la ventana, se acomoda igual.
+ * En angosto la navegación es un cajón que se abre encima del contenido; en
+ * ancho es una columna lateral abierta por defecto. Ese cambio lo decide una
+ * **consulta de contenedor** sobre el hueco real del armazón, no una `@media`
+ * del viewport: el día que esto se embeba en algo más angosto que la ventana,
+ * se acomoda igual.
+ *
+ * Desde T-1 el armazón **mide la ventana** (`100svh`) y la única región que
+ * scrollea es el contenido. Eso no se ve acá porque no hay nada que mirar:
+ * está entero en `src/estilos/layout.css` y no hay una sola altura calculada
+ * en este archivo. Lo que sí vive acá es lo que no se puede expresar en CSS:
+ * el estado del cajón, el modo en el que está, y el `inert` que convierte el
+ * velo en un overlay de verdad.
  */
-import type { ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 
 import { Enlace } from "./Enlace";
 
@@ -85,10 +93,142 @@ function esSeccionActiva(ruta: string, href: string): boolean {
   return ruta === href || ruta.startsWith(`${href}/`);
 }
 
+/**
+ * El identificador del `<nav>`, escrito una vez porque lo usan dos lugares:
+ * el elemento y el `aria-controls` del botón. Dos literales iguales en dos
+ * atributos distintos son dos literales que se desincronizan.
+ */
+const ID_NAVEGACION = "navegacion-de-secciones";
+
+/**
+ * El umbral del armazón, leído con `matchMedia`.
+ *
+ * **Es el único lugar de todo el sistema donde el viewport decide algo**, y
+ * no es una concesión sino una imposibilidad: JavaScript no puede consultar
+ * una `@container`. Y acá hace falta saberlo, porque el comportamiento modal
+ * del cajón —el valor inicial del estado, `Escape`, `inert`— depende del modo
+ * y no hay forma de expresarlo en CSS.
+ *
+ * El número está duplicado a propósito y con la duplicación a la vista: la
+ * fuente es `--umbral-lateral: 48rem` en `src/estilos/tokens.css`, y de ahí
+ * salen las dos consultas `@container armazon (min-width: 48rem)` de
+ * `src/estilos/layout.css`. No se puede leer el token desde acá sin pedirle
+ * el estilo calculado al documento en cada render, que es peor que una copia
+ * declarada. Si el umbral cambia, cambia en los dos lados.
+ *
+ * Que las dos consultas coincidan depende de que el contenedor de consulta
+ * sea `#root`, que mide la ventana entera. **Toda la adaptación visual se
+ * queda en `@container armazon`** justamente por eso: el día que el armazón
+ * se embeba en un hueco más angosto que la ventana, esta consulta y las del
+ * CSS dejarían de decir lo mismo, y lo que se desacomodaría sería solo el
+ * modo —no el dibujo.
+ */
+const CONSULTA_DEL_UMBRAL = "(min-width: 48rem)";
+
+function estaEnModoAncho(): boolean {
+  return window.matchMedia(CONSULTA_DEL_UMBRAL).matches;
+}
+
 export function Esqueleto({ children, ruta }: Props) {
+  /*
+   * Dos estados, y el segundo no es estado del lateral: es el entorno.
+   *
+   * `navegacionVisible` es el único booleano que describe la navegación —«¿se
+   * está mostrando?»— y se lee igual en los dos modos. `modoAncho` es de qué
+   * lado del umbral está la ventana, y existe porque el valor inicial, el
+   * `Escape` y el `inert` lo necesitan. Guardarlo en vez de consultarlo en
+   * cada render es lo que permite que un cambio de modo vuelva a renderizar.
+   */
+  const [modoAncho, setModoAncho] = useState(estaEnModoAncho);
+  /* El valor inicial es el del modo: abierto en ancho, cerrado en angosto. */
+  const [navegacionVisible, setNavegacionVisible] = useState(estaEnModoAncho);
+
+  useEffect(() => {
+    const consulta = window.matchMedia(CONSULTA_DEL_UMBRAL);
+
+    function alCruzarElUmbral(evento: MediaQueryListEvent) {
+      setModoAncho(evento.matches);
+      /*
+       * Y se vuelve al valor por defecto del modo nuevo. Arrastrar el estado
+       * del modo anterior deja las dos formas malas: un cajón que alguien
+       * abrió, al ensancharse, se convierte en una columna que nadie pidió; y
+       * una columna que alguien colapsó, al angostarse, deja la aplicación sin
+       * menú visible y sin ninguna señal de por qué.
+       */
+      setNavegacionVisible(evento.matches);
+    }
+
+    consulta.addEventListener("change", alCruzarElUmbral);
+    return () => {
+      consulta.removeEventListener("change", alCruzarElUmbral);
+    };
+  }, []);
+
+  /*
+   * El cajón es cajón solo en angosto. En ancho el lateral es una columna
+   * que no tapa nada, así que no hay nada modal: ni `Escape` que cierre, ni
+   * contenido que dejar inerte.
+   */
+  const cajonAbierto = !modoAncho && navegacionVisible;
+
+  useEffect(() => {
+    if (!cajonAbierto) return;
+
+    function alTeclear(evento: KeyboardEvent) {
+      if (evento.key === "Escape") setNavegacionVisible(false);
+    }
+
+    window.addEventListener("keydown", alTeclear);
+    return () => {
+      window.removeEventListener("keydown", alTeclear);
+    };
+  }, [cajonAbierto]);
+
+  function alternarNavegacion() {
+    setNavegacionVisible((visible) => !visible);
+  }
+
+  function alElegirSeccion(evento: MouseEvent<HTMLElement>) {
+    /*
+     * En modo cajón, elegir una sección es navegar, y el cajón se cierra.
+     * Dejarlo abierto encima de la pantalla nueva —y con el contenido
+     * `inert` detrás— sería entregar la navegación a medias: la persona
+     * llegó a donde quería y tiene que cerrar algo para verlo.
+     *
+     * Se comprueba que el clic haya caído en un enlace: las secciones sin
+     * pantalla propia se dibujan como `<span>` y no llevan a ninguna parte,
+     * así que cerrar el cajón al tocarlas sería castigar una exploración.
+     */
+    if (!cajonAbierto) return;
+    if (!(evento.target instanceof Element)) return;
+    if (evento.target.closest("a") === null) return;
+    setNavegacionVisible(false);
+  }
+
   return (
-    <div className="esqueleto">
+    <div
+      className={`esqueleto${navegacionVisible ? "" : " esqueleto--sin-navegacion"}`}
+    >
       <header className="esqueleto__encabezado">
+        {/*
+          El encabezado **no** recibe `inert` con el cajón abierto, y el velo
+          tampoco lo tapa. Es deliberado y es el precio de que el botón sea
+          una de las tres formas de cerrar el cajón: un encabezado inerte es
+          un botón que no puede cerrar lo que abrió. La barra de arriba es lo
+          único del armazón que nunca se mueve ni se apaga.
+        */}
+        <button
+          type="button"
+          className="esqueleto__alternar"
+          aria-expanded={navegacionVisible}
+          aria-controls={ID_NAVEGACION}
+          onClick={alternarNavegacion}
+        >
+          <span className="esqueleto__alternar-glifo" aria-hidden="true">
+            ☰
+          </span>
+          Secciones
+        </button>
         <div className="marca">
           <span className="marca__sello" aria-hidden="true">
             ⚖
@@ -98,7 +238,27 @@ export function Esqueleto({ children, ruta }: Props) {
         <p className="esqueleto__lema">Seguimiento de procesos</p>
       </header>
 
-      <nav className="esqueleto__navegacion" aria-label="Secciones">
+      {/*
+        El velo. Es un botón de verdad —no un `div` con `onClick`— para que
+        «cerrar tocando afuera» exista también para el teclado y se anuncie
+        con nombre. En ancho lo oculta la consulta de contenedor de
+        `layout.css`, así que ahí no hay clic que interceptar.
+      */}
+      <button
+        type="button"
+        className="esqueleto__velo"
+        aria-label="Cerrar las secciones"
+        onClick={() => {
+          setNavegacionVisible(false);
+        }}
+      />
+
+      <nav
+        id={ID_NAVEGACION}
+        className="esqueleto__navegacion"
+        aria-label="Secciones"
+        onClick={alElegirSeccion}
+      >
         <ul className="navegacion__lista">
           {SECCIONES.map((seccion) => (
             <li key={seccion.rotulo}>
@@ -146,7 +306,16 @@ export function Esqueleto({ children, ruta }: Props) {
         </div>
       </nav>
 
-      <main className="esqueleto__contenido">{children}</main>
+      {/*
+        `inert` es la mitad que convierte el velo en overlay de verdad. Un
+        velo que solo oscurece deja el foco tabulando por debajo: se llega
+        con el teclado a controles que no se ven y que no se sabe que están
+        ahí. Y solo en modo cajón: en ancho el lateral no tapa nada, así que
+        dejar el contenido inerte sería una aplicación que no se puede usar.
+      */}
+      <main className="esqueleto__contenido" inert={cajonAbierto}>
+        {children}
+      </main>
     </div>
   );
 }
