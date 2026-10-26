@@ -296,6 +296,32 @@ commits ya están partidos por tarea.
   `title`—, pero al motivo no: «Sin identidad reconocida (acceso_no_conf…»
   pierde justamente la parte que dice qué hay que arreglar. El estado normal
   no salta nunca; el anormal se ve entero.
+### Verificación de control, corrida aparte de los escritores
+
+`pnpm lint` limpio · `pnpm typecheck` limpio · `pnpm test` 2175 en 42
+archivos · `pnpm test:e2e` **437 en verde, dos corridas completas seguidas**.
+
+La primera corrida completa falló una: `e2e/procesos.spec.ts:839`,
+«reordenar dos pendientes…», con el plan leído como arreglo vacío. **No era
+una regresión de esta tajada**, y se comprobó en vez de suponerse: la prueba
+pasa 8 de 8 en aislamiento, y leyendo el código la causa es unívoca —
+`planDibujado` usa `evaluateAll`, que no reintenta, y esa única llamada no
+tenía ninguna espera entre el `goto` y la aserción, al revés que las otras
+dos del mismo archivo. Arreglada con `expect.poll` en el commit `0dbdfb4`,
+aparte de esta tajada porque no es de esta tajada.
+
+Mirado además a mano en el navegador, medido y no supuesto: a 1920 el
+armazón mide 1408px con 256px de cada lado; el botón lleva el contenido de
+1092px a 1312px y el lateral a `x: -16`; a 390 el cajón abre sobre el
+contenido, el velo tapa, el `<main>` queda `inert` y «Salir» sigue
+alcanzable; cero desborde horizontal.
+
+Un aviso para el que venga a medir esto a mano con un navegador en segundo
+plano: **ahí `requestAnimationFrame` corre a ~1 fps**, así que una
+transición de 0.18s parece tardar un segundo y el cajón parece no abrirse.
+No es el cajón, es el instrumento. La medición que vale es la de la suite de
+Playwright, que corre con su propio navegador.
+
 - Próximo paso: las tres tareas están cerradas. Queda la deuda anotada abajo,
   que es de la puerta y no del armazón.
 
