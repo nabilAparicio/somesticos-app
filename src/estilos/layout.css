@@ -435,16 +435,33 @@
   pointer-events: none;
 }
 
+/*
+ * En ancho **no hay cajón**, y esto es la corrección de un defecto que se vio
+ * en pantalla antes que en ninguna prueba: «el sidebar vuela por encima de la
+ * pantalla».
+ *
+ * Lo que había era un `:not(.esqueleto--sin-navegacion)` sobre la regla de la
+ * columna, escrito para no repetir el estado cerrado. El ahorro era falso,
+ * porque **el estado cerrado no es el mismo en los dos modos**, y al fingir
+ * que sí pasaba esto: al colapsar en ancho el lateral perdía la regla de
+ * columna y caía de nuevo a la regla base, que es la del cajón. O sea que
+ * dejaba de ser una pista de la rejilla y se volvía, en un cuadro, un panel
+ * `position: absolute` con fondo blanco, sombra y `z-index: 20` —medido:
+ * `static`/sin sombra/`auto` abierto, `absolute`/con sombra/`20` colapsado—
+ * y recién entonces se deslizaba 180ms **por encima del contenido**. El
+ * estado final quedaba bien; el viaje era el defecto.
+ *
+ * Así que acá la columna se declara sin condición, y las tres líneas que
+ * matan el cajón —`transform`, `transition`, `visibility`— no son limpieza:
+ * son las que impiden que quede una animación corriendo entre dos esquemas
+ * de posicionamiento distintos, que es una cosa que el navegador no puede
+ * interpolar y resuelve saltando.
+ *
+ * Colapsar en ancho es **quitarle la pista a la rejilla**, y nada más. Sin
+ * vuelo, sin sombra y sin nada que atraviese la pantalla.
+ */
 @container armazon (min-width: 48rem) {
-  /*
-   * Abierto y con espacio: el cajón vuelve a ser una pista de la rejilla.
-   *
-   * El selector lleva el `:not()` porque el estado cerrado en ancho es el
-   * mismo que en angosto —el cajón corrido y fuera de alcance— y así se
-   * escribe una sola vez, en lugar de deshacer la columna y rehacer el
-   * cajón con un segundo juego de reglas que se desincroniza del primero.
-   */
-  .esqueleto:not(.esqueleto--sin-navegacion) .esqueleto__navegacion {
+  .esqueleto__navegacion {
     grid-area: navegacion;
     position: static;
     z-index: auto;
@@ -454,6 +471,25 @@
     border-inline-end: none;
     background: none;
     box-shadow: none;
+    transform: none;
+    transition: none;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  /*
+   * Colapsado en ancho: la pista ya no existe en `grid-template-areas`, así
+   * que el `display: none` es además lo que evita que el lateral se cuelgue
+   * de una pista implícita. Y es instantáneo a propósito: el contenido
+   * reflúye a su ancho nuevo de una vez, en vez de que algo cruce la
+   * pantalla para avisarlo.
+   *
+   * Gana por orden de aparición, no por especificidad: pesa lo mismo que la
+   * regla del cajón cerrado de más arriba (`.esqueleto--sin-navegacion
+   * .esqueleto__navegacion`) y viene después.
+   */
+  .esqueleto--sin-navegacion .esqueleto__navegacion {
+    display: none;
   }
 }
 

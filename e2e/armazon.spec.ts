@@ -306,6 +306,76 @@ test.describe("el lateral en ancho: columna que se saca y se devuelve (T-2)", ()
     ).toBeHidden();
   });
 
+  /*
+   * La prueba que faltaba, y la falta tiene nombre: **las de acá arriba miden
+   * el principio y el final, y el defecto estaba en el medio.**
+   *
+   * «El sidebar vuela por encima de la pantalla en pantallas grandes», dicho
+   * por quien usa esto. Y era cierto: la regla de la columna llevaba un
+   * `:not(.esqueleto--sin-navegacion)`, así que al colapsar en ancho el
+   * lateral perdía esa regla y caía a la base, que es la del cajón. En un
+   * cuadro pasaba de pista de la rejilla a panel `absolute` con fondo blanco,
+   * sombra y `z-index`, y recién ahí corría 180ms cruzando el contenido.
+   * Las dos pruebas de arriba pasaban en verde: el estado final era correcto.
+   *
+   * Por eso esto **no** afirma sobre la animación —muestrear cuadros es la
+   * receta de una prueba intermitente— sino sobre lo que la hace posible. Un
+   * lateral que en ancho nunca está fuera de flujo y nunca tiene una
+   * transición encendida no puede volar, se lo mire en el cuadro que se lo
+   * mire.
+   */
+  test("en ancho el lateral nunca es un panel que flota ni tiene qué animar", async ({
+    page,
+  }) => {
+    await page.setViewportSize(ANCHA);
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+
+    const comoSeDibuja = () =>
+      lateral(page).evaluate((nodo) => {
+        const estilo = getComputedStyle(nodo);
+        return {
+          position: estilo.position,
+          sombra: estilo.boxShadow,
+          duracion: estilo.transitionDuration,
+        };
+      });
+
+    // Control de hostilidad: con el lateral escondido de entrada, los tres
+    // valores de abajo darían bien sin probar nada. En ancho tiene que
+    // arrancar a la vista.
+    await expect(
+      lateral(page),
+      "en ancho el lateral tiene que arrancar visible o esta prueba no mide nada",
+    ).toBeVisible();
+
+    for (const momento of ["abierto", "colapsado"] as const) {
+      if (momento === "colapsado") await alternar(page).click();
+
+      const dibujo = await comoSeDibuja();
+
+      expect(
+        dibujo.position,
+        `en ancho y ${momento} el lateral está fuera de flujo` +
+          ` (\`position: ${dibujo.position}\`): eso es el cajón, y un cajón en` +
+          " ancho es el panel que cruza el contenido",
+      ).not.toBe("absolute");
+
+      expect(
+        dibujo.sombra,
+        `en ancho y ${momento} el lateral tiene sombra (${dibujo.sombra}):` +
+          " una columna de la rejilla no levanta, flota un panel",
+      ).toBe("none");
+
+      expect(
+        dibujo.duracion,
+        `en ancho y ${momento} el lateral tiene una transición encendida` +
+          ` (${dibujo.duracion}): colapsar es quitarle la pista a la rejilla,` +
+          " y entre dos esquemas de posicionamiento no hay nada que interpolar",
+      ).toBe("0s");
+    }
+  });
+
   test("en ancho el contenido nunca queda inerte", async ({ page }) => {
     await page.setViewportSize(ANCHA);
     await page.goto("/");
