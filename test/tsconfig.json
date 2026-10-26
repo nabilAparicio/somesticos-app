@@ -51,6 +51,7 @@
     "../src/pantallas/procesos/presentacion.ts",
     "../src/pantallas/procesos/notas.ts",
     "../src/pantallas/procesos/pendientes.ts",
+    "../src/pantallas/procesos/pestanas.ts",
     "../src/pantallas/procesos/gastos.ts",
     "../src/pantallas/cotizaciones/formulario.ts",
     "../src/pantallas/cotizaciones/generar.ts",

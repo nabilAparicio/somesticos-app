@@ -1,51 +1,59 @@
 /**
- * El detalle de un proceso, con su plan de trabajo.
+ * El detalle de un proceso: la cabecera fija, la tira de pestañas y el
+ * panel de la que esté abierta.
  *
- * Esta pantalla es el corazón del CRM, y su forma sale directo del diseño:
- * `proceso_etapa` es la **lista ordenada completa** del plan, no un puntero a
- * la etapa vigente, y «lo que viene» es la mitad del valor
- * (`docs/diseno.md` §6, «Etapas: plantilla y plan de trabajo»).
+ * Esta pantalla es el corazón del CRM, y hasta esta tajada era **una sola
+ * lista de trece secciones**: pendientes, estado, cumplido, lo que falta,
+ * plan, guardar como plantilla, anotar un pendiente, cerrados, gastos,
+ * línea de tiempo, bitácora y anotar. Las palabras del usuario, que son el
+ * criterio: «ahorita es difícil ver y configurar porque todo es como una
+ * gran lista grande».
  *
- * De ahí las dos secciones separadas y no una lista con marcas de color:
+ * La forma que salió de ahí **no** es «pestañas para todo», y la razón es
+ * una restricción que no se negocia: «los pendientes abiertos viven arriba
+ * del proceso, contados y a la vista» (`docs/diseno.md` §6). De ahí que
+ * esto sea una **cabecera fija más pestañas para el cuerpo**: el contador
+ * de cabos sueltos y la etapa vigente nunca quedan detrás de un clic.
  *
- *  - **Lo cumplido**, con la fecha de cada paso. Es el registro.
- *  - **Lo que falta**, que es editable. Es el plan.
+ * ## Qué quedó acá y por qué
  *
- * Si la pantalla mostrara solo la etapa actual, el dato estaría bien y la
- * tarea no habría cumplido su objetivo: el abogado abre un proceso para ver
- * qué tiene por delante, no solo dónde quedó.
+ * Este archivo es el **armador**: carga los datos, dibuja la cabecera y la
+ * navegación, y despacha al panel. Las cuatro pestañas viven en
+ * `PanelDeTrabajo`, `PanelDePendientes`, `PanelDeGastos` y
+ * `PanelDeHistorial`, y lo que no es React vive en los `.ts` puros de al
+ * lado (`plan.ts`, `pendientes.ts`, `notas.ts`, `plantilla.ts`,
+ * `presentacion.ts`, `pestanas.ts`).
  *
- * Tres botones y no uno, por lo mismo que en T-6: avanzar y guardar el plan
- * son dos escrituras distintas, y un botón que hace las dos tiene un estado
- * en el que hizo una.
+ * ## Todo el estado vive acá, y eso es una decisión, no una omisión
  *
- * T-8 le colgó la **línea de tiempo**: las notas del proceso, agrupadas por
- * la etapa donde ocurrieron y en el orden del plan. Va al final y no arriba,
- * y eso también sale del diseño: «los pendientes abiertos viven arriba del
- * proceso, contados y a la vista; las notas viven en la línea de tiempo»
- * (`docs/diseno.md` §6). A las cuarenta notas, nada sería visible si todo
- * compitiera por el mismo lugar.
+ * La regla sana es que el estado viva donde está el dato y no donde está
+ * el botón. Aplicada a esta pantalla da un resultado claro:
  *
- * T-9 le colgó los **pendientes**, y los puso donde el diseño manda: el
- * bloque contado va **arriba de todo**, inmediatamente debajo del título,
- * antes que los datos del proceso y antes que el plan. «Los pendientes
- * abiertos viven arriba del proceso, contados y a la vista» no es una
- * sugerencia de maquetado — es la diferencia entre que el documento que
- * falta se vea o se pierda otra vez, ahora con una aplicación encima
- * recordando que estaba anotado.
+ *  - **Lo que se carga del servidor** —el proceso, el plan, los
+ *    pendientes, el equipo, la línea de tiempo, la bitácora— es dato del
+ *    proceso, no de la pestaña. La cabecera cuenta los pendientes, así que
+ *    ni siquiera son de un panel solo.
+ *  - **Lo que una persona escribió y todavía no se guardó** —el borrador
+ *    del plan, el paso que se está tecleando, el pendiente a medio
+ *    redactar, la nota, el destino de la plantilla— también es del
+ *    proceso. El criterio de T-8 y T-9 es que un borrador se vacía **solo
+ *    si el servidor lo guardó**, porque perder el texto por un 403 sería
+ *    perderlo de verdad; un clic en otra pestaña no puede ser la excepción
+ *    a esa regla.
  *
- * Lo que se escribe y lo que se lee están separados, igual que con las
- * notas: arriba va lo que no se puede perder de vista; el formulario de
- * anotar y los pendientes ya cerrados van abajo, donde se los busca.
+ * Con eso, ningún panel tiene estado propio: son presentación con
+ * propiedades, y lo que un panel necesita avisarle a otro —que el plan
+ * avanzó y hay que recontar los pendientes— es una devolución explícita a
+ * una función de acá, no un estado global.
  *
- * T-14 le colgó **cerrar y reabrir**, y con eso la pantalla pasó a tener
- * dos modos. Con el proceso cerrado se apagan avanzar, guardar el plan y
- * anotar un pendiente, y **cada apagado dice por qué**: un botón gris sin
- * explicación se lee como una falla de la aplicación, no como una regla.
- * Siguen encendidos escribir una nota y cerrar un cabo suelto que haya
- * quedado, que son las dos salidas que vuelven la regla una guarda y no una
- * pared. Nada de esto es la guarda de verdad —ésa vive en el servidor y se
- * prueba por rechazo—: acá solo se evita que alguien la descubra apretando.
+ * ## La carga sigue siendo una sola, en paralelo
+ *
+ * Nada se pide por pestaña. La cabecera necesita los pendientes igual, y
+ * cargar al cambiar de pestaña pondría un «Consultando…» en cada clic para
+ * ahorrar lecturas que ya viajan juntas. El día que se mida lento se
+ * revisa; hoy no hay medición que lo pida. Lo que lo sostiene del lado de
+ * `App` es que la `key` de este componente es el identificador y **no** la
+ * pestaña: cambiar de pestaña no vuelve a montar nada.
  */
 import { useEffect, useState } from "react";
 
@@ -57,19 +65,19 @@ import type {
   TramoDeLineaDeTiempo,
   Usuario,
 } from "../../../worker/contract";
-import { VACIO, diaLegible, fechaLegible } from "../../formatos";
 import { Aviso } from "../../layout/Aviso";
 import { Enlace } from "../../layout/Enlace";
-import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
-import { Prosa } from "../../layout/Prosa";
-import { Rejilla } from "../../layout/Rejilla";
-import { mensajeDeFalla } from "../../mensajes";
-import { enlaceDe } from "../../ruteo";
+import { enlaceDe, type PestanaDeProceso } from "../../ruteo";
 import { cargarUsuarios } from "../../api/usuarios";
 import { cargarAreas } from "../catalogos/api";
-import { Bitacora, type EstadoDeBitacora } from "../Bitacora";
+import type { EstadoDeBitacora } from "../Bitacora";
+import { CabeceraDeProceso } from "./CabeceraDeProceso";
 import { PanelDeGastos } from "./PanelDeGastos";
+import { PanelDeHistorial } from "./PanelDeHistorial";
+import { PanelDePendientes } from "./PanelDePendientes";
+import { PanelDeTrabajo } from "./PanelDeTrabajo";
+import { PESTANAS_DEL_PROCESO } from "./pestanas";
 import {
   anotar,
   anotarPendiente,
@@ -86,65 +94,31 @@ import {
   textoDeProblema,
 } from "./api";
 import {
-  AVISO_PENDIENTE_NO_SE_REABRE,
   BORRADOR_DE_PENDIENTE_VACIO,
   aPeticionDePendiente,
-  estaVencido,
-  firmaDeAutor,
-  firmaDeCierre,
-  firmaDeResponsable,
   hoyEnPanama,
-  responsablesSeleccionables,
   separarPendientes,
   validarPendiente,
   type BorradorDePendiente,
 } from "./pendientes";
-import { tipoSeleccionables } from "./formulario";
 import {
-  AVISO_NOTA_INMUTABLE,
   BORRADOR_DE_NOTA_VACIO,
   aPeticionDeNota,
-  etapaVigenteDe,
-  opcionesDeEtapa,
-  resumenDeLaLinea,
   validarNota,
   type BorradorDeNota,
 } from "./notas";
 import {
-  AVISO_GUARDAR_NO_SINCRONIZA,
-  AVISO_TIPO_NUEVO_NO_REASIGNA,
   BORRADOR_DE_GUARDADO_VACIO,
   aPeticionDeGuardado,
-  resumenDelPlan,
   validarGuardado,
   type BorradorDeGuardado,
 } from "./plantilla";
-import {
-  AVISO_PLAN_PROPIO,
-  AYUDA_DE_CARA_AL_CLIENTE,
-  agregarPaso,
-  aPeticionDePlan,
-  esAlcanzado,
-  moverPaso,
-  planDe,
-  quitarPaso,
-  renombrarPaso,
-  separarPlan,
-  validarPlan,
-  type PasoDelPlan,
-} from "./plan";
-import {
-  ROTULO_DE_LA_COTIZACION,
-  avanceDe,
-  avisoDeProcesoCerrado,
-  estadoLegible,
-  proximoPaso,
-  resumenDeTrabajoVigente,
-  textoDeOrigen,
-} from "./presentacion";
+import { aPeticionDePlan, planDe, validarPlan, type PasoDelPlan } from "./plan";
+import { textoDelCierre } from "./presentacion";
 
 type Props = {
   readonly id: string;
+  readonly pestana: PestanaDeProceso;
 };
 
 type Estado =
@@ -152,134 +126,7 @@ type Estado =
   | { fase: "listo"; detalle: Detalle }
   | { fase: "problema"; mensaje: string };
 
-/**
- * Lo que se dice justo después de cerrar (T-14).
- *
- * El número va en la frase y no en una advertencia roja aparte: el cierre
- * con cabos sueltos **salió bien**, y es una decisión legítima del bufete.
- * Lo único que el sistema aporta es que no pase inadvertido.
- */
-function textoDelCierre(pendientesAbiertos: number): string {
-  if (pendientesAbiertos === 0) {
-    return "El proceso quedó cerrado, y no había ningún pendiente abierto.";
-  }
-
-  const cuantos =
-    pendientesAbiertos === 1
-      ? "1 pendiente sin cerrar"
-      : `${String(pendientesAbiertos)} pendientes sin cerrar`;
-
-  return (
-    `El proceso quedó cerrado con ${cuantos}. Siguen listados acá arriba y` +
-    " se pueden cerrar; lo que ya no se puede es anotar uno nuevo."
-  );
-}
-
-function Dato({ rotulo, valor }: { rotulo: string; valor: string }) {
-  return (
-    <div className="definicion">
-      <dt className="definicion__rotulo">{rotulo}</dt>
-      <dd className="definicion__valor">{valor}</dd>
-    </div>
-  );
-}
-
-/**
- * Un pendiente dibujado.
- *
- * El reparto visual sale de qué hace falta para que no se pierda:
- *
- *  - **El texto manda**, en el cuerpo del párrafo. Es lo que falta.
- *  - **El responsable va en una etiqueta**, destacada, porque es quien tiene
- *    que hacer algo. Si no hay ninguno, la etiqueta lo dice en vez de
- *    desaparecer: un hueco en blanco no se ve, y un pendiente que nadie
- *    tiene es justo el que se pierde.
- *  - **El autor va apagado**, abajo, con la fecha. Es contexto, no una
- *    tarea. Confundirlo con el responsable pierde la mitad del dato, así
- *    que no se parecen.
- *  - **Lo vencido se marca**, y solo si está abierto: en rojo sobre algo ya
- *    cerrado sería ruido sobre lo que no hay que hacer.
- */
-function Pendiente({
-  pendiente,
-  hoy,
-  trabajando,
-  alCerrar,
-}: {
-  readonly pendiente: PendienteDeProceso;
-  readonly hoy: string;
-  readonly trabajando: boolean;
-  readonly alCerrar?: (pendienteId: string) => void;
-}) {
-  const vencido = estaVencido(pendiente, hoy);
-  const cierre = firmaDeCierre(pendiente);
-
-  return (
-    <li
-      className={[
-        "pendiente",
-        vencido ? "pendiente--vencido" : "",
-        pendiente.cerradoEn !== null ? "pendiente--cerrado" : "",
-        // No hay modificador para «sin responsable»: ese estado ya se dice
-        // con la etiqueta apagada y con su frase, y una clase que ninguna
-        // regla usa y ninguna prueba puede matar es decoración, no defensa
-        // — la lección que T-8 dejó escrita sobre el `overflow-wrap`.
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      <p className="pendiente__texto">{pendiente.texto}</p>
-
-      <Fila>
-        <span
-          className={[
-            "etiqueta",
-            pendiente.responsableId === null ? "etiqueta--tenue" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-        >
-          {firmaDeResponsable(pendiente)}
-        </span>
-
-        {pendiente.venceEn !== null && (
-          <span className="pendiente__vence">
-            {vencido ? "Venció el " : "Vence el "}
-            {diaLegible(pendiente.venceEn)}
-          </span>
-        )}
-
-        {alCerrar !== undefined && (
-          <button
-            type="button"
-            className="boton boton--tenue"
-            disabled={trabajando}
-            onClick={() => {
-              alCerrar(pendiente.id);
-            }}
-          >
-            Cerrar
-          </button>
-        )}
-      </Fila>
-
-      <p className="pendiente__firma texto-apagado">
-        {firmaDeAutor(pendiente)} · {fechaLegible(pendiente.creadoEn)}
-        {pendiente.procesoEtapaNombre !== null && (
-          <> · nació en «{pendiente.procesoEtapaNombre}»</>
-        )}
-        {cierre !== null && (
-          <>
-            {" · "}
-            {cierre} · {fechaLegible(pendiente.cerradoEn ?? "")}
-          </>
-        )}
-      </p>
-    </li>
-  );
-}
-
-export function DetalleDeProceso({ id }: Props) {
+export function DetalleDeProceso({ id, pestana }: Props) {
   const [estado, setEstado] = useState<Estado>({ fase: "cargando" });
   const [plan, setPlan] = useState<PasoDelPlan[]>([]);
   const [pasoNuevo, setPasoNuevo] = useState("");
@@ -350,6 +197,11 @@ export function DetalleDeProceso({ id }: Props) {
      que la pantalla acaba de hacer es exactamente lo que la bitácora tiene
      que mostrar. El sello es el disparador: lo mueve `registrado()`, que
      se llama en el único lugar donde cada escritura termina bien.
+
+     El sello vive acá y no en la pestaña del historial a propósito: el
+     hecho que hay que registrar lo produce casi siempre otra pestaña
+     —avanzar una etapa, cerrar un cabo suelto— y un contador que viviera
+     dentro del panel que lo lee no se enteraría de nada.
      ------------------------------------------------------------------- */
   const [bitacora, setBitacora] = useState<EstadoDeBitacora>({
     fase: "cargando",
@@ -407,8 +259,8 @@ export function DetalleDeProceso({ id }: Props) {
    * Van juntos porque el desplegable de responsable no sirve sin el equipo
    * y el equipo no se usa en ninguna otra parte de esta pantalla. Ninguno
    * de los dos bloquea el detalle: un proceso sin pendientes se lee igual,
-   * y si el equipo no llega, el bloque de arriba —que es lo que no se puede
-   * perder— se dibuja lo mismo.
+   * y si el equipo no llega, la cuenta de la cabecera —que es lo que no se
+   * puede perder— se dibuja lo mismo.
    */
   useEffect(() => {
     const control = new AbortController();
@@ -605,7 +457,9 @@ export function DetalleDeProceso({ id }: Props) {
    * El borrador se vacía **solo si el servidor lo guardó**, por lo mismo que
    * con una nota: perder el texto por un 403 sería perderlo de verdad.
    */
-  async function escribirPendiente(etapas: readonly Detalle["etapas"][number][]) {
+  async function escribirPendiente(
+    etapas: readonly Detalle["etapas"][number][],
+  ) {
     if (trabajando) return;
 
     const previas = validarPendiente(pendiente, etapas, equipo);
@@ -714,943 +568,151 @@ export function DetalleDeProceso({ id }: Props) {
     );
   }
 
-  const { proceso } = estado.detalle;
-  const { cumplidas, pendientes: etapasPendientes } = separarPlan(
-    estado.detalle.etapas,
-  );
+  const { detalle } = estado;
+  const { proceso } = detalle;
   const { abiertos, cerrados } = separarPendientes(pendientes);
-  /* T-14: el proceso cerrado no acepta avance. La pantalla lo apaga y lo
-     dice; la guarda que vale es la del servidor, y ésta solo evita que
-     alguien descubra la regla apretando. */
   const terminado = proceso.estado === "cerrado";
-  const avisoDelCierre = avisoDeProcesoCerrado(proceso);
-  /* T-15: la cotización de la que nace, leída **una sola vez**. Es la que
-     decide si hay renglón, la que da el texto y la que da la dirección del
-     enlace: tres cosas de una lectura, que es lo que impide que la frase y
-     el botón puedan discrepar. */
-  const deCotizacion = proceso.cotizacionDeOrigen;
   /* El borrador tiene cambios sin guardar respecto de lo que está en la base. */
   const sinGuardar =
     JSON.stringify(aPeticionDePlan(plan)) !==
-    JSON.stringify(aPeticionDePlan(planDe(estado.detalle.etapas)));
+    JSON.stringify(aPeticionDePlan(planDe(detalle.etapas)));
+
+  /**
+   * El panel de la pestaña abierta.
+   *
+   * Es un `switch` sobre la unión y no un mapa de componentes: así el
+   * compilador obliga a cubrir las cuatro, y una pestaña nueva no puede
+   * quedar dibujando una pantalla en blanco.
+   */
+  function panel() {
+    switch (pestana) {
+      case "trabajo":
+        return (
+          <PanelDeTrabajo
+            detalle={detalle}
+            trabajando={trabajando}
+            plan={plan}
+            setPlan={setPlan}
+            sinGuardar={sinGuardar}
+            fallas={fallas}
+            avisoDelPlan={avisoDelPlan}
+            pasoNuevo={pasoNuevo}
+            setPasoNuevo={setPasoNuevo}
+            alAvanzar={() => {
+              void avanzar();
+            }}
+            alGuardar={() => {
+              void guardar();
+            }}
+            guardado={guardado}
+            setGuardado={setGuardado}
+            areas={areas}
+            fallasDelGuardado={fallasDelGuardado}
+            avisoDelGuardado={avisoDelGuardado}
+            alGuardarPlantilla={() => {
+              void guardarPlantilla(detalle.etapas.length);
+            }}
+          />
+        );
+      case "pendientes":
+        return (
+          <PanelDePendientes
+            abiertos={abiertos}
+            cerrados={cerrados}
+            hoy={hoy}
+            trabajando={trabajando}
+            terminado={terminado}
+            equipo={equipo}
+            pendiente={pendiente}
+            setPendiente={setPendiente}
+            fallasDelPendiente={fallasDelPendiente}
+            avisoDelPendiente={avisoDelPendiente}
+            alCerrar={(pendienteId) => {
+              void cerrar(pendienteId);
+            }}
+            alAnotar={() => {
+              void escribirPendiente(detalle.etapas);
+            }}
+          />
+        );
+      case "dinero":
+        /* T-10 · Los gastos reales y su saldo.
+           **Cuelgan del proceso y no de la cotización**, y eso no es
+           maquetado: el gasto tiene dos vidas en dos lugares
+           (`docs/diseno.md` §6). El estimado vive congelado en la
+           cotización; el real aparece meses después, acá, con su
+           comprobante.
+
+           Su `<h2>Gastos y anticipos</h2>` se conserva aunque la pestaña ya
+           se llame «Dinero», y no es un descuido: son dos textos distintos
+           —«Dinero» es el cajón, «Gastos y anticipos» es lo que hay
+           adentro—, el encabezado es el nombre accesible de la sección y el
+           ancla de su `aria-labelledby`, y los `<h3>` de saldo y
+           movimientos cuelgan de él. Quitarlo dejaría la región sin nombre
+           y ataría un componente propio al contenedor que hoy le toca. */
+        return <PanelDeGastos procesoId={id} />;
+      case "historial":
+        return (
+          <PanelDeHistorial
+            etapas={detalle.etapas}
+            tramos={tramos}
+            bitacora={bitacora}
+            trabajando={trabajando}
+            nota={nota}
+            setNota={setNota}
+            fallasDeLaNota={fallasDeLaNota}
+            avisoDeLaNota={avisoDeLaNota}
+            alAnotar={() => {
+              void escribirNota(detalle.etapas);
+            }}
+          />
+        );
+    }
+  }
 
   return (
     <Pila espacio="holgado">
-      <header>
-        <Pila espacio="ceñido">
-          <p className="texto-apagado">
-            <Enlace href={enlaceDe({ nombre: "procesos" })}>Procesos</Enlace>
-          </p>
-          <h1>{proceso.titulo}</h1>
-        </Pila>
-      </header>
+      <CabeceraDeProceso
+        proceso={proceso}
+        abiertos={abiertos}
+        hoy={hoy}
+        trabajando={trabajando}
+        avisoDelEstado={avisoDelEstado}
+        alCambiarEstado={(hacia) => {
+          void cambiarEstado(hacia);
+        }}
+      />
 
       {/* ---------------------------------------------------------------
-          T-9 · Los pendientes abiertos, contados y arriba de todo.
+          La tira de pestañas: enlaces de verdad, no el patrón `tablist`.
 
-          Va **antes** de los datos del proceso y antes del plan, y no es
-          una preferencia de maquetado: «los pendientes abiertos viven
-          arriba del proceso, contados y a la vista» (`docs/diseno.md` §6).
-          Un pendiente que hay que ir a buscar no cumple su única función.
-
-          Se dibuja también cuando no hay ninguno. Un bloque que aparece y
-          desaparece obliga a preguntarse si no hay pendientes o si no se
-          cargaron, y esa duda es exactamente lo que este bloque existe
-          para no tener.
+          Cada pestaña es **una dirección**, con su entrada en el historial
+          y su botón de atrás. `role="tablist"` le prometería a un lector de
+          pantalla que el contenido cambia en la misma página y que las
+          flechas recorren las pestañas, y las dos cosas serían mentira.
+          Lo que esto es, de verdad, es una navegación.
           --------------------------------------------------------------- */}
-      <section aria-labelledby="pendientes-abiertos" className="pendientes">
-        <Pila espacio="ceñido">
-          <Fila>
-            <h2 id="pendientes-abiertos">Pendientes</h2>
-            <span className="etiqueta" role="status">
-              {resumenDeTrabajoVigente(proceso, abiertos, hoy)}
-            </span>
-          </Fila>
-
-          {avisoDelPendiente !== null && (
-            <Aviso tono="error">{avisoDelPendiente}</Aviso>
-          )}
-
-          {abiertos.length > 0 && (
-            <ul className="pendientes__lista sin-viñetas">
-              {abiertos.map((suyo) => (
-                <Pendiente
-                  key={suyo.id}
-                  pendiente={suyo}
-                  hoy={hoy}
-                  trabajando={trabajando}
-                  alCerrar={(pendienteId) => {
-                    void cerrar(pendienteId);
-                  }}
-                />
-              ))}
-            </ul>
-          )}
-        </Pila>
-      </section>
-
-      <Rejilla minimo="16rem">
-        <dl className="definiciones">
-          <Dato rotulo="Cliente" valor={proceso.clienteNombre ?? VACIO} />
-          <Dato
-            rotulo="Tipo de proceso"
-            valor={proceso.tipoProcesoNombre ?? VACIO}
-          />
-          <Dato rotulo="Área" valor={proceso.areaNombre ?? VACIO} />
-        </dl>
-        <dl className="definiciones">
-          <Dato rotulo="Avance" valor={`${avanceDe(proceso)} etapas`} />
-          <Dato rotulo="Lo que viene" valor={proximoPaso(proceso)} />
-          {/* «Abierto el» y no «Abierto»: desde que al lado hay un «Estado»
-              que puede decir «Abierto», el rótulo a secas se leía como si
-              fuera el estado y no la fecha de apertura. */}
-          <Dato rotulo="Abierto el" valor={fechaLegible(proceso.abiertoEn)} />
-          <Dato rotulo="Estado" valor={estadoLegible(proceso)} />
-        </dl>
-      </Rejilla>
-
-      <p>
-        <Enlace href={enlaceDe({ nombre: "cliente", id: proceso.clienteId })}>
-          Ver el cliente
-        </Enlace>
-      </p>
-
-      {/* ---------------------------------------------------------------
-          T-15 · De dónde nace este proceso, y el botón para ir a verlo.
-
-          Va pegado al enlace del cliente porque son la misma clase de
-          cosa: las dos salidas de esta pantalla hacia la fila de la que
-          cuelga el proceso.
-
-          **La condición es una sola lectura**, y la frase y el enlace
-          cuelgan de ella. Colgar la frase de `textoDeOrigen` y el enlace
-          de `proceso.origen === "cotizacion"` serían dos guardas para el
-          mismo hecho: quitar cualquiera de las dos dejaría la pantalla
-          igual, y ninguna quedaría verificada.
-
-          Y sobre un proceso directo **no se dibuja nada**: ni el renglón,
-          ni un botón apagado. Un control apagado sigue siendo la promesa
-          de que hay algo detrás, y detrás no hay ninguna cotización —es
-          la lección de la unidad B de T-2—. */}
-      {deCotizacion !== null && (
-        <p className="texto-apagado">
-          {textoDeOrigen(proceso)}{" "}
-          <Enlace
-            href={enlaceDe({ nombre: "cotizacion", id: deCotizacion.id })}
-          >
-            {ROTULO_DE_LA_COTIZACION}
-          </Enlace>
-        </p>
-      )}
-
-      {/* ---------------------------------------------------------------
-          T-14 · Cerrar y reabrir.
-
-          Va acá, debajo de los datos del proceso y **arriba** del plan: lo
-          que decide si el plan se puede tocar tiene que leerse antes que
-          el plan. Abajo, junto a «Guardar plan», alguien descubriría la
-          regla recién al encontrar el botón apagado.
-
-          El aviso de la regla se dibuja solo con el proceso cerrado: con
-          el proceso abierto no hay nada que advertir, y un cartel
-          permanente se deja de leer.
-          --------------------------------------------------------------- */}
-      <section aria-labelledby="estado-del-proceso">
-        <Pila espacio="ceñido">
-          <h2 id="estado-del-proceso">Estado del proceso</h2>
-
-          {avisoDelCierre !== null && <Aviso>{avisoDelCierre}</Aviso>}
-
-          {avisoDelEstado !== null && (
-            <Aviso tono={avisoDelEstado.tono}>{avisoDelEstado.texto}</Aviso>
-          )}
-
-          <Fila>
-            <button
-              type="button"
-              className="boton"
-              disabled={trabajando}
-              onClick={() => {
-                void cambiarEstado(terminado ? "reabrir" : "cerrar");
-              }}
-            >
-              {terminado ? "Reabrir el proceso" : "Cerrar el proceso"}
-            </button>
-          </Fila>
-
-          <p className="campo__ayuda">
-            {terminado
-              ? "Reabrir no borra nada: el cierre anterior queda en la" +
-                " bitácora con quién lo hizo y cuándo."
-              : "Cerrar se puede deshacer reabriendo, y las dos cosas quedan" +
-                " firmadas. Si quedan pendientes abiertos no lo impide: la" +
-                " respuesta dice cuántos son."}
-          </p>
-        </Pila>
-      </section>
-
-      {avisoDelPlan !== null && <Aviso tono="error">{avisoDelPlan}</Aviso>}
-
-      {fallas.length > 0 && (
-        <Aviso tono="error">
-          <ul className="lista-de-fallas">
-            {fallas.map((falla) => (
-              <li key={`${falla.campo}-${falla.motivo}`}>
-                {mensajeDeFalla(falla.motivo)}
-              </li>
-            ))}
-          </ul>
-        </Aviso>
-      )}
-
-      {/* ---------------------------------------------------------------
-          Lo cumplido. Es el registro, así que no se edita desde acá: se
-          lee, con la fecha de cada paso.
-          --------------------------------------------------------------- */}
-      <section aria-labelledby="etapas-cumplidas">
-        <Pila>
-          <h2 id="etapas-cumplidas">Cumplido</h2>
-
-          {cumplidas.length === 0 ? (
-            <p className="texto-apagado">
-              Todavía no se cumplió ninguna etapa de este proceso.
-            </p>
-          ) : (
-            <ol className="plan plan--cumplido">
-              {cumplidas.map((etapa) => (
-                <li className="plan__paso plan__paso--cumplido" key={etapa.id}>
-                  <span className="plan__nombre">{etapa.nombre}</span>
-                  <span className="etiqueta">
-                    {fechaLegible(etapa.alcanzadaEn ?? "")}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </Pila>
-      </section>
-
-      {/* ---------------------------------------------------------------
-          Lo que falta. Es el plan, así que sí se edita.
-          --------------------------------------------------------------- */}
-      <section aria-labelledby="etapas-pendientes">
-        <Pila>
-          <h2 id="etapas-pendientes">Lo que falta</h2>
-
-          {etapasPendientes.length === 0 ? (
-            <Aviso>
-              {proceso.etapasTotales === 0
-                ? "Este proceso no tiene plan todavía. Se le pueden agregar" +
-                  " los pasos acá abajo."
-                : "No queda ninguna etapa por delante. Si falta trabajo, se" +
-                  " agrega un paso nuevo acá abajo."}
-            </Aviso>
-          ) : (
-            <ol className="plan plan--pendiente">
-              {etapasPendientes.map((etapa) => (
-                <li className="plan__paso" key={etapa.id}>
-                  <span className="plan__nombre">{etapa.nombre}</span>
-                </li>
-              ))}
-            </ol>
-          )}
-
-          <Fila>
-            <button
-              type="button"
-              className="boton boton--primario"
-              disabled={
-                trabajando || terminado || etapasPendientes.length === 0
-              }
-              onClick={() => {
-                void avanzar();
-              }}
-            >
-              {etapasPendientes.length === 0
-                ? "Nada por avanzar"
-                : `Avanzar a «${etapasPendientes[0].nombre}»`}
-            </button>
-          </Fila>
-          <p className="campo__ayuda">
-            Avanzar marca cumplida esa etapa con la fecha de hoy.{" "}
-            <strong>No se puede deshacer</strong>: lo que ya pasó se queda
-            registrado, igual que las notas que cuelguen de él.
-          </p>
-        </Pila>
-      </section>
-
-      {/* ---------------------------------------------------------------
-          El editor del plan.
-          --------------------------------------------------------------- */}
-      <section aria-labelledby="plan-de-trabajo">
-        <Pila>
-          <h2 id="plan-de-trabajo">Plan de trabajo</h2>
-
-          <Aviso>{AVISO_PLAN_PROPIO}</Aviso>
-          {terminado && <Aviso>{avisoDelCierre}</Aviso>}
-          <Prosa como="p" className="texto-apagado">
-            {AYUDA_DE_CARA_AL_CLIENTE}
-          </Prosa>
-
-          {plan.length === 0 ? (
-            <p className="texto-apagado">
-              El plan está vacío. Se arma agregando pasos acá abajo.
-            </p>
-          ) : (
-            <ol className="plantilla">
-              {plan.map((paso, indice) => {
-                const cumplido = esAlcanzado(paso);
-                const primeroPendiente = plan.findIndex(
-                  (otro) => !esAlcanzado(otro),
-                );
-
-                return (
-                  <li
-                    className={[
-                      "plantilla__etapa",
-                      cumplido ? "plantilla__etapa--cumplida" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    key={paso.id ?? `nuevo-${String(indice)}`}
-                  >
-                    <Fila>
-                      <div className="campo campo--crecer">
-                        <input
-                          className="campo__control"
-                          type="text"
-                          aria-label={`Etapa ${String(indice + 1)}`}
-                          value={paso.nombre}
-                          onChange={(evento) => {
-                            setPlan((anterior) =>
-                              renombrarPaso(
-                                anterior,
-                                indice,
-                                evento.target.value,
-                              ),
-                            );
-                          }}
-                        />
-                      </div>
-                      {cumplido ? (
-                        // Una etapa cumplida no se mueve ni se quita, así que
-                        // no se dibujan los botones apagados: se dice por qué.
-                        <span className="etiqueta">Cumplida</span>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="boton boton--tenue"
-                            aria-label={`Subir ${paso.nombre}`}
-                            disabled={indice <= primeroPendiente}
-                            onClick={() => {
-                              setPlan((anterior) =>
-                                moverPaso(anterior, indice, -1),
-                              );
-                            }}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            className="boton boton--tenue"
-                            aria-label={`Bajar ${paso.nombre}`}
-                            disabled={indice === plan.length - 1}
-                            onClick={() => {
-                              setPlan((anterior) =>
-                                moverPaso(anterior, indice, 1),
-                              );
-                            }}
-                          >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
-                            className="boton boton--tenue"
-                            aria-label={`Quitar ${paso.nombre}`}
-                            onClick={() => {
-                              setPlan((anterior) =>
-                                quitarPaso(anterior, indice),
-                              );
-                            }}
-                          >
-                            Quitar
-                          </button>
-                        </>
-                      )}
-                    </Fila>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-
-          <form
-            onSubmit={(evento) => {
-              evento.preventDefault();
-              setPlan((anterior) => agregarPaso(anterior, pasoNuevo));
-              setPasoNuevo("");
-            }}
-            noValidate
-          >
-            <Fila>
-              <div className="campo campo--crecer">
-                <label className="campo__rotulo" htmlFor="campo-paso">
-                  Etapa nueva
-                </label>
-                <input
-                  id="campo-paso"
-                  className="campo__control"
-                  type="text"
-                  value={pasoNuevo}
-                  onChange={(evento) => {
-                    setPasoNuevo(evento.target.value);
-                  }}
-                />
-              </div>
-              <button type="submit" className="boton">
-                Agregar etapa
-              </button>
-            </Fila>
-          </form>
-
-          <Fila>
-            <button
-              type="button"
-              className="boton boton--primario"
-              disabled={trabajando || terminado}
-              onClick={() => {
-                void guardar();
-              }}
-            >
-              {trabajando ? "Guardando…" : "Guardar plan"}
-            </button>
-            {sinGuardar && (
-              <span className="etiqueta" role="status">
-                Hay cambios sin guardar
-              </span>
-            )}
-          </Fila>
-        </Pila>
-      </section>
-
-      {/* ---------------------------------------------------------------
-          T-11 · Guardar el plan como plantilla.
-
-          El diseño señala este camino como el que más se va a usar para
-          crear una plantilla, y por eso está acá y no en Catálogos: se
-          acomodan los pasos sobre la marcha y, cuando queda bien, se
-          guarda para la próxima.
-          --------------------------------------------------------------- */}
-      <section aria-labelledby="guardar-plantilla">
-        <Pila>
-          <h2 id="guardar-plantilla">Guardar como plantilla</h2>
-
-          <Prosa como="p" className="texto-apagado">
-            {resumenDelPlan(estado.detalle.etapas.length, cumplidas.length)}
-          </Prosa>
-
-          {sinGuardar && (
-            <Aviso tono="error">
-              Hay cambios en el plan que no se guardaron todavía. Lo que se
-              copia a la plantilla es el plan guardado, así que conviene
-              apretar «Guardar plan» primero.
-            </Aviso>
-          )}
-
-          {fallasDelGuardado.length > 0 && (
-            <Aviso tono="error">
-              <ul className="lista-de-fallas">
-                {fallasDelGuardado.map((falla) => (
-                  <li key={`${falla.campo}-${falla.motivo}`}>
-                    {mensajeDeFalla(falla.motivo)}
-                  </li>
-                ))}
-              </ul>
-            </Aviso>
-          )}
-
-          {avisoDelGuardado !== null && (
-            <Aviso tono={avisoDelGuardado.tono}>{avisoDelGuardado.texto}</Aviso>
-          )}
-
-          <fieldset className="campo">
-            <legend className="campo__rotulo">A dónde se guarda</legend>
-
-            <label className="campo__casilla">
-              <input
-                type="radio"
-                name="destino-de-plantilla"
-                value="actualizar"
-                checked={guardado.destino === "actualizar"}
-                onChange={() => {
-                  setGuardado((anterior) => ({
-                    ...anterior,
-                    destino: "actualizar",
-                  }));
-                }}
-              />
-              <span>
-                {`Actualizar la plantilla de «${
-                  proceso.tipoProcesoNombre ?? VACIO
-                }»`}
-              </span>
-            </label>
-
-            <label className="campo__casilla">
-              <input
-                type="radio"
-                name="destino-de-plantilla"
-                value="nuevo"
-                checked={guardado.destino === "nuevo"}
-                onChange={() => {
-                  setGuardado((anterior) => ({
-                    ...anterior,
-                    destino: "nuevo",
-                  }));
-                }}
-              />
-              <span>Crear un tipo de proceso nuevo con este plan</span>
-            </label>
-          </fieldset>
-
-          {guardado.destino === "nuevo" && (
-            <Rejilla minimo="16rem">
-              <div className="campo">
-                <label className="campo__rotulo" htmlFor="campo-area-nueva">
-                  Área del tipo nuevo
-                  <span className="campo__marca"> · obligatorio</span>
-                </label>
-                <select
-                  id="campo-area-nueva"
-                  className="campo__control"
-                  value={guardado.areaId}
-                  onChange={(evento) => {
-                    setGuardado((anterior) => ({
-                      ...anterior,
-                      areaId: evento.target.value,
-                    }));
-                  }}
-                >
-                  <option value="">Elegir área…</option>
-                  {tipoSeleccionables(areas, guardado.areaId).map((area) => (
-                    <option key={area.id} value={area.id}>
-                      {area.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="campo">
-                <label className="campo__rotulo" htmlFor="campo-tipo-nuevo">
-                  Nombre del tipo nuevo
-                  <span className="campo__marca"> · obligatorio</span>
-                </label>
-                <input
-                  id="campo-tipo-nuevo"
-                  className="campo__control"
-                  type="text"
-                  value={guardado.nombre}
-                  onChange={(evento) => {
-                    setGuardado((anterior) => ({
-                      ...anterior,
-                      nombre: evento.target.value,
-                    }));
-                  }}
-                />
-              </div>
-            </Rejilla>
-          )}
-
-          {/* El aviso va acá, pegado al botón: es el momento en que alguien
-              acaba de ajustar un plan y supone que guardarlo sincroniza
-              todo. No en un manual. */}
-          <Aviso>{AVISO_GUARDAR_NO_SINCRONIZA}</Aviso>
-          {guardado.destino === "nuevo" && (
-            <Aviso>{AVISO_TIPO_NUEVO_NO_REASIGNA}</Aviso>
-          )}
-
-          <Fila>
-            <button
-              type="button"
-              className="boton"
-              disabled={trabajando}
-              onClick={() => {
-                void guardarPlantilla(estado.detalle.etapas.length);
-              }}
-            >
-              Guardar como plantilla
-            </button>
-          </Fila>
-        </Pila>
-      </section>
-
-      {/* ---------------------------------------------------------------
-          T-9 · Anotar un pendiente, y los que ya se cerraron.
-
-          Escribir va acá abajo y leer va arriba, igual que con las notas:
-          el formulario no puede empujar hacia abajo lo que hay que ver sin
-          buscarlo. Los cerrados también viven acá — ya no hay que hacer
-          nada con ellos, pero son el registro de lo que se persiguió.
-          --------------------------------------------------------------- */}
-      <section aria-labelledby="anotar-pendiente">
-        <Pila>
-          <h2 id="anotar-pendiente">Anotar un pendiente</h2>
-
-          <Prosa como="p" className="texto-apagado">
-            Un cabo suelto que no detiene el proceso pero no se puede
-            olvidar: «falta el certificado apostillado, pero el proceso
-            inicia». Mientras esté abierto se ve arriba, contado.
-          </Prosa>
-
-          {/* El botón apagado sin explicación hace pensar en un error de la
-              aplicación. Acá se dice la regla y la salida: la nota de más
-              abajo sigue abierta, y es donde va «el cliente volvió
-              preguntando por X». */}
-          {terminado && (
-            <Aviso>
-              Este proceso está cerrado, así que no se le anotan pendientes
-              nuevos: un pendiente es algo que sigue pasando, y acá ya no
-              está pasando nada. Lo que sí se puede es escribir una nota más
-              abajo, y cerrar los que hayan quedado abiertos. Si apareció
-              trabajo de verdad, hay que reabrir el proceso.
-            </Aviso>
-          )}
-
-          {fallasDelPendiente.length > 0 && (
-            <Aviso tono="error">
-              <ul className="lista-de-fallas">
-                {fallasDelPendiente.map((falla) => (
-                  <li key={`${falla.campo}-${falla.motivo}`}>
-                    {mensajeDeFalla(falla.motivo, falla.cuantos)}
-                  </li>
-                ))}
-              </ul>
-            </Aviso>
-          )}
-
-          <form
-            onSubmit={(evento) => {
-              evento.preventDefault();
-              void escribirPendiente(estado.detalle.etapas);
-            }}
-            noValidate
-          >
-            <Pila>
-              <div className="campo">
-                <label className="campo__rotulo" htmlFor="campo-pendiente">
-                  Qué falta
-                  <span className="campo__marca"> · obligatorio</span>
-                </label>
-                <textarea
-                  id="campo-pendiente"
-                  className="campo__control campo__control--prosa"
-                  rows={3}
-                  value={pendiente.texto}
-                  onChange={(evento) => {
-                    setPendiente((anterior) => ({
-                      ...anterior,
-                      texto: evento.target.value,
-                    }));
-                  }}
-                />
-              </div>
-
-              <Rejilla minimo="16rem">
-                <div className="campo">
-                  <label
-                    className="campo__rotulo"
-                    htmlFor="campo-responsable-pendiente"
-                  >
-                    Quién lo tiene que resolver
-                  </label>
-                  <select
-                    id="campo-responsable-pendiente"
-                    className="campo__control"
-                    value={pendiente.responsableId}
-                    onChange={(evento) => {
-                      setPendiente((anterior) => ({
-                        ...anterior,
-                        responsableId: evento.target.value,
-                      }));
-                    }}
-                  >
-                    {/* La opción vacía se NOMBRA, no se deja en blanco: un
-                        pendiente sin dueño es legítimo y es el que se
-                        pierde, así que hay que elegirlo a sabiendas. */}
-                    <option value="">Sin responsable asignado</option>
-                    {responsablesSeleccionables(
-                      equipo,
-                      pendiente.responsableId,
-                    ).map((persona) => (
-                      <option key={persona.id} value={persona.id}>
-                        {persona.nombre}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="campo__ayuda">
-                    Es distinto de quien lo anota: el sistema firma con tu
-                    identidad quién lo vio, y acá va quien lo persigue.
-                  </p>
-                </div>
-
-                <div className="campo">
-                  <label className="campo__rotulo" htmlFor="campo-vence">
-                    Vence el
-                  </label>
-                  <input
-                    id="campo-vence"
-                    className="campo__control"
-                    type="date"
-                    value={pendiente.venceEn}
-                    onChange={(evento) => {
-                      setPendiente((anterior) => ({
-                        ...anterior,
-                        venceEn: evento.target.value,
-                      }));
-                    }}
-                  />
-                  <p className="campo__ayuda">
-                    Opcional. Si se pasa, el pendiente se ve marcado arriba
-                    hasta que alguien lo cierre.
-                  </p>
-                </div>
-              </Rejilla>
-
-              <Fila>
-                <button
-                  type="submit"
-                  className="boton boton--primario"
-                  disabled={trabajando || terminado}
-                >
-                  {trabajando ? "Guardando…" : "Anotar pendiente"}
-                </button>
-              </Fila>
-            </Pila>
-          </form>
-
-          {/* El aviso va pegado a lo que se cierra, no en un manual: es el
-              momento en que alguien va a apretar «Cerrar». */}
-          <Aviso>{AVISO_PENDIENTE_NO_SE_REABRE}</Aviso>
-
-          <h3>Cerrados</h3>
-          {cerrados.length === 0 ? (
-            <p className="texto-apagado">
-              Todavía no se cerró ningún pendiente de este proceso.
-            </p>
-          ) : (
-            <ul className="pendientes__lista sin-viñetas">
-              {cerrados.map((suyo) => (
-                <Pendiente
-                  key={suyo.id}
-                  pendiente={suyo}
-                  hoy={hoy}
-                  trabajando={trabajando}
-                />
-              ))}
-            </ul>
-          )}
-        </Pila>
-      </section>
-
-      {/* ---------------------------------------------------------------
-          T-10 · Los gastos reales y su saldo.
-
-          Van acá: debajo del plan y de la plantilla, y **arriba** de la
-          línea de tiempo y de la bitácora. El criterio es el mismo con el
-          que T-9 puso los pendientes arriba de todo y T-8 las notas al
-          final: lo que hay que hacer algo con ello va antes que lo que se
-          lee cuando se lo busca. La plata de un trámite es lo primero, y
-          los dos registros —lo que alguien quiso dejar dicho y lo que hizo
-          el sistema— son lo último.
-
-          **Cuelga del proceso y no de la cotización**, y eso no es
-          maquetado: el gasto tiene dos vidas en dos lugares
-          (`docs/diseno.md` §6). El estimado vive congelado en la
-          cotización; el real aparece meses después, acá, con su
-          comprobante.
-
-          Es su propio componente con su propia petición, igual que la
-          bitácora: un fallo de la cuenta no puede dejar la pantalla del
-          proceso en blanco, y al revés, el panel se dibuja sin depender de
-          que el detalle haya traído nada más que el identificador.
-          --------------------------------------------------------------- */}
-      <PanelDeGastos procesoId={id} />
-
-      {/* ---------------------------------------------------------------
-          T-8 · La línea de tiempo.
-
-          Va al final: «los pendientes abiertos viven arriba del proceso,
-          contados y a la vista; las notas viven en la línea de tiempo»
-          (`docs/diseno.md` §6). Las notas se leen cuando se las busca; lo
-          que no se puede perder de vista es otra cosa.
-          --------------------------------------------------------------- */}
-      <section aria-labelledby="linea-de-tiempo">
-        <Pila>
-          <h2 id="linea-de-tiempo">Línea de tiempo</h2>
-
-          <Prosa como="p" className="texto-apagado">
-            {resumenDeLaLinea(tramos)}
-          </Prosa>
-
-          {tramos.length === 0 ? (
-            <p className="texto-apagado">
-              Las notas que se escriban van a aparecer acá, agrupadas por la
-              etapa en la que pasaron.
-            </p>
-          ) : (
-            <ol className="linea">
-              {tramos.map((tramo) => (
-                <li className="linea__tramo" key={tramo.etapa.id}>
-                  <h3 className="linea__etapa">
-                    {tramo.etapa.nombre}
-                    {tramo.etapa.alcanzadaEn !== null && (
-                      <span className="etiqueta">
-                        {fechaLegible(tramo.etapa.alcanzadaEn)}
-                      </span>
-                    )}
-                  </h3>
-                  <ul className="linea__notas sin-viñetas">
-                    {tramo.notas.map((suya) => (
-                      <li className="nota" key={suya.id}>
-                        <p className="nota__texto">{suya.texto}</p>
-                        <p className="nota__firma texto-apagado">
-                          {suya.autorNombre ?? VACIO} ·{" "}
-                          {fechaLegible(suya.creadaEn)}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ol>
-          )}
-        </Pila>
-      </section>
-
-      {/* ---------------------------------------------------------------
-          T-10 · La bitácora.
-
-          Debajo de la línea de tiempo y encima del formulario de anotar:
-          las dos se leen, y lo que se escribe va al final. Son dos
-          registros distintos y la pantalla los separa a propósito — la
-          línea de tiempo son hechos que alguien quiso dejar dichos, la
-          bitácora son hechos del sistema. Juntarlos haría que «Itzel
-          avanzó a Entrevista» y «el cliente quiere pago diferido» se
-          leyeran como lo mismo.
-          --------------------------------------------------------------- */}
-      <Bitacora estado={bitacora} id="bitacora-del-proceso" />
-
-      {/* ---------------------------------------------------------------
-          El formulario de la nota. Separado de la línea y debajo de ella,
-          para que escribir no empuje hacia abajo lo que hay que leer.
-          --------------------------------------------------------------- */}
-      <section aria-labelledby="anotar">
-        <Pila>
-          <h2 id="anotar">Anotar</h2>
-
-          {/* El aviso va ANTES del campo: enterarse de que no se puede
-              corregir recién después de escribir no sirve de nada. */}
-          <Aviso>{AVISO_NOTA_INMUTABLE}</Aviso>
-
-          {avisoDeLaNota !== null && <Aviso tono="error">{avisoDeLaNota}</Aviso>}
-
-          {fallasDeLaNota.length > 0 && (
-            <Aviso tono="error">
-              <ul className="lista-de-fallas">
-                {fallasDeLaNota.map((falla) => (
-                  <li key={`${falla.campo}-${falla.motivo}`}>
-                    {mensajeDeFalla(falla.motivo, falla.cuantos)}
-                  </li>
-                ))}
-              </ul>
-            </Aviso>
-          )}
-
-          <form
-            onSubmit={(evento) => {
-              evento.preventDefault();
-              void escribirNota(estado.detalle.etapas);
-            }}
-            noValidate
-          >
-            <Pila>
-              <div className="campo">
-                <label className="campo__rotulo" htmlFor="campo-nota">
-                  Qué pasó
-                  <span className="campo__marca"> · obligatorio</span>
-                </label>
-                <textarea
-                  id="campo-nota"
-                  className="campo__control campo__control--prosa"
-                  rows={4}
-                  value={nota.texto}
-                  onChange={(evento) => {
-                    setNota((anterior) => ({
-                      ...anterior,
-                      texto: evento.target.value,
-                    }));
-                  }}
-                />
-                <p className="campo__ayuda">
-                  Un hecho, como se lo contaría a alguien del bufete: «el
-                  cliente quiere pago diferido por meses».
-                </p>
-              </div>
-
-              <div className="campo">
-                <label className="campo__rotulo" htmlFor="campo-etapa-nota">
-                  Etapa en la que pasó
-                </label>
-                <select
-                  id="campo-etapa-nota"
-                  className="campo__control"
-                  value={nota.procesoEtapaId}
-                  disabled={estado.detalle.etapas.length === 0}
-                  onChange={(evento) => {
-                    setNota((anterior) => ({
-                      ...anterior,
-                      procesoEtapaId: evento.target.value,
-                    }));
-                  }}
-                >
-                  {/* La opción vacía no es «ninguna»: es «la vigente», que es
-                      lo que el servidor elige y lo que acierta casi siempre.
-                      Se la nombra para que nadie crea que dejó el campo sin
-                      llenar. */}
-                  <option value="">
-                    {etapaVigenteDe(estado.detalle.etapas) === null
-                      ? "Este proceso no tiene etapas todavía"
-                      : `Donde está el proceso hoy: «${
-                          etapaVigenteDe(estado.detalle.etapas)?.nombre ?? ""
-                        }»`}
-                  </option>
-                  {opcionesDeEtapa(estado.detalle.etapas).map((opcion) => (
-                    <option key={opcion.id} value={opcion.id}>
-                      {opcion.etiqueta}
-                    </option>
-                  ))}
-                </select>
-                <p className="campo__ayuda">
-                  Una nota se ancla a la etapa donde ocurrió el hecho, que no
-                  siempre es donde está el proceso cuando alguien se sienta a
-                  escribirlo.
-                </p>
-              </div>
-
-              <Fila>
-                <button
-                  type="submit"
-                  className="boton boton--primario"
-                  disabled={trabajando}
-                >
-                  {trabajando ? "Guardando…" : "Anotar"}
-                </button>
-              </Fila>
-            </Pila>
-          </form>
-        </Pila>
-      </section>
+      <nav className="pestanas" aria-label="Partes del proceso">
+        <ul className="pestanas__lista sin-viñetas">
+          {PESTANAS_DEL_PROCESO.map((entrada) => (
+            <li key={entrada.clave}>
+              <Enlace
+                className="pestanas__item"
+                href={enlaceDe({
+                  nombre: "proceso",
+                  id,
+                  pestana: entrada.clave,
+                })}
+                ariaCurrent={entrada.clave === pestana ? "page" : undefined}
+              >
+                {entrada.rotulo}
+              </Enlace>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      {panel()}
     </Pila>
   );
 }

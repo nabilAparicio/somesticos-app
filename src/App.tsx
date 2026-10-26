@@ -71,8 +71,16 @@ function pantallaDe(ruta: Ruta) {
           clienteId={ruta.clienteId ?? undefined}
         />
       );
+    // La `key` es el identificador **y no la pestaña**. Cambiar de pestaña
+    // tiene que dejar la pantalla montada: si la pestaña entrara en la
+    // `key`, cada clic volvería a pedir el proceso, los pendientes, la
+    // línea de tiempo y la bitácora, pondría un «Consultando…» en el medio
+    // y tiraría el pendiente a medio escribir. Pasar del proceso A al B sí
+    // vuelve a montar, por lo mismo que en clientes.
     case "proceso":
-      return <DetalleDeProceso key={ruta.id} id={ruta.id} />;
+      return (
+        <DetalleDeProceso key={ruta.id} id={ruta.id} pestana={ruta.pestana} />
+      );
     case "cotizaciones":
       return <ListaDeCotizaciones />;
     case "cotizacion-nueva":

@@ -236,6 +236,34 @@ export function resumenDeTrabajoVigente(
       )} pendientes sin cerrar.`;
 }
 
+/**
+ * Lo que se dice justo después de cerrar (T-14).
+ *
+ * El número va en la frase y no en una advertencia roja aparte: el cierre
+ * con cabos sueltos **salió bien**, y es una decisión legítima del bufete.
+ * Lo único que el sistema aporta es que no pase inadvertido.
+ *
+ * Vive acá desde que la cabecera se separó del cuerpo: era una función de
+ * datos a texto enterrada en un `.tsx`, donde solo se podía afirmar
+ * montando un navegador para leer lo que ya era una cadena.
+ */
+export function textoDelCierre(pendientesAbiertos: number): string {
+  if (pendientesAbiertos === 0) {
+    return "El proceso quedó cerrado, y no había ningún pendiente abierto.";
+  }
+
+  const cuantos =
+    pendientesAbiertos === 1
+      ? "1 pendiente sin cerrar"
+      : `${String(pendientesAbiertos)} pendientes sin cerrar`;
+
+  return (
+    `El proceso quedó cerrado con ${cuantos}. Siguen listados en la pestaña` +
+    " de pendientes y se pueden cerrar; lo que ya no se puede es anotar uno" +
+    " nuevo."
+  );
+}
+
 /* ==========================================================================
    T-15 · De dónde viene cada proceso
 

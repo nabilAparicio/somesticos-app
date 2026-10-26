@@ -94,7 +94,10 @@ const PANTALLAS: Record<Ruta["nombre"], Destino> = {
     ruta: { nombre: "proceso-nuevo", clienteId: null },
     bajo: "/procesos",
   },
-  proceso: { ruta: { nombre: "proceso", id: "x" }, bajo: "/procesos" },
+  proceso: {
+    ruta: { nombre: "proceso", id: "x", pestana: "trabajo" },
+    bajo: "/procesos",
+  },
 
   cotizaciones: { ruta: { nombre: "cotizaciones" }, bajo: "/cotizaciones" },
   "cotizacion-nueva": {

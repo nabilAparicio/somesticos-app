@@ -936,7 +936,11 @@ por el
                   {abiertos.procesos.map((proceso) => (
                     <li key={proceso.id}>
                       <Enlace
-                        href={enlaceDe({ nombre: "proceso", id: proceso.id })}
+                        href={enlaceDe({
+                          nombre: "proceso",
+                          id: proceso.id,
+                          pestana: "trabajo",
+                        })}
                       >
                         {proceso.titulo}
                       </Enlace>

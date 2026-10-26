@@ -270,7 +270,11 @@ export function DetalleDeCliente({ id }: Props) {
                   <tr key={proceso.id}>
                     <th scope="row">
                       <Enlace
-                        href={enlaceDe({ nombre: "proceso", id: proceso.id })}
+                        href={enlaceDe({
+                          nombre: "proceso",
+                          id: proceso.id,
+                          pestana: "trabajo",
+                        })}
                       >
                         {proceso.titulo}
                       </Enlace>

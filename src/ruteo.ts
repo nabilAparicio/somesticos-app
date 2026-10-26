@@ -14,6 +14,20 @@
  * resto del proyecto, sin montar un navegador para comparar cadenas.
  */
 
+/**
+ * Las cuatro partes del detalle de un proceso.
+ *
+ * Vive acá y no en la carpeta de la pantalla porque es parte de la ruta:
+ * `src/ruteo.ts` es el módulo que no depende de nadie, y la tira de pestañas
+ * de la pantalla importa de acá y no al revés. Dar vuelta esa flecha haría
+ * que el ruteo —que se prueba sin DOM— dependiera de un `.tsx`.
+ */
+export type PestanaDeProceso =
+  | "trabajo"
+  | "pendientes"
+  | "dinero"
+  | "historial";
+
 export type Ruta =
   | { nombre: "inicio" }
   | { nombre: "banco-de-pruebas" }
@@ -34,7 +48,29 @@ export type Ruta =
    * segundo canal del que acordarse.
    */
   | { nombre: "proceso-nuevo"; clienteId: string | null }
-  | { nombre: "proceso"; id: string }
+  /**
+   * El detalle del proceso, con **la pestaña adentro de la ruta**.
+   *
+   * La pestaña no es estado local y la razón es lo que se pierde si lo
+   * fuera: no se podría mandar el enlace a la parte de plata de un
+   * expediente, recargar devolvería al principio y el botón de atrás no
+   * volvería a la pestaña anterior.
+   *
+   * **«Trabajo» se escribe como un valor y no como una ausencia**, aunque
+   * su dirección no lleve segmento. Si el valor por defecto fuera `null`,
+   * cada lugar que lee la pestaña tendría que volver a decidir qué
+   * significa esa ausencia —la tira que marca la activa, el armador que
+   * despacha al panel, el que arma el enlace—, y tres decisiones del mismo
+   * hecho son tres que pueden discrepar. Con el valor explícito, el único
+   * que sabe que «trabajo» se escribe sin segmento es el par
+   * `resolverRuta`/`enlaceDe`, que la prueba de ida y vuelta ata.
+   *
+   * Y por eso `/procesos/{id}/trabajo` cae en «desconocida», como cualquier
+   * otro tercer segmento que no se reconoce: cada pantalla tiene **una**
+   * dirección. Dos direcciones para lo mismo es la que alguien copia y la
+   * que después nadie mantiene.
+   */
+  | { nombre: "proceso"; id: string; pestana: PestanaDeProceso }
   /**
    * Las cuatro pantallas de la cotización (tajada 2, T-2).
    *
@@ -99,6 +135,30 @@ const TIPOS_PROCESO = "tipos-proceso";
 /** La raíz de las pantallas de proceso (T-7). */
 const PROCESOS = "procesos";
 
+/**
+ * Las tres pestañas que llevan segmento propio.
+ *
+ * «Trabajo» no está en la lista, y ésa es toda la regla: es la que se abre
+ * en `/procesos/{id}`, así que no tiene segmento que reconocer ni que
+ * escribir.
+ *
+ * **La clave de la pestaña y su segmento son el mismo literal a
+ * propósito.** Una tabla de ida y otra de vuelta serían dos tablas que hay
+ * que acordarse de mantener iguales; con un solo literal, `enlaceDe` lo
+ * escribe y `pestanaDe` lo reconoce sin que exista un lugar donde puedan
+ * discrepar.
+ */
+const PESTANAS_CON_SEGMENTO = [
+  "pendientes",
+  "dinero",
+  "historial",
+] as const satisfies readonly PestanaDeProceso[];
+
+/** El tercer segmento de un proceso, si es una pestaña y no cualquier cosa. */
+function pestanaDe(segmento: string): PestanaDeProceso | null {
+  return PESTANAS_CON_SEGMENTO.find((clave) => clave === segmento) ?? null;
+}
+
 /** La raíz de las pantallas de cotización (tajada 2, T-2). */
 const COTIZACIONES = "cotizaciones";
 
@@ -162,18 +222,37 @@ function resolverCatalogos(segmentos: string[], pathname: string): Ruta {
  * Las tres pantallas de proceso. Aparte, por la misma razón que las de
  * catálogo: un tercer árbol dentro de `resolverRuta` es donde un `return` cae
  * en la rama equivocada sin que se note.
+ *
+ * La rama de tres segmentos es la de las pestañas del detalle. Un segmento
+ * que no es ninguna de ellas cae en «desconocida», que es el mismo criterio
+ * con el que `/cotizaciones/{id}/modulos` no resuelve a una pantalla vacía:
+ * lo que no existe tiene que decirse, no dibujarse en blanco.
  */
 function resolverProcesos(segmentos: string[], pathname: string): Ruta {
   const desconocida: Ruta = { nombre: "desconocida", ruta: pathname };
 
   if (segmentos.length === 1) return { nombre: "procesos" };
-  if (segmentos.length !== 2) return desconocida;
-  if (segmentos[1] === NUEVO) {
-    return { nombre: "proceso-nuevo", clienteId: null };
+
+  if (segmentos.length === 2) {
+    if (segmentos[1] === NUEVO) {
+      return { nombre: "proceso-nuevo", clienteId: null };
+    }
+
+    const id = identificador(segmentos[1]);
+    return id === null
+      ? desconocida
+      : { nombre: "proceso", id, pestana: "trabajo" };
   }
 
-  const id = identificador(segmentos[1]);
-  return id === null ? desconocida : { nombre: "proceso", id };
+  if (segmentos.length === 3) {
+    const id = identificador(segmentos[1]);
+    if (id === null) return desconocida;
+
+    const pestana = pestanaDe(segmentos[2]);
+    if (pestana !== null) return { nombre: "proceso", id, pestana };
+  }
+
+  return desconocida;
 }
 
 /**
@@ -290,8 +369,15 @@ export function enlaceDe(ruta: Ruta): string {
       return ruta.clienteId === null
         ? `/${PROCESOS}/${NUEVO}`
         : `/clientes/${encodeURIComponent(ruta.clienteId)}/${PROCESOS}/${NUEVO}`;
-    case "proceso":
-      return `/${PROCESOS}/${encodeURIComponent(ruta.id)}`;
+    case "proceso": {
+      const detalle = `/${PROCESOS}/${encodeURIComponent(ruta.id)}`;
+      // «Trabajo» es la dirección a secas. El segmento no se escribe ni
+      // aunque el valor exista: es el único lugar del programa que sabe
+      // cómo se deletrea el defecto.
+      return ruta.pestana === "trabajo"
+        ? detalle
+        : `${detalle}/${ruta.pestana}`;
+    }
     case "cotizaciones":
       return `/${COTIZACIONES}`;
     case "cotizacion-nueva":

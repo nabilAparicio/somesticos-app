@@ -56,6 +56,7 @@ import {
   resumenDelPlan,
   validarGuardado,
 } from "../src/pantallas/procesos/plantilla";
+import { PESTANAS_DEL_PROCESO } from "../src/pantallas/procesos/pestanas";
 import {
   avanceDe,
   avisoDeProcesoCerrado,
@@ -69,6 +70,7 @@ import {
   proximoPaso,
   resumenDeTrabajoVigente,
   textoDeOrigen,
+  textoDelCierre,
 } from "../src/pantallas/procesos/presentacion";
 import { enlaceDe, resolverRuta } from "../src/ruteo";
 
@@ -529,6 +531,7 @@ describe("las rutas de procesos", () => {
     expect(resolverRuta(`/procesos/${PROCESO_ID}`)).toEqual({
       nombre: "proceso",
       id: PROCESO_ID,
+      pestana: "trabajo",
     });
   });
 
@@ -544,7 +547,10 @@ describe("las rutas de procesos", () => {
       { nombre: "procesos" } as const,
       { nombre: "proceso-nuevo", clienteId: null } as const,
       { nombre: "proceso-nuevo", clienteId: CLIENTE_ID } as const,
-      { nombre: "proceso", id: PROCESO_ID } as const,
+      { nombre: "proceso", id: PROCESO_ID, pestana: "trabajo" } as const,
+      { nombre: "proceso", id: PROCESO_ID, pestana: "pendientes" } as const,
+      { nombre: "proceso", id: PROCESO_ID, pestana: "dinero" } as const,
+      { nombre: "proceso", id: PROCESO_ID, pestana: "historial" } as const,
     ];
 
     for (const ruta of rutas) {
@@ -568,9 +574,84 @@ describe("las rutas de procesos", () => {
   });
 
   it("escapa el identificador en el enlace", () => {
-    expect(enlaceDe({ nombre: "proceso", id: "a b/c" })).toBe(
-      "/procesos/a%20b%2Fc",
-    );
+    expect(
+      enlaceDe({ nombre: "proceso", id: "a b/c", pestana: "trabajo" }),
+    ).toBe("/procesos/a%20b%2Fc");
+    expect(
+      enlaceDe({ nombre: "proceso", id: "a b/c", pestana: "dinero" }),
+    ).toBe("/procesos/a%20b%2Fc/dinero");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Las cuatro pestañas del detalle
+// ---------------------------------------------------------------------------
+
+describe("las pestañas del detalle de un proceso", () => {
+  it("cada pestaña tiene su dirección, y «Trabajo» es la de por defecto", () => {
+    const direcciones = {
+      trabajo: `/procesos/${PROCESO_ID}`,
+      pendientes: `/procesos/${PROCESO_ID}/pendientes`,
+      dinero: `/procesos/${PROCESO_ID}/dinero`,
+      historial: `/procesos/${PROCESO_ID}/historial`,
+    } as const;
+
+    for (const [pestana, direccion] of Object.entries(direcciones)) {
+      expect(resolverRuta(direccion)).toEqual({
+        nombre: "proceso",
+        id: PROCESO_ID,
+        pestana,
+      });
+    }
+  });
+
+  /**
+   * `trabajo` **no** es un segmento que exista.
+   *
+   * Es la única forma de que cada pantalla tenga una dirección y nada más:
+   * si `/procesos/{id}/trabajo` resolviera, habría dos direcciones para lo
+   * mismo, y la que alguien copiara sería la que después nadie mantiene.
+   */
+  it("«trabajo» no se escribe como segmento: esa dirección no existe", () => {
+    expect(resolverRuta(`/procesos/${PROCESO_ID}/trabajo`)).toEqual({
+      nombre: "desconocida",
+      ruta: `/procesos/${PROCESO_ID}/trabajo`,
+    });
+  });
+
+  it("un tercer segmento inventado cae en «desconocida», no en una pestaña", () => {
+    for (const inventado of ["gastos", "Dinero", "plan", "pendiente"]) {
+      expect(resolverRuta(`/procesos/${PROCESO_ID}/${inventado}`)).toEqual({
+        nombre: "desconocida",
+        ruta: `/procesos/${PROCESO_ID}/${inventado}`,
+      });
+    }
+  });
+
+  /**
+   * La tira que se dibuja y el resolvedor, atados.
+   *
+   * Sin esto, agregar una pestaña a `PESTANAS_DEL_PROCESO` y olvidarse de
+   * `resolverRuta` daría un enlace que lleva a «esa página no existe», y el
+   * único que se enteraría sería quien lo apretara.
+   */
+  it("las cuatro de la tira construyen una dirección que vuelve a ellas", () => {
+    expect(PESTANAS_DEL_PROCESO.map((entrada) => entrada.rotulo)).toEqual([
+      "Trabajo",
+      "Pendientes",
+      "Dinero",
+      "Historial",
+    ]);
+
+    for (const entrada of PESTANAS_DEL_PROCESO) {
+      const ruta = {
+        nombre: "proceso",
+        id: PROCESO_ID,
+        pestana: entrada.clave,
+      } as const;
+
+      expect(resolverRuta(enlaceDe(ruta))).toEqual(ruta);
+    }
   });
 });
 
@@ -831,6 +912,26 @@ describe("el aviso de que el proceso está cerrado", () => {
     // Y las dos salidas, que es lo que lo vuelve un aviso y no una pared.
     expect(texto).toContain("nota");
     expect(texto).toContain("reabr");
+  });
+});
+
+/**
+ * Lo que se dice después de cerrar bajó a `presentacion.ts` al partir la
+ * pantalla en cabecera y pestañas: era una función de datos a texto
+ * enterrada en un `.tsx`, y acá se puede afirmar sin montar un navegador.
+ */
+describe("lo que se dice al cerrar un proceso", () => {
+  it("sin cabos sueltos lo dice, en vez de callar el cero", () => {
+    expect(textoDelCierre(0)).toBe(
+      "El proceso quedó cerrado, y no había ningún pendiente abierto.",
+    );
+  });
+
+  it("con cabos sueltos dice cuántos y dónde siguen estando", () => {
+    expect(textoDelCierre(1)).toContain("1 pendiente sin cerrar");
+    expect(textoDelCierre(3)).toContain("3 pendientes sin cerrar");
+    // Y dice dónde buscarlos, que desde las pestañas ya no es «acá arriba».
+    expect(textoDelCierre(3)).toContain("pestaña de pendientes");
   });
 });
 

@@ -163,7 +163,11 @@ export function FormularioDeProceso({ clienteId }: Props) {
       return;
     }
 
-    navegarA(enlaceDe({ nombre: "proceso", id: resultado.valor.id }));
+    navegarA(enlaceDe({
+        nombre: "proceso",
+        id: resultado.valor.id,
+        pestana: "trabajo",
+      }));
   }
 
   const volver =

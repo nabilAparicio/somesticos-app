@@ -304,7 +304,12 @@ async function conLaCuentaCargada(page: Page, banco: Banco = {}): Promise<void> 
   );
 }
 
-const DETALLE_URL = `/procesos/${PROCESO_ID}`;
+/**
+ * El panel de gastos vive en la pestaña «Dinero» desde que el detalle del
+ * proceso se partió en cuatro. Cambió el camino, no la pantalla: todo lo
+ * que estas pruebas miden está dibujado por el mismo `PanelDeGastos`.
+ */
+const DETALLE_URL = `/procesos/${PROCESO_ID}/dinero`;
 
 /** La sección de gastos, para no repetir el selector en cada prueba. */
 function panel(page: Page) {

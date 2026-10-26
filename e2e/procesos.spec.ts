@@ -570,7 +570,23 @@ async function conProcesosCargados(page: Page): Promise<void> {
   );
 }
 
+/**
+ * Las cuatro direcciones del detalle.
+ *
+ * El detalle dejó de ser una página y pasó a ser cuatro, cada una con su
+ * dirección: la pestaña vive en la URL y no en estado local, así que se
+ * puede abrir en frío, compartir y volver con el botón de atrás.
+ * «Trabajo» es la de por defecto y por eso no lleva segmento — y
+ * `/procesos/{id}/trabajo`, que sería la segunda dirección de la misma
+ * pantalla, no existe.
+ *
+ * Las pruebas que antes entraban al detalle y buscaban una sección que hoy
+ * vive en otra pestaña **cambiaron de camino, no se borraron**.
+ */
 const DETALLE_URL = `/procesos/${PROCESO_ID}`;
+const PENDIENTES_URL = `${DETALLE_URL}/pendientes`;
+const DINERO_URL = `${DETALLE_URL}/dinero`;
+const HISTORIAL_URL = `${DETALLE_URL}/historial`;
 
 /** Los nombres del editor del plan, en el orden en que están dibujados. */
 function planDibujado(page: Page): Promise<string[]> {
@@ -647,7 +663,17 @@ test.describe("los procesos del bufete", () => {
       page.getByRole("button", { name: `Avanzar a «${PENDIENTE_1}»` }),
     ).toBeEnabled();
 
-    await expect(page.getByText(/No se puede deshacer/i)).toBeVisible();
+    // El aviso se busca **dentro de la sección donde está el botón**, y no
+    // en la página entera. Suelto, era una prueba de que la frase existe en
+    // algún lado: habría pasado con la advertencia al final de todo, que es
+    // donde nadie la lee justo antes de apretar. Y con el detalle partido
+    // en pestañas, también habría pasado con el botón en una pestaña y el
+    // aviso en otra.
+    await expect(
+      page
+        .getByRole("region", { name: "Lo que falta" })
+        .getByText(/No se puede deshacer/i),
+    ).toBeVisible();
   });
 
   test("una etapa cumplida no ofrece quitar ni mover; una pendiente sí", async ({
@@ -840,41 +866,95 @@ test.describe("los procesos del bufete", () => {
   // T-9 · Pendientes
   // -------------------------------------------------------------------------
 
-  test("el bloque de pendientes abiertos va ARRIBA, contado y sin buscarlo", async ({
+  /**
+   * **La medición que decide si el rediseño respetó el diseño.**
+   *
+   * `docs/diseno.md` §6: «los pendientes abiertos viven arriba del proceso,
+   * contados y a la vista». Con el cuerpo repartido en pestañas, «a la
+   * vista» quiere decir una cosa muy concreta y comprobable: que no exista
+   * ninguna pestaña desde la que haya que apretar algo para enterarse de
+   * cuántos cabos sueltos hay y en qué etapa va el trámite. Por eso esto
+   * recorre las cuatro y no se conforma con la primera.
+   */
+  test("la cuenta y la etapa vigente se ven desde las CUATRO pestañas, sin apretar nada", async ({
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
 
-    // La cuenta, que es lo que se lee de un vistazo: dos abiertos de los
-    // tres que hay, y uno de ellos vencido.
-    await expect(
-      page.getByText("2 pendientes abiertos, 1 vencido."),
-    ).toBeVisible();
+    for (const direccion of [
+      DETALLE_URL,
+      PENDIENTES_URL,
+      DINERO_URL,
+      HISTORIAL_URL,
+    ]) {
+      await page.goto(direccion);
 
-    // Y arriba de verdad: antes de los datos del proceso y antes del plan.
-    // Es la única parte del criterio que una prueba de datos no puede ver.
-    const posicion = await page.evaluate(() => {
-      const bloque = document.querySelector(".pendientes");
-      const cumplido = document.querySelector("#etapas-cumplidas");
-      if (bloque === null || cumplido === null) return "falta alguno";
-      return (bloque.compareDocumentPosition(cumplido) &
-        Node.DOCUMENT_POSITION_FOLLOWING) !==
-        0
-        ? "arriba"
-        : "abajo";
-    });
-    expect(posicion).toBe("arriba");
+      // La cuenta, que es lo que se lee de un vistazo: dos abiertos de los
+      // tres que hay, y uno de ellos vencido.
+      await expect(
+        page.getByText("2 pendientes abiertos, 1 vencido."),
+      ).toBeVisible();
+
+      // Y la etapa vigente, que es la otra mitad de lo que la cabecera
+      // existe para no esconder.
+      await expect(
+        page.getByRole("definition").filter({ hasText: PENDIENTE_1 }),
+      ).toBeVisible();
+
+      // Arriba de verdad: antes de la tira de pestañas, no debajo de ella.
+      // Es la parte del criterio que una prueba de datos no puede ver.
+      const posicion = await page.evaluate(() => {
+        const cuenta = document.querySelector('[role="status"]');
+        const tira = document.querySelector(".pestanas");
+        if (cuenta === null || tira === null) return "falta alguno";
+        return (cuenta.compareDocumentPosition(tira) &
+          Node.DOCUMENT_POSITION_FOLLOWING) !==
+          0
+          ? "arriba"
+          : "abajo";
+      });
+      expect(posicion, `en ${direccion}`).toBe("arriba");
+    }
+  });
+
+  test("la pestaña de pendientes lleva el detalle, y solo el de los abiertos", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(PENDIENTES_URL);
 
     // Solo los abiertos en el bloque: el cerrado no compite por ese lugar.
     await expect(page.locator(".pendientes .pendiente")).toHaveCount(2);
+  });
+
+  test("sin ninguno abierto, el bloque dice qué pasa en vez de quedar vacío", async ({
+    page,
+  }) => {
+    // La cuenta que llenaba este bloque se fue a la cabecera, así que sobre
+    // un proceso sin cabos sueltos quedaba un recuadro con borde y nada
+    // adentro. Un bloque mudo obliga a preguntarse si no hay pendientes o
+    // si no se cargaron, que es la duda que este bloque existe para no
+    // tener (`docs/diseno.md` §6).
+    await conProcesosCargados(page);
+    await page.route(
+      `**/api/procesos/${PROCESO_ID}/pendientes`,
+      async (ruta) => {
+        await ruta.fulfill({ status: 200, json: { pendientes: [] } });
+      },
+    );
+    await page.goto(PENDIENTES_URL);
+
+    const bloque = page.locator(".pendientes");
+    await expect(bloque).toContainText("Ninguno abierto");
+    // Y dice la salida, como el resto de los vacíos de esta pantalla.
+    await expect(bloque).toContainText("se anota acá abajo");
   });
 
   test("un pendiente vencido se ve distinto, y lo DICE además de marcarlo", async ({
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(PENDIENTES_URL);
 
     await expect(page.locator(".pendiente--vencido")).toHaveCount(1);
     // La marca visual acompaña una frase: un estado que solo existe como
@@ -894,7 +974,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(PENDIENTES_URL);
 
     const conDueno = page.locator(".pendiente", {
       hasText: "verificación domiciliaria",
@@ -922,7 +1002,7 @@ test.describe("los procesos del bufete", () => {
     // etapa y este pendiente, abierto, sigue colgando de la primera. Nadie
     // lo copió ni lo movió.
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(PENDIENTES_URL);
 
     await expect(page.locator(".pendiente--vencido")).toContainText(
       `nació en «${CUMPLIDA_1}»`,
@@ -931,7 +1011,7 @@ test.describe("los procesos del bufete", () => {
 
   test("cerrar redibuja con lo que contestó el servidor", async ({ page }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(PENDIENTES_URL);
 
     await page.locator(".pendiente--vencido").getByRole("button", {
       name: "Cerrar",
@@ -948,7 +1028,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(PENDIENTES_URL);
 
     await expect(page.getByRole("button", { name: /Reabrir/i })).toHaveCount(
       0,
@@ -970,7 +1050,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(PENDIENTES_URL);
 
     await expect(
       page.locator("#campo-responsable-pendiente option"),
@@ -1056,7 +1136,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(PENDIENTES_URL);
 
     await page.getByRole("button", { name: "Anotar pendiente" }).click();
 
@@ -1073,7 +1153,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     await expect(
       page.getByRole("heading", { name: "Línea de tiempo" }),
@@ -1098,7 +1178,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     // Dos autores distintos en la misma etapa: la autoría es por nota, no
     // por proceso.
@@ -1115,7 +1195,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     // La inmutabilidad, vista desde afuera: los botones no existen.
     await expect(
@@ -1133,7 +1213,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     const etapa = page.getByLabel("Etapa en la que pasó");
 
@@ -1158,7 +1238,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     await page.getByLabel("Qué pasó").fill(NOTA_NUEVA);
     await page
@@ -1176,7 +1256,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     await page
       .getByRole("button", { name: "Anotar", exact: true })
@@ -1194,7 +1274,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     const hechos = page.locator(".bitacora__frase");
     await expect(hechos).toHaveCount(BITACORA.entradas.length);
@@ -1247,7 +1327,7 @@ test.describe("los procesos del bufete", () => {
     // «20 hechos registrados» de un proceso que tiene sesenta y cuatro.
     await conProcesosCargados(page);
     await conHistoriaLarga(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     await expect(page.locator(".bitacora__frase")).toHaveCount(20);
     await expect(
@@ -1263,7 +1343,7 @@ test.describe("los procesos del bufete", () => {
   test("el control de abajo dice cuántos trae y los trae", async ({ page }) => {
     await conProcesosCargados(page);
     await conHistoriaLarga(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     const pedidos: string[] = [];
     page.on("request", (peticion) => {
@@ -1304,7 +1384,7 @@ test.describe("los procesos del bufete", () => {
   }) => {
     await conProcesosCargados(page);
     await conHistoriaLarga(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     await page
       .getByRole("button", { name: "Ver 20 hechos más antiguos" })
@@ -1332,10 +1412,16 @@ test.describe("los procesos del bufete", () => {
     // Una lista que arranca el martes pasado se lee como la historia
     // completa si nadie dice que no lo es.
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
+    // Dentro de la bitácora, no en la página. Suelta, la afirmación sólo
+    // decía que la frase estaba escrita en alguna parte: habría pasado con
+    // la advertencia en la línea de tiempo de al lado, que es el otro
+    // registro y el que **sí** está completo.
     await expect(
-      page.getByText(/lo que pasó antes no está acá/i),
+      page
+        .getByRole("region", { name: "Bitácora" })
+        .getByText(/lo que pasó antes no está acá/i),
     ).toBeVisible();
   });
 
@@ -1343,7 +1429,7 @@ test.describe("los procesos del bufete", () => {
     page,
   }) => {
     await conProcesosCargados(page);
-    await page.goto(DETALLE_URL);
+    await page.goto(HISTORIAL_URL);
 
     // La bitácora la escribe el sistema al hacer otra cosa. Que no haya un
     // solo control adentro de la lista es la mitad visible de esa regla; la
@@ -1361,6 +1447,12 @@ test.describe("los procesos del bufete", () => {
     // Lo que la pantalla acaba de hacer es exactamente lo que la bitácora
     // tiene que mostrar: si no se recargara, el hecho recién ocurrido sería
     // el único que no se ve.
+    //
+    // Y se mide **desde la pestaña de trabajo**, que es donde está el botón
+    // de avanzar, aunque la bitácora se dibuje en la de historial: el sello
+    // que dispara la recarga vive en el armador y no en el panel que la
+    // lee. Si viviera adentro del panel, nada de lo que pasa en las otras
+    // tres pestañas llegaría nunca a la bitácora.
     await conProcesosCargados(page);
     await page.goto(DETALLE_URL);
 
@@ -1465,11 +1557,19 @@ test.describe("los procesos del bufete", () => {
     await expect(
       page.getByRole("button", { name: "Guardar plan" }),
     ).toBeDisabled();
+
+    // Las otras dos reglas viven en otras pestañas, y se llega a ellas por
+    // la tira: cambiar de pestaña **no vuelve a montar la pantalla**, así
+    // que el cierre que se acaba de hacer sigue en pie sin que el servidor
+    // —que en estas pruebas contesta siempre «abierto»— lo vuelva a decir.
+    // Si la `key` de la pantalla incluyera la pestaña, esto fallaría acá.
+    await page.getByRole("link", { name: "Pendientes", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Anotar pendiente" }),
     ).toBeDisabled();
 
     // Anotar una nota sigue habilitado: la historia no se congela.
+    await page.getByRole("link", { name: "Historial", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Anotar", exact: true }),
     ).toBeEnabled();
@@ -1494,32 +1594,64 @@ test.describe("los procesos del bufete", () => {
     });
   }
 
-  for (const ancho of ANCHOS) {
-    test(`a ${String(ancho)}px de ancho, sobre el detalle de un proceso`, async ({
-      page,
-    }) => {
-      await conProcesosCargados(page);
-      await page.setViewportSize({ width: ancho, height: ALTO });
-      await page.goto(DETALLE_URL);
-      await page.evaluate(() => document.fonts.ready);
-      await page.locator(".plantilla__etapa .campo__control").first().waitFor();
-      // La línea de tiempo llega en su propia petición, y es la que trae el
-      // token largo sin espacios. Medir antes de que esté dibujada haría que
-      // el criterio pasara sin haber visto el contenido hostil, que es la
-      // vacuidad que T-4 descubrió en su propia rejilla.
-      await page.locator(".nota__texto").last().waitFor();
-      // Y los pendientes, que desde T-9 traen el otro token hostil y están
-      // en el bloque de arriba. Medir antes de que estén dibujados sería la
-      // misma vacuidad por segunda vez.
-      await page.locator(".pendiente__texto").first().waitFor();
+  /*
+   * El detalle dejó de ser una página, así que el criterio de §9 deja de
+   * medirse en una.
+   *
+   * El bucle de antes esperaba las tres clases de contenido hostil en la
+   * misma pantalla —el editor del plan, el token largo de una nota y el de
+   * un pendiente—. Repartidas en pestañas, esa espera no se cumpliría
+   * nunca en ninguna, así que cada pestaña se mide **donde vive su
+   * contenido hostil**, en los mismos nueve anchos. Medir una sola y dar
+   * las otras por buenas sería dejar sin cubrir justo lo que se movió.
+   *
+   * «Dinero» no está acá: su panel es `PanelDeGastos`, que tiene sus
+   * propias nueve medidas en `e2e/gastos.spec.ts`. Repetirlas sería una
+   * segunda cuenta del mismo contenido.
+   */
+  const PESTANAS_MEDIDAS = [
+    {
+      nombre: "en la pestaña de trabajo",
+      direccion: DETALLE_URL,
+      hostil: ".plantilla__etapa .campo__control",
+    },
+    {
+      // Desde T-9 los pendientes traen un token sin espacios, y el bloque
+      // va arriba del todo.
+      nombre: "en la pestaña de pendientes",
+      direccion: PENDIENTES_URL,
+      hostil: ".pendiente__texto",
+    },
+    {
+      // La línea de tiempo llega en su propia petición y es la que trae el
+      // token largo sin espacios. Medir antes de que esté dibujada haría
+      // que el criterio pasara sin haber visto el contenido hostil, que es
+      // la vacuidad que T-4 descubrió en su propia rejilla.
+      nombre: "en la pestaña de historial",
+      direccion: HISTORIAL_URL,
+      hostil: ".nota__texto",
+    },
+  ] as const;
 
-      const desborde = await medirDesborde(page);
+  for (const pestana of PESTANAS_MEDIDAS) {
+    for (const ancho of ANCHOS) {
+      test(`a ${String(ancho)}px de ancho, ${pestana.nombre}`, async ({
+        page,
+      }) => {
+        await conProcesosCargados(page);
+        await page.setViewportSize({ width: ancho, height: ALTO });
+        await page.goto(pestana.direccion);
+        await page.evaluate(() => document.fonts.ready);
+        await page.locator(pestana.hostil).first().waitFor();
 
-      expect(
-        desborde.scrollWidth,
-        porQueSeSale(ancho, desborde),
-      ).toBeLessThanOrEqual(desborde.clientWidth);
-    });
+        const desborde = await medirDesborde(page);
+
+        expect(
+          desborde.scrollWidth,
+          porQueSeSale(ancho, desborde),
+        ).toBeLessThanOrEqual(desborde.clientWidth);
+      });
+    }
   }
 
   // T-17 · el control de «ver más viejos» es contenido nuevo, y el rótulo
@@ -1534,7 +1666,7 @@ test.describe("los procesos del bufete", () => {
       await conProcesosCargados(page);
       await conHistoriaLarga(page);
       await page.setViewportSize({ width: ancho, height: ALTO });
-      await page.goto(DETALLE_URL);
+      await page.goto(HISTORIAL_URL);
       await page.evaluate(() => document.fonts.ready);
       await page
         .getByRole("button", { name: "Ver 20 hechos más antiguos" })
@@ -1548,6 +1680,187 @@ test.describe("los procesos del bufete", () => {
       ).toBeLessThanOrEqual(desborde.clientWidth);
     });
   }
+});
+
+/* ==========================================================================
+   Las cuatro pestañas del proceso
+
+   Lo que `test/procesos-ui.spec.ts` ya prueba sin navegador es **qué
+   dirección corresponde a qué pestaña**. Lo que sólo se puede comprobar
+   acá es que esas direcciones estén cableadas a la pantalla: que cada una
+   se abra en frío, que el botón de atrás funcione porque la pestaña es una
+   entrada del historial y no un estado escondido, que la abierta se
+   distinga de las otras tres, y que la tira sea alcanzable con el teclado.
+   ========================================================================== */
+
+/** Un encabezado que sólo existe en una de las cuatro pestañas. */
+const MARCAS = [
+  { pestana: "Trabajo", direccion: DETALLE_URL, marca: "Plan de trabajo" },
+  {
+    pestana: "Pendientes",
+    direccion: PENDIENTES_URL,
+    marca: "Anotar un pendiente",
+  },
+  { pestana: "Dinero", direccion: DINERO_URL, marca: "Gastos y anticipos" },
+  {
+    pestana: "Historial",
+    direccion: HISTORIAL_URL,
+    marca: "Línea de tiempo",
+  },
+] as const;
+
+test.describe("las pestañas del proceso", () => {
+  test("cada pestaña se abre por su dirección, en frío, y trae lo suyo", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+
+    for (const abierta of MARCAS) {
+      await page.goto(abierta.direccion);
+
+      await expect(
+        page.getByRole("heading", { name: abierta.marca, exact: true }),
+      ).toBeVisible();
+
+      // Y **sólo** lo suyo. La cuenta se toma con `.count()` y no con
+      // `toHaveCount(0)`: el segundo reintenta hasta que se cumpla, así que
+      // sobre una pantalla que todavía no dibujó nada da cero y pasa. Acá
+      // el cero recién tiene sentido después de que la marca de arriba esté
+      // visible, que es la prueba de que la pestaña ya está dibujada.
+      for (const otra of MARCAS) {
+        if (otra.pestana === abierta.pestana) continue;
+
+        const cuantas = await page
+          .getByRole("heading", { name: otra.marca, exact: true })
+          .count();
+        expect(cuantas, `«${otra.marca}» en ${abierta.direccion}`).toBe(0);
+      }
+    }
+  });
+
+  test("el h1 sigue siendo el título del proceso, no el de la pestaña", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+
+    for (const abierta of MARCAS) {
+      await page.goto(abierta.direccion);
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+        PROCESO.titulo,
+      );
+    }
+  });
+
+  test("el botón de atrás vuelve a la pestaña anterior", async ({ page }) => {
+    // Es la razón por la que la pestaña vive en la URL y no en un `useState`:
+    // con estado local esto no tendría ni siquiera adónde volver.
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    await page.getByRole("link", { name: "Pendientes", exact: true }).click();
+    await expect(page).toHaveURL(PENDIENTES_URL);
+
+    await page.getByRole("link", { name: "Dinero", exact: true }).click();
+    await expect(page).toHaveURL(DINERO_URL);
+
+    await page.goBack();
+    await expect(page).toHaveURL(PENDIENTES_URL);
+    await expect(
+      page.getByRole("heading", { name: "Anotar un pendiente", exact: true }),
+    ).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL(DETALLE_URL);
+    await expect(
+      page.getByRole("heading", { name: "Plan de trabajo", exact: true }),
+    ).toBeVisible();
+  });
+
+  test("la abierta se distingue, y no sólo por el color", async ({ page }) => {
+    await conProcesosCargados(page);
+    await page.goto(PENDIENTES_URL);
+
+    const tira = page.locator(".pestanas");
+    const abierta = tira.getByRole("link", {
+      name: "Pendientes",
+      exact: true,
+    });
+    const cerrada = tira.getByRole("link", { name: "Dinero", exact: true });
+
+    await expect(abierta).toHaveAttribute("aria-current", "page");
+    expect(await cerrada.getAttribute("aria-current")).toBeNull();
+
+    // Y la diferencia se ve sin distinguir tonos: la abierta pesa más y
+    // lleva una barra debajo. Un estado que sólo existe como color no
+    // existe para todo el mundo.
+    const pesos = await Promise.all(
+      [abierta, cerrada].map((enlace) =>
+        enlace.evaluate((nodo) => ({
+          peso: getComputedStyle(nodo).fontWeight,
+          barra: getComputedStyle(nodo).borderBottomColor,
+        })),
+      ),
+    );
+
+    expect(Number(pesos[0].peso)).toBeGreaterThan(Number(pesos[1].peso));
+    expect(pesos[0].barra).not.toBe(pesos[1].barra);
+  });
+
+  test("las cuatro se alcanzan con el tabulador, en su orden", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    const tira = page.locator(".pestanas");
+    await tira.getByRole("link", { name: "Trabajo", exact: true }).focus();
+
+    for (const siguiente of ["Pendientes", "Dinero", "Historial"]) {
+      await page.keyboard.press("Tab");
+      await expect(
+        tira.getByRole("link", { name: siguiente, exact: true }),
+      ).toBeFocused();
+    }
+  });
+
+  /**
+   * La tira **no** usa el patrón `tablist` de ARIA, y es a propósito.
+   *
+   * `role="tab"` le promete a un lector de pantalla que el contenido
+   * cambia en la misma página y que las flechas recorren las pestañas.
+   * Acá cada pestaña es una dirección con su historial, así que esa
+   * promesa sería falsa — y una promesa falsa deja peor a quien confía en
+   * ella que no prometer nada. Lo que hay es una navegación de enlaces.
+   */
+  test("no promete el patrón `tablist`, que no cumpliría", async ({ page }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    // Primero, que la tira esté dibujada: sin esto las cuentas de abajo
+    // serían cero sobre una pantalla vacía.
+    await expect(
+      page.locator(".pestanas").getByRole("link"),
+    ).toHaveCount(4);
+
+    for (const rol of ["tablist", "tab", "tabpanel"] as const) {
+      expect(await page.locator(`[role="${rol}"]`).count(), rol).toBe(0);
+    }
+
+    await expect(
+      page.getByRole("navigation", { name: "Partes del proceso" }),
+    ).toBeVisible();
+  });
+
+  test("una tercera parte inventada no dibuja una pantalla en blanco", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(`${DETALLE_URL}/gastos`);
+
+    await expect(
+      page.getByRole("heading", { name: "Esa página no existe" }),
+    ).toBeVisible();
+  });
 });
 
 /* ==========================================================================

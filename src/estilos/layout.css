@@ -398,3 +398,53 @@
 .catalogo__historia > td {
   background: var(--color-superficie-tenue);
 }
+
+/* ======================================================================
+   La tira de pestañas de una pantalla con varias partes
+
+   Son **enlaces**, no el patrón `tablist` de ARIA: cada pestaña es una
+   dirección distinta, con su historial. Por eso el selector del activo es
+   `[aria-current="page"]`, el mismo que usa la navegación del armazón, y
+   no un `[aria-selected]`.
+
+   La barra inferior se declara **transparente en todos** y solo cambia de
+   color en el activo. Sin eso, el renglón entero salta dos píxeles cada vez
+   que alguien cambia de pestaña, que es la clase de movimiento que después
+   nadie sabe de dónde sale.
+
+   Y el activo se distingue por **tres cosas a la vez** —barra, peso y
+   tinta— y no solo por el color: una pestaña abierta que solo se diferencia
+   en el tono no existe para quien no distingue ese tono.
+   ====================================================================== */
+
+.pestanas {
+  min-width: 0;
+  border-block-end: var(--borde-fino);
+}
+
+.pestanas__lista {
+  /* Franja unidimensional que envuelve, como la del armazón: cuatro
+     rótulos entran en un renglón en casi todo ancho, y a 320px bajan. */
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-3xs) var(--espacio-xs);
+  min-width: 0;
+}
+
+.pestanas__item {
+  display: block;
+  padding: var(--espacio-2xs) var(--espacio-xs);
+  border-block-end: 2px solid transparent;
+  color: var(--color-tinta);
+  text-decoration: none;
+}
+
+.pestanas__item:hover {
+  background: var(--color-superficie-tenue);
+}
+
+.pestanas__item[aria-current="page"] {
+  border-block-end-color: var(--color-acento);
+  color: var(--color-acento);
+  font-weight: var(--peso-fuerte);
+}
