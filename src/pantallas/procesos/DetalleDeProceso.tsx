@@ -113,7 +113,13 @@ import {
   validarGuardado,
   type BorradorDeGuardado,
 } from "./plantilla";
-import { aPeticionDePlan, planDe, validarPlan, type PasoDelPlan } from "./plan";
+import {
+  aPeticionDePlan,
+  hayCambiosSinGuardar,
+  planDe,
+  validarPlan,
+  type PasoDelPlan,
+} from "./plan";
 import { textoDelCierre } from "./presentacion";
 
 type Props = {
@@ -324,10 +330,36 @@ export function DetalleDeProceso({ id, pestana }: Props) {
     };
   }, [id, sello]);
 
-  /** Lo que el servidor dejó guardado manda sobre lo que la pantalla creía. */
+  /**
+   * Lo que el servidor dejó guardado manda sobre lo que la pantalla creía.
+   *
+   * **Reemplaza el borrador**, y eso sólo es correcto después de una
+   * escritura que tocó el plan: guardar, que acaba de persistir ese mismo
+   * borrador, y avanzar, que desde T-2 se niega mientras haya cambios sin
+   * guardar. Las dos llegan acá con el borrador y lo guardado ya iguales,
+   * así que el reemplazo no pierde nada de nadie.
+   */
   function asentar(detalle: Detalle) {
     setEstado({ fase: "listo", detalle });
     setPlan(planDe(detalle.etapas));
+    registrado();
+  }
+
+  /**
+   * Lo mismo, para una escritura que **no toca las etapas**.
+   *
+   * Cerrar y reabrir contestan el detalle entero, pero el plan que traen es
+   * el que ya estaba: lo único que cambió es el estado del proceso. Pasarlo
+   * por `asentar` tiraba el borrador de alguien que estaba editando la
+   * lista y apretó «Cerrar el proceso» —una escritura que no guardó una
+   * sola de esas etapas—, y eso es la regla de T-8 y T-9 al revés: un
+   * borrador se vacía **sólo si el servidor lo guardó**.
+   *
+   * Con la lista única de T-2 el defecto además se ve: lo que desaparecía
+   * era la lista entera que la persona tenía delante.
+   */
+  function asentarSinTocarElBorrador(detalle: Detalle) {
+    setEstado({ fase: "listo", detalle });
     registrado();
   }
 
@@ -541,7 +573,7 @@ export function DetalleDeProceso({ id, pestana }: Props) {
     }
 
     const { proceso: cambiado, etapas, pendientesAbiertos } = resultado.valor;
-    asentar({ proceso: cambiado, etapas });
+    asentarSinTocarElBorrador({ proceso: cambiado, etapas });
 
     setAvisoDelEstado({
       tono: "neutro",
@@ -572,10 +604,12 @@ export function DetalleDeProceso({ id, pestana }: Props) {
   const { proceso } = detalle;
   const { abiertos, cerrados } = separarPendientes(pendientes);
   const terminado = proceso.estado === "cerrado";
-  /* El borrador tiene cambios sin guardar respecto de lo que está en la base. */
-  const sinGuardar =
-    JSON.stringify(aPeticionDePlan(plan)) !==
-    JSON.stringify(aPeticionDePlan(planDe(detalle.etapas)));
+  /* El borrador dice algo distinto de lo que está guardado.
+     Desde T-2 esto decide una guarda y no sólo una etiqueta —apaga
+     «Avanzar», porque el servidor marca cumplida la próxima pendiente del
+     plan que él tiene—, así que la comparación vive en `plan.ts`, donde se
+     puede probar sin montar un navegador. */
+  const sinGuardar = hayCambiosSinGuardar(plan, detalle.etapas);
 
   /**
    * El panel de la pestaña abierta.

@@ -35,11 +35,15 @@ import {
   type BorradorDeProceso,
 } from "../src/pantallas/procesos/formulario";
 import {
+  AVISO_AVANZAR_SIN_GUARDAR,
   AVISO_PLAN_PROPIO,
   AYUDA_DE_CARA_AL_CLIENTE,
   agregarPaso,
   aPeticionDePlan,
+  avanceDelPlan,
   esAlcanzado,
+  hayCambiosSinGuardar,
+  marcaDeCumplida,
   moverPaso,
   planDe,
   quitarPaso,
@@ -318,6 +322,180 @@ describe("el borrador del plan protege lo alcanzado", () => {
 
     // Los nombres de etapa son texto de cara al cliente (§6).
     expect(AYUDA_DE_CARA_AL_CLIENTE).toMatch(/cliente/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-2 · Una sola lista, y la guarda de avanzar con el plan a medio editar
+// ---------------------------------------------------------------------------
+
+/** Las etapas guardadas que corresponden a `planMixto()`. */
+function etapasGuardadas(): EtapaDeProceso[] {
+  return [
+    etapa({ id: "e1", nombre: "Recepción", orden: 0, alcanzadaEn: MOMENTO }),
+    etapa({ id: "e2", nombre: "Presentación", orden: 1, alcanzadaEn: MOMENTO }),
+    etapa({ id: "e3", nombre: "Entrevista", orden: 2 }),
+    etapa({ id: "e4", nombre: "Resolución", orden: 3 }),
+  ];
+}
+
+describe("la marca de un paso cumplido, en la lista única", () => {
+  it("un paso que todavía falta no lleva marca, y eso es un nulo", () => {
+    // Nulo y no cadena vacía: la ausencia de marca **es** el estado
+    // pendiente, y un nulo obliga a quien dibuje a decidir qué hace con él.
+    // Una cadena vacía llega hasta la pantalla como un hueco.
+    expect(marcaDeCumplida(planMixto()[2])).toBeNull();
+  });
+
+  it("un paso cumplido dice que lo está y desde cuándo, en un solo rótulo", () => {
+    const marca = marcaDeCumplida(planMixto()[0]);
+
+    // Las dos mitades que antes vivían en dos listas distintas: el editor
+    // decía «Cumplida» y el registro mostraba la fecha. En una lista sola
+    // tienen que ser un rótulo y no dos.
+    expect(marca).toMatch(/^Cumplida el /);
+    expect(marca).toMatch(/2026/);
+  });
+});
+
+describe("el borrador comparado con lo guardado", () => {
+  it("un plan recién cargado no tiene cambios sin guardar", () => {
+    expect(hayCambiosSinGuardar(planMixto(), etapasGuardadas())).toBe(false);
+  });
+
+  it("reordenar dos pendientes sí es un cambio sin guardar", () => {
+    const movido = moverPaso(planMixto(), 3, -1);
+
+    expect(hayCambiosSinGuardar(movido, etapasGuardadas())).toBe(true);
+  });
+
+  it("agregar, quitar y renombrar también lo son", () => {
+    const guardadas = etapasGuardadas();
+
+    expect(
+      hayCambiosSinGuardar(agregarPaso(planMixto(), "Apostilla"), guardadas),
+    ).toBe(true);
+    expect(hayCambiosSinGuardar(quitarPaso(planMixto(), 3), guardadas)).toBe(
+      true,
+    );
+    expect(
+      hayCambiosSinGuardar(renombrarPaso(planMixto(), 3, "Otra"), guardadas),
+    ).toBe(true);
+  });
+
+  it("un espacio que el servidor va a recortar igual NO es un cambio", () => {
+    // Si contara, «Avanzar» quedaría apagado por una diferencia que no
+    // existe del otro lado del cable, y nadie podría adivinar cuál es.
+    const conEspacios = renombrarPaso(planMixto(), 3, "  Resolución  ");
+
+    expect(hayCambiosSinGuardar(conEspacios, etapasGuardadas())).toBe(false);
+  });
+
+  it("compara contra el orden guardado y no contra el de llegada", () => {
+    // Las etapas pueden llegar desordenadas: lo que define el plan guardado
+    // es `orden`, no la posición en el arreglo de la respuesta.
+    const alReves = [...etapasGuardadas()].reverse();
+
+    expect(hayCambiosSinGuardar(planMixto(), alReves)).toBe(false);
+  });
+});
+
+describe("avanzar se niega con el plan a medio editar", () => {
+  /** Lo normal: plan guardado, proceso abierto, nada en vuelo. */
+  const ENCURSO = {
+    proxima: "Entrevista",
+    cerrado: false,
+    sinGuardar: false,
+    trabajando: false,
+  };
+
+  it("con todo guardado se puede, y el botón nombra la etapa que se marca", () => {
+    expect(avanceDelPlan(ENCURSO)).toEqual({
+      rotulo: "Avanzar a «Entrevista»",
+      habilitado: true,
+      impedimento: null,
+    });
+  });
+
+  /**
+   * **La prueba por rechazo.** Es la razón de ser de T-2: `POST /avanzar`
+   * marca cumplida la próxima pendiente del plan **guardado**, así que con
+   * el borrador reordenado el servidor firmaría como hecha una etapa
+   * distinta de la que la persona está mirando — con fecha y sin deshacer.
+   *
+   * Si alguien quita la guarda, esto muere: `habilitado` vuelve a `true`.
+   */
+  it("con cambios sin guardar NO se puede, y dice por qué", () => {
+    const avance = avanceDelPlan({ ...ENCURSO, sinGuardar: true });
+
+    expect(avance.habilitado).toBe(false);
+    expect(avance.impedimento).toBe(AVISO_AVANZAR_SIN_GUARDAR);
+  });
+
+  it("el motivo nombra el riesgo y la salida, no sólo la prohibición", () => {
+    // El criterio repetido del proyecto: ninguna negativa se queda sin
+    // puerta. Y la puerta acá es una sola —guardar— así que se dice.
+    expect(AVISO_AVANZAR_SIN_GUARDAR).toMatch(/guardad|guardar/i);
+    expect(AVISO_AVANZAR_SIN_GUARDAR).toMatch(/cumplida/i);
+    expect(AVISO_AVANZAR_SIN_GUARDAR).toMatch(/deshacer/i);
+  });
+
+  it("el rótulo sale del plan GUARDADO, que es el que el servidor avanza", () => {
+    // Dicho de otro modo: el nombre que el botón promete marcar es el que
+    // el servidor va a marcar de verdad, no el primero del borrador.
+    const avance = avanceDelPlan({
+      ...ENCURSO,
+      proxima: "Entrevista",
+      sinGuardar: true,
+    });
+
+    expect(avance.rotulo).toBe("Avanzar a «Entrevista»");
+  });
+
+  it("los cambios sin guardar ganan incluso sobre «nada por avanzar»", () => {
+    // Quien acaba de agregar un paso ve algo por delante en la lista. Decir
+    // «nada por avanzar» y callar sería cierto del plan guardado y falso de
+    // lo que tiene a la vista.
+    const avance = avanceDelPlan({
+      ...ENCURSO,
+      proxima: null,
+      sinGuardar: true,
+    });
+
+    expect(avance.rotulo).toBe("Nada por avanzar");
+    expect(avance.habilitado).toBe(false);
+    expect(avance.impedimento).toBe(AVISO_AVANZAR_SIN_GUARDAR);
+  });
+
+  it("sin nada por delante lo dice el rótulo, y no hace falta un cartel", () => {
+    const avance = avanceDelPlan({ ...ENCURSO, proxima: null });
+
+    expect(avance).toEqual({
+      rotulo: "Nada por avanzar",
+      habilitado: false,
+      impedimento: null,
+    });
+  });
+
+  it("el proceso cerrado apaga sin repetir el aviso que ya está en pantalla", () => {
+    // `avisoDeProcesoCerrado` nombra las tres prohibiciones y las dos
+    // salidas, y se dibuja justo arriba. Un segundo cartel diciendo lo
+    // mismo es ruido, no información.
+    const avance = avanceDelPlan({
+      ...ENCURSO,
+      cerrado: true,
+      sinGuardar: true,
+    });
+
+    expect(avance.habilitado).toBe(false);
+    expect(avance.impedimento).toBeNull();
+  });
+
+  it("mientras una petición está en vuelo tampoco se puede, y en silencio", () => {
+    const avance = avanceDelPlan({ ...ENCURSO, trabajando: true });
+
+    expect(avance.habilitado).toBe(false);
+    expect(avance.impedimento).toBeNull();
   });
 });
 

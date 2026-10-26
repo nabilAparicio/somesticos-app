@@ -87,11 +87,20 @@ dice por qué**. Se prueba por rechazo.
       paneles extraídos a sus propios archivos **sin cambiar el contenido de
       ninguna sección**. El primer paso tiene que ser verificable: si algo se
       ve distinto, es un error.
-- [ ] **T-2 · La pestaña Trabajo.** Fundir «Cumplido», «Lo que falta» y «Plan
-      de trabajo» en una sola lista, con la guarda de avanzar-con-cambios-sin-
-      guardar probada por rechazo.
-- [ ] **T-3 · El resto dentro de su pestaña.** Pendientes, Dinero e Historial
-      revisados ahora que cada uno tiene su propio espacio.
+- [x] **T-2 · La pestaña Trabajo, y la frontera entre cabecera y cuerpo.**
+      Fundir «Cumplido», «Lo que falta» y «Plan de trabajo» en una sola lista,
+      con la guarda de avanzar-con-cambios-sin-guardar probada por rechazo.
+      Más las dos cosas que se vieron recorriendo T-1 con datos reales y que
+      viven en la misma zona de la pantalla, así no se la toca dos veces:
+      «Estado del proceso» deja de ser una sección huérfana entre la cabecera
+      y la tira, y la tira deja de pesar menos que el ruido que la rodea.
+- [ ] **T-3 · El resto dentro de su pestaña, y el aire.** Pendientes, Dinero
+      e Historial revisados ahora que cada uno tiene su propio espacio. Más
+      las otras dos de la recorrida de T-1: la columna de contenido usa 770 de
+      2000 píxeles y deja medio lado vacío —se nota sobre todo en la lista de
+      gastos—, y hay demasiadas cajas de ayuda siempre abiertas: en Dinero son
+      cuatro antes de llegar a lo que uno fue a ver. Los textos son buenos; el
+      problema es que están todos desplegados a la vez.
 
 ## Alcance autorizado
 
@@ -265,5 +274,226 @@ que pasaban con la frase puesta en cualquier parte:
   apretar nada, y arriba de la tira.** Las nueve medidas de §9 se partieron
   en tres bucles, uno por pestaña con contenido hostil propio: una sola ya
   no podría esperar las tres clases de contenido a la vez.
+
+**Pendiente del coordinador:** el commit. El escritor no commiteó nada.
+
+### T-2 · La pestaña Trabajo, y la frontera entre cabecera y cuerpo — hecho, sin commitear
+
+**Ruta: delegada** (escritor acotado). Disparador: toca cinco archivos del
+front y dos de prueba, por encima del umbral de dos archivos no triviales, y
+la lógica nueva había que leerla antes de escribirla.
+
+**Los cinco comandos en 0.** `pnpm typecheck`, `pnpm lint` y `pnpm build` sin
+salida de error; `pnpm test` **2167 unitarias** en 41 archivos (base 2152,
++15); `pnpm test:e2e` **409 de punta a punta** (base 404, +5).
+
+#### La pregunta que había que contestar: qué se permite sobre un paso cumplido
+
+**Renombrar sí; mover y quitar no.** Es la regla de antes y no se tocó: la
+fusión no es ocasión para cambiar qué se permite.
+
+Y **las dos vistas de T-1 no se contradecían**, aunque lo pareciera.
+«Cumplido» era el registro dibujado —un `<span>` con la fecha—, no un editor
+que prohibiera renombrar; el único editor que había, «Plan de trabajo», ya
+mostraba las cumplidas con su campo de texto editable y sin los botones de
+orden ni de quitar. Las tres fuentes dicen lo mismo: `quitarPaso` y
+`moverPaso` se niegan sobre un paso alcanzado, `renombrarPaso` lo permite con
+un comentario que explica por qué —el nombre es texto de cara al cliente y
+corregir una errata no borra el hecho ni deja una nota huérfana—, y
+`AVISO_PLAN_PROPIO` dice «no se quitan ni se mueven» sin nombrar el nombre.
+Lo que la regla protege es **la existencia y el lugar** del paso, no su
+redacción. La lista única conserva eso exacto.
+
+#### La guarda de avanzar, que es la parte que no es de gusto
+
+`POST /avanzar` marca alcanzada la próxima pendiente **del plan guardado**;
+el editor trabaja sobre un borrador que recién se persiste con `PUT /etapas`.
+Con las dos cosas en una lista, «reordeno, no guardo, avanzo» hacía que el
+servidor firmara como cumplida la etapa que estaba antes en esa posición: un
+hecho falso, con fecha, y sin deshacer.
+
+`avanceDelPlan` en `plan.ts` devuelve de **una sola lectura** el rótulo, si
+el botón se puede apretar y el motivo cuando no. Una lectura y no tres,
+porque el botón y la explicación no pueden discrepar.
+
+- El rótulo nombra la próxima etapa **del plan guardado**, nunca la primera
+  del borrador: es la que el servidor va a marcar de verdad.
+- Los cambios sin guardar ganan incluso sobre «nada por avanzar». Quien acaba
+  de agregar un paso ve algo por delante en la lista; decir «nada por
+  avanzar» y callar sería cierto del plan guardado y falso de lo que tiene a
+  la vista.
+- El proceso cerrado apaga **sin motivo propio**: `avisoDeProcesoCerrado` ya
+  está dibujado arriba y nombra las tres prohibiciones y las dos salidas.
+- «Trabajando» apaga en silencio: dura lo que dura una petición, y un cartel
+  que aparece y desaparece solo es ruido.
+
+**Esta guarda no tiene gemela en el servidor, y es la única del proyecto que
+no la tiene.** No es un olvido: el borrador existe sólo en el navegador, así
+que no hay nada que el worker pueda mirar para saber que lo que la persona ve
+no es lo que él tiene.
+
+**Probada por rechazo, y verificada por mutación.** Quitando el brazo
+`sinGuardar` de `avanceDelPlan` mueren dos unitarias («con cambios sin
+guardar NO se puede, y dice por qué» y «los cambios sin guardar ganan incluso
+sobre nada por avanzar») y la de punta a punta «reordenar sin guardar niega
+avanzar, y guardar lo devuelve». Se midió corriendo las dos suites con el
+brazo borrado.
+
+#### El caso simétrico, que resultó ser un defecto de verdad
+
+Avanzar y después tocar el plan no tiene riesgo: avanzar ya escribió, y
+`asentar` reemplaza el borrador con lo que el servidor contestó. Con la
+guarda puesta ese reemplazo además es inofensivo por construcción —sólo se
+llega con el borrador y lo guardado ya iguales—.
+
+**Pero cerrar y reabrir pasaban por el mismo `asentar`, y ésos no guardan una
+sola etapa.** Alguien editando la lista que apretara «Cerrar el proceso»
+perdía el borrador entero, en silencio. Es la regla de T-8 y T-9 al revés: un
+borrador se vacía **sólo si el servidor lo guardó**. Se partió en
+`asentarSinTocarElBorrador`, que asienta el proceso y deja el plan en paz, y
+tiene prueba propia de punta a punta. Era un defecto previo a T-2; la lista
+única lo volvió visible, porque lo que desaparecía pasó a ser toda la lista
+que la persona tenía delante.
+
+#### «Estado del proceso» deja de ser una sección huérfana
+
+La `<section>` con su `<h2>` desapareció: cerrar un proceso es **una acción
+de la cabecera**, no una parte del expediente que se pueda visitar. El botón
+subió al lado del `<h1>`, en una `Fila` que envuelve sola cuando el título es
+largo.
+
+El texto de ayuda pasó de tres renglones a **uno**, y no se perdió nada: de
+las dos frases que decía, la que hay que leer *antes* de apretar es que el
+cierre se deshace reabriendo y que las dos cosas quedan firmadas; la otra
+—que los pendientes abiertos no lo impiden y que la respuesta dice cuántos
+son— ya la dice `textoDelCierre` justo después de cerrar, con el número de
+verdad y sólo cuando es cierta.
+
+Y va **atada al botón por `aria-describedby`**, no sólo puesta cerca. Sin la
+sección que los envolvía, la cercanía era lo único que los unía, y eso es
+exactamente la flojedad que T-1 arregló en dos pruebas. La de punta a punta
+lo mide con `toHaveAccessibleDescription`, que es un ancla más fuerte que la
+región que se fue.
+
+**La medición que reemplaza a la región**, y que es la que de verdad importa:
+ningún `<h2>` queda por encima de la tira de pestañas. Un encabezado de
+segundo nivel arriba de la navegación grita más que ella, y eso —no la
+sección en sí— era el problema. La prueba recorre todos los `<h2>` de la
+página y compara su `y` con el de la tira; vuelve a fallar el día que alguien
+meta otra sección ahí arriba.
+
+#### La tira pesa lo que vale
+
+Tres declaraciones sobre `.pestanas__item`, de los tokens que ya existían:
+`font-size: var(--texto-l)`, `font-weight: var(--peso-medio)` y la barra de
+2px a 3px con `--espacio-xs`/`--espacio-s` de aire. **Las tres se pueden
+matar**: la prueba mide, sobre una pestaña **cerrada** —medir la abierta
+escondería que las cerradas siguieran siendo letra chica—, que el rótulo sea
+más grande que el `font-size` del `body`, más pesado que 400, y que la barra
+tenga al menos 3px. Borrar cualquiera de las tres mata su aserción y no las
+otras dos.
+
+Sigue siendo un `<nav>` de enlaces con `aria-current="page"`; no se tocó nada
+del patrón, y las pruebas de T-1 —`tablist` ausente, tabulador en orden, la
+abierta distinguida por barra, peso y tinta— siguen verdes sin cambios.
+
+#### Dos cosas más que apareció mirando la aplicación con datos reales
+
+Las 2167 unitarias y las 409 de punta a punta no veían ninguna de las dos.
+
+1. **El aviso del proceso cerrado se dibujaba dos veces.** El mismo texto, en
+   la cabecera y dentro de «Plan de trabajo». Ya pasaba en T-1, pero con la
+   sección «Estado del proceso» en el medio costaba notarlo; con el cierre
+   subido al título quedaron los dos carteles idénticos a dos dedos uno del
+   otro. Se quitó el del panel: la cabecera lo dice en las cuatro pestañas, y
+   el de `PanelDePendientes` **no** se tocó porque es un texto distinto y
+   local («no se le anotan pendientes nuevos»).
+2. **«No queda ninguna etapa por delante. Si falta trabajo, se agrega un paso
+   nuevo acá abajo» le salía a un proceso cerrado**, donde agregar un paso no
+   se puede. Una puerta prometida y cerrada es peor que no decir nada. Ahora
+   se calla con el proceso cerrado, donde el aviso del cierre ya explica qué
+   se puede y qué no.
+
+#### Lo que se decidió, y por qué
+
+**«Avanzar» dejó de ser `boton--primario`.** Juntos en la misma sección, dos
+botones oscuros pegados no destacan: destacan los dos, que es lo mismo que
+ninguno. El realce se lo queda «Guardar plan», que es el envío de la sección
+—la regla que el resto del proyecto ya sigue, uno por formulario—, y avanzar
+queda del lado de «Cerrar el proceso», que es plano siendo la acción más
+consecuente de la pantalla. Un cambio de estado que no se deshace no tiene
+por qué ser además el botón que más llama.
+
+**El orden dentro de la sección es lista → agregar → guardar → avanzar.** Es
+el orden del trabajo, y pone la salida antes que la puerta cerrada: el botón
+que destraba la guarda se lee antes que el que la guarda apaga.
+
+**El número de paso lo pone el navegador.** La lista sigue siendo un `<ol>`
+porque el orden **es** el dato; no hay un `<span>` con el índice al lado, que
+sería una segunda numeración que puede discrepar de la primera.
+
+**`marcaDeCumplida` devuelve `null` y no una cadena vacía.** La ausencia de
+marca es el estado pendiente, y un nulo obliga a quien dibuja a decidir qué
+hace con él; una cadena vacía llega hasta la pantalla como un hueco sin que
+nadie se entere. Del nulo cuelgan **las dos** mitades del renglón —el rótulo
+con la fecha y la ausencia de los botones—: preguntar dos veces serían dos
+guardas del mismo hecho.
+
+**El banco de pruebas de punta a punta ahora guarda de verdad.** Hasta T-1 ni
+`PUT /etapas` ni `POST /avanzar` estaban contestados: los dos caían en el 404
+del final, así que ninguna prueba podía mirar qué pasa después de guardar.
+La secuencia que demuestra T-2 lo necesita, porque el conflicto es
+exactamente entre lo que la pantalla tiene y lo que el servidor guardó.
+
+#### Lo que se decidió NO hacer, y queda anotado
+
+- **`agregarPaso` sigue agregando al final.** «Un paso en el medio» se
+  consigue agregándolo y subiéndolo, que es lo que la prueba de punta a punta
+  hace y lo que la regla de T-7 permite: el final es el único lugar donde un
+  paso nuevo no se mete delante de algo que ya pasó. Inventar un
+  insertar-en-posición habría contradicho esa decisión escrita sin que nadie
+  lo pidiera.
+- **«Etapa nueva» y «Agregar etapa» siguen activos con el proceso cerrado.**
+  Sólo tocan el borrador, y «Guardar plan» está apagado, así que no se puede
+  escribir nada; pero es un control vivo sobre algo que no se va a poder
+  guardar. Viene de T-7, no lo empeoró T-2, y apagarlo es contenido adentro
+  de un panel.
+
+#### Pendiente del coordinador: CSS muerto fuera de las superficies
+
+Al fundir las tres listas, cuatro reglas de `src/estilos/formulario.css`
+quedaron **sin un solo consumidor**: `.plan` (304), `.plan__paso` (313),
+`.plan__nombre` (325) y `.plan__paso--cumplido` (336), más los modificadores
+`.plan--cumplido` y `.plan--pendiente` que sólo existían en el `.tsx`. La
+lista única usa `.plantilla` / `.plantilla__etapa` /
+`.plantilla__etapa--cumplida`, que siguen vivas —las dos primeras también en
+`catalogos/FormularioDeTipoDeProceso.tsx`—.
+
+**No se borraron porque `formulario.css` no estaba en las superficies
+autorizadas**, y porque no es un borrado mecánico: dos comentarios de ese
+mismo archivo usan `.plan__nombre` como punto de referencia para explicar
+otras decisiones (líneas 631 y 714), así que quitarlo obliga a reescribirlos.
+Queda para el coordinador.
+
+#### Las mediciones nuevas
+
+- **Unitarias** (`test/procesos-ui.spec.ts`, +15): `marcaDeCumplida` con sus
+  dos finales; `hayCambiosSinGuardar` con las cuatro formas de ensuciar el
+  borrador, con el espacio que el servidor recorta igual —que **no** cuenta
+  como cambio— y contra unas etapas que llegan desordenadas; y las ocho de
+  `avanceDelPlan`, incluidas las dos que mueren si se quita la guarda.
+- **De punta a punta** (`e2e/procesos.spec.ts`, +5): la lista única con sus
+  cuatro pasos en orden y los dos encabezados que dejaron de existir; la
+  secuencia completa de la guarda —se puede, se reordena, se niega diciendo
+  por qué, se guarda, vuelve, y lo que se marca cumplido es **la que se
+  movió**—; agregar un paso en el medio, guardarlo y **recargar** para ver
+  que quedó; el borrador que sobrevive a cerrar el proceso; la tira medida
+  contra el texto corriente; y el cierre en la cabecera con su descripción
+  accesible y sin ningún `<h2>` por encima de la tira.
+- **Las que cambiaron de camino, sin aflojarse**: «el detalle separa lo
+  cumplido de lo que falta» pasó a ser «el plan es UNA lista en orden»; el
+  aviso de «no se deshace» se busca ahora en la región «Plan de trabajo» en
+  vez de «Lo que falta», y sigue siendo una región y no la página; y el cero
+  de T-15 espera por «Plan de trabajo» en vez de por «Cumplido».
 
 **Pendiente del coordinador:** el commit. El escritor no commiteó nada.

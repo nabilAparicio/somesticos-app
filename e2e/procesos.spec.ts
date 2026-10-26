@@ -32,7 +32,22 @@ const CUMPLIDA_2 = "Presentación ante el Servicio Nacional de Migración";
 const PENDIENTE_1 = "Entrevista y verificación domiciliaria";
 const PENDIENTE_2 = "Resolución y entrega del carné";
 
-const ETAPAS = [
+/**
+ * Las etapas, con el tipo escrito.
+ *
+ * Sin la anotación, TypeScript infiere `alcanzadaEn: string` para las dos
+ * primeras y `null` para las dos últimas, y el banco de abajo —que marca
+ * cumplida una pendiente cuando la pantalla avanza— deja de compilar contra
+ * su propio arreglo.
+ */
+type EtapaEnLaBase = {
+  id: string;
+  nombre: string;
+  orden: number;
+  alcanzadaEn: string | null;
+};
+
+const ETAPAS: EtapaEnLaBase[] = [
   {
     id: "e1",
     nombre: CUMPLIDA_1,
@@ -142,8 +157,6 @@ const PROCESO_TRAS_CERRAR = {
   estado: "cerrado",
   cerradoEn: CERRADO_EN,
 };
-
-const DETALLE = { proceso: PROCESO, etapas: ETAPAS };
 
 /* --- T-8 · la línea de tiempo ------------------------------------------ */
 
@@ -460,10 +473,85 @@ const AREAS = [
  * la trampa que costó las 25 fallas iniciales de T-6.
  */
 async function conProcesosCargados(page: Page): Promise<void> {
+  /*
+   * T-2 · El plan que el banco guarda de verdad.
+   *
+   * Hasta T-1 ni `PUT /etapas` ni `POST /avanzar` estaban contestados: los
+   * dos caían en el 404 del final, así que ninguna prueba podía mirar
+   * **qué pasa después de guardar**. La secuencia que demuestra T-2
+   * —reordenar, que «Avanzar» se niegue, guardar, y que entonces sí deje—
+   * necesita que el banco recuerde, porque el conflicto es justamente
+   * entre lo que la pantalla tiene y lo que el servidor guardó.
+   *
+   * Es por `page`, o sea por prueba: dos pruebas no se pisan el plan.
+   */
+  let enLaBase: EtapaEnLaBase[] = ETAPAS.map((etapa) => ({ ...etapa }));
+
+  /** El detalle tal como lo contestaría el worker con ese plan. */
+  function detalleEnLaBase() {
+    const pendiente = enLaBase.find((etapa) => etapa.alcanzadaEn === null);
+
+    return {
+      proceso: {
+        ...PROCESO,
+        etapasCumplidas: enLaBase.filter((e) => e.alcanzadaEn !== null).length,
+        etapasTotales: enLaBase.length,
+        etapaVigente: pendiente?.nombre ?? null,
+      },
+      etapas: enLaBase,
+    };
+  }
+
   await page.route(
     (url) => url.pathname.startsWith("/api/"),
     async (ruta) => {
       const url = new URL(ruta.request().url());
+
+      /* T-7 · Guardar el plan reemplaza el plan entero, y el orden es la
+         posición en el arreglo: eso es lo que hace que avanzar dependa de
+         lo guardado y no de lo que hay en pantalla. Lo cumplido se conserva
+         por `id`, porque `alcanzadaEn` no viaja en la petición. */
+      if (url.pathname === `/api/procesos/${PROCESO_ID}/etapas`) {
+        const cuerpo = ruta.request().postDataJSON() as {
+          etapas: { id: string | null; nombre: string }[];
+        };
+
+        enLaBase = cuerpo.etapas.map((paso, orden) => ({
+          id: paso.id ?? `nueva-${String(orden)}`,
+          nombre: paso.nombre,
+          orden,
+          alcanzadaEn:
+            enLaBase.find((vieja) => vieja.id === paso.id)?.alcanzadaEn ?? null,
+        }));
+
+        await ruta.fulfill({ status: 200, json: detalleEnLaBase() });
+        return;
+      }
+
+      /* T-7 · Avanzar marca cumplida **la próxima pendiente del plan
+         guardado**. Que el banco lo haga así es lo que deja medir el
+         defecto que T-2 cierra: con el borrador reordenado y sin guardar,
+         la etapa que se marcaría no es la que se está mirando. */
+      if (url.pathname === `/api/procesos/${PROCESO_ID}/avanzar`) {
+        const proxima = enLaBase.find((etapa) => etapa.alcanzadaEn === null);
+
+        if (proxima === undefined) {
+          await ruta.fulfill({
+            status: 409,
+            json: { error: "sin_etapas_pendientes" },
+          });
+          return;
+        }
+
+        enLaBase = enLaBase.map((etapa) =>
+          etapa.id === proxima.id
+            ? { ...etapa, alcanzadaEn: "2026-10-26T15:00:00.000Z" }
+            : etapa,
+        );
+
+        await ruta.fulfill({ status: 200, json: detalleEnLaBase() });
+        return;
+      }
 
       // T-8: la línea de tiempo. El `POST` contesta la línea entera con la
       // nota nueva adentro, que es lo que la pantalla asienta: no inserta la
@@ -499,7 +587,7 @@ async function conProcesosCargados(page: Page): Promise<void> {
           status: 200,
           json: {
             proceso: PROCESO_TRAS_CERRAR,
-            etapas: ETAPAS,
+            etapas: enLaBase,
             pendientesAbiertos: 1,
           },
         });
@@ -509,7 +597,7 @@ async function conProcesosCargados(page: Page): Promise<void> {
       if (url.pathname === `/api/procesos/${PROCESO_ID}/reabrir`) {
         await ruta.fulfill({
           status: 200,
-          json: { proceso: PROCESO, etapas: ETAPAS, pendientesAbiertos: 1 },
+          json: { proceso: PROCESO, etapas: enLaBase, pendientesAbiertos: 1 },
         });
         return;
       }
@@ -548,7 +636,7 @@ async function conProcesosCargados(page: Page): Promise<void> {
         url.pathname === "/api/procesos"
           ? { procesos: [PROCESO, OTRO, TERMINADO, DESDE_COTIZACION] }
           : url.pathname === `/api/procesos/${PROCESO_ID}`
-            ? DETALLE
+            ? detalleEnLaBase()
             : url.pathname === `/api/procesos/${DESDE_COTIZACION.id}`
               ? DETALLE_DESDE_COTIZACION
             : url.pathname === "/api/areas"
@@ -628,29 +716,59 @@ test.describe("los procesos del bufete", () => {
     expect(filas, "el listado tiene que traer filas").toBe(3);
   });
 
-  test("el detalle separa lo cumplido de lo que falta, en dos listas", async ({
+  /**
+   * **T-2 · Una sola lista, que es el cambio que el usuario pidió.**
+   *
+   * Hasta T-1 las mismas filas de `proceso_etapa` se dibujaban tres veces
+   * —«Cumplido», «Lo que falta» y «Plan de trabajo»—, y eso es lo que
+   * hacía de la pantalla «una gran lista grande» donde cuesta ver y
+   * configurar. Esta prueba mide las dos mitades del cambio: que la lista
+   * sea **una**, y que no se haya perdido nada al fundirlas.
+   */
+  test("el plan es UNA lista en orden, con el estado de cada paso al lado", async ({
     page,
   }) => {
     await conProcesosCargados(page);
     await page.goto(DETALLE_URL);
 
-    // El criterio de T-7: dos secciones, no una lista con la etapa actual.
-    const cumplido = page.getByRole("heading", { name: "Cumplido" });
-    const falta = page.getByRole("heading", { name: "Lo que falta" });
-    await expect(cumplido).toBeVisible();
-    await expect(falta).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Plan de trabajo", exact: true }),
+    ).toBeVisible();
 
-    // Y cada etapa en la lista que le toca, no solo en pantalla.
-    const listaCumplida = page.locator(".plan--cumplido .plan__nombre");
-    const listaPendiente = page.locator(".plan--pendiente .plan__nombre");
+    // Los cuatro pasos, cumplidos y pendientes, en el orden del plan y en
+    // una sola lista. Es lo contrario de lo que había: ni dos listas, ni
+    // los cumplidos separados de los que faltan.
+    await expect(await planDibujado(page)).toEqual([
+      CUMPLIDA_1,
+      CUMPLIDA_2,
+      PENDIENTE_1,
+      PENDIENTE_2,
+    ]);
+    expect(
+      await page.locator(".plantilla").count(),
+      "las tres listas de antes son una sola",
+    ).toBe(1);
 
-    await expect(listaCumplida).toHaveText([CUMPLIDA_1, CUMPLIDA_2]);
-    await expect(listaPendiente).toHaveText([PENDIENTE_1, PENDIENTE_2]);
+    // Y los encabezados de las dos secciones que se fundieron ya no están.
+    // `.count()` y no `toHaveCount(0)`: el segundo reintenta, así que no
+    // puede probar un «nunca» — y acá ya está comprobado que la pantalla
+    // está dibujada.
+    for (const ido of ["Cumplido", "Lo que falta"]) {
+      expect(
+        await page.getByRole("heading", { name: ido, exact: true }).count(),
+        `«${ido}» era una sección propia y dejó de serlo`,
+      ).toBe(0);
+    }
 
-    // Lo cumplido lleva su fecha: es el registro, no una marca de color.
-    await expect(page.locator(".plan__paso--cumplido .etiqueta")).toHaveCount(
-      2,
-    );
+    // Lo cumplido se distingue **sin depender del color**: lleva su rótulo
+    // con la fecha, que es información y no decoración, y no ofrece los
+    // gestos que sobre el registro no se permiten.
+    const cumplidos = page.locator(".plantilla__etapa--cumplida");
+    await expect(cumplidos).toHaveCount(2);
+    await expect(cumplidos.locator(".etiqueta")).toHaveText([
+      /^Cumplida el .*2026/,
+      /^Cumplida el .*2026/,
+    ]);
   });
 
   test("el botón de avanzar nombra la próxima etapa y avisa que no se deshace", async ({
@@ -669,9 +787,13 @@ test.describe("los procesos del bufete", () => {
     // donde nadie la lee justo antes de apretar. Y con el detalle partido
     // en pestañas, también habría pasado con el botón en una pestaña y el
     // aviso en otra.
+    //
+    // La región cambió de nombre con T-2 —«Lo que falta» se fundió en «Plan
+    // de trabajo»—, así que el ancla se mudó con el botón. Lo que no se
+    // aflojó es la exigencia: sigue siendo una región y no la página.
     await expect(
       page
-        .getByRole("region", { name: "Lo que falta" })
+        .getByRole("region", { name: "Plan de trabajo", exact: true })
         .getByText(/No se puede deshacer/i),
     ).toBeVisible();
   });
@@ -760,6 +882,123 @@ test.describe("los procesos del bufete", () => {
         PENDIENTE_2,
         "Apostilla del acta de matrimonio",
       ]);
+  });
+
+  /**
+   * **La secuencia que demuestra T-2.**
+   *
+   * `POST /avanzar` marca cumplida la próxima pendiente **del plan
+   * guardado**, o sea que depende del orden que hay en la base. El editor
+   * trabaja sobre un borrador. Con las dos cosas en la misma lista, la
+   * secuencia «reordeno, no guardo, avanzo» hacía que el servidor firmara
+   * como cumplida la etapa que estaba antes en esa posición: no un renglón
+   * mal dibujado, sino un hecho falso con fecha y sin deshacer.
+   *
+   * Los tres actos van en una sola prueba a propósito: lo que hay que
+   * demostrar no es que el botón se apague, es que se apague **y vuelva**
+   * cuando la razón desaparece. Una guarda que no vuelve es una pared.
+   */
+  test("reordenar sin guardar niega avanzar, y guardar lo devuelve", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    // Acto 1: con todo guardado, se puede, y el botón nombra la etapa.
+    await expect(
+      page.getByRole("button", { name: `Avanzar a «${PENDIENTE_1}»` }),
+    ).toBeEnabled();
+
+    // Acto 2: se reordena y no se guarda.
+    await page.getByRole("button", { name: `Subir ${PENDIENTE_2}` }).click();
+    await expect
+      .poll(() => planDibujado(page))
+      .toEqual([CUMPLIDA_1, CUMPLIDA_2, PENDIENTE_2, PENDIENTE_1]);
+
+    // El botón se niega **y dice por qué**. Sigue nombrando la etapa del
+    // plan guardado, que es la que el servidor marcaría: si dijera la
+    // primera del borrador estaría prometiendo algo que no va a pasar.
+    const negado = page.getByRole("button", {
+      name: `Avanzar a «${PENDIENTE_1}»`,
+    });
+    await expect(negado).toBeDisabled();
+    await expect(
+      page.getByText(/tiene cambios que todavía no se guardaron/i),
+    ).toBeVisible();
+
+    // Acto 3: se guarda, y recién entonces el botón vuelve — ahora
+    // nombrando la etapa que de verdad quedó primera en la base.
+    await page.getByRole("button", { name: "Guardar plan" }).click();
+
+    await expect(
+      page.getByRole("button", { name: `Avanzar a «${PENDIENTE_2}»` }),
+    ).toBeEnabled();
+    expect(
+      await page
+        .getByText(/tiene cambios que todavía no se guardaron/i)
+        .count(),
+      "guardado el plan, el motivo ya no tiene nada que explicar",
+    ).toBe(0);
+
+    // Y avanzar marca cumplida **la que se movió**, no la que estaba antes
+    // en esa posición. Es el hecho que la guarda existe para no falsear.
+    await page
+      .getByRole("button", { name: `Avanzar a «${PENDIENTE_2}»` })
+      .click();
+
+    const cumplidos = page.locator(".plantilla__etapa--cumplida");
+    await expect(cumplidos).toHaveCount(3);
+    await expect(
+      cumplidos.nth(2).locator(".campo__control"),
+    ).toHaveValue(PENDIENTE_2);
+  });
+
+  test("agregar un paso en el medio del plan y guardarlo", async ({ page }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    const NUEVO = "Apostilla del acta de matrimonio";
+
+    // Entra al final, que es el único lugar donde no se mete delante de
+    // algo que ya pasó, y de ahí se sube hasta donde va.
+    await page.getByLabel("Etapa nueva").fill(NUEVO);
+    await page.getByRole("button", { name: "Agregar etapa" }).click();
+    await page.getByRole("button", { name: `Subir ${NUEVO}` }).click();
+
+    await expect
+      .poll(() => planDibujado(page))
+      .toEqual([CUMPLIDA_1, CUMPLIDA_2, PENDIENTE_1, NUEVO, PENDIENTE_2]);
+
+    await page.getByRole("button", { name: "Guardar plan" }).click();
+    await expect(page.getByText("Hay cambios sin guardar")).toHaveCount(0);
+
+    // Y quedó guardado de verdad, no sólo dibujado: se recarga la pantalla
+    // y el paso sigue en el medio. Sin la recarga, esto pasaría igual con
+    // un `PUT` que el servidor hubiera ignorado.
+    await page.reload();
+    await expect
+      .poll(() => planDibujado(page))
+      .toEqual([CUMPLIDA_1, CUMPLIDA_2, PENDIENTE_1, NUEVO, PENDIENTE_2]);
+  });
+
+  test("cerrar el proceso no se lleva puesto el plan a medio editar", async ({
+    page,
+  }) => {
+    // La regla de T-8 y T-9: un borrador se vacía **sólo si el servidor lo
+    // guardó**. Cerrar contesta el detalle entero, pero no guarda una sola
+    // de estas etapas, así que no puede tirar lo que alguien escribió.
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    const renglon = page.locator(".plantilla__etapa .campo__control").nth(2);
+    await renglon.fill("Entrevista en el consulado");
+    await expect(page.getByText("Hay cambios sin guardar")).toBeVisible();
+
+    await page.getByRole("button", { name: "Cerrar el proceso" }).click();
+    await page.getByRole("button", { name: "Reabrir el proceso" }).waitFor();
+
+    await expect(renglon).toHaveValue("Entrevista en el consulado");
+    await expect(page.getByText("Hay cambios sin guardar")).toBeVisible();
   });
 
   test("el detalle dice que el plan es del proceso y no de la plantilla", async ({
@@ -1851,6 +2090,109 @@ test.describe("las pestañas del proceso", () => {
     ).toBeVisible();
   });
 
+  /**
+   * **T-2 · La tira pesa lo que vale.**
+   *
+   * Es el eje de navegación de la pantalla, y en T-1 quedó en texto del
+   * tamaño del cuerpo con un subrayado fino, perdida entre bloques que
+   * pesaban más. Las tres medidas de abajo son las tres declaraciones que
+   * se agregaron, una por una: si alguien borra cualquiera, muere su
+   * aserción y no las otras dos.
+   *
+   * Se mide sobre una pestaña **cerrada** a propósito: el realce de la
+   * abierta ya tiene su prueba, y medirlo acá escondería que las cerradas
+   * siguieran siendo letra chica.
+   */
+  test("la tira pesa más que el texto corriente de la página", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    const cerrada = page
+      .locator(".pestanas")
+      .getByRole("link", { name: "Dinero", exact: true });
+    await expect(cerrada).toBeVisible();
+
+    const rotulo = await cerrada.evaluate((nodo) => {
+      const estilo = getComputedStyle(nodo);
+      return {
+        tamano: Number.parseFloat(estilo.fontSize),
+        peso: Number(estilo.fontWeight),
+        barra: Number.parseFloat(estilo.borderBottomWidth),
+      };
+    });
+    const cuerpo = await page.evaluate(() =>
+      Number.parseFloat(getComputedStyle(document.body).fontSize),
+    );
+
+    expect(rotulo.tamano, "una pestaña no puede ser más chica que un párrafo")
+      .toBeGreaterThan(cuerpo);
+    expect(rotulo.peso, "ni pesar lo mismo que el texto corrido")
+      .toBeGreaterThan(400);
+    expect(rotulo.barra, "la barra tiene que tener cuerpo, no ser un pelo")
+      .toBeGreaterThanOrEqual(3);
+  });
+
+  /**
+   * **T-2 · «Estado del proceso» deja de ser una sección huérfana.**
+   *
+   * T-1 la dejó como una `<section>` con su propio `<h2>` **debajo** de la
+   * tira. Medido con datos reales en una pantalla de 2000px: las pestañas
+   * aparecían recién a un tercio de la altura, detrás de un encabezado de
+   * segundo nivel que pesaba más que la navegación que tenía encima.
+   *
+   * Lo que se mide acá no es que el `<h2>` se haya borrado —eso pasaría
+   * con el botón borrado también— sino las tres cosas juntas: que la
+   * acción siga estando, que esté **arriba** de la tira, y que no haya
+   * ningún encabezado de sección por encima de la navegación.
+   */
+  test("cerrar el proceso es una acción de la cabecera, no una sección", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+
+    const cerrar = page.getByRole("button", { name: "Cerrar el proceso" });
+    await expect(cerrar).toBeVisible();
+
+    // La advertencia sigue disponible y **atada al botón**, no sólo puesta
+    // cerca: sin la sección que los envolvía, la cercanía era lo único que
+    // los unía, y eso es la flojedad que T-1 arregló en otras dos pruebas.
+    await expect(cerrar).toHaveAccessibleDescription(
+      /se puede deshacer reabriendo/i,
+    );
+
+    const tira = await page.locator(".pestanas").boundingBox();
+    const boton = await cerrar.boundingBox();
+    expect(tira).not.toBeNull();
+    expect(boton).not.toBeNull();
+    expect(
+      boton?.y,
+      "la acción del expediente entero va antes que la navegación",
+    ).toBeLessThan(tira?.y ?? 0);
+
+    // Y ningún encabezado de sección por encima de la tira: un `<h2>`
+    // arriba de la navegación grita más fuerte que ella.
+    for (const encabezado of await page.locator("h2").all()) {
+      const caja = await encabezado.boundingBox();
+      expect(
+        caja?.y ?? Number.POSITIVE_INFINITY,
+        `«${(await encabezado.textContent()) ?? ""}» quedó arriba de la tira`,
+      ).toBeGreaterThan(tira?.y ?? 0);
+    }
+
+    // La sección ya no existe, ni como encabezado ni como región. `.count()`
+    // y no `toHaveCount(0)`: el segundo reintenta, y acá la pantalla ya se
+    // comprobó dibujada.
+    expect(
+      await page.getByRole("heading", { name: "Estado del proceso" }).count(),
+    ).toBe(0);
+    expect(
+      await page.getByRole("region", { name: "Estado del proceso" }).count(),
+    ).toBe(0);
+  });
+
   test("una tercera parte inventada no dibuja una pantalla en blanco", async ({
     page,
   }) => {
@@ -1952,7 +2294,10 @@ test.describe("de dónde viene cada proceso", () => {
 
     // Se espera a que la pantalla esté dibujada antes de contar: un cero
     // leído sobre una página a medio montar es un cero que no prueba nada.
-    await expect(page.getByRole("heading", { name: "Cumplido" })).toBeVisible();
+    // El ancla era «Cumplido», que T-2 fundió en la lista única.
+    await expect(
+      page.getByRole("heading", { name: "Plan de trabajo", exact: true }),
+    ).toBeVisible();
 
     // `.count()` y no `toHaveCount(0)`: una aserción que reintenta no puede
     // demostrar un «nunca». Es la misma lección que `controlesDelCiclo` de

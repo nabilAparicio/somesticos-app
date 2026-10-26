@@ -431,11 +431,26 @@
   min-width: 0;
 }
 
+/*
+ * T-2 · La tira pesa lo que vale.
+ *
+ * Hasta T-1 era texto del tamaño del cuerpo con un subrayado fino, o sea
+ * **el eje de navegación de la pantalla dibujado más chico que el párrafo
+ * de ayuda de al lado**. Las tres declaraciones de tamaño, peso y aire son
+ * eso y nada más, y las tres se pueden matar: `e2e/procesos.spec.ts` mide
+ * que un rótulo de pestaña sea más grande y más pesado que el texto
+ * corriente de la misma página, y que la barra del activo tenga cuerpo.
+ *
+ * Sale de los tokens que ya existen —`--texto-l`, `--peso-medio`,
+ * `--espacio-xs`/`--espacio-s`—: no hay escala nueva ni número suelto.
+ */
 .pestanas__item {
   display: block;
-  padding: var(--espacio-2xs) var(--espacio-xs);
-  border-block-end: 2px solid transparent;
+  padding: var(--espacio-xs) var(--espacio-s);
+  border-block-end: 3px solid transparent;
   color: var(--color-tinta);
+  font-size: var(--texto-l);
+  font-weight: var(--peso-medio);
   text-decoration: none;
 }
 

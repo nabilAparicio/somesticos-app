@@ -14,11 +14,18 @@
  * cargaron, y esa duda es exactamente lo que esta línea existe para no
  * tener.
  *
- * Lo que está acá adentro es lo que había antes del plan, en el mismo
- * orden en que estaba: el título, la cuenta, la tira de datos, las dos
- * salidas hacia el cliente y la cotización, y el estado del proceso con su
- * botón. Mudado de lugar, no cambiado — si algo de esto se ve distinto, es
- * un error de T-1.
+ * Lo que está acá adentro: el título con la acción de cerrar al lado, la
+ * cuenta, la tira de datos y las dos salidas hacia el cliente y la
+ * cotización.
+ *
+ * **T-2 subió el cierre a la cabecera y le sacó el `<h2>`.** T-1 lo dejó
+ * como una `<section aria-labelledby="estado-del-proceso">` debajo de la
+ * tira de pestañas, y recorrerlo con datos reales mostró el costo: en una
+ * pantalla de 2000px las pestañas —que son el eje de navegación— aparecían
+ * recién a un tercio de la altura, detrás de un encabezado de segundo
+ * nivel que pesaba más que ellas. Cerrar un proceso no es una parte del
+ * expediente que se pueda visitar: es una acción sobre el expediente
+ * entero, y las acciones de ese alcance viven con el título.
  */
 import type { PendienteDeProceso, Proceso } from "../../../worker/contract";
 import { VACIO, fechaLegible } from "../../formatos";
@@ -50,6 +57,15 @@ type Props = {
   } | null;
   readonly alCambiarEstado: (hacia: "cerrar" | "reabrir") => void;
 };
+
+/**
+ * El `id` que ata la advertencia del cierre a su botón.
+ *
+ * Es una constante y no una cadena escrita dos veces: el `id` del párrafo y
+ * el `aria-describedby` del botón **tienen** que decir lo mismo, y dos
+ * literales iguales son dos que mañana se separan sin que nada avise.
+ */
+const AYUDA_DEL_CIERRE = "ayuda-del-cierre";
 
 function Dato({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
@@ -86,7 +102,39 @@ export function CabeceraDeProceso({
           <p className="texto-apagado">
             <Enlace href={enlaceDe({ nombre: "procesos" })}>Procesos</Enlace>
           </p>
-          <h1>{proceso.titulo}</h1>
+
+          {/* -------------------------------------------------------------
+              T-14 · Cerrar y reabrir, al lado del título.
+
+              Hasta T-1 esto era una `<section>` con su propio `<h2>Estado
+              del proceso</h2>`, **debajo de la tira de pestañas**. Medido
+              en una pantalla de 2000px: las pestañas aparecían recién a un
+              tercio de la altura, y ese `<h2>` gritaba más que la
+              navegación que tenía encima. El reparto de T-1 lo dejó así, y
+              es culpa del reparto.
+
+              Cerrar un proceso es **una acción de la cabecera**, de la
+              misma clase que el título al que pertenece: no es una parte
+              del expediente que se pueda visitar, así que no es una
+              sección ni lleva encabezado. Sigue arriba del cuerpo, que es
+              donde T-14 la puso y por la razón de T-14: lo que decide si
+              el plan se puede tocar tiene que leerse antes que el plan, y
+              el cierre apaga controles en tres de las cuatro pestañas.
+              ------------------------------------------------------------- */}
+          <Fila alinear="entre">
+            <h1>{proceso.titulo}</h1>
+            <button
+              type="button"
+              className="boton"
+              disabled={trabajando}
+              aria-describedby={AYUDA_DEL_CIERRE}
+              onClick={() => {
+                alCambiarEstado(terminado ? "reabrir" : "cerrar");
+              }}
+            >
+              {terminado ? "Reabrir el proceso" : "Cerrar el proceso"}
+            </button>
+          </Fila>
 
           {/* La cuenta va pegada al título y no dentro de una sección con
               su propio encabezado: la pestaña de al lado ya se llama
@@ -99,8 +147,40 @@ export function CabeceraDeProceso({
               {resumenDeTrabajoVigente(proceso, abiertos, hoy)}
             </span>
           </p>
+
+          {/* La advertencia va atada al botón por `aria-describedby` y no
+              sólo puesta cerca. Con la sección fuera, la cercanía era lo
+              único que los unía, y eso es exactamente la flojedad que T-1
+              arregló en dos pruebas: el botón en un lado y su advertencia
+              en otro habrían pasado igual.
+
+              Es **una línea y no tres**. De las dos frases que decía antes,
+              la que tiene que leerse *antes* de apretar es que el cierre se
+              deshace y queda firmado; la otra —que los pendientes abiertos
+              no lo impiden y que la respuesta dice cuántos son— la dice
+              `textoDelCierre` justo después de cerrar, con el número de
+              verdad y sólo cuando es cierta. */}
+          <p className="campo__ayuda" id={AYUDA_DEL_CIERRE}>
+            {terminado
+              ? "Reabrir no borra nada: el cierre anterior queda en la" +
+                " bitácora, con quién lo hizo y cuándo."
+              : "Cerrar se puede deshacer reabriendo, y las dos cosas quedan" +
+                " firmadas."}
+          </p>
         </Pila>
       </header>
+
+      {/* Los dos avisos del cierre **no** son permanentes: el de la regla
+          sólo aparece con el proceso cerrado —con el proceso abierto no hay
+          nada que advertir, y un cartel que está siempre se deja de leer— y
+          el de la última acción sólo después de apretar. Por eso pueden
+          vivir en la cabecera sin empujar nada hacia abajo el resto del
+          tiempo. */}
+      {avisoDelCierre !== null && <Aviso>{avisoDelCierre}</Aviso>}
+
+      {avisoDelEstado !== null && (
+        <Aviso tono={avisoDelEstado.tono}>{avisoDelEstado.texto}</Aviso>
+      )}
 
       <Rejilla minimo="16rem">
         <dl className="definiciones">
@@ -155,53 +235,6 @@ export function CabeceraDeProceso({
           </Enlace>
         </p>
       )}
-
-      {/* ---------------------------------------------------------------
-          T-14 · Cerrar y reabrir.
-
-          Sigue arriba del cuerpo, que es donde T-14 lo puso: lo que decide
-          si el plan se puede tocar tiene que leerse antes que el plan. Con
-          las pestañas la razón se vuelve más fuerte, no más débil — el
-          cierre apaga controles en tres de las cuatro, así que no puede
-          vivir dentro de ninguna.
-
-          El aviso de la regla se dibuja solo con el proceso cerrado: con
-          el proceso abierto no hay nada que advertir, y un cartel
-          permanente se deja de leer.
-          --------------------------------------------------------------- */}
-      <section aria-labelledby="estado-del-proceso">
-        <Pila espacio="ceñido">
-          <h2 id="estado-del-proceso">Estado del proceso</h2>
-
-          {avisoDelCierre !== null && <Aviso>{avisoDelCierre}</Aviso>}
-
-          {avisoDelEstado !== null && (
-            <Aviso tono={avisoDelEstado.tono}>{avisoDelEstado.texto}</Aviso>
-          )}
-
-          <Fila>
-            <button
-              type="button"
-              className="boton"
-              disabled={trabajando}
-              onClick={() => {
-                alCambiarEstado(terminado ? "reabrir" : "cerrar");
-              }}
-            >
-              {terminado ? "Reabrir el proceso" : "Cerrar el proceso"}
-            </button>
-          </Fila>
-
-          <p className="campo__ayuda">
-            {terminado
-              ? "Reabrir no borra nada: el cierre anterior queda en la" +
-                " bitácora con quién lo hizo y cuándo."
-              : "Cerrar se puede deshacer reabriendo, y las dos cosas quedan" +
-                " firmadas. Si quedan pendientes abiertos no lo impide: la" +
-                " respuesta dice cuántos son."}
-          </p>
-        </Pila>
-      </section>
     </Pila>
   );
 }
