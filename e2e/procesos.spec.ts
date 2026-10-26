@@ -836,7 +836,15 @@ test.describe("los procesos del bufete", () => {
     await conProcesosCargados(page);
     await page.goto(DETALLE_URL);
 
-    await expect(await planDibujado(page)).toEqual(
+    // `expect.poll` y no `await planDibujado(page)` suelto, que es lo que
+    // había: `evaluateAll` **no reintenta**, así que leía el DOM en el
+    // instante en que terminaba el `goto`, antes de que React montara el
+    // plan, y devolvía el arreglo vacío. Pasaba sola y fallaba bajo carga
+    // paralela, que es la peor forma de fallar: una prueba intermitente que
+    // afirma sobre la pantalla equivocada. Es el mismo defecto que el
+    // encabezado de `e2e/navegacion.spec.ts` documenta con todas las letras,
+    // y el mismo arreglo que usan las cuatro aserciones de abajo.
+    await expect.poll(() => planDibujado(page)).toEqual(
       ETAPAS.map((e) => e.nombre),
     );
 
