@@ -14,3 +14,6 @@ worker/worker-configuration.d.ts
 test-results/
 playwright-report/
 .playwright/
+
+# Capturas y registros del navegador de Playwright MCP
+.playwright-mcp/
