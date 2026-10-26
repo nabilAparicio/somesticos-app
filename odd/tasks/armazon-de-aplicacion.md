@@ -157,12 +157,12 @@ Ruta: **delegada**, junto con T-1: mismos archivos.
 
 ### T-3 · Quién entró y cómo salir
 
-- [ ] `src/api/identidad.ts` con `cargarIdentidad(signal)` sobre `pedir`.
-- [ ] El encabezado muestra nombre (y correo como título) y **Salir** a
+- [x] `src/api/identidad.ts` con `cargarIdentidad(signal)` sobre `pedir`.
+- [x] El encabezado muestra nombre (y correo como título) y **Salir** a
       `/cdn-cgi/access/logout`.
-- [ ] Sin identidad reconocida, lo dice en vez de quedar en blanco: la puerta
+- [x] Sin identidad reconocida, lo dice en vez de quedar en blanco: la puerta
       puede estar mal configurada y eso tiene que verse.
-- [ ] Se va la línea de diagnóstico de `src/pantallas/Inicio.tsx`.
+- [x] Se va la línea de diagnóstico de `src/pantallas/Inicio.tsx`.
 
 Ruta: **delegada** (archivo nuevo + dos editados).
 
@@ -255,7 +255,49 @@ commits ya están partidos por tarea.
 - La lista de secciones pasa a ser vertical en los dos modos: dentro de un
   cajón de 17rem, una franja que envuelve mete tres rótulos en un renglón y
   dos en el siguiente.
-- Próximo paso: T-3, quién entró y cómo salir. Sigue sin empezar.
+- **T-3 cerrada.** `src/api/identidad.ts` con `cargarIdentidad(signal)` sobre
+  `pedir`, y el encabezado con el nombre, el correo y **Salir** a
+  `/cdn-cgi/access/logout` —un `<a href>` relativo, con el porqué escrito al
+  lado para que nadie lo convierta en un `fetch`: lo que Access contesta es
+  una redirección, y una redirección dentro de un `fetch` no saca a nadie de
+  ninguna parte—. La línea de diagnóstico de `Inicio.tsx` se fue entera, con
+  su `fetch` a mano y su estado. Y en `@media print` nada cambió ni hizo
+  falta: `impresion.css` ya apaga `.esqueleto__encabezado`, y medido con
+  `emulateMedia` el grupo de identidad queda en 0x0 adentro de un
+  `display: none`.
+- Pruebas: `test/identidad-ui.spec.ts` (ocho unitarias sobre las ramas de
+  `Resultado`) y `e2e/identidad.spec.ts` (nueve de punta a punta sobre el
+  dibujo), escritas antes y vistas en rojo: la unitaria no compilaba —no
+  existía el módulo— y las nueve de punta a punta fallaban todas.
+- **El correo no puede ir sólo en el `title`.** Un `title` aparece al pasar
+  el mouse por encima, y no hay mouse en un teléfono ni navegando con
+  teclado; los lectores de pantalla tampoco lo anuncian de forma confiable.
+  Así que el correo viaja dos veces: en el `title` para quien apunta, y en un
+  `<span class="oculto-visualmente">` para todos los demás. La utilidad se
+  reusa de `formulario.css` en vez de copiarse.
+- **Lo que la tarea dio por cierto y no lo era: `test/tsconfig.json`.** El
+  alcance de T-3 nombraba `src/api/identidad.ts` y sus pruebas, y no que una
+  prueba en `test/` que importe un módulo de `src` **tiene que listarlo** en
+  el `include` de ese proyecto `composite`: sin eso el `typecheck` falla con
+  TS6307 y ninguna otra cosa lo arregla. Se agregó la línea, al lado de
+  `src/api/peticiones.ts`, que entró por lo mismo en su momento.
+- **Dos cosas que el escritor encontró al medir.** Primera, y costó
+  diecinueve pruebas: el grupo de identidad nació `flex: 0 0 auto` —copiado
+  del botón de secciones— y con el encogimiento prohibido conservaba su ancho
+  de contenido entero, así que a 320px la página volvía a scrollear en
+  horizontal y se caían las diecinueve pruebas de ese criterio repartidas en
+  siete suites. Pasó a `flex: 0 1 auto` con `min-width: 0`. Segunda: el
+  mínimo del rótulo de identidad es **el ancho del rótulo de carga**, 11ch
+  medidos en el navegador, y no un número cómodo: con un mínimo menor el
+  grupo se angostaba al resolverse la identidad y «Salir» se corría de lugar
+  mientras alguien lo estaba apuntando.
+- **El aviso de rechazo es el único que puede hacer crecer la franja.** Al
+  nombre se le recorta con elipsis —el entero sigue en el árbol y en el
+  `title`—, pero al motivo no: «Sin identidad reconocida (acceso_no_conf…»
+  pierde justamente la parte que dice qué hay que arreglar. El estado normal
+  no salta nunca; el anormal se ve entero.
+- Próximo paso: las tres tareas están cerradas. Queda la deuda anotada abajo,
+  que es de la puerta y no del armazón.
 
 ## Deuda que esta tajada deja anotada
 

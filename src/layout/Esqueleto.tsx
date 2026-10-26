@@ -18,9 +18,18 @@
  * en este archivo. Lo que sí vive acá es lo que no se puede expresar en CSS:
  * el estado del cajón, el modo en el que está, y el `inert` que convierte el
  * velo en un overlay de verdad.
+ *
+ * Desde T-3 vive acá además **quién entró y cómo salir**. Está en el armazón
+ * y no en una pantalla porque es de la aplicación y no de ninguna de ellas:
+ * hasta T-3 la identidad se dibujaba sólo en la portada, como una línea de
+ * diagnóstico que se perdía en cuanto alguien navegaba a cualquier otro
+ * lado, y de salir no había nada.
  */
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 
+import type { IdentidadActual } from "../../worker/contract";
+import { cargarIdentidad } from "../api/identidad";
+import type { Resultado } from "../api/peticiones";
 import { Enlace } from "./Enlace";
 
 type Props = {
@@ -129,6 +138,123 @@ function estaEnModoAncho(): boolean {
   return window.matchMedia(CONSULTA_DEL_UMBRAL).matches;
 }
 
+/**
+ * La salida. **Es un enlace y no va a ser un `fetch`.**
+ *
+ * Alguien va a querer «arreglar» esto convirtiéndolo en un botón con un
+ * `fetch` y un `setState`, así que queda escrito por qué no: la
+ * autenticación es Cloudflare Access (`docs/diseno.md` §7 y §9) y **no hay
+ * sesión nuestra que cerrar**. Lo que hay que borrar es la cookie
+ * `CF_Authorization`, que la pone y la saca el borde de Cloudflare; el
+ * Worker no la ve nacer ni la puede matar, y por eso no hay —ni va a haber—
+ * una ruta de salida en `worker/index.ts`. Un `fetch` a esta dirección
+ * tampoco serviría: lo que Access contesta es una redirección a su propia
+ * pantalla de salida, y una redirección dentro de un `fetch` no saca a nadie
+ * de ninguna parte. Tiene que **navegar**.
+ *
+ * Verificado en la documentación de Cloudflare (Access · Session
+ * Management): sirven las dos direcciones, la del dominio del team y la de
+ * la aplicación. Se usa **la de la aplicación**, o sea esta ruta relativa, y
+ * la diferencia es observable: es la que borra la cookie del dominio propio,
+ * así que la salida se siente inmediata en vez de dejar al navegador con una
+ * cookie nuestra todavía puesta mientras el team resuelve lo suyo.
+ *
+ * Relativa también significa que no hay ningún nombre de team escrito en el
+ * código del navegador, que es un valor de despliegue y no de la aplicación.
+ */
+const SALIDA_DE_ACCESS = "/cdn-cgi/access/logout";
+
+/**
+ * Lo que el armazón sabe de quién entró, en los tres estados que de verdad
+ * existen.
+ *
+ * `sin_reconocer` es uno y no cuatro a propósito: la puerta puede negarse de
+ * varias formas —mal configurada, sin token, un correo sin fila en
+ * `usuario`— y para el armazón son la misma situación (no hay nombre que
+ * mostrar y hay que ofrecer salir). Lo que **sí** se conserva es el motivo,
+ * en `detalle`, porque es lo único que distingue «hay que arreglar el
+ * despliegue» de «hay que dar de alta a esa persona».
+ */
+type Quien =
+  | { readonly estado: "cargando" }
+  | { readonly estado: "dentro"; readonly identidad: IdentidadActual }
+  | { readonly estado: "sin_reconocer"; readonly detalle: string };
+
+/**
+ * El motivo del rechazo, en una palabra que quepa en la franja.
+ *
+ * No se usa `textoDeProblema` —que es la frase buena para una pantalla—
+ * porque acá no hay lugar para una frase: el encabezado es una franja de una
+ * línea y una oración de dos renglones la haría crecer sobre el contenido.
+ * Lo que se muestra es el término técnico que manda la puerta, que es
+ * justamente lo que quien configuró el despliegue necesita leer.
+ */
+function detalleDelRechazo(
+  resultado: Exclude<Resultado<IdentidadActual>, { estado: "ok" }>,
+): string {
+  if (resultado.estado === "sin_acceso") return resultado.motivo;
+  if (resultado.estado === "falla") return resultado.mensaje;
+  // Ninguno de los demás tiene sentido en `/api/yo` —no hay 404, ni 409, ni
+  // 422 en una ruta que no recibe nada—, pero un servidor más nuevo que esta
+  // pantalla podría traer cualquiera. Se dice el estado y no se inventa una
+  // explicación.
+  return resultado.estado;
+}
+
+/**
+ * Quién entró, dibujado.
+ *
+ * Los tres estados dibujan **algo**, y eso es el requisito y no una
+ * casualidad:
+ *
+ *  - **cargando** no deja un hueco. Un rótulo apagado ocupa el lugar que el
+ *    nombre va a ocupar, así que el encabezado no cambia de alto cuando la
+ *    respuesta llega y el contenido de abajo no salta. La alternativa
+ *    —renderizar nada hasta saber— es un parpadeo en cada carga de página, y
+ *    en una franja que envuelve es además un renglón que aparece y empuja
+ *    todo.
+ *  - **sin reconocer** lo dice con el motivo a la vista. Quedarse en blanco
+ *    sería esconder un despliegue a medias, y hoy es el estado probable:
+ *    `wrangler.jsonc` sigue con los valores de ejemplo en
+ *    `ACCESO_TEAM_DOMAIN` y `ACCESO_AUD`, así que la puerta falla cerrada
+ *    con `acceso_no_configurado`.
+ *  - **dentro** muestra el nombre, y el correo **dos veces**: en el `title`
+ *    para quien pasa el mouse, y en un `<span>` recortado para quien no
+ *    tiene mouse. Un `title` solo no alcanza: no hay mouse en un teléfono ni
+ *    navegando con teclado, y los lectores de pantalla no lo anuncian de
+ *    forma confiable. El nombre es lo que se lee de un vistazo y el correo
+ *    es lo que desempata dos personas con el mismo nombre, así que el correo
+ *    tiene que estar al alcance de todos y no sólo del que apunta.
+ *
+ * `.oculto-visualmente` es la utilidad global de `src/estilos/formulario.css`
+ * y se reusa en vez de copiarse: dos definiciones de «recortado pero leíble»
+ * son dos lugares donde la próxima persona arregla una sola.
+ */
+function QuienEntro({ quien }: { readonly quien: Quien }) {
+  if (quien.estado === "cargando") {
+    return (
+      <span className="esqueleto__quien esqueleto__quien--cargando">
+        Identificando…
+      </span>
+    );
+  }
+
+  if (quien.estado === "sin_reconocer") {
+    return (
+      <span className="esqueleto__quien esqueleto__quien--sin-reconocer">
+        Sin identidad reconocida ({quien.detalle})
+      </span>
+    );
+  }
+
+  return (
+    <span className="esqueleto__quien" title={quien.identidad.email}>
+      {quien.identidad.nombre}
+      <span className="oculto-visualmente">{` (${quien.identidad.email})`}</span>
+    </span>
+  );
+}
+
 export function Esqueleto({ children, ruta }: Props) {
   /*
    * Dos estados, y el segundo no es estado del lateral: es el entorno.
@@ -142,6 +268,43 @@ export function Esqueleto({ children, ruta }: Props) {
   const [modoAncho, setModoAncho] = useState(estaEnModoAncho);
   /* El valor inicial es el del modo: abierto en ancho, cerrado en angosto. */
   const [navegacionVisible, setNavegacionVisible] = useState(estaEnModoAncho);
+
+  /*
+   * Quién entró. Se pide **una vez**, al montar el armazón, y no en cada
+   * pantalla: el armazón no se desmonta al navegar —`App.tsx` cambia lo que
+   * va adentro de `children`— así que una sola petición cubre la sesión
+   * entera. Pedirla por pantalla serían tantas lecturas de `/api/yo` como
+   * clics, para una respuesta que no cambia.
+   */
+  const [quien, setQuien] = useState<Quien>({ estado: "cargando" });
+
+  useEffect(() => {
+    const control = new AbortController();
+
+    async function cargar() {
+      const resultado = await cargarIdentidad(control.signal);
+      /*
+       * El aborto del desmontaje. `cargarIdentidad` lo devuelve como `falla`
+       * en vez de tirar, así que sin esta guarda el armazón desmontado
+       * terminaría pintando «sin identidad reconocida» en un componente que
+       * ya no está. Es la misma guarda que los formularios de procesos y
+       * cotizaciones ponen después de cada `Promise.all`.
+       */
+      if (control.signal.aborted) return;
+
+      setQuien(
+        resultado.estado === "ok"
+          ? { estado: "dentro", identidad: resultado.valor }
+          : { estado: "sin_reconocer", detalle: detalleDelRechazo(resultado) },
+      );
+    }
+
+    void cargar();
+
+    return () => {
+      control.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const consulta = window.matchMedia(CONSULTA_DEL_UMBRAL);
@@ -236,6 +399,44 @@ export function Esqueleto({ children, ruta }: Props) {
           <span className="marca__nombre">Bufete</span>
         </div>
         <p className="esqueleto__lema">Seguimiento de procesos</p>
+
+        {/*
+          Quién entró y cómo salir, **al final de la franja** y siempre los
+          dos juntos.
+
+          Van juntos en un grupo propio porque son una sola cosa para quien
+          mira —de quién es esta sesión y cómo se termina— y porque así la
+          franja los acomoda o los envuelve como un bloque en vez de dejar el
+          nombre arriba y la salida abajo.
+
+          «Salir» se dibuja en los tres estados, incluido el de no reconocido,
+          y eso no es simetría: **es el estado en el que más falta hace**. Una
+          sesión que la puerta no reconoce es exactamente la que alguien
+          necesita poder cerrar para volver a entrar como quien corresponde;
+          esconder la salida ahí sería dejar a la persona sin la única palanca
+          que le queda dentro de la aplicación.
+
+          Y queda alcanzable con el cajón de navegación abierto, que es
+          deliberado: el encabezado está fuera del velo por construcción
+          —el cajón y el velo se posicionan contra el área de contenido de la
+          rejilla— y no recibe `inert`. Es la decisión que T-2 tomó para que
+          el botón pudiera cerrar lo que abrió, y «Salir» se beneficia de
+          ella. Nada de esto se arregla agregándole `inert` al encabezado.
+        */}
+        <div className="esqueleto__identidad">
+          <QuienEntro quien={quien} />
+          {/*
+            Un `<a>` pelado y sin la clase `.boton`. Lo segundo cuesta las
+            declaraciones de `.esqueleto__salir` en `layout.css` y vale lo
+            mismo que costaba en el botón de secciones: varias pruebas de
+            punta a punta de cotizaciones miden la barra de acciones de una
+            pantalla contando `header button.boton` y leyendo
+            `header .boton`. La salida no es una acción de ninguna pantalla.
+          */}
+          <a className="esqueleto__salir" href={SALIDA_DE_ACCESS}>
+            Salir
+          </a>
+        </div>
       </header>
 
       {/*

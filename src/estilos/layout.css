@@ -232,6 +232,151 @@
 }
 
 /* ======================================================================
+   Quién entró y cómo salir (T-3)
+
+   Un grupo propio al final de la franja, y no dos elementos sueltos. Son
+   una sola cosa para quien mira —de quién es esta sesión y cómo se
+   termina—, y agrupados se acomodan o envuelven como un bloque en vez de
+   dejar el nombre en un renglón y la salida en el siguiente.
+   ====================================================================== */
+
+.esqueleto__identidad {
+  /*
+   * **Se encoge, y eso se midió.** La primera versión era `flex: 0 0 auto`
+   * —copiado del botón de secciones, que sí tiene un ancho propio— y con el
+   * encogimiento prohibido el grupo conservaba su ancho de contenido entero:
+   * un correo largo, o el aviso de rechazo con el motivo adentro, empujaba
+   * la franja más allá de la ventana. A 320px eso saca a la página a
+   * scrollear en horizontal, y se cayeron **diecinueve** pruebas del
+   * criterio de «nada scrollea en horizontal» repartidas en siete suites.
+   *
+   * Sin `grow`, a propósito: el grupo no tiene por qué estirarse cuando
+   * sobra aire —de eso se encarga el margen automático de abajo— y sólo
+   * tiene que saber ceder cuando falta. El `min-width: 0` es la otra mitad:
+   * sin él un ítem de flex no baja de su contenido y el encogimiento no
+   * llega a pasar.
+   */
+  flex: 0 1 auto;
+  /* La franja alinea por línea de base, y acá hay un rótulo de texto al
+     lado de un enlace con relleno: sin esto el enlace cuelga. */
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: var(--espacio-xs) var(--espacio-s);
+  min-width: 0;
+  /*
+   * Lo que empuja el grupo al final de la franja.
+   *
+   * Hay un segundo `margin-inline-start: auto` en `.esqueleto__lema` cuando
+   * el encabezado tiene 30rem o más, y la convivencia es deliberada: con
+   * dos márgenes automáticos flexbox reparte el aire libre entre los dos,
+   * así que la marca queda a la izquierda, la identidad al final y el lema
+   * flotando en el medio. Por debajo de 30rem el lema no tiene el suyo y
+   * esto se lleva todo el aire, que es lo que mantiene a la identidad
+   * pegada al borde en una pantalla angosta.
+   */
+  margin-inline-start: auto;
+  font-size: var(--texto-s);
+}
+
+/*
+ * El rótulo de quién entró.
+ *
+ * **El mínimo es el ancho del rótulo de carga, y ése es el número.** En
+ * `ch` y no en píxeles (§9: topes y mínimos, nunca anchos), y medido en el
+ * navegador: «Identificando…» ocupa 11ch con la tipografía y el tamaño de
+ * esta franja. Reservar exactamente eso es lo que hace que la llegada del
+ * nombre **no mueva «Salir»**: el rótulo de carga llena la caja, un nombre
+ * corto la ocupa sin encogerla, y el enlace de al lado se queda donde
+ * estaba. Con un mínimo más chico el grupo se angostaba al resolverse y la
+ * salida se corría de lugar mientras alguien la estaba apuntando. Si el
+ * nombre es más largo, el rótulo crece; nunca queda recortado a esta medida.
+ *
+ * El recorte con elipsis es el tope del otro lado: un nombre muy largo —o un
+ * motivo de rechazo largo— no tiene por qué empujar «Salir» fuera de la
+ * franja ni hacerla envolver. Lo que se pierde a la vista sigue entero en el
+ * árbol, así que un lector de pantalla lo lee completo igual.
+ */
+.esqueleto__quien {
+  min-inline-size: 11ch;
+  overflow: hidden;
+  color: var(--color-tinta-apagada);
+  font-weight: var(--peso-medio);
+  line-height: var(--linea-ajustada);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Mientras la identidad carga.
+ *
+ * Es un rótulo apagado y **no un hueco vacío**: con el grupo vacío hasta que
+ * la respuesta llegue, el encabezado cambia de alto cuando el nombre aparece
+ * —en una franja que envuelve, aparece un renglón nuevo— y el contenido
+ * entero salta. Un rótulo que dice qué está pasando ocupa el lugar desde el
+ * primer pintado y además es honesto; un bloque gris animado sería la misma
+ * reserva diciendo menos y trayendo una animación que `prefers-reduced-
+ * motion` tendría que apagar.
+ */
+.esqueleto__quien--cargando {
+  color: var(--color-borde-fuerte);
+  font-style: italic;
+  font-weight: var(--peso-normal);
+}
+
+/*
+ * Sin identidad reconocida: se dice, y se dice con la tinta llena. Un aviso
+ * de que la puerta no reconoció la sesión apagado al mismo tono que el
+ * nombre de quien entró es un aviso que nadie mira.
+ *
+ * **Y es el único estado al que se le suelta la elipsis**, o sea el único
+ * que puede hacer crecer la franja un renglón. Es deliberado y es el reparto
+ * que corresponde: un nombre recortado sigue identificando a alguien —el
+ * entero está en el árbol y en el `title`—, pero un motivo recortado deja
+ * «Sin identidad reconocida (acceso_no_conf…» en la pantalla, y la parte que
+ * se perdió es justamente la que dice qué hay que arreglar. Entre un
+ * encabezado de alto constante y un despliegue a medias legible, se elige lo
+ * segundo: el estado normal no salta nunca, y el anormal se ve entero.
+ */
+.esqueleto__quien--sin-reconocer {
+  overflow: visible;
+  color: var(--color-tinta);
+  text-overflow: clip;
+  white-space: normal;
+}
+
+/*
+ * La salida.
+ *
+ * Sale de los mismos tokens que `.esqueleto__alternar` y por el mismo
+ * motivo, así que las dos listas de declaraciones se parecen a propósito:
+ * **ninguno de los dos lleva la clase `.boton`**, porque las pruebas de
+ * punta a punta de cotizaciones miden la barra de acciones de una pantalla
+ * contando `header button.boton` y leyendo `header .boton`, y ni el control
+ * del armazón ni la salida de la sesión son acciones de una pantalla.
+ *
+ * No se reusa `.esqueleto__alternar` con un selector compartido porque uno
+ * es un `<button>` que alterna una región de esta página y el otro un `<a>`
+ * que se va de la aplicación: comparten la forma de hoy y no la razón, y un
+ * selector común los ataría el día que uno de los dos tenga que cambiar.
+ */
+.esqueleto__salir {
+  flex: 0 0 auto;
+  padding: var(--espacio-2xs) var(--espacio-xs);
+  border-radius: var(--radio-m);
+  color: var(--color-acento);
+  font-weight: var(--peso-medio);
+  line-height: var(--linea-ajustada);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.esqueleto__salir:hover {
+  background: var(--color-superficie-tenue);
+  text-decoration: underline;
+}
+
+/* ======================================================================
    El lateral: cajón en angosto, columna en ancho (T-2)
 
    Lo que está escrito sin consulta de ninguna clase —el estado base— es el

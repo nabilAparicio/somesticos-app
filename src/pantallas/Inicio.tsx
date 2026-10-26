@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 
-import type { HealthReport, IdentidadActual } from "../../worker/contract";
+import type { HealthReport } from "../../worker/contract";
 import { Enlace } from "../layout/Enlace";
-import { Fila } from "../layout/Fila";
 import { Pila } from "../layout/Pila";
 import { Prosa } from "../layout/Prosa";
 import { Rejilla } from "../layout/Rejilla";
@@ -13,39 +12,34 @@ type HealthState =
   | { kind: "ready"; report: HealthReport }
   | { kind: "error"; message: string };
 
-type IdentityState =
-  | { kind: "loading" }
-  | { kind: "ready"; identity: IdentidadActual }
-  | { kind: "denied" };
+/*
+ * **La identidad ya no se lee acá, y eso es lo que T-3 entregó.**
+ *
+ * Esta pantalla tenía un `fetch("/api/yo")` a mano y una línea apagada que
+ * decía «Entró …» o «Sin identidad reconocida». Se fue entera, por dos
+ * razones distintas:
+ *
+ *  1. **Estaba en el lugar equivocado.** La identidad es del armazón y no de
+ *     ninguna pantalla: dicha sólo en la portada, se perdía en cuanto
+ *     alguien navegaba, que es cuando hace falta. Ahora vive en
+ *     `src/layout/Esqueleto.tsx`, permanente y en toda pantalla, con el
+ *     correo y con «Salir» al lado. Repetirla acá sería decir dos veces lo
+ *     mismo en la misma pantalla, y peor: sin correo y sin salida.
+ *  2. **Pedía por fuera del cliente HTTP.** El `fetch` a mano comparaba
+ *     contra 200 y aplastaba los cuatro motivos de rechazo de la puerta en
+ *     la misma nada. Lo que pide ahora es `src/api/identidad.ts`, sobre el
+ *     `pedir` que ya distingue 403 y 503 y conserva el motivo.
+ *
+ * El `fetch` de `/api/health` de abajo **se queda a mano**, y la asimetría
+ * es deliberada: `/api/health` corre antes de la puerta y su 503 es una
+ * respuesta válida con cuerpo, o sea exactamente lo que `pedir` trataría
+ * como `sin_acceso`. No es un cliente que falte; es una ruta que no sigue el
+ * contrato de las demás porque está para contestar cuando las demás no
+ * pueden.
+ */
 
 export function Inicio() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
-  const [identity, setIdentity] = useState<IdentityState>({ kind: "loading" });
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    // Who got in. Una sola línea con la identidad resuelta, para que la
-    // puerta de Access se vea desde el navegador. En local, sin token, el
-    // Worker contesta 403 y acá se lee "Sin identidad reconocida": es el
-    // comportamiento esperado, no una falla.
-    fetch("/api/yo", { signal: controller.signal })
-      .then(async (response) =>
-        response.status === 200
-          ? ({
-              kind: "ready",
-              identity: (await response.json()) as IdentidadActual,
-            } as const)
-          : ({ kind: "denied" } as const),
-      )
-      .then(setIdentity)
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        setIdentity({ kind: "denied" });
-      });
-
-    return () => controller.abort();
-  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -75,19 +69,7 @@ export function Inicio() {
   return (
     <Pila espacio="holgado">
       <header>
-        <Pila espacio="ceñido">
-          <h1>Procesos del bufete</h1>
-          <Fila alinear="centro">
-            {identity.kind === "ready" && (
-              <p className="texto-apagado">
-                Entró {identity.identity.nombre}.
-              </p>
-            )}
-            {identity.kind === "denied" && (
-              <p className="texto-apagado">Sin identidad reconocida.</p>
-            )}
-          </Fila>
-        </Pila>
+        <h1>Procesos del bufete</h1>
       </header>
 
       {/*

@@ -66,6 +66,13 @@
     // —`CONFLICTOS`— es lógica pura con una prueba propia, y compila acá sin
     // DOM porque `fetch`, `Request` y `Response` los declaran los tipos del
     // runtime de Workers, que este proyecto ya carga en `types`.
-    "../src/api/peticiones.ts"
+    "../src/api/peticiones.ts",
+    // El segundo cliente HTTP de la lista (T-3 de
+    // `odd/tasks/armazon-de-aplicacion.md`), y entra por lo mismo que el de
+    // arriba: `cargarIdentidad` es lógica pura con prueba propia en
+    // `test/identidad-ui.spec.ts`, y compila sin DOM porque lo único que
+    // toca —`fetch`, `AbortSignal`, `Response`— lo declaran los tipos del
+    // runtime de Workers que este proyecto ya carga en `types`.
+    "../src/api/identidad.ts"
   ]
 }
