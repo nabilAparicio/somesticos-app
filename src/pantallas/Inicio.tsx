@@ -34,9 +34,7 @@ import type {
 import { cargarInicio } from "../api/inicio";
 import { textoDeProblema } from "../api/peticiones";
 import { Aviso } from "../layout/Aviso";
-import { Enlace } from "../layout/Enlace";
 import { Pila } from "../layout/Pila";
-import { Prosa } from "../layout/Prosa";
 import { Rejilla } from "../layout/Rejilla";
 import { GraficoDeDistribucion } from "./inicio/GraficoDeDistribucion";
 import { GraficoDeSerie } from "./inicio/GraficoDeSerie";
@@ -89,44 +87,6 @@ export function Inicio() {
       <header>
         <h1>Procesos del bufete</h1>
       </header>
-
-      {/*
-        Esta prosa describe lo que el sistema hace **hoy**, en presente, y por
-        eso no nombra nada como «lo que sigue».
-
-        La versión anterior era de T-5 y prometía como futuro el catálogo, las
-        plantillas de etapas y el plan de trabajo: las tres estaban entregadas
-        desde T-6, T-7 y T-11, y el texto siguió diciendo lo contrario seis
-        tajadas. Es la misma clase de defecto que la revisión marcó en una
-        migración y que ya se corrigió dos veces en comentarios: texto que
-        caduca porque habla en futuro de algo que después pasa.
-
-        Quien agregue una capacidad nueva agrega acá su frase en presente. Lo
-        que **no** se vuelve a escribir es una promesa.
-      */}
-      <Prosa>
-        <p>
-          El bufete lleva acá sus <Enlace href="/clientes">clientes</Enlace> —
-          dar de alta un prospecto cuesta un nombre y un teléfono, que es lo
-          que se sabe de alguien que acaba de llamar — y sus{" "}
-          <Enlace href="/catalogos">catálogos</Enlace> de áreas y tipos de
-          proceso, cada tipo con su plantilla de etapas.
-        </p>
-        <p>
-          Con eso se abre un <Enlace href="/procesos">proceso</Enlace>, que es
-          donde está el trabajo: su plan de etapas, editable caso por caso sin
-          tocar la plantilla; sus notas; sus pendientes con responsable y
-          fecha de vencimiento; y su bitácora, que anota sola quién cambió qué
-          y cuándo. Un proceso se cierra cuando termina, y se reabre si hacía
-          falta.
-        </p>
-        <p>
-          Debajo, cada quien ve lo que le espera: los pendientes abiertos a su
-          nombre, sus borradores y sus cotizaciones emitidas que vencen pronto;
-          y cuántas cotizaciones se abrieron, se emitieron, se ganaron y se
-          perdieron este mes, las suyas o las de todo el bufete.
-        </p>
-      </Prosa>
 
       {estado.fase === "cargando" && <p>Consultando…</p>}
 
