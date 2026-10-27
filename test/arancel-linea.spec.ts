@@ -484,6 +484,73 @@ describe("un precio sale de un renglón que tiene precio del bufete", () => {
     expect(await origenDe(lineaId)).toBe(reglaTarifadaId);
   });
 
+  it("dejar de tarifar un servicio no congela la línea que ya salió de él", async () => {
+    // El defecto que `0014` corrige, encontrado probando la base a mano y no
+    // por ninguna de las pruebas de arriba.
+    //
+    // La guarda de `0013` miraba el estado de la fila después de **cualquier**
+    // escritura, no el cambio. Y como el bufete puede dejar de tarifar un
+    // servicio cuando quiera, la secuencia era alcanzable: la línea apunta a
+    // un renglón tarifado, alguien vacía ese precio en la pantalla de precios,
+    // y desde entonces la línea no aceptaba ninguna escritura más —ni
+    // corregirle una falta de ortografía al concepto, que no tiene nada que
+    // ver con el precio—. Un borrador congelado por algo que pasó en otra
+    // pantalla, y sin forma de salir: la pantalla que causa el bloqueo no es
+    // la que falla.
+    //
+    // El invariante real es sobre el **acto de tomar el precio**, no sobre la
+    // fila para siempre. Que el bufete deje de tarifar ese servicio mañana no
+    // vuelve falso que ayer el precio salió de ahí; es el mismo razonamiento
+    // por el que `snapshot.ts` congela el monto en vez de volver a buscarlo.
+    const lineaId = nuevoId();
+    await sembrarLinea({
+      id: lineaId,
+      arancelRenglonId: renglonTarifadoId,
+    }).run();
+
+    // El bufete deja de tarifar ese servicio. Es legítimo y no se impide.
+    await env.DB.prepare(
+      "UPDATE arancel_renglon SET monto = NULL WHERE id = ?",
+    )
+      .bind(renglonTarifadoId)
+      .run();
+
+    // Y la línea sigue siendo una línea: se le puede escribir cualquier otra
+    // columna. Sin el `IS NOT OLD...` de `0014`, esto muere.
+    await env.DB.prepare(
+      "UPDATE cotizacion_linea SET concepto = ? WHERE id = ?",
+    )
+      .bind("corregida una falta de ortografía", lineaId)
+      .run();
+
+    // La procedencia no se perdió: sigue diciendo de dónde salió el precio.
+    expect(await origenDe(lineaId)).toBe(renglonTarifadoId);
+
+    // Y el contrapeso, para que esta prueba no afloje la guarda entera:
+    // **mover** el origen hacia ese renglón ahora sin precio se sigue
+    // rechazando, que es el invariante que `0013` quería y que `0014`
+    // conserva.
+    // `orden: 1` y no el 0 por defecto: es la segunda línea de este mismo
+    // borrador y `cotizacion_linea_orden_unico` es por cotización.
+    const otraLinea = nuevoId();
+    await sembrarLinea({ id: otraLinea, orden: 1 }).run();
+    await expect(
+      env.DB.prepare(
+        "UPDATE cotizacion_linea SET arancel_renglon_id = ? WHERE id = ?",
+      )
+        .bind(renglonTarifadoId, otraLinea)
+        .run(),
+    ).rejects.toThrow(ORIGEN_SIN_PRECIO);
+
+    // El `beforeEach` sólo abre un borrador nuevo: no vuelve a sembrar los
+    // renglones, y `renglonTarifadoId` lo comparten las pruebas de abajo. Sin
+    // devolverle el precio acá, esta prueba las rompe a todas y el error
+    // aparece lejos de su causa.
+    await env.DB.prepare("UPDATE arancel_renglon SET monto = ? WHERE id = ?")
+      .bind(180_000, renglonTarifadoId)
+      .run();
+  });
+
   it("el otro contrapeso: quitarle el origen a una línea pasa", async () => {
     // Volver a un monto libre es legítimo —el usuario borra el servicio y
     // escribe su cifra—, y con `<>` en vez de `IS NOT`, o con la condición de
