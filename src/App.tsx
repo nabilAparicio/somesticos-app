@@ -17,6 +17,7 @@ import { BancoDePruebas } from "./pantallas/BancoDePruebas";
 import { Inicio } from "./pantallas/Inicio";
 import { Arancel } from "./pantallas/catalogos/Arancel";
 import { Catalogos } from "./pantallas/catalogos/Catalogos";
+import { PlantillasDeModulo } from "./pantallas/catalogos/PlantillasDeModulo";
 import { Precios } from "./pantallas/catalogos/Precios";
 import { FormularioDeTipoDeProceso } from "./pantallas/catalogos/FormularioDeTipoDeProceso";
 import { TiposDeProceso } from "./pantallas/catalogos/TiposDeProceso";
@@ -65,6 +66,11 @@ function pantallaDe(ruta: Ruta) {
       return <Precios />;
     case "arancel":
       return <Arancel />;
+    // Los módulos de una cotización (T-2 de
+    // `odd/tasks/plantillas-de-modulo.md`). Tampoco lleva `key`, por lo mismo
+    // que las dos de arriba: no tiene parámetro que la distinga.
+    case "plantillas-de-modulo":
+      return <PlantillasDeModulo />;
     case "tipos-proceso":
       return <TiposDeProceso />;
     case "tipo-proceso-nuevo":

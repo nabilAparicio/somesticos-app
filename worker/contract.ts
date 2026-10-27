@@ -3035,3 +3035,153 @@ export interface RenglonCitado {
 export interface RubroSinPrecio {
   error: "rubro_sin_precio";
 }
+
+/* ===========================================================================
+   Las plantillas de módulo (T-2 de `odd/tasks/plantillas-de-modulo.md`)
+   ===========================================================================
+
+   Los seis módulos de prosa con los que se arma una cotización, con **su
+   descripción**, que es la razón de ser de la tajada: hasta `0016` el rótulo
+   era todo lo que el sistema sabía de ellos, y por lo tanto todo lo que la IA
+   recibía. `worker/ia/prompt.ts` le pasaba al modelo `alcance · Alcance` y
+   nada más; el propósito lo deducía del nombre.
+
+   La asimetría es la misma que el arancel, y es la que el usuario pidió por su
+   nombre —«igual que los precios, le damos como preset los módulos ya
+   configurados»—, con una diferencia de significado que conviene no mezclar:
+
+    - `rotuloOficial` y `descripcionOficial` son **un preset**, no una cita.
+      Nadie los publicó: los sembró `0016` para que haya un piso al que
+      volver. Se leen, no se escriben, y lo sostienen un disparador en la base
+      (`modulo_plantilla_preset_no_se_edita`) y una negativa explícita en la
+      API, con prueba cada una.
+    - `rotulo` y `descripcion` son **lo que el bufete decidió**, y nulo
+      significa «uso el preset». Ahí vive el «volver atrás» entero: se vacía el
+      campo y el `COALESCE` devuelve el original. No hay columna «¿editado?»,
+      porque la presencia del valor **es** la respuesta.
+    - `clave` es el identificador que viaja fuera de esta tabla: lo que el
+      snapshot congela al emitir y lo que la IA copia tal cual. **Inmutable**,
+      y por eso renombrar una plantilla mañana no toca ningún documento
+      emitido.
+   ========================================================================== */
+
+/**
+ * Una plantilla de módulo tal como la ve el navegador.
+ *
+ * ## Viajan los tres valores: el propio, el preset y el vigente
+ *
+ * Son redundantes a propósito, y la redundancia compra dos cosas concretas:
+ *
+ *  - **El vigente viaja resuelto desde el servidor.** `COALESCE` es una regla
+ *    del sistema, no una decisión de presentación, y dos pantallas que la
+ *    reconstruyan por su cuenta son dos pantallas que algún día la
+ *    reconstruyen distinto. Es el mismo argumento con el que
+ *    `CategoriaDelArancel` se agrupa en el servidor.
+ *  - **El preset viaja en la misma respuesta que la lista.** Sin él, la
+ *    pantalla no podría dibujar la marca de editado ni ofrecer el vuelta
+ *    atrás sin una segunda petición por fila: son seis filas hoy, pero el
+ *    argumento no es el tamaño sino que el dato ya estaba en la consulta.
+ *
+ * **Y esto no es la comparación lado a lado que la pantalla de precios
+ * descartó.** Lo que ahí se sacó fue dibujar dos cifras juntas —«así no se
+ * siente que el sistema juzga tus precios»—; lo que viaja acá es de quién es
+ * el valor que se ve, que es un hecho y no un juicio. El contrato lleva los
+ * dos; la pantalla muestra **uno**, y eso lo mide `e2e/plantillas.spec.ts`
+ * sobre el dibujo, que es donde se puede medir.
+ *
+ * Los dos `*Vigente` no son nullable, y eso no es optimismo: lo sostienen los
+ * dos `CHECK` de `0016` —`la_plantilla_tiene_rotulo_vigente` y
+ * `la_plantilla_tiene_descripcion_vigente`—, así que una fila sin valor
+ * vigente no existe y no puede existir. Declararlos nullable obligaría a cada
+ * pantalla a inventar qué dibujar en un caso que la base niega.
+ */
+export interface PlantillaDeModulo {
+  id: string;
+  /** El identificador estable. Lo congela el snapshot, lo copia la IA. */
+  clave: string;
+  /** La posición sugerida en la cotización. */
+  orden: number;
+  /** El preset. Nulo en una plantilla que el bufete cree (ninguna todavía). */
+  rotuloOficial: string | null;
+  descripcionOficial: string | null;
+  /** Lo del bufete. Nulo es «uso el preset», y es cómo se vuelve atrás. */
+  rotulo: string | null;
+  descripcion: string | null;
+  /** `COALESCE(rotulo, rotulo_oficial)`, resuelto en el servidor. */
+  rotuloVigente: string;
+  descripcionVigente: string;
+  /** Se da de baja; no se borra (`modulo_plantilla_no_se_borra`). */
+  activo: boolean;
+}
+
+/**
+ * `GET /api/plantillas-modulo`: el catálogo entero, en el orden sugerido.
+ *
+ * **Vienen también las dadas de baja**, y la decisión está argumentada en
+ * `worker/plantillas/repositorio.ts`: sin ellas no habría forma de
+ * reactivarlas, y `activo` viaja en cada fila para que la pantalla las
+ * distinga.
+ */
+export interface RespuestaDePlantillasDeModulo {
+  plantillas: PlantillaDeModulo[];
+}
+
+/** `PUT /api/plantillas-modulo/{id}`: la plantilla releída después de guardar. */
+export interface RespuestaDePlantillaDeModulo {
+  plantilla: PlantillaDeModulo;
+}
+
+/**
+ * El 409 de intentar escribir lo que esta ruta no escribe nunca: la `clave` o
+ * el preset.
+ *
+ * Es un **409 y no un 422** por la distinción que esta API ya usa y que
+ * `RenglonCitado` dejó escrita arriba: 422 dice «entendí el cuerpo y los datos
+ * no me sirven»; esto es «el cuerpo está perfecto y lo que no admite la
+ * escritura es el estado de la fila». Acá el estado es que esos tres campos
+ * son lo que hace que «volver al preset» signifique algo y que un documento
+ * emitido siga apuntando a la plantilla que nombró.
+ *
+ * `campos` viaja para que la pantalla pueda nombrar cuál fue, con los nombres
+ * del **cable**: quien lee este error está mirando el cuerpo que mandó.
+ *
+ * Es **un** motivo para los tres campos aunque la base los guarde con dos
+ * disparadores, y el argumento está en `CAMPOS_INMUTABLES` de
+ * `worker/plantillas/dominio.ts`: el motivo del cable existe para que la
+ * pantalla pueda explicar, y la explicación es una sola; el nombre del
+ * disparador existe para que una consola pueda diagnosticar, y ahí sí hacen
+ * falta dos.
+ */
+export interface PlantillaInmutable {
+  error: "plantilla_inmutable";
+  campos: string[];
+}
+
+/**
+ * El 409 de vaciar un campo que no tiene preset debajo.
+ *
+ * ## Por qué no es el mismo motivo que su vecino de arriba
+ *
+ * `plantilla_inmutable` dice «ese campo no se escribe **nunca**». Esto dice lo
+ * contrario: ese campo **sí** se escribe —es la mitad editable de la tabla— y
+ * lo que no se puede es dejarlo vacío, porque vaciarlo significa «uso el
+ * preset» y debajo no hay preset. Aplastarlos en un motivo dejaría a la
+ * pantalla diciéndole a alguien que no puede editar su propia descripción.
+ *
+ * ## Por qué no es un 422
+ *
+ * Porque no hay dato que arreglar en el cuerpo: la cadena vacía es un valor
+ * perfectamente bueno y en cinco de las seis filas significa «volver al
+ * original». Lo que la rechaza es **la fila** —no tiene piso debajo—, que es
+ * exactamente la forma de `rubro_sin_precio`: el importe puede ser impecable;
+ * lo que no lleva precio es el encabezado.
+ *
+ * Hoy no hay ninguna fila que pueda producirlo: las seis que `0016` siembra
+ * tienen preset en las dos columnas. Está en el contrato igual porque las dos
+ * columnas del preset son nullable a propósito —la tajada 2 permite crear
+ * plantillas propias— y un contrato que calla el caso lo descubre como un 500.
+ */
+export interface PlantillaSinPreset {
+  error: "plantilla_sin_preset";
+  campos: string[];
+}

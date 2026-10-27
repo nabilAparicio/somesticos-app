@@ -53,6 +53,15 @@
     // para leer el fragmento de la URL deja de compilar acá, que es
     // exactamente lo que tiene que pasar: el fragmento lo lee `Arancel.tsx`.
     "../src/pantallas/catalogos/precios.ts",
+    // La lógica de la pantalla de módulos (T-2 de
+    // `odd/tasks/plantillas-de-modulo.md`). Entra por lo mismo que la de
+    // arriba, y de hecho importa de ella: la marca de editado es un solo
+    // literal para las tres pantallas que la dibujan. La barrera de este
+    // proyecto le sirve de guardia igual — el día que alguien le meta un
+    // `document` para leer el valor de un campo, deja de compilar acá, que es
+    // exactamente lo que tiene que pasar: los campos los cablea
+    // `PlantillasDeModulo.tsx`, que no es lógica.
+    "../src/pantallas/catalogos/plantillas.ts",
     "../src/formatos.ts",
     "../src/pantallas/procesos/formulario.ts",
     "../src/pantallas/procesos/plan.ts",

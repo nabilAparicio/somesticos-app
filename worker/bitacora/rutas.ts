@@ -1,20 +1,19 @@
 /**
- * Las rutas HTTP de la bitácora. Siete, y las siete de lectura:
+ * Las rutas HTTP de la bitácora. Ocho, y las ocho de lectura:
  *
- *   GET /api/procesos/{id}/bitacora       qué pasó con este proceso
- *   GET /api/clientes/{id}/bitacora       quién tocó esta ficha
- *   GET /api/areas/{id}/bitacora          qué le pasó a esta área
- *   GET /api/tipos-cliente/{id}/bitacora  …y a este tipo de cliente
- *   GET /api/tipos-proceso/{id}/bitacora  …y a este tipo de proceso
- *   GET /api/cotizaciones/{id}/bitacora   qué le pasó a esta cotización
- *   GET /api/arancel/{id}/bitacora        quién le puso este precio
+ *   GET /api/procesos/{id}/bitacora           qué pasó con este proceso
+ *   GET /api/clientes/{id}/bitacora           quién tocó esta ficha
+ *   GET /api/areas/{id}/bitacora              qué le pasó a esta área
+ *   GET /api/tipos-cliente/{id}/bitacora      …y a este tipo de cliente
+ *   GET /api/tipos-proceso/{id}/bitacora      …y a este tipo de proceso
+ *   GET /api/cotizaciones/{id}/bitacora       qué le pasó a esta cotización
+ *   GET /api/arancel/{id}/bitacora            quién le puso este precio
+ *   GET /api/plantillas-modulo/{id}/bitacora  quién cambió esta descripción
  *
- * Hay una octava dirección reconocida y todavía sin contestar:
- * `/api/plantillas-modulo/{id}/bitacora`. La entidad entró al vocabulario con
- * su migración en T-1 de `odd/tasks/plantillas-de-modulo.md` —el `CHECK` y la
- * unión no se pueden separar sin dejar la suite en rojo—, pero el puerto que
- * comprueba la fila llega con T-2, así que hoy contesta 404. El porqué, y qué
- * tiene que reemplazar T-2, están al lado del `case` en `existeLaFila`.
+ * La octava la estrenó T-2 de `odd/tasks/plantillas-de-modulo.md`, que es la
+ * tarea que abrió el repositorio de plantillas. T-1 había dejado la dirección
+ * reconocida y contestando 404 porque el puerto que comprueba la fila todavía
+ * no existía; hoy existe y `existeLaFila` lo usa como cualquier otro.
  *
  * **Y nada más.** No hay `POST`, ni `PUT`, ni `PATCH`, ni `DELETE`, ni
  * `/api/bitacora`, ni dirección propia de una entrada. Es la misma forma que
@@ -64,6 +63,7 @@ import type { ServicioDeArancel } from "../arancel/repositorio";
 import type { ServicioDeCatalogos } from "../catalogos/repositorio";
 import type { ServicioDeClientes } from "../clientes/repositorio";
 import type { ServicioDeCotizaciones } from "../cotizaciones/repositorio";
+import type { ServicioDePlantillas } from "../plantillas/repositorio";
 import type { ServicioDeProcesos } from "../procesos/repositorio";
 import type { ServicioDeBitacora } from "./repositorio";
 
@@ -179,6 +179,7 @@ interface Puertos {
   readonly catalogos: ServicioDeCatalogos;
   readonly cotizaciones: ServicioDeCotizaciones;
   readonly arancel: ServicioDeArancel;
+  readonly plantillas: ServicioDePlantillas;
 }
 
 /**
@@ -209,37 +210,8 @@ async function existeLaFila(
       return (await puertos.cotizaciones.obtener(tenantId, id)) !== null;
     case "arancel_renglon":
       return (await puertos.arancel.obtener(tenantId, id)) !== null;
-    /*
-     * **Un `false` provisorio, con fecha de vencimiento y dicho a la vista.**
-     *
-     * `modulo_plantilla` entra al vocabulario en T-1 porque tiene que entrar
-     * con su migración: `test/bitacora-api.spec.ts` compara el `CHECK` de
-     * `entidad` contra `ENTIDADES_REGISTRADAS`, así que partir el par dejaría
-     * la suite en rojo entre una tarea y la otra. Y el `satisfies` de
-     * `COLECCION_POR_ENTIDAD` obliga a decir por qué dirección se lee, que es
-     * exactamente la red que este archivo quiere.
-     *
-     * Lo que **todavía no existe** es el puerto que contesta si la fila es de
-     * este bufete: vive en `worker/plantillas/repositorio.ts`, que es el
-     * primer archivo de T-2, y hace falta además pasarlo desde
-     * `worker/index.ts`. Hasta entonces esta dirección contesta 404 para una
-     * fila que sí existe, que es un defecto conocido y acotado: hoy **nadie
-     * la llama** —no hay pantalla ni cliente que la pida— y no hay una sola
-     * entrada de bitácora de esta entidad, porque la escritura también llega
-     * en T-2.
-     *
-     * No se devuelve `true` ni se afloja la comprobación: contestar 200 con
-     * una lista vacía confirmaría que ese identificador existe en alguna
-     * parte, que es justo la fuga que el 404 de este archivo niega. Entre
-     * «esconde una historia que todavía no tiene dueño» y «confirma un
-     * identificador ajeno», la primera se arregla en la tarea siguiente y la
-     * segunda no se arregla nunca.
-     *
-     * **T-2 reemplaza esta línea por `puertos.plantillas.obtener(…)`**, y es
-     * lo primero que tiene que hacer al abrir el repositorio.
-     */
     case "modulo_plantilla":
-      return false;
+      return (await puertos.plantillas.obtener(tenantId, id)) !== null;
   }
 }
 
@@ -260,6 +232,7 @@ export async function rutasDeBitacora(
   catalogos: ServicioDeCatalogos,
   cotizaciones: ServicioDeCotizaciones,
   arancel: ServicioDeArancel,
+  plantillas: ServicioDePlantillas,
   bitacora: ServicioDeBitacora,
 ): Promise<Response | null> {
   const segmentos = segmentosDe(url.pathname);
@@ -309,6 +282,7 @@ export async function rutasDeBitacora(
     catalogos,
     cotizaciones,
     arancel,
+    plantillas,
   });
 
   if (!existe) return noEncontrado();

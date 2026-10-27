@@ -62,6 +62,28 @@ export type Ruta =
    */
   | { nombre: "precios" }
   | { nombre: "arancel" }
+  /**
+   * Los módulos de una cotización, configurables (T-2 de
+   * `odd/tasks/plantillas-de-modulo.md`).
+   *
+   * Va bajo `/catalogos` y no en una raíz propia por el mismo criterio que
+   * las dos del arancel: lo que se edita acá es un dato del bufete, como un
+   * área o un tipo de proceso, y el menú ya ofrece `/catalogos`. El
+   * invariante de `e2e/navegacion.spec.ts` compara la **raíz de sección**,
+   * así que queda alcanzable desde el menú sin agregarle un ítem a una
+   * navegación de siete.
+   *
+   * El segmento es `modulos` y no `plantillas`: en este sistema «plantilla»
+   * ya está tomada por las etapas de un tipo de proceso, y
+   * `/catalogos/plantillas` es la dirección que alguien leería al revés. El
+   * nombre de la ruta sí es `plantillas-de-modulo`, porque ahí no hay
+   * ambigüedad posible —lleva el sustantivo adentro— y es el que la hace
+   * buscable junto al resto de la tajada.
+   *
+   * No lleva parámetro: los seis módulos se editan en la misma pantalla, que
+   * es un catálogo corto y no una ficha por fila.
+   */
+  | { nombre: "plantillas-de-modulo" }
   | { nombre: "tipos-proceso" }
   | { nombre: "tipo-proceso-nuevo" }
   | { nombre: "tipo-proceso"; id: string }
@@ -171,6 +193,19 @@ const TIPOS_PROCESO = "tipos-proceso";
 const PRECIOS = "precios";
 const ARANCEL = "arancel";
 
+/**
+ * La subsección de las plantillas de módulo (T-2 de
+ * `odd/tasks/plantillas-de-modulo.md`).
+ *
+ * `modulos` y no `plantillas`: «plantilla» ya nombra las etapas de un tipo de
+ * proceso en este sistema, y una dirección ambigua es la que alguien lee al
+ * revés. La API usa el nombre completo —`/api/plantillas-modulo`— porque ahí
+ * convive con la colección de la bitácora y hace falta desambiguar; en la
+ * barra de direcciones, bajo `/catalogos`, «módulos» ya no se confunde con
+ * nada.
+ */
+const MODULOS = "modulos";
+
 /** La raíz de las pantallas de proceso (T-7). */
 const PROCESOS = "procesos";
 
@@ -260,6 +295,15 @@ function resolverCatalogos(segmentos: string[], pathname: string): Ruta {
   }
   if (segmentos[1] === ARANCEL) {
     return segmentos.length === 2 ? { nombre: "arancel" } : desconocida;
+  }
+  /*
+   * Los módulos, con el mismo corte: la pantalla edita los seis a la vez, así
+   * que `/catalogos/modulos/{algo}` no es la dirección de nada.
+   */
+  if (segmentos[1] === MODULOS) {
+    return segmentos.length === 2
+      ? { nombre: "plantillas-de-modulo" }
+      : desconocida;
   }
 
   if (segmentos[1] !== TIPOS_PROCESO) return desconocida;
@@ -414,6 +458,8 @@ export function enlaceDe(ruta: Ruta): string {
       return `/${CATALOGOS}/${PRECIOS}`;
     case "arancel":
       return `/${CATALOGOS}/${ARANCEL}`;
+    case "plantillas-de-modulo":
+      return `/${CATALOGOS}/${MODULOS}`;
     case "tipos-proceso":
       return `/${CATALOGOS}/${TIPOS_PROCESO}`;
     case "tipo-proceso-nuevo":

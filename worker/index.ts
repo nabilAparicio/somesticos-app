@@ -59,6 +59,11 @@ import { TENANT_UNICO_ID } from "./db/ids";
 import { notasSobreD1, type ServicioDeNotas } from "./notas/repositorio";
 import { rutasDeNotas } from "./notas/rutas";
 import {
+  plantillasSobreD1,
+  type ServicioDePlantillas,
+} from "./plantillas/repositorio";
+import { rutasDePlantillas } from "./plantillas/rutas";
+import {
   pendientesSobreD1,
   type ServicioDePendientes,
 } from "./pendientes/repositorio";
@@ -145,6 +150,12 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
 
   /** El arancel de honorarios y el precio del bufete (T-2). Idem. */
   arancel?: ServicioDeArancel;
+
+  /**
+   * Las plantillas de módulo y su descripción (T-2 de
+   * `odd/tasks/plantillas-de-modulo.md`). Idem.
+   */
+  plantillas?: ServicioDePlantillas;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -299,6 +310,17 @@ export async function manejar(
   // existe en este bufete y no por una segunda copia de la consulta.
   const servicioDeArancel = dependencias.arancel ?? arancelSobreD1(base);
 
+  // Un solo servicio de plantillas para las dos rutas que lo necesitan: la
+  // suya y la de su bitácora, que comprueba por el mismo puerto que la
+  // plantilla existe en este bufete y no por una segunda copia de la consulta.
+  //
+  // **Esta línea es la que cierra el 404 que T-1 dejó debiendo.** El `case`
+  // de `modulo_plantilla` en `existeLaFila` devolvía `false` porque este
+  // puerto no existía; lo que faltaba era el repositorio y este parámetro, y
+  // están los dos.
+  const servicioDePlantillas =
+    dependencias.plantillas ?? plantillasSobreD1(base);
+
   const bitacora = await rutasDeBitacora(
     request,
     url,
@@ -308,6 +330,7 @@ export async function manejar(
     servicioDeCatalogos,
     servicioDeCotizaciones,
     servicioDeArancel,
+    servicioDePlantillas,
     dependencias.bitacora ?? bitacoraSobreD1(base),
   );
   if (bitacora !== null) return bitacora;
@@ -323,6 +346,18 @@ export async function manejar(
     servicioDeArancel,
   );
   if (arancel !== null) return arancel;
+
+  // Las plantillas de módulo, por lo mismo que el arancel: la bitácora es una
+  // subruta suya. `rutasDePlantillas` corta en `segmentos.length !== 3` y
+  // devuelve `null` para `/bitacora`, así que el orden no cambia qué contesta
+  // cada una, pero deja el reparto escrito.
+  const plantillas = await rutasDePlantillas(
+    request,
+    url,
+    TENANT_UNICO_ID,
+    servicioDePlantillas,
+  );
+  if (plantillas !== null) return plantillas;
 
   // Las cotizaciones van **después** de la bitácora porque ésta es una
   // subruta suya: `rutasDeCotizaciones` corta en `segmentos.length !== 3` y

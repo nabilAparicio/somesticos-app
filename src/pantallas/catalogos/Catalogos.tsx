@@ -108,6 +108,38 @@ export function Catalogos() {
         </Pila>
       </section>
 
+      {/*
+        Los módulos de una cotización (T-2 de
+        `odd/tasks/plantillas-de-modulo.md`). Entra con enlace propio y no
+        solo con ruta, por la lección que este archivo ya tiene escrita
+        arriba: una pantalla a la que solo se llega escribiendo la URL no está
+        entregada.
+
+        Va en sección aparte y no dentro de «Precios de los servicios» porque
+        es otra cosa: aquello es cuánto se cobra, esto es qué dice cada parte
+        del documento. Y el texto de abajo nombra al asistente a propósito —es
+        el motivo por el que esta pantalla existe— sin pedirle a nadie que
+        entienda cómo funciona.
+      */}
+      <section aria-labelledby="catalogo-modulos">
+        <Pila espacio="ceñido">
+          <h2 id="catalogo-modulos">Módulos de una cotización</h2>
+          <p className="texto-apagado">
+            El rótulo y la descripción de cada parte de una propuesta
+            —alcance, exclusiones, cláusulas—. La descripción es lo que lee el
+            asistente para entender de qué trata el módulo cuando redacta.
+          </p>
+          <p>
+            <Enlace
+              href={enlaceDe({ nombre: "plantillas-de-modulo" })}
+              className="boton"
+            >
+              Ver los módulos
+            </Enlace>
+          </p>
+        </Pila>
+      </section>
+
       <section aria-labelledby="catalogo-tipos-proceso">
         <Pila espacio="ceñido">
           <h2 id="catalogo-tipos-proceso">Tipos de proceso</h2>

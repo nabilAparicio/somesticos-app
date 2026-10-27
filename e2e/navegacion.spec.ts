@@ -88,6 +88,17 @@ const PANTALLAS: Record<Ruta["nombre"], Destino> = {
    */
   precios: { ruta: { nombre: "precios" }, bajo: "/catalogos" },
   arancel: { ruta: { nombre: "arancel" }, bajo: "/catalogos" },
+  /*
+   * Los módulos de una cotización (T-2 de
+   * `odd/tasks/plantillas-de-modulo.md`). **No está exenta**: vive bajo
+   * `/catalogos`, que el menú ya ofrece, y se llega a ella desde la pantalla
+   * de catálogos con su enlace propio, en la sección «Módulos de una
+   * cotización». Es el mismo criterio que las dos del arancel.
+   */
+  "plantillas-de-modulo": {
+    ruta: { nombre: "plantillas-de-modulo" },
+    bajo: "/catalogos",
+  },
   "tipos-proceso": { ruta: { nombre: "tipos-proceso" }, bajo: "/catalogos" },
   "tipo-proceso-nuevo": {
     ruta: { nombre: "tipo-proceso-nuevo" },

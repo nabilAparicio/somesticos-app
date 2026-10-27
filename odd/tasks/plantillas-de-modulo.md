@@ -209,7 +209,7 @@ acotado; el disparador es la regla de escritura y la de preparación.
 
 ### T-2 · El rótulo y la descripción se editan desde catálogos
 
-- [ ] **Lo que T-1 dejó debiendo, y es lo primero de esta tarea.**
+- [x] **Lo que T-1 dejó debiendo, y es lo primero de esta tarea.**
       `existeLaFila` de `worker/bitacora/rutas.ts` es un `switch` exhaustivo, y
       agregar `modulo_plantilla` al vocabulario obligó a darle un `case`
       **antes** de que exista el puerto que lo contesta. Quedó devolviendo
@@ -220,14 +220,14 @@ acotado; el disparador es la regla de escritura y la de preparación.
       repositorio, más el parámetro nuevo en `worker/index.ts`. **No se dejó en
       `true`** a propósito: contestar 200 con una lista vacía confirmaría un
       identificador ajeno, que es la fuga que ese archivo niega.
-- [ ] `worker/plantillas/{rutas,dominio,repositorio}.ts` con la forma de
+- [x] `worker/plantillas/{rutas,dominio,repositorio}.ts` con la forma de
       `worker/arancel/`: `GET` de la colección, `PUT` del renglón, y la baja.
       Registradas en `worker/index.ts` **antes** de la bitácora o después según
       lo que el subruta `/bitacora` exija, como ya resolvió el arancel.
-- [ ] `src/api/plantillas.ts` y la pantalla `/catalogos/modulos`, con la
+- [x] `src/api/plantillas.ts` y la pantalla `/catalogos/modulos`, con la
       disciplina de `Precios.tsx`: un valor por campo, marca discreta de
       editado, y volver al preset vaciando el campo.
-- [ ] `docs/diseno.md` §8 `### El catálogo` (:377) y §6 (:258) corregidos: se
+- [x] `docs/diseno.md` §8 `### El catálogo` (:377) y §6 (:258) corregidos: se
       dice qué se revirtió y por qué, con la medición de arriba. **Un documento
       de diseño que sigue afirmando lo contrario de lo que hace el código es
       peor que no tenerlo.**
@@ -368,3 +368,131 @@ ahora tienen dos fuentes, la del código y la de la siembra, y es T-3 la que
 deja una sola—.
 
 **Siguiente paso**: T-2, empezando por cerrar el 404 de arriba.
+
+### T-2 cerrada
+
+**Archivos.** Nuevos: `worker/plantillas/dominio.ts` (315), `repositorio.ts`
+(279) y `rutas.ts` (230); `src/api/plantillas.ts` (139);
+`src/pantallas/catalogos/plantillas.ts` (476) y `PlantillasDeModulo.tsx` (466);
+`test/plantillas-dominio.spec.ts` (417), `plantillas-rutas.spec.ts` (525),
+`plantillas-api.spec.ts` (680) y `plantillas-ui.spec.ts` (566);
+`e2e/plantillas.spec.ts` (780). Modificados: 469 líneas agregadas y 52
+quitadas en `worker/contract.ts` (+150), `src/estilos/layout.css` (+105),
+`docs/diseno.md` (+65), `worker/bitacora/rutas.ts` (+62/−52),
+`src/ruteo.ts` (+46), `worker/index.ts` (+35),
+`src/pantallas/catalogos/Catalogos.tsx` (+32) y `e2e/navegacion.spec.ts` (+11).
+
+**La deuda de T-1, cerrada y medida.** El `case` de `modulo_plantilla` en
+`existeLaFila` ya llama a `puertos.plantillas.obtener(…)`, el puerto viaja
+desde `worker/index.ts`, y **las 32 líneas del comentario provisorio se
+borraron** junto con el párrafo del encabezado que anunciaba la octava
+dirección sin contestar. Medido al revés: con el `return false` de T-1 puesto
+de nuevo, `test/plantillas-api.spec.ts` da **6 fallando de 25** —la dirección
+que contesta 200, las cuatro que leen la historia de una escritura, y la que
+cuenta que un 409 no deja entrada—. Con el puerto, 25 pasando.
+
+**RED observado donde hay regla que proteger.** Quitando la normalización de
+`textoEditable` —el `trim()` y el vacío a NULL—,
+`test/plantillas-dominio.spec.ts` da **7 fallando de 46**: las tres formas de
+vacío por cada uno de los dos campos, más el recorte. Restaurada, 46 pasando.
+Es la regla que carga con la tajada, así que es la que tiene la mutación
+medida.
+
+**Dos decisiones que se separaron del enunciado, con su motivo.**
+
+1. **El rechazo del vaciado sin preset es un 409 y no un 422.** El enunciado
+   pedía 422 con motivo propio. Se eligió 409 por el criterio que el propio
+   contrato tiene escrito en `RenglonCitado`: «422 dice *entendí el cuerpo y
+   los datos no me sirven*; esto es *el cuerpo está perfecto y lo que no
+   admite la escritura es el estado de la fila*». Una cadena vacía es un valor
+   impecable —en cinco de las seis filas significa «volver al original»— y lo
+   que la rechaza es que esa fila no tiene piso debajo: es la forma exacta de
+   `rubro_sin_precio`. El efecto práctico, además, es que la frase vive en
+   `src/api/plantillas.ts` junto a la del arancel y no hay que tocar el
+   `Record<MotivoDeFalla, string>` de `src/mensajes.ts`. Dos motivos nuevos,
+   los dos 409: `plantilla_inmutable` (clave y preset, los tres campos en un
+   solo motivo porque `campos` ya dice cuál fue) y `plantilla_sin_preset`.
+2. **La baja y la reactivación van por el mismo `PUT`**, no por ruta propia.
+   Es lo que los tres catálogos de T-6 ya hacen, y lo que decide no es la
+   simetría: `accionDeEdicion` existe exactamente para esto —mira cómo quedó
+   `activo` respecto de cómo estaba y elige entre los tres verbos— y con rutas
+   propias habría que emitir el verbo a mano en cada una.
+
+**Dos defectos encontrados manejando la pantalla, no leyéndola.**
+
+1. **Editar un campo marcaba los dos.** El `PUT` manda el juego completo, así
+   que cambiar el rótulo mandaba también la descripción, y la descripción que
+   nadie tocó llegaba como texto del bufete. Medido en el navegador: **2
+   marcas en vez de 1** tras cambiar el rótulo de «Alcance». Es un defecto y
+   no una sutileza —la marca diría «lo editó el bufete» sobre algo que nadie
+   editó, y la copia dejaría de seguir al preestablecido el día que una
+   migración lo mejore—. Arreglado en `propioParaGuardar`: escribir exactamente
+   lo que ya se ve, sobre un campo que todavía usa el preestablecido, viaja
+   como NULL. Ahí esta pantalla se separa a propósito de la de precios, que sí
+   deja adoptar la sugerencia; el argumento completo está al lado de la
+   función.
+2. **La consulta de contenedor no se aplicaba.** `@container` estaba declarada
+   sobre `.plantilla-modulo`, que es su propio contenedor, y una consulta no
+   puede dar estilo al elemento que la declaró. Medido: a 1400px, con la
+   sección midiendo 1033px, el relleno computado seguía siendo **12px** en vez
+   del de `--espacio-l`. Arreglado con `.plantilla-modulo__cuerpo`, que es el
+   mismo reparto que `.tarjeta` ya tenía con `.tarjeta__cuerpo`. Con el
+   arreglo: **26px a 1400px, 12px a 768px y a 320px**. Hay una prueba de punta
+   a punta que compara los dos rellenos, porque el defecto no rompía nada
+   visible.
+
+**La pantalla, manejada a mano contra la base local** (API real, no
+interceptada), en `http://localhost:5174/catalogos/modulos`:
+
+| Qué se midió | Resultado |
+|---|---|
+| Bloques dibujados | **6**, con las seis claves en el orden de la propuesta |
+| Controles por bloque | **1 `input` + 1 `textarea`**, nunca un tercero |
+| Marcas en la pantalla limpia | **0**; leyenda no dibujada |
+| Tras editar sólo el rótulo de «Alcance» | **1** marca, sobre el `<h2>`; **0** sobre la descripción; leyenda presente |
+| Tras vaciar el campo y guardar | **0** marcas, `<h2>` de vuelta en «Alcance», campo con «Alcance», leyenda ida |
+| Desborde a 1400px | `scrollWidth` 1400 = `clientWidth` 1400 |
+| Desborde a 320px | `scrollWidth` 320 = `clientWidth` 320 |
+| Ancho de la sección / del campo | 1033 / 979 px a 1400; 273 / 247 px a 320 |
+
+El cajón de navegación aparece fuera del ancho a 320px —`left: -256..0`—, y es
+el del armazón, estacionado ahí a propósito: no produce scroll, que es lo que
+`medirDesborde` mide.
+
+**Verificación.** `pnpm lint`: sin hallazgos. `pnpm typecheck`: 0 errores.
+`pnpm test`: **54 archivos, 2.688 pruebas, todas pasando** (desde 50 y 2.545:
++4 archivos y +143 pruebas). `pnpm test:e2e`: **532 pasando** en 1,1 min
+(desde 509: +23, que son las del archivo nuevo) —`e2e/catalogos.spec.ts` no
+necesitó tocarse, y `e2e/sin-scroll-horizontal.spec.ts` pasó sin repetirse—.
+`e2e/navegacion.spec.ts` **sí** se tocó, y era obligatorio: su
+`Record<Ruta["nombre"], Destino>` es exhaustivo, así que la ruta nueva no
+compila hasta que alguien diga bajo qué sección vive. Vive bajo `/catalogos`,
+como las dos del arancel.
+
+**Dos archivos fuera de la superficie autorizada, y se dicen.** La lista de
+superficies no los incluía y los dos son forzados por redes del propio
+proyecto, no por alcance:
+
+- `src/App.tsx`, **2 líneas** (un `import` y un `case`). `pantallaDe` es el
+  único despachador de rutas del proyecto, así que sin esa línea la ruta
+  resuelve y no se dibuja nada. No rompe el `typecheck` —la función no declara
+  tipo de retorno, así que el `case` faltante solo ensancha el inferido a
+  `| undefined`— y por eso el único que lo habría visto es el punta a punta.
+- `test/tsconfig.json`, **1 línea** de `include`. El proyecto es `composite`,
+  así que importar `src/pantallas/catalogos/plantillas.ts` desde
+  `test/plantillas-ui.spec.ts` sin listarlo falla con TS6307. Es la misma
+  entrada que `precios.ts` tiene arriba, con el mismo argumento.
+
+**Lo que no se tocó, y se midió**: `worker/cotizaciones/*`, `worker/ia/*` y
+`src/pantallas/cotizaciones/*` siguen intactos —el editor de la cotización
+sigue leyendo sus rótulos del registro del código, que es T-3— y
+`src/mensajes.ts` tampoco, por la decisión 1 de arriba.
+
+**Lo que esta tarea no entregó y conviene anotar**: la pantalla **no dibuja la
+bitácora** de una plantilla, aunque la dirección ya conteste. Los catálogos de
+T-6 sí tienen ese despliegue por fila, y acá no se construyó porque el
+enunciado de la pantalla no lo pedía y porque la primera entrada de esta
+entidad la escribe esta misma tarea. La dirección funciona y tiene prueba, así
+que cuando se quiera es una fila de tabla, no un camino nuevo.
+
+**Siguiente paso**: T-3, que saca el rótulo del código.

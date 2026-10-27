@@ -254,10 +254,22 @@ ese trabajo.
 
 Un cliente puede ser un particular, una empresa, y a futuro otras entidades como una ONG.
 
-El tipo vive en una **tabla de catálogo** (`tipo_cliente`), no en un `CHECK`. La diferencia con el
-catálogo de módulos de §8, que sí va en código, es que detrás de un tipo de módulo hay código —
-un renderizador y un esquema — mientras que detrás de un tipo de cliente no hay nada que
-ramifique: es una etiqueta. Agregar "ONG" tiene que ser una fila, no un despliegue.
+El tipo vive en una **tabla de catálogo** (`tipo_cliente`), no en un `CHECK`. El criterio es que
+detrás de un tipo de cliente no hay nada que ramifique: es una etiqueta. Agregar "ONG" tiene que
+ser una fila, no un despliegue.
+
+**Acá había una comparación que era falsa y se corrige.** Esta sección decía que la diferencia con
+el catálogo de módulos de §8 era que «detrás de un tipo de módulo hay código — un renderizador y
+un esquema». No lo había: los seis tipos de módulo diferían únicamente en el rótulo. Se midió
+archivo por archivo, y la tabla está en §8. El criterio de esta sección era el correcto; lo
+equivocado era creer que el catálogo de módulos no lo cumplía, y por eso el catálogo de módulos
+también vive hoy en una tabla (`modulo_plantilla`).
+
+Lo que sí separa a los dos catálogos es **cuánto se guarda de cada fila**. Un tipo de cliente es
+un nombre: lo único que hace con él el sistema es rotular un desplegable. Una plantilla de módulo
+lleva además una **descripción**, que no es texto decorativo sino lo que el generador lee para
+entender de qué trata el módulo; por eso la base exige que toda plantilla tenga descripción
+vigente, con `CHECK`, y un tipo de cliente no exige nada más que su nombre.
 
 La identificación **no se modela por tipo**. Nada de una columna `cedula` y otra `ruc`: va un par
 genérico `documento_tipo` y `documento_numero`. Cédula, RUC, pasaporte y el número de registro de
@@ -376,9 +388,48 @@ de trabajo?", porque cada cotización habría guardado el honorario en otro luga
 
 ### El catálogo
 
-El catálogo de tipos de módulo vive **como registro tipado en código**, no como configuración
-editable en pantalla. Agregar un tipo nuevo es un despliegue, no un CRUD de plantillas. Para dos
-personas, ese editor es un mes de trabajo que nadie pidió.
+El catálogo de tipos de módulo vive en una **tabla de catálogo** (`modulo_plantilla`), con el
+rótulo y la descripción de cada módulo editables desde `/catalogos/modulos`.
+
+**Esto revierte lo que esta sección decía**, y conviene dejar escrito qué se revirtió y por qué.
+Decía: «el catálogo de tipos de módulo vive **como registro tipado en código**, no como
+configuración editable en pantalla. Agregar un tipo nuevo es un despliegue, no un CRUD de
+plantillas». El argumento con que se sostenía estaba en §6: detrás de un tipo de módulo *«hay
+código — un renderizador y un esquema»*, a diferencia del tipo de cliente, que es sólo una
+etiqueta y por eso sí vive en tabla.
+
+**Ese argumento no se cumplía**, y se midió archivo por archivo antes de decidir:
+
+| Hecho | Dónde |
+|---|---|
+| La hoja dibuja los seis idénticos: `<h2>{rotulo}</h2><p>{contenido}</p>` | `HojaDeCotizacion.tsx` |
+| El prompt recorre el catálogo; no sabe qué es «alcance» | `worker/ia/prompt.ts` |
+| El editor dibuja un `<select>` del catálogo, sin rama por tipo | `EditorDeModulos.tsx` |
+| El validador sólo verifica pertenencia | `worker/cotizaciones/modulos.ts` |
+| **Ninguno** de los seis disparadores de `cotizacion_modulo` nombra `tipo` | `0004`, `0006` |
+
+No había renderizador por tipo ni esquema por tipo: los seis diferían **únicamente en el
+rótulo**, que es la definición exacta de «etiqueta» con la que §6 mandó al tipo de cliente a una
+tabla. Así que esto no contradice el documento: le aplica su propio criterio al caso que había
+clasificado mal.
+
+**Y lo que de verdad obligó es otra cosa**, que aquel párrafo no contemplaba: el rótulo era todo
+lo que el sistema sabía de un módulo, **así que era todo lo que la IA recibía**. El prompt le
+pasaba al modelo `alcance · Alcance` y el propósito lo deducía del nombre. Un campo de descripción
+tiene que vivir en algún lado, y ese lado es una fila. Las seis descripciones pesan unos 1.000
+caracteres contra los 30.000 que ya pesa la sección del arancel en el prompt: el costo es ruido y
+el beneficio es que el modelo deje de adivinar.
+
+**El costo que aquel párrafo sí tenía bien sigue en pie**: «para dos personas, ese editor es un
+mes de trabajo que nadie pidió». Y por eso lo que se construyó **no es un editor de plantillas de
+documento** sino una tabla de catálogo con cuatro campos editables —rótulo, descripción, orden y
+vigencia—, con la misma asimetría preset/bufete que `arancel_renglon`: el preset es inmutable y
+nulo significa «uso el preset», que es cómo se vuelve atrás. Crear tipos nuevos sigue siendo un
+despliegue mientras `cotizacion_modulo.tipo` sea texto cerrado por `CHECK`.
+
+Las claves **no** se editan: `clave` es lo que el snapshot congela al emitir y lo que la IA copia
+tal cual. Lo que se renombra es el rótulo, que es lo que la persona lee — y por eso renombrar un
+módulo mañana no toca ningún documento ya emitido.
 
 ### La entrada
 

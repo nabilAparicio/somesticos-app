@@ -1087,9 +1087,14 @@
  * `background`, no hay `border` y no hay ningún ícono. No es una `.etiqueta`
  * —que es la forma de un distintivo de estado— porque esto no es un estado del
  * servicio: dice de cuál de dos orígenes salió la cifra, no si está bien.
+ *
+ * Desde T-2 de `odd/tasks/plantillas-de-modulo.md` son **tres** las pantallas
+ * que la dibujan: la tercera la pone sobre un rótulo y una descripción en vez
+ * de sobre una cifra, y la pregunta que contesta es exactamente la misma.
  */
 .precio__marca,
-.lista-de-servicios__marca {
+.lista-de-servicios__marca,
+.plantilla-modulo__marca {
   margin-inline-start: var(--espacio-3xs);
   color: var(--color-tinta-apagada);
   font-size: var(--texto-xs);
@@ -1603,3 +1608,101 @@
   border-inline-start: 2px solid var(--color-acento);
   font-size: var(--texto-s);
 }
+
+/* ==========================================================================
+   Los módulos de una cotización (T-2 de `odd/tasks/plantillas-de-modulo.md`)
+   ==========================================================================
+
+   **Qué se intentó antes de escribir este bloque, para que no se vuelva a
+   intentar.** La primera forma era `.tarjeta`, que ya existe y ya trae su
+   consulta de contenedor y su superficie. No sirve por dos cosas que no son
+   de estilo: dibuja un `<article>` con un `<h3>` adentro y acá cada módulo es
+   un `<section aria-labelledby>` con un `<h2>` —es una sección de la página,
+   no una ficha de una rejilla—, y su regla `.tarjeta p` pinta **todo**
+   párrafo en tinta apagada, que aplastaría el texto de los dos campos. Lo que
+   sí se reusa entero es lo de adentro: `.campo`, `.campo__control`,
+   `.campo__control--prosa`, `.boton`, `.etiqueta--tenue` y `.pila`, que es lo
+   que acomoda la columna.
+
+   Lo que este bloque agrega son cuatro declaraciones: la superficie del
+   bloque, la clave en chico, la marca —que **comparte** la declaración con
+   las otras dos pantallas que la dibujan— y el atenuado de lo dado de baja.
+   Ninguna lleva medidas fijas (§9): la consulta es de contenedor, el tope del
+   texto se mide en `ch` desde `.prosa` y la altura del `<textarea>` la define
+   el contenido.
+   ========================================================================== */
+
+/*
+ * La superficie de cada módulo.
+ *
+ * Es `container` por lo mismo que `.tarjeta`: este bloque mide el ancho de la
+ * columna de contenido a 1400px y el ancho entero menos los márgenes a 320px,
+ * y el viewport no sabe nada de eso. Lo único que la consulta cambia es el
+ * relleno, que es lo que de verdad se nota: a 320px un relleno de
+ * `--espacio-l` se come buena parte del ancho del campo.
+ *
+ * **El relleno vive en `__cuerpo` y no acá, y no es gusto.** Una consulta de
+ * contenedor no puede dar estilo a su propio contenedor: `@container` resuelve
+ * contra el ancho del elemento que declaró `container`, así que una regla
+ * dentro de la consulta que apunte a `.plantilla-modulo` no se aplica nunca.
+ * Se midió en el navegador antes de corregirlo: a 1400px, con la sección
+ * midiendo 1033px, el relleno computado seguía siendo `12px` —el de abajo de
+ * la consulta— en vez del de `--espacio-l`. Es exactamente el reparto que
+ * `.tarjeta` ya tenía con `.tarjeta__cuerpo`, y por el mismo motivo; lo que
+ * faltaba acá era el elemento interno.
+ */
+.plantilla-modulo {
+  container: plantilla-modulo / inline-size;
+  min-width: 0;
+  border: var(--borde-fino);
+  border-radius: var(--radio-l);
+  background: var(--color-superficie);
+}
+
+.plantilla-modulo__cuerpo {
+  padding: var(--espacio-s);
+}
+
+@container plantilla-modulo (min-width: 30rem) {
+  .plantilla-modulo__cuerpo {
+    padding: var(--espacio-l);
+  }
+}
+
+/*
+ * La clave, debajo del rótulo.
+ *
+ * En monoespaciada y en el cuerpo chico porque **no es texto de cara al
+ * usuario**: es el identificador que la IA copia y que una cotización emitida
+ * guardó. Se dibuja porque hace falta para saber de qué módulo se habla
+ * —renombrar el rótulo no cambia la clave, y ése es el punto de que estén
+ * separadas— y se dibuja así para que no compita con el rótulo, que es el
+ * nombre que la persona lee.
+ */
+.plantilla-modulo__clave {
+  color: var(--color-tinta-apagada);
+  font-family: var(--fuente-mono);
+  font-size: var(--texto-xs);
+}
+
+/*
+ * El módulo dado de baja, atenuado y no escondido.
+ *
+ * Misma política que los catálogos de T-6: lo dado de baja se muestra marcado,
+ * porque lo que ya lo usa tiene que poder seguir nombrándolo — y porque sin
+ * verlo no se lo puede reactivar. El atenuado va sobre la superficie y no
+ * sobre el texto: los campos siguen siendo legibles y editables, que es lo que
+ * hace falta para arreglar un módulo antes de volver a ofrecerlo.
+ */
+.plantilla-modulo--de-baja {
+  background: var(--color-superficie-tenue);
+}
+
+/*
+ * La marca de que ese texto lo escribió el bufete **no se declara acá**:
+ * comparte bloque con `.precio__marca` y `.lista-de-servicios__marca`, más
+ * arriba, en la sección de la pantalla de precios. Las tres pantallas dibujan
+ * la misma marca y tiene que leerse como la misma cosa en las tres —el mismo
+ * cuerpo, la misma tinta, la misma separación—; tres bloques que hay que
+ * mantener idénticos son los que se desincronizan sin que nadie lo note.
+ */
