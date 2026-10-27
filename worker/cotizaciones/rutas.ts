@@ -181,7 +181,11 @@ import {
   normalizarOrdenDeLineas,
   totalesDe,
 } from "./lineas";
-import { normalizarModulo, normalizarOrdenDeModulos } from "./modulos";
+import {
+  clavesDePlantillas,
+  normalizarModulo,
+  normalizarOrdenDeModulos,
+} from "./modulos";
 import type {
   ResultadoDeApertura,
   ResultadoDeCierre,
@@ -841,6 +845,26 @@ function decodificar(segmento: string): string | null {
  *
  * **Leer nunca se bloquea.** El `GET` de la colección contesta igual sobre
  * una emitida: lo que el estado impide es cambiar el documento, no mirarlo.
+ *
+ * ## El catálogo se lee acá desde T-6, y sólo donde hace falta
+ *
+ * `normalizarModulo` dejó de tener una lista de seis adentro y compara contra
+ * las claves del bufete, así que alguien tiene que leerlas. Es esta función,
+ * por la frontera de siempre: la ruta lee y el dominio decide.
+ *
+ * La lectura va **pegada a las dos normalizaciones** —el alta y la edición— y
+ * no arriba del todo. Ni el `GET`, ni el `DELETE`, ni el `PUT` de la colección
+ * normalizan una clave, y pedirles el catálogo sería una consulta por
+ * petición para servir a dos de las cinco rutas. Es el mismo criterio con el
+ * que `rutasDeCotizaciones` recibe el **puerto** y no la lista ya leída.
+ *
+ * Es una segunda lectura de `modulo_plantilla` en la misma petición: el puerto
+ * de cotizaciones ya pide el catálogo para resolver el rótulo que la bitácora
+ * copia (`rotuloVigenteDe`). No se comparte a propósito, y es el mismo
+ * argumento que aquél tiene escrito para no memoizarse: la validación mira el
+ * catálogo **antes** de escribir y la bitácora lo mira **después**, y entre
+ * las dos hay una escritura. Un catálogo compartido entre los dos momentos
+ * sería el que deja a la bitácora diciendo el rótulo viejo.
  */
 async function rutasDeModulos(
   request: Request,
@@ -848,6 +872,7 @@ async function rutasDeModulos(
   tenantId: string,
   cotizacionId: string,
   servicio: ServicioDeCotizaciones,
+  plantillas: ServicioDePlantillas,
   unModulo: boolean,
 ): Promise<Response> {
   const permitidos = unModulo ? "PUT, DELETE" : "GET, POST, PUT";
@@ -896,7 +921,10 @@ async function rutasDeModulos(
     const leido = await leerCuerpo(request);
     if (!leido.ok) return leido.respuesta;
 
-    const normalizado = normalizarModulo(leido.valor);
+    const normalizado = normalizarModulo(
+      leido.valor,
+      clavesDePlantillas(await plantillas.listar(tenantId)),
+    );
     if (!normalizado.ok) return invalido(normalizado.fallas);
 
     return respuestaDeModulos(
@@ -927,7 +955,10 @@ async function rutasDeModulos(
     );
   }
 
-  const normalizado = normalizarModulo(leido.valor);
+  const normalizado = normalizarModulo(
+    leido.valor,
+    clavesDePlantillas(await plantillas.listar(tenantId)),
+  );
   if (!normalizado.ok) return invalido(normalizado.fallas);
 
   return respuestaDeModulos(
@@ -1068,12 +1099,19 @@ export async function rutasDeCotizaciones(
    */
   catalogos: ServicioDeCatalogos,
   /**
-   * Las plantillas de módulo del bufete. Se usan para **una sola cosa**, igual
-   * que los catálogos: saber qué tipos de módulo ofrecerle al modelo, con su
-   * rótulo y su descripción vigentes (T-4). Llega el servicio y no la lista ya
-   * leída por el mismo motivo —la lectura hace falta en una sola de las
-   * diecinueve direcciones de este archivo—, y es **el mismo puerto** que
-   * sirve `/api/plantillas-modulo` y su bitácora, no una segunda copia de la
+   * Las plantillas de módulo del bufete, para **dos** cosas:
+   *
+   *  1. Qué tipos de módulo ofrecerle al modelo, con su rótulo y su
+   *     descripción vigentes (T-4). Sólo las activas: `modulosOfrecidos`.
+   *  2. Qué claves acepta una escritura de módulo (T-6), ahora que
+   *     `normalizarModulo` no tiene la lista adentro. Todas, activas y de
+   *     baja: `clavesDePlantillas`.
+   *
+   * Llega el servicio y no la lista ya leída, igual que los catálogos: la
+   * lectura hace falta en tres de las diecinueve direcciones de este archivo, y
+   * pedirla siempre sería una consulta en cada petición de cotizaciones para
+   * servir a esas tres. Y es **el mismo puerto** que sirve
+   * `/api/plantillas-modulo` y su bitácora, no una segunda copia de la
    * consulta: el día que la resolución del rótulo cambie, cambia en un lugar.
    */
   plantillas: ServicioDePlantillas,
@@ -1181,6 +1219,7 @@ export async function rutasDeCotizaciones(
       tenantId,
       cotizacionId,
       servicio,
+      plantillas,
       unModulo,
     );
   }

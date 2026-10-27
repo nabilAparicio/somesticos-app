@@ -441,10 +441,12 @@ describe("la costura rechaza un tipo de módulo que nadie le ofreció", () => {
   });
 
   it("con catálogo declarado, uno que no está se rechaza", () => {
-    // `exclusiones` **es** una clave válida: está en `TipoDeModulo`, en
-    // `TIPOS_DE_MODULO` y en el `CHECK` de `0004`. Lo que la rechaza es que
-    // esta corrida no la ofreció, que es exactamente lo que le pasa a una
-    // plantilla dada de baja. Hasta T-3 esta propuesta pasaba.
+    // `exclusiones` **es** una clave válida: tiene fila en
+    // `modulo_plantilla`, así que la llave foránea la acepta y la ruta de
+    // módulos también. Lo que la rechaza es que esta corrida no la ofreció, que
+    // es exactamente lo que le pasa a una plantilla dada de baja. Hasta T-3
+    // esta propuesta pasaba, y lo que la dejaba pasar —la unión y la lista en
+    // código— lo borró T-6.
     expect(
       motivos(conModulo({ tipo: "exclusiones" }), {
         modulos: MODULOS_OFRECIDOS,

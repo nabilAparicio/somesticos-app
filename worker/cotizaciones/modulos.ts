@@ -26,42 +26,40 @@
  * exacta de «etiqueta» con la que el mismo criterio mandó al tipo de cliente a
  * una tabla. `docs/diseno.md` §6 y §8 ya están corregidos (T-2).
  *
- * ## Lo que sí sigue acá, y por qué
+ * ## Lo que este archivo dejó de tener en T-6, y qué hay en su lugar
  *
- * **La lista cerrada de claves, y ya sin su mitad en el esquema.** Hasta T-4
- * el `CHECK` de `cotizacion_modulo.tipo` y `TIPOS_DE_MODULO` eran **una sola
- * decisión escrita dos veces**, como el vocabulario de la bitácora. **T-5
- * borró la primera**: `0017` cambió la columna por
- * `plantilla_id REFERENCES modulo_plantilla (id)`.
+ * **Ya no hay lista.** `TIPOS_DE_MODULO`, `esTipoDeModulo` y la red de tipos
+ * `TiposFueraDeLaLista` no existen, y con ellas se fue la unión
+ * `TipoDeModulo` de `worker/contract.ts`. La historia de ese catálogo en
+ * código fue, en orden: el `CHECK` de `0004` y la lista eran **una sola
+ * decisión escrita dos veces** —como el vocabulario de la bitácora—, T-5 borró
+ * la mitad del esquema (`0017` cambió la columna por
+ * `plantilla_id REFERENCES modulo_plantilla (id)`) y T-6 borró la otra.
  *
- *  - Lo que el `CHECK` sostenía —«en dos años conviven `clausulas`,
- *    `cláusulas` y `clauses` y la pregunta *¿qué solemos excluir?* no se
- *    contesta más» (§5)— lo sostiene ahora el único
- *    `modulo_plantilla_clave_unica`: admite las tres claves pero una sola vez
- *    cada una, y un módulo sólo puede apuntar a una fila que exista. El
- *    `CHECK` prohibía claves **nuevas**; el único prohíbe claves
- *    **repetidas**, que es el defecto real. Lo que de verdad se perdió es que
- *    la lista sea de seis, y esa decisión pasa a ser del bufete desde T-7.
- *  - La **lista** es la que valida lo que entra por el cable y la que estrecha
- *    el tipo de lo que sale de la validación del generador. Es lo único que
- *    queda, y muere en T-6.
+ * Lo que el `CHECK` sostenía —«en dos años conviven `clausulas`, `cláusulas` y
+ * `clauses` y la pregunta *¿qué solemos excluir?* no se contesta más» (§5)— lo
+ * sostiene el único `modulo_plantilla_clave_unica`: admite las tres claves
+ * pero una sola vez cada una, y un módulo sólo puede apuntar a una fila que
+ * exista. El `CHECK` prohibía claves **nuevas**; el único prohíbe claves
+ * **repetidas**, que es el defecto real. Que la lista sea de seis pasa a ser
+ * decisión del bufete desde T-7.
  *
- * Lo que la lista **no** contesta, y hace falta decirlo desde T-4: *cuáles
- * están vigentes*. Eso es una columna `activo` de una fila, no una unión, así
- * que al modelo lo que le cierra el juego es el catálogo de plantillas activas
- * que el prompt le declaró — ver `CatalogosOfrecidos.modulos`. Una plantilla
- * dada de baja es una clave de esta lista que ya no se ofrece.
+ * Y lo que la lista hacía acá —validar lo que entra por el cable— lo hace
+ * ahora `normalizarModulo` **contra las claves que le pasan**, que salen de
+ * `modulo_plantilla` por el único puerto que la lee. El contrato tiene el
+ * balance entero escrito donde vivía la unión; lo que hace falta saber desde
+ * acá es que la comparación dejó de ser contra seis literales y pasó a ser
+ * contra las filas de un bufete, así que **ya no hay dos listas que se puedan
+ * separar**. Eso es lo que se gana. Lo que se pierde es que un
+ * `{ tipo: "alcanze" }` escrito en este repositorio ya compila, y se entera
+ * una prueba en vez del `typecheck`.
  *
- * Si la lista y las filas se separan, la pantalla ofrece una clave sin
- * plantilla y la escritura muere con un `NOT NULL constraint failed` que nadie
- * puede leer. `test/modulos-api.spec.ts` las compara en los dos sentidos y
- * falla.
- *
- * **Esta lista muere en T-6**, que es el único cambio de ese día. Lo que la
- * reemplaza no es otra lista sino la llave foránea de `0017`: la clave pasa a
- * ser una cadena validada contra el catálogo inyectado —lo que `validarModulo`
- * ya hace desde T-4 con `clavesOfrecidas`— y lo que impide inventar una es que
- * no haya fila a la que apuntar.
+ * Lo que la lista **no** contestaba nunca, y sigue sin contestarse acá:
+ * *cuáles están vigentes*. Eso es la columna `activo` de una fila. Al modelo
+ * se lo cierra el catálogo de plantillas **activas** que el prompt le declaró
+ * —`CatalogosOfrecidos.modulos`—, y a esta función no, a propósito: el
+ * encabezado de `clavesDePlantillas`, unas líneas más abajo, argumenta por qué
+ * la lista que llega acá incluye las dadas de baja.
  *
  * ## Lo que este archivo ya no contesta
  *
@@ -76,83 +74,47 @@ import type {
   DatosDeModulo,
   FallaDeValidacion,
   MotivoDeFalla,
-  TipoDeModulo,
+  PlantillaDeModulo,
 } from "../contract";
 
 /**
- * Las seis claves, **en el orden en que se sugieren**.
+ * Las claves de un catálogo de plantillas: lo que una clave de módulo se
+ * compara contra desde T-6.
  *
- * El orden es el de lectura de una propuesta y no el alfabético: de dónde
- * viene el encargo, qué se va a hacer, qué queda afuera, sobre qué se apoya
- * el precio, bajo qué condiciones, y el cierre dirigido al cliente. Es el
- * mismo orden que `0016` sembró en la columna `orden` de `modulo_plantilla`,
- * que es la que hoy ordena el desplegable; acá queda porque una lista sin
- * orden invita a reordenarla, y reordenarla no significaría nada.
+ * **Incluye las dadas de baja**, y no es un descuido: es exactamente lo que la
+ * unión `TipoDeModulo` decía antes de morir. La unión enumeraba las claves
+ * *válidas* y nunca supo nada de vigencia, así que filtrar por `activo` acá no
+ * sería mudar la red de lugar sino endurecerla de contrabando — y endurecerla
+ * tiene una consecuencia ya medida: T-3 dejó escrito que rechazar una clave
+ * retirada deja **congelado todo módulo cuya plantilla se dio de baja**, porque
+ * el formulario manda el tipo junto con el texto y nadie podría corregirle una
+ * coma. Lo que impide *elegirla de nuevo* es qué ofrece el desplegable, no esta
+ * lista.
  *
- * **No hay rótulo**, y la ausencia es el cambio de T-3. Tampoco hay columna
- * `orden`: el orden **es** la posición del arreglo, y una columna sería un
- * segundo lugar donde decir lo mismo.
+ * Quien sí filtra por `activo` es `modulosOfrecidos` en
+ * `worker/cotizaciones/rutas.ts`, y la pregunta de allá es otra: «¿qué le
+ * ofrezco al modelo para que lo escriba desde cero?». La distinción entre
+ * *válido* y *seleccionable* la fijó T-5 y acá sólo se respeta.
  *
- * `as const satisfies` y no una anotación, por lo mismo que
- * `ACCIONES_POR_ENTIDAD`: así las cadenas conservan sus literales —y la red de
- * abajo puede excluirlas de la unión— pero el compilador sigue exigiendo que
- * cada una sea un miembro de `TipoDeModulo`. Una clave inventada acá no
- * compila.
+ * ## Por qué vive en este archivo y no al lado del puerto que lee la tabla
+ *
+ * Porque **lo usan las dos copias de la validación** —ésta y
+ * `normalizarBorradorDeModulo` de `src/pantallas/cotizaciones/modulos.ts`— y
+ * una de las dos corre en el navegador. `worker/plantillas/repositorio.ts`
+ * arrastra el adaptador de D1 detrás, y `worker/plantillas/dominio.ts`, que es
+ * puro, no está en el `include` de `tsconfig.app.json`. Este archivo **sí**
+ * está, y por la condición que ese `include` tiene documentada y que esta
+ * función cumple: no tiene ninguna importación en tiempo de ejecución, sólo
+ * tipos del contrato, que se borran al compilar.
+ *
+ * Es además el archivo que antes **tenía** el catálogo. Que la lista de seis se
+ * haya ido y quede acá la función que deriva la lista de verdad es la forma más
+ * corta de decir qué cambió.
  */
-export const TIPOS_DE_MODULO = [
-  "antecedentes",
-  "alcance",
-  "exclusiones",
-  "supuestos",
-  "clausulas",
-  "nota_cliente",
-] as const satisfies readonly TipoDeModulo[];
-
-/**
- * La red que impide que un miembro de la unión se quede fuera de la lista.
- *
- * Es lo que queda de `TiposSinRotulo`, y lo que queda **no es lo mismo**: esa
- * red probaba que todo tipo tenía rótulo, y eso ya no se puede probar con un
- * tipo porque el rótulo es una fila. Lo prueba ahora
- * `test/modulos-api.spec.ts`, leyendo las claves de `modulo_plantilla` y
- * enfrentándolas a esta lista **en los dos sentidos** —una clave sin fila y
- * una fila sin clave son dos defectos distintos y los dos rompen—. La red no
- * se perdió: cambió de lugar y de mecanismo.
- *
- * Lo que sigue siendo cuestión de tipos es la pertenencia, que nunca tuvo que
- * ver con el rótulo. El `satisfies` de arriba cierra una dirección: no se
- * puede listar una clave que no está en `TipoDeModulo`. Esto cierra la otra:
- * si alguien agrega un miembro a la unión y no lo pone en la lista,
- * `Exclude<…>` deja de ser `never`, la restricción `T extends never` de
- * `DebeSerVacio` no se satisface y **el `typecheck` se cae con TS2344**
- * nombrando la clave suelta. Sin esto, un miembro nuevo compilaría, nada lo
- * validaría —`esTipoDeModulo` se construye de esta lista— y la prueba de la
- * base tampoco lo notaría: compara filas contra la lista, y a la lista no le
- * faltaría nada.
- *
- * ## La forma que había acá no servía, y hay que no volver a escribirla
- *
- * Hasta T-8 la red era `export const TODOS_LOS_TIPOS_TIENEN_ROTULO:
- * TiposSinRotulo[] = []`, y el comentario afirmaba que esa asignación no
- * compilaba cuando la exclusión dejaba de ser `never`. **Era falso.** Un
- * arreglo vacío es asignable a `T[]` para cualquier `T`, así que
- * `const x: "resumen_ejecutivo"[] = []` compila igual que
- * `const x: never[] = []`. Se midió con la mutación correcta —agregar
- * `"resumen_ejecutivo"` a `TipoDeModulo` y **ningún** otro cambio— y
- * `pnpm typecheck` salió 0. La misma corrección está en `lineas.ts` y en
- * `worker/bitacora/vocabulario.ts`.
- */
-type DebeSerVacio<T extends never> = T;
-
-export type TiposFueraDeLaLista = DebeSerVacio<
-  Exclude<TipoDeModulo, (typeof TIPOS_DE_MODULO)[number]>
->;
-
-const CLAVES = new Set<string>(TIPOS_DE_MODULO);
-
-/** Si una cadena cualquiera es una de las seis claves. */
-export function esTipoDeModulo(valor: unknown): valor is TipoDeModulo {
-  return typeof valor === "string" && CLAVES.has(valor);
+export function clavesDePlantillas(
+  plantillas: readonly PlantillaDeModulo[],
+): string[] {
+  return plantillas.map((una) => una.clave);
 }
 
 export type NormalizacionDeModulo =
@@ -184,8 +146,29 @@ function esObjeto(cuerpo: unknown): cuerpo is Record<string, unknown> {
  * le hablaría a nadie, y lo que de verdad importa —que no se pueda imponer—
  * lo garantiza que esta función no lo copia a la salida. El `orden` lo asigna
  * el servidor, siempre.
+ *
+ * ## Las claves llegan por parámetro, y eso es T-6
+ *
+ * Hasta T-5 esta función cerraba el juego con `esTipoDeModulo`, o sea con seis
+ * literales de este archivo. Ahora recibe las claves del bufete y sigue
+ * pura: ni D1 ni HTTP, igual que antes, y las pruebas del dominio le pasan la
+ * lista que quieren probar. Quien la lee es la ruta, que para eso ya tiene el
+ * puerto de plantillas en la mano.
+ *
+ * **Falla cerrada con la lista vacía**, por la misma regla que
+ * `CatalogosOfrecidos`: sin claves conocidas ningún módulo pasa. No es un
+ * estado alcanzable hoy —`modulo_plantilla_no_se_borra` impide que un bufete
+ * se quede sin filas— y la alternativa sería que una lectura fallida del
+ * catálogo se tradujera en «todo vale», que es la peor de las dos.
  */
-export function normalizarModulo(cuerpo: unknown): NormalizacionDeModulo {
+export function normalizarModulo(
+  cuerpo: unknown,
+  /**
+   * Las claves de `modulo_plantilla` de este bufete, **activas y de baja**.
+   * Las dos, y el motivo está en `clavesDePlantillas`.
+   */
+  clavesConocidas: readonly string[],
+): NormalizacionDeModulo {
   if (!esObjeto(cuerpo)) {
     return { ok: false, fallas: [falla("tipo", "tipo_de_modulo_desconocido")] };
   }
@@ -193,10 +176,21 @@ export function normalizarModulo(cuerpo: unknown): NormalizacionDeModulo {
   const fallas: FallaDeValidacion[] = [];
 
   // Ausente, en blanco e inventado caen en el mismo motivo: el tipo sale de
-  // un desplegable que la pantalla dibuja del mismo registro, así que las
-  // tres situaciones son el mismo defecto desde donde está la persona.
+  // un desplegable que la pantalla dibuja de la misma tabla contra la que se
+  // compara acá, así que las tres situaciones son el mismo defecto desde donde
+  // está la persona.
+  //
+  // El `typeof` no es una segunda guarda y no se cuenta como una: `includes`
+  // sobre `readonly string[]` no acepta un `unknown`, así que la comprobación
+  // de cadena es lo que deja hacer la de pertenencia. Y es además lo que
+  // estrecha `tipo` a `string` para el `return` de abajo, que es por lo que esa
+  // salida **no lleva un `as`** — el estrechamiento sale de la misma condición
+  // que la pertenencia y no de una afirmación sobre un valor que viene del
+  // cable. Es la forma que `validarModulo` ya usa en `worker/ia/esquema.ts`.
   const tipo = cuerpo.tipo;
-  if (!esTipoDeModulo(tipo)) {
+  const tipoConocido =
+    typeof tipo === "string" && clavesConocidas.includes(tipo);
+  if (!tipoConocido) {
     fallas.push(falla("tipo", "tipo_de_modulo_desconocido"));
   }
 
@@ -217,7 +211,13 @@ export function normalizarModulo(cuerpo: unknown): NormalizacionDeModulo {
 
   if (fallas.length > 0) return { ok: false, fallas };
 
-  return { ok: true, datos: { tipo: tipo as TipoDeModulo, contenido } };
+  // `tipoConocido` otra vez, y acá no promete nada: `fallas.length > 0` ya dio
+  // el veredicto arriba, así que esta rama es inalcanzable. Lo que hace es
+  // construir — es la condición bajo la cual `tipo` está estrechado a `string`.
+  // El mismo reparto que `validarModulo` deja escrito para su propia salida.
+  if (!tipoConocido) return { ok: false, fallas };
+
+  return { ok: true, datos: { tipo, contenido } };
 }
 
 /**

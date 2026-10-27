@@ -177,9 +177,11 @@ export interface EncargoAlModelo {
    * imprimió.
    *
    * Lo que agrega sobre lo que había es que una plantilla **dada de baja** se
-   * rechaza: su clave sigue estando en el `CHECK` de `0004` y en
-   * `TIPOS_DE_MODULO`, así que hasta T-3 el esquema la aceptaba. Un módulo con
-   * una plantilla retirada es un módulo que el editor no puede volver a
+   * rechaza, y eso sigue siendo cierto después de T-6 **con más motivo**: la
+   * clave de una plantilla retirada es una clave perfectamente válida —tiene
+   * fila, así que la llave foránea la acepta, y `normalizarModulo` también, a
+   * propósito—. Lo único que la rechaza para el modelo es esta lista. Un módulo
+   * con una plantilla retirada es un módulo que el editor no puede volver a
    * ofrecer, y el modelo no tiene por qué proponerlo.
    */
   readonly tiposDeModuloOfrecidos: readonly string[];

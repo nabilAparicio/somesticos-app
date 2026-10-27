@@ -317,15 +317,21 @@ acotado; el disparador es la regla de escritura y la de preparación.
 
 ### T-6 · Muere `TipoDeModulo`, y es el único cambio del día
 
-- [ ] Se van la unión de `worker/contract.ts`, `TIPOS_DE_MODULO`,
+- [x] Se van la unión de `worker/contract.ts`, `TIPOS_DE_MODULO`,
       `esTipoDeModulo` y `TiposFueraDeLaLista`. La clave pasa a ser una cadena
       validada contra el catálogo inyectado, que es lo que `validarModulo` ya
       hace desde T-4 con `clavesOfrecidas`.
-- [ ] Las tres pruebas bidireccionales que enfrentan `TIPOS_DE_MODULO` a
+      **Y el enunciado tenía un hueco que hubo que cerrar**: `clavesOfrecidas`
+      es del camino del modelo, no del cable. La ruta de módulos validaba con
+      `esTipoDeModulo`, así que borrarlo sin reemplazo degradaba un 422 a un
+      500. Está medido en el progreso.
+- [x] Las tres pruebas bidireccionales que enfrentan `TIPOS_DE_MODULO` a
       `modulo_plantilla` se van con ella: ya no hay dos listas que comparar.
       **Lo que las reemplaza es la llave foránea de T-5**, que es más fuerte
-      que las tres: una clave inventada no llega a existir.
-- [ ] Nada más entra en este commit. Es deliberado: el día que se pierde una
+      que las tres: una clave inventada no llega a existir. Se fue **una
+      cuarta** que el enunciado no contaba, y era forzoso: la que afirmaba que
+      la lista no repitiera claves.
+- [x] Nada más entra en este commit. Es deliberado: el día que se pierde una
       red del compilador conviene que no haya nada más que culpar.
 
 **Ruta: delegada.**
@@ -1142,3 +1148,175 @@ contestando.
 
 **Siguiente paso**: T-6, que se lleva `TipoDeModulo` y es el único cambio de ese
 día. Lo que la habilita es la llave foránea de esta tarea.
+
+### T-6 cerrada
+
+**Archivos.** Ninguno nuevo. Modificados, 13: `test/modulos-api.spec.ts`
+(+150/−111), `worker/cotizaciones/modulos.ts` (+107/−107, que es casi todo
+encabezado reescrito), `worker/contract.ts` (+92/−52),
+`worker/cotizaciones/rutas.ts` (+48/−9), `src/pantallas/cotizaciones/modulos.ts`
+(+51/−19), `test/modulos-ui.spec.ts` (+44/−4), `worker/ia/esquema.ts` (+42/−39),
+`worker/cotizaciones/repositorio.ts` (+20/−8),
+`src/pantallas/cotizaciones/EditorDeModulos.tsx` (+13/−2),
+`worker/cotizaciones/snapshot.ts` (+9/−4), `test/ia-modelo.spec.ts` (+6/−4),
+`worker/ia/prompt.ts` (+5/−3) y `test/generador-api.spec.ts` (+3/−2). **590
+insertadas y 364 quitadas** sin contar este documento. Ninguno de punta a
+punta: el cable no cambió.
+
+**El hueco del enunciado, encontrado antes de escribir y dicho acá porque
+cambia la tarea.** El enunciado decía que la clave pasa a estar «validada
+contra el catálogo inyectado, que es lo que `validarModulo` ya hace desde T-4
+con `clavesOfrecidas`». Es cierto **del camino del modelo y de ningún otro**:
+`clavesOfrecidas` vive en `worker/ia/esquema.ts`. El cable de módulos no pasa
+por ahí — `POST` y `PUT /api/cotizaciones/{id}/modulos` validan con
+`normalizarModulo`, que cerraba el juego con `esTipoDeModulo`.
+
+O sea que borrar la lista sin reemplazarla **habría degradado un 422 a un
+500**, y no es una hipótesis: `PLANTILLA_DE_LA_CLAVE` resuelve a NULL y la
+columna es `NOT NULL`, así que `{"tipo": "garantias"}` habría muerto con
+`NOT NULL constraint failed: cotizacion_modulo.plantilla_id`. El encabezado de
+esa subconsulta decía con todas las letras por qué eso estaba bien —«
+`normalizarModulo` ya rechaza con 422 cualquier cadena que no sea del
+catálogo»— y el día de T-6 esa frase se volvía falsa. La prueba que lo atrapa
+existía y es «rechaza un tipo que no está en el catálogo»: **no es una de las
+tres bidireccionales**, así que dejarla caer no estaba autorizado.
+
+Lo que se hizo: `normalizarModulo` recibe las claves por parámetro y la ruta
+las lee del puerto de plantillas que `rutasDeCotizaciones` **ya tenía en la
+mano** desde T-4. `worker/index.ts` no se tocó. Lo mismo del otro lado:
+`normalizarBorradorDeModulo` las recibe del catálogo que el editor ya carga.
+
+**El balance, dicho sin adornos, y es lo que el enunciado pedía juzgar.** No es
+«genuinamente más fuerte» ni «sólo distinto»:
+
+| | Antes | Después |
+|---|---|---|
+| Literal inventado en el código | **no compila** | compila; lo atrapa una prueba o un 422 |
+| Cadena inventada por el cable | 422, contra seis literales | 422, contra las filas del bufete |
+| Clave del modelo | 422 + `clavesOfrecidas` | `clavesOfrecidas`, sola |
+| Clave sin fila en la base | imposible por `CHECK` (T-5 lo borró) | imposible por llave foránea |
+| Las guardas y la base, desincronizadas | **posible**, y por eso había tres pruebas | imposible: miran la misma tabla |
+
+**Más fuerte en tiempo de ejecución, más débil en tiempo de compilación, y las
+dos cosas a la vez.** La ganancia real no es una guarda más: es que las tres
+miran la misma fuente, que es justo lo que las tres pruebas bidireccionales
+vigilaban. La pérdida real es una sola y concreta: `{ tipo: "alcanze" }`
+escrito en este repositorio ya compila. Está escrito donde vivía la unión
+(`worker/contract.ts`), sin pintarlo de ganancia, porque es el precio de que
+T-7 pueda agregar una plantilla sin un despliegue.
+
+**Una cuarta prueba se fue, y no estaba en el enunciado.** «No se repite
+ninguna clave en la lista» no comparaba nada con la base, así que no era una de
+las tres — pero su sujeto era la lista. Se fue con ella, y lo que contesta hoy
+esa pregunta es el único `modulo_plantilla_clave_unica` de `0016`, que tiene su
+prueba en `test/plantillas-esquema.spec.ts`. Queda dicho en el archivo.
+
+**Dónde quedó `clavesDePlantillas`, y es una decisión forzada por el
+`typecheck`.** La función que deriva las claves de un catálogo tiene que ser
+importable **por las dos copias de la validación**, y una corre en el
+navegador. El hogar natural era `worker/plantillas/dominio.ts` —puro, sin D1—
+y no sirve: no está en el `include` de `tsconfig.app.json`, y agregarlo es
+tocar un archivo fuera de la superficie (TS6307, medido). Vive en
+`worker/cotizaciones/modulos.ts`, que **sí** está listado y por la condición
+que ese `include` documenta y esta función cumple: ninguna importación en
+tiempo de ejecución. Es además el archivo que antes tenía el catálogo.
+
+**Y la lista incluye las dadas de baja, que es la decisión que más fácil se
+rompía.** La unión enumeraba las claves *válidas* y nunca supo nada de
+`activo`, así que filtrar por `activo` al mudar la red habría sido endurecerla
+de contrabando — y el costo está medido desde T-3: rechazar una clave retirada
+deja **congelado todo módulo cuya plantilla se dio de baja**, porque el
+formulario manda el tipo junto con el texto y nadie podría corregirle una coma.
+Se le escribió prueba propia por el cable, que es la que faltaba:
+«una plantilla dada de baja sigue siendo una clave que se puede guardar».
+
+**Las mutaciones. No hay RED porque no hay comportamiento nuevo**, así que la
+evidencia es qué se rompe al apagar la guarda que ahora carga el peso:
+
+| Mutación | Resultado |
+|---|---|
+| `normalizarModulo` ignora las claves que recibe | **3 fallando de 177** en `modulos-api` + `cotizaciones-api` + `generador-api`: la del cable, la de la lista parcial y la de la lista vacía |
+| `validarModulo` ignora `clavesOfrecidas` | **10 fallando de 181** en `ia-modelo` + `generador-api` |
+| `normalizarBorradorDeModulo` ignora las claves | **2 fallando de 49** en `modulos-ui` |
+| `clavesDePlantillas` filtra por `activo` | **1 fallando de 52**, y es exactamente la de la plantilla retirada |
+
+Las cuatro restauradas: 177, 181, 49 y 52 pasando. La segunda es la que mide el
+cambio de T-6 mejor que ninguna: **T-4 la había medido en 4 de 181**, y hoy son
+10 — porque `esTipoDeModulo` ya no está atajando la mitad de los casos. Era la
+comprobación que «no llevaba la regla», y los seis fallos de más son la prueba
+de que eso era cierto.
+
+Y el motivo **no cambió de frase**, que era la condición explícita: los nombres
+de las diez que fallan lo dicen —«el motivo es `tipo_de_modulo_desconocido`,
+igual que con una clave inventada», «sin catálogo declarado, cualquier tipo de
+módulo se rechaza»—.
+
+**Lo que se corrigió porque esta tarea lo volvió falso, y nada más.** Cinco
+comentarios cuyo argumento apoyaba en la lista o en el `CHECK` de `0004`:
+`worker/cotizaciones/repositorio.ts` y `src/pantallas/cotizaciones/modulos.ts`
+—los dos justificaban la reserva `?? tipo` con «la siembra cubre las seis
+claves del `CHECK`», y hoy lo que la vuelve inalcanzable es que el `tipo`
+**sale** de `modulo_plantilla.clave` por el `JOIN`—, `worker/ia/prompt.ts`,
+`test/ia-modelo.spec.ts` y `test/generador-api.spec.ts`.
+
+**Tres referencias colgadas fuera de la superficie, y no se tocaron.** Las tres
+nombran `TIPOS_DE_MODULO` o el `CHECK` de `0004` en un comentario:
+`worker/ia/modelo.ts:83`, `worker/cotizaciones/lineas.ts:142` y
+`worker/plantillas/rutas.ts:17` —ésta última ya estaba anotada por T-5—. Son
+palabras en comentarios, la referencia vigente equivalente es evidente en los
+tres, y están fuera del alcance autorizado de esta tarea igual que la de
+`lineas.ts:78` que T-4 dejó anotada.
+
+**Pendiente menor, encontrado y no hecho.** `worker/plantillas/dominio.ts`
+cumple la condición documentada del `include` de `tsconfig.app.json` —no tiene
+importaciones en tiempo de ejecución— y agregarlo dejaría que las pantallas
+importen de ahí sin pasar por un re-export. Es `tsconfig.app.json`, o sea fuera
+de la superficie, y no urge: el re-export de hoy tiene una sola línea y su
+motivo escrito.
+
+**La base local quedó intacta.** Esta tarea no escribió una fila: no hay
+medición manual contra la base del usuario porque no hay comportamiento nuevo
+que mirar, y la única escritura de las pruebas —dar de baja `alcance`— va
+contra la base de la suite y vuelve en un `finally`. Las seis plantillas siguen
+con `rotulo` y `descripcion` en NULL y `activo = 1`, y no hay entradas de
+bitácora nuevas.
+
+**Un descuido propio, encontrado midiendo y corregido.** La prueba nueva de la
+plantilla retirada dejaba `activo = 0` puesto para las demás: el
+almacenamiento de esta suite está aislado por archivo y no por prueba, y esta
+tabla la siembra la migración, así que el `beforeEach` no la toca. Medido sin
+el `finally`: **32 fallando de 101**, ninguno un defecto del código. Con el
+`finally`, y volviendo a medir la mutación que esa prueba vigila: **1 de 52**,
+que es el número que de verdad informa. Queda escrito al lado de la prueba,
+porque el mismo `finally` lo tiene la prueba del rótulo propio por el mismo
+motivo.
+
+**Verificación.** `pnpm lint`: sin hallazgos. `pnpm typecheck`: 0 errores.
+`pnpm test`: **54 archivos, 2.736 pruebas, todas pasando** —el mismo número que
+T-5, y la coincidencia es casual: −4 borradas (las tres bidireccionales y la de
+las claves repetidas) y +4 nuevas (dos del dominio, una del catálogo vacío en
+la pantalla y la de la plantilla retirada por el cable)—. `pnpm test:e2e`:
+**535 pasando** en una corrida, y **534 + 1 fallando** en varias otras.
+
+**El fallo de punta a punta no es de este cambio, y se midió en vez de
+suponerse.** Es `e2e/armazon.spec.ts:475` «el velo cierra el cajón», que
+apareció en tres corridas de seis. Sale solo —20 de 20 en su archivo— y, lo
+decisivo: **se guardó este trabajo y se corrió la suite entera sobre `baf1f1d`
+limpio, y falla exactamente igual**. Es un parpadeo preexistente del cajón de
+navegación, que esta tarea no toca: no se modificó ni un archivo de
+`src/layout/`. Hubo además una corrida de **97 pasando** con fallos en masa de
+`toHaveCount`, que es el choque de puerto ya documentado en T-5 —el servidor
+del usuario escucha en `[::1]:5174` y `reuseExistingServer` lo busca en
+`127.0.0.1`— por venir pegada a la anterior.
+
+**Un escritor concurrente en el árbol de trabajo, dicho porque se vio.** A
+mitad de la verificación apareció `src/pantallas/procesos/PanelDeGastos.tsx`
+modificado, de otra tarea (`procesos-comodidad.md`), y **rompía el
+`typecheck`**: importa `src/layout/Confirmacion`, que todavía no existe. No es
+de esta tarea y no entra en este commit —que se hace por ruta explícita— y la
+verificación se tomó con ese archivo fuera del medio, con su diff respaldado
+antes de tocarlo.
+
+**Siguiente paso**: T-7, el alta de plantillas, que es lo que esta tarea y
+`0017` habilitan. Entra con el verbo `creado` en `ACCIONES_POR_ENTIDAD` y sin
+migración.

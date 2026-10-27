@@ -56,9 +56,18 @@ import type {
   ModuloDeCotizacion,
   MotivoDeFalla,
   PlantillaDeModulo,
-  TipoDeModulo,
 } from "../../../worker/contract";
-import { esTipoDeModulo } from "../../../worker/cotizaciones/modulos";
+
+/**
+ * Re-exportado y no re-escrito, igual que `mensajeDeFalla`: las claves que esta
+ * pantalla compara son **las mismas** que compara el servidor, y el día que
+ * «qué claves cuentan» cambie —T-7 agrega plantillas propias— tiene que cambiar
+ * en un lugar. Vive en `worker/cotizaciones/modulos.ts`, que es el archivo que
+ * este módulo ya importaba para `esTipoDeModulo` antes de que T-6 lo borrara, y
+ * que cumple la condición del `include` de `tsconfig.app.json`: ninguna
+ * importación en tiempo de ejecución.
+ */
+export { clavesDePlantillas } from "../../../worker/cotizaciones/modulos";
 
 export { mensajeDeFalla } from "../../mensajes";
 
@@ -82,10 +91,14 @@ const SUFIJO_DE_BAJA = " (de baja)";
  * El rótulo vigente de una clave, o la clave si el catálogo no la tiene.
  *
  * La reserva es la clave cruda y no una cadena vacía ni un `undefined`
- * disfrazado: es inalcanzable —los dos `CHECK` de `0016` y su siembra cubren
- * las seis claves que el `CHECK` de `0004` permite— y si algún día se alcanza,
- * lo que se ve es `nota_cliente` en un encabezado, que se entiende y se
- * reporta. Es la misma salida que toman el repositorio y `congelar`.
+ * disfrazado. Es inalcanzable, y el motivo que acá estaba escrito —«el `CHECK`
+ * de `0004` permite seis claves y `0016` las sembró»— no existe desde T-5 y
+ * T-6: lo que la vuelve inalcanzable hoy es que el `tipo` de un módulo **sale**
+ * de `modulo_plantilla.clave` y el catálogo que esta función recibe es de esa
+ * misma tabla, así que las dos listas no son dos. Y si algún día se alcanza
+ * —el catálogo quedó viejo entre dos lecturas—, lo que se ve es `nota_cliente`
+ * en un encabezado, que se entiende y se reporta. Es la misma salida que toman
+ * el repositorio y `congelar`.
  */
 export function rotuloDeModulo(
   plantillas: readonly PlantillaDeModulo[],
@@ -170,10 +183,12 @@ export function opcionesParaModulo(
 /**
  * Lo que se escribe en los dos controles de un módulo.
  *
- * `tipo` es `string` y no `TipoDeModulo` porque el desplegable arranca
- * **vacío** en el alta: tiparlo estrecho obligaría a inventar un séptimo
- * valor para «ninguno todavía», que es exactamente el tipo que el catálogo
- * cerrado existe para impedir.
+ * `tipo` es `string`, y hasta T-6 el comentario de acá tenía que argumentar por
+ * qué no era la unión: porque el desplegable arranca **vacío** en el alta, y
+ * tiparlo estrecho obligaba a inventar un séptimo valor para «ninguno
+ * todavía». El argumento ya no hace falta —la clave es `string` en todo el
+ * sistema— pero la cadena vacía sigue significando eso, y
+ * `BORRADOR_DE_MODULO_VACIO` sigue siendo un borrador que no pasa.
  */
 export interface BorradorDeModulo {
   tipo: string;
@@ -349,21 +364,34 @@ function falla(campo: string, motivo: MotivoDeFalla): FallaDeValidacion {
  * allá: el tipo sale de un desplegable, así que las tres situaciones son el
  * mismo defecto desde donde está la persona.
  *
- * Lo que se comprueba es la **pertenencia a las seis claves cerradas**, no que
- * la plantilla esté activa. Es deliberado: una plantilla de baja se puede
- * seguir guardando en el módulo que ya la usa —ver `opcionesParaModulo`— y lo
- * que impide elegirla de nuevo es qué ofrece el desplegable, no esta función.
- * Rechazarla acá dejaría congelado todo módulo cuya plantilla se retiró: nadie
- * podría corregirle una coma, porque el formulario manda el tipo junto con el
- * texto.
+ * Lo que se comprueba es la **pertenencia al catálogo del bufete**, no que la
+ * plantilla esté activa, y las dos mitades de esa frase son decisiones:
+ *
+ *  - *Pertenencia al catálogo* y no a una lista cerrada en código, que es el
+ *    cambio de T-6: la lista de seis de `worker/cotizaciones/modulos.ts` y su
+ *    guarda no existen más. Las claves llegan por parámetro —el editor ya
+ *    tiene el catálogo cargado, porque sin él no sabe dibujar un solo rótulo—
+ *    y esta función sigue pura y probada sin navegador.
+ *  - *No que esté activa*, que ya era así: una plantilla de baja se puede
+ *    seguir guardando en el módulo que ya la usa —ver `opcionesParaModulo`— y
+ *    lo que impide elegirla de nuevo es qué ofrece el desplegable, no esta
+ *    función. Rechazarla acá dejaría congelado todo módulo cuya plantilla se
+ *    retiró: nadie podría corregirle una coma, porque el formulario manda el
+ *    tipo junto con el texto. Por eso lo que se le pasa es
+ *    `clavesDePlantillas` del catálogo **entero**, que es exactamente lo que
+ *    recibe el servidor.
+ *
+ * Esta validación sigue sin autorizar nada: la que manda es la del Worker, que
+ * compara contra las filas y no contra lo que la pantalla leyó hace un rato.
  */
 export function normalizarBorradorDeModulo(
   borrador: BorradorDeModulo,
+  clavesConocidas: readonly string[],
 ): ModuloNormalizado {
   const fallas: FallaDeValidacion[] = [];
 
   const tipo = borrador.tipo;
-  if (!esTipoDeModulo(tipo)) {
+  if (!clavesConocidas.includes(tipo)) {
     fallas.push(falla("tipo", "tipo_de_modulo_desconocido"));
   }
 
@@ -376,7 +404,11 @@ export function normalizarBorradorDeModulo(
 
   if (fallas.length > 0) return { ok: false, fallas };
 
-  return { ok: true, datos: { tipo: tipo as TipoDeModulo, contenido } };
+  // Sin aserción de tipo, y la ausencia es el punto de T-6: `tipo` ya es
+  // `string` y `DatosDeModulo.tipo` también, así que no hay nada que afirmarle
+  // al compilador. Antes acá había un `as` que la guarda de arriba justificaba;
+  // hoy no hay guarda que justificar porque no hay estrechamiento que hacer.
+  return { ok: true, datos: { tipo, contenido } };
 }
 
 /**

@@ -91,6 +91,7 @@ import {
   AYUDA_DE_MODULOS,
   BORRADOR_DE_MODULO_VACIO,
   borradorDesdeModulo,
+  clavesDePlantillas,
   exigeRecarga,
   hayCambioEnModulo,
   mensajeDeExcepcion,
@@ -335,7 +336,14 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
   }
 
   async function guardar(modulo: ModuloDeCotizacion) {
-    const normalizado = normalizarBorradorDeModulo(borradorDe(modulo));
+    // Las claves salen del catálogo que esta pantalla ya tiene cargado (T-6).
+    // No hace falta pedirlo de nuevo ni preguntarse si está: la fase `listo` no
+    // existe sin él —un fallo de cualquiera de las dos lecturas cae en
+    // `problema`— y sin catálogo esta pantalla no sabría dibujar un rótulo.
+    const normalizado = normalizarBorradorDeModulo(
+      borradorDe(modulo),
+      clavesDePlantillas(plantillas),
+    );
     if (!normalizado.ok) {
       setFallas(normalizado.fallas);
       setProblema(null);
@@ -375,7 +383,10 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
     evento.preventDefault();
     if (ocupado) return;
 
-    const normalizado = normalizarBorradorDeModulo(nuevo);
+    const normalizado = normalizarBorradorDeModulo(
+      nuevo,
+      clavesDePlantillas(plantillas),
+    );
     if (!normalizado.ok) {
       setFallas(normalizado.fallas);
       setProblema(null);

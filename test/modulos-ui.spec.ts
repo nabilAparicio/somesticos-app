@@ -46,7 +46,6 @@ import type {
   ModuloDeCotizacion,
   PlantillaDeModulo,
 } from "../worker/contract";
-import { TIPOS_DE_MODULO } from "../worker/cotizaciones/modulos";
 import {
   BORRADOR_DE_MODULO_VACIO,
   borradorDesdeModulo,
@@ -255,19 +254,54 @@ describe("borradorDesdeModulo", () => {
 });
 
 describe("normalizarBorradorDeModulo", () => {
-  it("acepta cada una de las claves del catálogo del servidor", () => {
-    for (const clave of TIPOS_DE_MODULO) {
+  /*
+   * **Las claves llegan por parámetro desde T-6.** Hasta T-5 esta suite
+   * importaba `TIPOS_DE_MODULO` del Worker, que es lo que la función comparaba
+   * adentro; esa constante no existe más y lo que la función compara es la
+   * lista que recibe. La de acá son las seis que `0016` sembró, porque son las
+   * que el editor va a tener en la mano en producción, y la que falta a
+   * propósito —`garantias`, más abajo— es la que prueba que la pertenencia se
+   * decide contra esta lista y no contra un resto de la constante.
+   */
+  const CLAVES = [
+    "antecedentes",
+    "alcance",
+    "exclusiones",
+    "supuestos",
+    "clausulas",
+    "nota_cliente",
+  ];
+
+  it("acepta cada una de las claves del catálogo que recibe", () => {
+    for (const clave of CLAVES) {
       const resultado = normalizarBorradorDeModulo(
         borrador({ tipo: clave, contenido: "Algo escrito." }),
+        CLAVES,
       );
 
       expect(resultado.ok, `la clave «${clave}» tiene que pasar`).toBe(true);
     }
   });
 
+  it("con el catálogo vacío no pasa ningún borrador", () => {
+    // Falla cerrada, igual que su gemela del Worker: el editor no llega acá sin
+    // catálogo —un fallo de lectura cae en la fase `problema`— y la alternativa
+    // sería que esa fase se tradujera en «todo vale».
+    const resultado = normalizarBorradorDeModulo(
+      borrador({ tipo: "alcance", contenido: "Algo escrito." }),
+      [],
+    );
+
+    expect(resultado.ok).toBe(false);
+    expect(resultado.ok ? [] : motivos(resultado.fallas)).toEqual([
+      "tipo_de_modulo_desconocido",
+    ]);
+  });
+
   it("recorta el contenido, que es lo que el servidor guarda", () => {
     const resultado = normalizarBorradorDeModulo(
       borrador({ tipo: "alcance", contenido: "  Dos trámites.\n\n" }),
+      CLAVES,
     );
 
     expect(resultado).toEqual({
@@ -279,6 +313,7 @@ describe("normalizarBorradorDeModulo", () => {
   it("sin tipo elegido avisa antes de mandar nada", () => {
     const resultado = normalizarBorradorDeModulo(
       borrador({ tipo: "", contenido: "Algo escrito." }),
+      CLAVES,
     );
 
     expect(resultado.ok).toBe(false);
@@ -290,6 +325,7 @@ describe("normalizarBorradorDeModulo", () => {
   it("un tipo que no es del catálogo tampoco pasa", () => {
     const resultado = normalizarBorradorDeModulo(
       borrador({ tipo: "honorarios", contenido: "Algo escrito." }),
+      CLAVES,
     );
 
     expect(resultado.ok).toBe(false);
@@ -301,6 +337,7 @@ describe("normalizarBorradorDeModulo", () => {
   it("un contenido de puro espacio es un título sin nada debajo", () => {
     const resultado = normalizarBorradorDeModulo(
       borrador({ tipo: "supuestos", contenido: "  \n\t\n " }),
+      CLAVES,
     );
 
     expect(resultado.ok).toBe(false);
@@ -314,6 +351,7 @@ describe("normalizarBorradorDeModulo", () => {
     // que nadie usa. Es el mismo criterio que `normalizarModulo`.
     const resultado = normalizarBorradorDeModulo(
       borrador({ tipo: "", contenido: "" }),
+      CLAVES,
     );
 
     expect(resultado.ok).toBe(false);
@@ -324,7 +362,9 @@ describe("normalizarBorradorDeModulo", () => {
   });
 
   it("el borrador vacío no pasa, que es con lo que arranca el formulario", () => {
-    expect(normalizarBorradorDeModulo(BORRADOR_DE_MODULO_VACIO).ok).toBe(false);
+    expect(
+      normalizarBorradorDeModulo(BORRADOR_DE_MODULO_VACIO, CLAVES).ok,
+    ).toBe(false);
   });
 });
 

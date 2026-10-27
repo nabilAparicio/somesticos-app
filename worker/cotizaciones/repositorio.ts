@@ -41,7 +41,6 @@ import type {
   DatosDeProcesoPorAbrir,
   LineaDeCotizacion,
   ModuloDeCotizacion,
-  TipoDeModulo,
 } from "../contract";
 import type { BaseDeDatos, Sentencia } from "../db/base";
 /**
@@ -240,8 +239,9 @@ export type ResultadoDeDocumento =
  * derecha pasa a ser `false`, `false` no es asignable a `true` y
  * `pnpm typecheck` se cae acá con el nombre de esta constante encima.
  *
- * Es la misma mecánica que `TiposFueraDeLaLista` en `./modulos.ts`: una
- * afirmación que el compilador ejerce, no un comentario pidiendo cuidado.
+ * Es la misma mecánica que `ClasesSinRotulo` en `./lineas.ts`: una afirmación
+ * que el compilador ejerce, no un comentario pidiendo cuidado. El ejemplo que
+ * esta línea citaba era `TiposFueraDeLaLista`, que T-6 borró con la unión.
  *
  * **Se borra el día que `snapshot.ts` pueda importar del contrato**, que es
  * el día que sus ayudantes de rótulo se separen de `totalesDe`. Entonces las
@@ -656,10 +656,17 @@ function aDia(momento: string | null): string | null {
  * conserva porque es el de `ModuloDeCotizacion.tipo`, que es lo que viaja por
  * el cable y lo que el snapshot congela — la referencia es cómo la fila
  * guarda el dato, no cómo el resto del sistema lo nombra.
+ *
+ * Y es `string` desde T-6, como el campo del contrato. Lo que el tipo decía
+ * antes —«ésta es una de seis»— no era algo que esta interfaz pudiera saber:
+ * describe lo que el motor devolvió, y afirmarlo era exactamente el `as` que
+ * el proyecto se niega a escribir sobre un valor que viene de afuera. Lo que
+ * garantiza que esa cadena sea una clave del catálogo es el `JOIN`: sale de
+ * `modulo_plantilla.clave`.
  */
 interface FilaDeModulo {
   id: string;
-  tipo: TipoDeModulo;
+  tipo: string;
   orden: number;
   contenido: string;
 }
@@ -955,10 +962,15 @@ export function cotizacionesSobreD1(
    * escritura que lo cambió, y la bitácora de esa escritura diría el viejo.
    *
    * La clave como reserva, por lo mismo que en `congelar`: la rama es
-   * inalcanzable —la siembra de `0016` cubre las seis claves del `CHECK` de
-   * `0004`— y escribirla evita que un `detalle` diga `undefined` el día que
-   * alguien ablande una de las dos cosas. Es la misma salida que
-   * `worker/plantillas/repositorio.ts` toma con `?? previa.clave`.
+   * inalcanzable y desde T-6 lo es por un motivo más corto que el que acá
+   * estaba escrito. Decía «la siembra de `0016` cubre las seis claves del
+   * `CHECK` de `0004`», y ninguna de las dos cosas existe: lo que hoy la vuelve
+   * inalcanzable es que `tipo` **sale** de `modulo_plantilla.clave` —por el
+   * `JOIN` de `SELECCION_DE_MODULOS`— así que preguntar por una clave que no
+   * tiene fila es preguntar por una clave que la lectura no pudo haber
+   * devuelto. Escribir la reserva igual evita que un `detalle` diga
+   * `undefined` el día que alguien repare la base a mano. Es la misma salida
+   * que `worker/plantillas/repositorio.ts` toma con `?? previa.clave`.
    */
   async function rotuloVigenteDe(
     tenantId: string,

@@ -32,7 +32,6 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ACCIONES_POR_ENTIDAD } from "../worker/bitacora/vocabulario";
 import {
-  TIPOS_DE_MODULO,
   normalizarModulo,
   normalizarOrdenDeModulos,
 } from "../worker/cotizaciones/modulos";
@@ -58,23 +57,26 @@ describe("el catálogo de la base y el del código dicen lo mismo", () => {
   }
 
   /*
-   * **Acá había una prueba que `0017` jubiló, y conviene decir cuál.**
+   * **Acá había dos pruebas, y las dos se jubilaron. Conviene decir cuáles.**
    *
-   * Hasta T-4 esta prueba leía el `CHECK` `el_tipo_de_modulo_es_del_catalogo_cerrado`
+   * Hasta T-4 una leía el `CHECK` `el_tipo_de_modulo_es_del_catalogo_cerrado`
    * de `sqlite_master` y exigía que nombrara exactamente las claves de
    * `TIPOS_DE_MODULO`, en los dos sentidos. Era la mitad verificable de «las
-   * dos mitades acopladas del catálogo».
+   * dos mitades acopladas del catálogo». `0017` **borró esa mitad**: la columna
+   * `tipo` no existe y en su lugar hay `plantilla_id` con una llave foránea.
    *
-   * `0017` **borró esa mitad**: la columna `tipo` no existe y en su lugar hay
-   * `plantilla_id` con una llave foránea. Lo que la reemplaza no es otra lista
-   * que comparar sino una garantía más fuerte, y por eso la prueba cambia de
-   * forma y no de nombre: una clave inventada ya no es rechazada por un
-   * `CHECK` que alguien tiene que mantener al día, **no llega a existir**,
-   * porque no hay fila en `modulo_plantilla` a la que apuntar.
+   * La otra contaba que la lista no repitiera ninguna clave. **T-6 se llevó la
+   * lista**, y con ella esa prueba: una lista que no existe no tiene claves
+   * repetidas. Lo que la pregunta de fondo —«¿puede haber dos `alcance`?»—
+   * tiene hoy debajo es el único `modulo_plantilla_clave_unica` de `0016`, que
+   * es de quien es, y `test/plantillas-esquema.spec.ts` lo prueba.
    *
-   * Las dos pruebas que quedan de esa familia —las de más abajo, que comparan
-   * la lista con las filas— mueren en T-6 junto con `TipoDeModulo`. Esta no:
-   * afirma algo de la base que va a seguir siendo cierto después.
+   * **Lo que sostiene esta línea ahora es la llave foránea**, y es más fuerte
+   * que las listas que se fueron: una clave inventada ya no es rechazada por un
+   * `CHECK` ni por un arreglo que alguien tiene que mantener al día, **no llega
+   * a existir**, porque no hay fila en `modulo_plantilla` a la que apuntar. Las
+   * dos pruebas que quedan acá son las que afirman eso, y van a seguir siendo
+   * ciertas cuando T-7 permita crear plantillas.
    */
   it("la columna es una referencia a modulo_plantilla y no una cadena", async () => {
     const definicion = await definicionDeModulo();
@@ -120,105 +122,49 @@ describe("el catálogo de la base y el del código dicen lo mismo", () => {
 
     expect(await listar(), "no entró nada").toHaveLength(0);
   });
-
-  it("no se repite ninguna clave en la lista", () => {
-    // El orden en que se sugieren **es** el orden del arreglo: no hay una
-    // columna `orden` en la lista porque sería un segundo lugar donde decir
-    // lo mismo, y el día que los dos no coincidan gana el que alguien mire
-    // primero. Una clave repetida son dos entradas indistinguibles.
-    expect(new Set(TIPOS_DE_MODULO).size).toBe(TIPOS_DE_MODULO.length);
-  });
 });
 
 // ---------------------------------------------------------------------------
-// La red del compilador que T-3 perdió, y dónde quedó
+// La red del compilador, y por qué acá ya no hay nada que comparar
 // ---------------------------------------------------------------------------
-
-/**
- * Las plantillas de módulo tal como las dejó `0016`.
- *
- * Se leen por SQL y no por `GET /api/plantillas-modulo`: lo que estas dos
- * pruebas enfrentan es la **fila**, no la respuesta. Pasar por la ruta metería
- * en el medio el adaptador que resuelve el rótulo vigente, y entonces una
- * prueba sobre el preset estaría mirando el `COALESCE`.
- *
- * **Con el filtro de tenencia puesto desde T-5**, y no es cosmético: el banco
- * de esta suite siembra una plantilla del bufete vecino —la que `0017` obliga
- * a que exista para que su módulo pueda apuntar a algo— y sin el filtro esa
- * fila entraría en las tres comparaciones de abajo. La primera que se cae es
- * la del orden, que es la que no puede tolerar una fila de más.
- */
-async function plantillasSembradas(): Promise<
-  { clave: string; rotulo_oficial: string | null }[]
-> {
-  const { results } = await env.DB.prepare(
-    "SELECT clave, rotulo_oficial FROM modulo_plantilla" +
-      " WHERE tenant_id = ? ORDER BY orden, clave",
-  )
-    .bind(TENANT_UNICO_ID)
-    .all<{ clave: string; rotulo_oficial: string | null }>();
-
-  return results;
-}
-
-describe("las claves de la lista y las de modulo_plantilla dicen lo mismo", () => {
-  /*
-   * **Esto es `TiposSinRotulo` mudado de lugar** (T-3 de
-   * `odd/tasks/plantillas-de-modulo.md`).
-   *
-   * Hasta T-2 la red era un tipo: `Exclude<TipoDeModulo, …>` sobre un catálogo
-   * que tenía los rótulos adentro, y lo que probaba era que ningún tipo se
-   * quedara sin rótulo. Eso ya no se puede probar con un tipo, porque el
-   * rótulo es una fila y el compilador no lee filas. Así que la red cambia de
-   * mecanismo y **no desaparece**: lo que se compara es la lista contra las
-   * claves sembradas, en los dos sentidos, que es la misma forma que la prueba
-   * del `CHECK` de arriba ya usaba.
-   *
-   * Los dos sentidos son dos defectos distintos y por eso son dos pruebas:
-   *
-   *  - Una clave de la lista sin fila es un módulo que el editor ofrece y para
-   *    el que no hay rótulo: la pantalla dibujaría la clave cruda.
-   *  - Una fila sin clave en la lista es una plantilla que el abogado puede
-   *    editar en `/catalogos/modulos` y que ningún módulo puede usar, porque
-   *    el `CHECK` de `0004` la rechaza. Trabajo que no sirve de nada.
-   *
-   * Y la pertenencia a la unión `TipoDeModulo` sigue siendo cosa del
-   * compilador, en `TiposFueraDeLaLista`: eso nunca tuvo que ver con el
-   * rótulo.
-   */
-
-  it("cada clave de la lista tiene su plantilla sembrada", async () => {
-    const enLaBase = (await plantillasSembradas()).map((una) => una.clave);
-
-    for (const clave of TIPOS_DE_MODULO) {
-      expect(enLaBase, `«${clave}» no tiene fila en modulo_plantilla`).toContain(
-        clave,
-      );
-    }
-  });
-
-  it("cada plantilla sembrada tiene su clave en la lista", async () => {
-    const enLaBase = (await plantillasSembradas()).map((una) => una.clave);
-
-    for (const clave of enLaBase) {
-      expect(
-        [...TIPOS_DE_MODULO] as string[],
-        `la plantilla «${clave}» no es una clave que un módulo pueda usar`,
-      ).toContain(clave);
-    }
-  });
-
-  it("el orden de la siembra es el orden sugerido de la lista", async () => {
-    // `0016` sembró `orden` 0..5 en el mismo orden de lectura de una
-    // propuesta, y el editor dibuja su desplegable con ese `ORDER BY`. Si los
-    // dos se separan, el orden que la lista documenta deja de ser el que se
-    // ve, y lo que se vería es el de la base: la lista pasaría a estar
-    // mintiendo en un comentario.
-    const enLaBase = (await plantillasSembradas()).map((una) => una.clave);
-
-    expect(enLaBase).toEqual([...TIPOS_DE_MODULO]);
-  });
-});
+//
+// **Acá vivían las tres pruebas bidireccionales, y T-6 se las llevó.**
+//
+// La historia completa, porque es la de una red que se mudó dos veces y a la
+// tercera se disolvió:
+//
+//  1. Hasta T-2 la red era un tipo —`Exclude<TipoDeModulo, …>` sobre un
+//     catálogo que tenía los rótulos adentro— y probaba que ningún tipo se
+//     quedara sin rótulo.
+//  2. T-3 sacó el rótulo del código. Eso ya no se podía probar con un tipo
+//     —el rótulo es una fila y el compilador no lee filas— así que la red
+//     cambió de mecanismo: tres pruebas que leían `modulo_plantilla` y la
+//     enfrentaban a `TIPOS_DE_MODULO` en los dos sentidos, más el orden.
+//  3. T-6 borró `TIPOS_DE_MODULO`. **Ya no hay dos listas que comparar**, y
+//     dejar estas tres habría significado resucitar la constante para que su
+//     propia prueba siguiera viva — una lista que existe sólo porque algo la
+//     verifica es una lista que no verifica nada.
+//
+// **Lo que sostiene esta línea ahora es la llave foránea de `0017`**, y es más
+// fuerte que las tres juntas. Los dos defectos que cada sentido vigilaba:
+//
+//  - *Una clave de la lista sin fila* era un módulo que el editor ofrecía y
+//    para el que no había rótulo. Hoy el editor ofrece **las filas**: lo que
+//    dibuja el desplegable es `GET /api/plantillas-modulo`, así que una clave
+//    sin fila no se puede ofrecer.
+//  - *Una fila sin clave en la lista* era una plantilla que el abogado podía
+//    editar y que ningún módulo podía usar, porque el `CHECK` de `0004` la
+//    rechazaba. Ese `CHECK` no existe desde T-5: cualquier fila de
+//    `modulo_plantilla` sirve, que es exactamente lo que T-7 necesita.
+//
+// Y el tercero —que el orden de la siembra fuera el de la lista— dejó de tener
+// con qué contradecirse: el desplegable ordena por `modulo_plantilla.orden` y
+// no hay un segundo orden escrito en ninguna parte.
+//
+// Lo que queda vivo de esta familia son las dos pruebas de más arriba: que la
+// columna sea una referencia, y que una plantilla inexistente no llegue a
+// existir. Es el precedente que T-4 ya había sentado al borrar las dos pruebas
+// que ataban `CATALOGO_DE_MODULOS` a los `rotulo_oficial`.
 
 // ---------------------------------------------------------------------------
 // Los verbos de los módulos cuelgan de la cotización
@@ -626,6 +572,59 @@ describe("el alta rechaza lo que no es un módulo", () => {
     expect(motivos(await fallasDe(respuesta))).toContain(
       "tipo_de_modulo_desconocido",
     );
+  });
+
+  it("una plantilla dada de baja sigue siendo una clave que se puede guardar", async () => {
+    // **La decisión de T-6 que hay que proteger con una prueba**, porque el
+    // cambio de fuente abrió la puerta a endurecerla sin querer: hasta T-5 la
+    // guarda era `esTipoDeModulo` sobre seis literales, que no sabían nada de
+    // `activo`; ahora es el catálogo del bufete, y un `.filter(activo)` de más
+    // en `clavesDePlantillas` convertiría una baja en un módulo congelado para
+    // siempre — nadie podría corregirle una coma, porque el formulario manda
+    // el tipo junto con el texto.
+    //
+    // La baja va por SQL y no por `PUT /api/plantillas-modulo`: lo que esta
+    // prueba mide es la ruta de **módulos**, y meter la otra ruta en el medio
+    // haría que un fallo de aquélla se leyera como un fallo de ésta.
+    //
+    // Y el `finally` devuelve `activo` a 1, por el mismo motivo que el de la
+    // prueba del rótulo propio más abajo: esta tabla la siembra la migración y
+    // el `beforeEach` no la toca, así que una prueba que deje una plantilla de
+    // baja se la deja de baja a las demás. Medido al quitarlo: **32 fallando
+    // de 101** en esta suite y en `modulos-ui`, y ninguno de los 32 era un
+    // defecto del código.
+    const [modulo] = await agregar({
+      tipo: "alcance",
+      contenido: "Lo que se hace.",
+    });
+
+    await env.DB.prepare(
+      "UPDATE modulo_plantilla SET activo = 0" +
+        " WHERE tenant_id = ? AND clave = 'alcance'",
+    )
+      .bind(TENANT_UNICO_ID)
+      .run();
+
+    try {
+      const respuesta = await comoAutor(
+        conCuerpo(`${rutaDeModulos()}/${modulo.id}`, "PUT", {
+          tipo: "alcance",
+          contenido: "Lo que se hace, con la coma corregida.",
+        }),
+      );
+
+      expect(respuesta.status, await respuesta.clone().text()).toBe(200);
+      expect((await listar())[0].contenido).toBe(
+        "Lo que se hace, con la coma corregida.",
+      );
+    } finally {
+      await env.DB.prepare(
+        "UPDATE modulo_plantilla SET activo = 1" +
+          " WHERE tenant_id = ? AND clave = 'alcance'",
+      )
+        .bind(TENANT_UNICO_ID)
+        .run();
+    }
   });
 
   it("rechaza un contenido que es sólo espacios", async () => {
@@ -1492,12 +1491,52 @@ describe("la superficie es exactamente la que se decidió", () => {
 // ---------------------------------------------------------------------------
 
 describe("la normalización, sin base ni HTTP", () => {
-  it("acepta los seis tipos del catálogo", () => {
-    for (const tipo of TIPOS_DE_MODULO) {
-      const resultado = normalizarModulo({ tipo, contenido: "Algo." });
+  /*
+   * **Las claves llegan por parámetro desde T-6**, así que acá se le pasa una
+   * lista inventada a propósito y no las seis sembradas. Es la misma
+   * disciplina que T-4 eligió para las pruebas del prompt: una lista que no es
+   * la de la base es lo único que deja afirmar que la función compara contra lo
+   * que recibe **y nada más**. Con las seis reales, una versión que siguiera
+   * leyendo una constante borrada pasaría igual.
+   *
+   * Que las claves de verdad sean las de `modulo_plantilla` lo prueba la ruta,
+   * más arriba: «rechaza un tipo que no está en el catálogo» va por el cable y
+   * la lista sale de la base.
+   */
+  const CLAVES = ["uno", "dos_con_guion", "tres"];
+
+  it("acepta cualquier clave de la lista que recibe", () => {
+    for (const tipo of CLAVES) {
+      const resultado = normalizarModulo({ tipo, contenido: "Algo." }, CLAVES);
 
       expect(resultado.ok, tipo).toBe(true);
     }
+  });
+
+  it("una clave que no está en la lista que recibe no pasa", () => {
+    // Y «alcance» es una clave **real**: está sembrada en `modulo_plantilla` y
+    // la acepta la ruta. Acá no, porque esta lista no la tiene. Es la forma de
+    // afirmar que lo que decide es el parámetro y no un resto de la constante.
+    const resultado = normalizarModulo(
+      { tipo: "alcance", contenido: "Algo." },
+      CLAVES,
+    );
+
+    expect(resultado.ok).toBe(false);
+    expect(resultado.ok ? [] : motivos(resultado.fallas)).toEqual([
+      "tipo_de_modulo_desconocido",
+    ]);
+  });
+
+  it("con la lista vacía no pasa ningún módulo", () => {
+    // Falla cerrada, la misma regla que `CatalogosOfrecidos`: una lectura del
+    // catálogo que devolviera nada no puede significar «todo vale».
+    const resultado = normalizarModulo(
+      { tipo: "alcance", contenido: "Algo." },
+      [],
+    );
+
+    expect(resultado.ok).toBe(false);
   });
 
   it("el orden tiene que ser un arreglo de cadenas con algo adentro", () => {

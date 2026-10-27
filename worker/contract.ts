@@ -252,7 +252,13 @@ export type MotivoDeFalla =
   | "etapa_con_pendientes_no_se_quita"
   /* --- Módulos de prosa de una cotización (tajada 2, T-2 C) --- */
   /**
-   * El `tipo` no es ninguno del catálogo cerrado de `TipoDeModulo`.
+   * El `tipo` no es la clave de ninguna plantilla de este bufete.
+   *
+   * **La frase no cambió en T-6 y la fuente sí.** Hasta T-5 lo que se
+   * comparaba era la unión `TipoDeModulo`, seis literales escritos en código;
+   * desde T-6 son las filas de `modulo_plantilla`, leídas por el bufete que
+   * pregunta. Para quien recibe el 422 es el mismo hecho dicho igual, y por eso
+   * el motivo no se partió en dos.
    *
    * **Cubre también el tipo ausente, y ahí está la decisión.** El precedente
    * de al lado parte en dos el mismo caso —`cliente_requerido` y
@@ -265,10 +271,11 @@ export type MotivoDeFalla =
    * que el formulario cargó y se envió: ahí «elegí uno» y «ese ya no existe»
    * son dos cosas que pasan por motivos distintos.
    *
-   * Y no es una copia del `CHECK` de la base: el `CHECK` convierte el tipo
-   * inventado en un 500 que nadie puede leer; esto lo convierte en un 422
-   * que dice qué arreglar. Las dos mitades siguen existiendo, y
-   * `test/modulos-api.spec.ts` falla si se separan.
+   * Y no es una copia de la guarda de la base: la llave foránea de `0017`
+   * convierte una clave sin plantilla en un `NOT NULL constraint failed`, o
+   * sea un 500 que nadie puede leer; esto lo convierte en un 422 que dice qué
+   * arreglar. Las dos mitades siguen existiendo, y la de arriba es la única que
+   * le habla a una persona.
    */
   | "tipo_de_modulo_desconocido"
   /**
@@ -1515,46 +1522,60 @@ export interface CotizacionNoEsEmitida {
   estado: EstadoDeCotizacion;
 }
 
-/**
- * Los seis tipos de módulo de prosa (T-2 C, `docs/diseno.md` §8).
- *
- * Es la familia de **prosa** de la tabla de §8: la que el modelo escribe
- * libremente. La otra familia —líneas de honorarios, gastos estimados, plan
- * de pagos, totales— no está acá y no es un olvido: es estructurada, vive en
- * `cotizacion_linea` y en `cuota`, y es donde la barandilla manda («el modelo
- * no suma, nunca»).
- *
- * **La unión es cerrada; lo que cada clave significa no.** Son dos cosas
- * distintas y el proyecto tardó dos tajadas en separarlas:
- *
- *  - La **clave** sigue cerrada y sigue en código, y **desde T-5 de la tajada
- *    2 ya no tiene el `CHECK` de `migrations/0004_cotizaciones.sql` debajo**:
- *    `0017` cambió `cotizacion_modulo.tipo` por `plantilla_id`, una referencia
- *    a `modulo_plantilla`. La base sigue sosteniendo la regla como §5 obliga,
- *    y con una guarda más fuerte que la lista —una clave inventada no es
- *    rechazada, **no llega a existir**—. Esta unión es lo único que queda de
- *    la mitad en código, y muere en T-6, que es el único cambio de ese día.
- *  - El **rótulo y la descripción** viven en `modulo_plantilla` desde T-1 de
- *    esa tajada, y el abogado los edita desde `/catalogos/modulos`. El
- *    criterio del proyecto —catálogo en la base cuando el valor es sólo una
- *    etiqueta, en código cuando hay código detrás— se midió contra los seis y
- *    no había código detrás: se dibujan idénticos y difieren sólo en el
- *    rótulo. `docs/diseno.md` §6 y §8 están corregidos con esa medición.
- *
- * Lo que ata esta unión a la base, mientras viva: `test/modulos-api.spec.ts`
- * enfrenta `TIPOS_DE_MODULO` a las claves de `modulo_plantilla` en los dos
- * sentidos. Ya no hay un `CHECK` con el que compararla —T-5 lo borró— y por
- * eso esas dos pruebas se van con la unión en T-6: lo que las reemplaza es la
- * llave foránea, que es más fuerte que las dos. Acá está sólo la unión, que es
- * lo que cruza el cable.
- */
-export type TipoDeModulo =
-  | "alcance"
-  | "exclusiones"
-  | "antecedentes"
-  | "supuestos"
-  | "clausulas"
-  | "nota_cliente";
+/* ==========================================================================
+   Acá vivía `TipoDeModulo`, y conviene decir qué se perdió (T-6 de
+   `odd/tasks/plantillas-de-modulo.md`)
+   ==========================================================================
+
+   La unión cerrada de las seis claves —`"alcance" | "exclusiones" | …`— no
+   existe más. La clave de un módulo es una `string`, y lo que dice cuáles
+   valen son las filas de `modulo_plantilla`. Sigue siendo la familia de
+   **prosa** de la tabla de `docs/diseno.md` §8: la que el modelo escribe
+   libremente, al revés de las líneas de honorarios y el plan de pagos, que son
+   estructurados y donde la barandilla manda («el modelo no suma, nunca»).
+
+   ## Lo que se perdió es exactamente una cosa, y se nombra
+
+   Hasta hoy una clave inventada **escrita en el código** no compilaba:
+   `{ tipo: "alcanze" }` en cualquier archivo de este repositorio era un error
+   de `typecheck`, y nadie tenía que correr nada ni mandar un dato a ninguna
+   base para enterarse. Hoy compila. El error de tipeo de un programador pasó
+   de morir en `pnpm typecheck` a morir en una prueba, en un 422 o en un
+   rechazo del modelo — más tarde y con más pasos en el medio.
+
+   ## Lo que lo reemplaza, por orden de quién llega primero
+
+    - **La pertenencia al catálogo vivo, en las dos normalizaciones del
+      cable**: `normalizarModulo` en el servidor y
+      `normalizarBorradorDeModulo` en la pantalla. Las dos ya no comparan
+      contra una lista escrita a mano sino contra las claves que **ese bufete**
+      tiene en `modulo_plantilla`, y `tipo_de_modulo_desconocido` sigue siendo
+      el motivo con la misma frase. En el camino del modelo lo hace
+      `clavesOfrecidas` (T-4), que además distingue lo *vigente* de lo
+      *válido*: una plantilla dada de baja no se ofrece.
+    - **La llave foránea de `0017`**, debajo de todo. `plantilla_id` apunta a
+      una fila, así que una clave sin plantilla no es *rechazada*: no hay fila
+      a la que apuntar y la escritura **no llega a existir**. Es la única de
+      las tres que sobrevive a un script de importación, que es lo que §5
+      exige.
+
+   ## El balance, sin adornos
+
+   **Más fuerte en tiempo de ejecución, más débil en tiempo de compilación, y
+   las dos cosas a la vez.** Lo que se gana no es una guarda más: es que las
+   tres miran **la misma fuente**, así que no se pueden desincronizar. Esa
+   desincronización era un defecto real y tenía tres pruebas vigilándola
+   —`test/modulos-api.spec.ts` enfrentaba `TIPOS_DE_MODULO` a las claves
+   sembradas en los dos sentidos—, y esas tres se van con la unión porque ya no
+   hay dos listas que comparar. Lo que se pierde es la red del compilador sobre
+   los literales del propio código, y no se pinta de ganancia: es el precio de
+   que el bufete pueda agregar una plantilla sin un despliegue, que es el pedido
+   de T-7.
+
+   Lo que **no** cambió es el rótulo ni la descripción: viven en
+   `modulo_plantilla` desde T-1 y el abogado los edita desde
+   `/catalogos/modulos`. `docs/diseno.md` §6 y §8 ya están corregidos con la
+   medición que lo justificó. */
 
 /**
  * Un módulo tal como lo lee la pantalla.
@@ -1590,7 +1611,12 @@ export type TipoDeModulo =
  */
 export interface ModuloDeCotizacion {
   id: string;
-  tipo: TipoDeModulo;
+  /**
+   * La clave de la plantilla, resuelta en lectura. **Es `string` desde T-6** y
+   * ya no una unión de seis: ver el bloque de arriba por qué, y qué la valida
+   * ahora.
+   */
+  tipo: string;
   orden: number;
   contenido: string;
 }
@@ -1604,7 +1630,15 @@ export interface ModuloDeCotizacion {
  * para que el generador de T-9 decida un número en vez de una lista.
  */
 export interface DatosDeModulo {
-  tipo: TipoDeModulo;
+  /**
+   * `string` y no una unión (T-6). Que sea una clave del catálogo del bufete
+   * lo garantiza quien construye este valor —`normalizarModulo`,
+   * `normalizarBorradorDeModulo` y `validarModulo`, cada uno contra la lista
+   * que recibe—, y por eso ninguno de los tres necesita un `as`: el
+   * estrechamiento a `string` sale de la misma comprobación que la
+   * pertenencia.
+   */
+  tipo: string;
   contenido: string;
 }
 
@@ -1914,13 +1948,19 @@ export interface ClienteCongelado {
 /**
  * Un módulo de prosa congelado.
  *
- * Lleva `tipo` **y** `rotulo` porque no son lo mismo: `tipo` es la cadena
- * del catálogo cerrado, que un lector automático compara; `rotulo` es el
- * encabezado que la persona leyó, y el catálogo vive en código y se puede
- * renombrar en cualquier despliegue.
+ * Lleva `tipo` **y** `rotulo` porque no son lo mismo: `tipo` es la clave que
+ * un lector automático compara; `rotulo` es el encabezado que la persona leyó.
+ * Que el rótulo se renombre desde `/catalogos/modulos` es lo que vuelve
+ * indispensable esta segunda copia — la regla entera cabe en una línea: lo
+ * vivo se resuelve, lo emitido se copia.
+ *
+ * `tipo` es `string` desde T-6, como en el módulo vivo, y acá la unión hacía
+ * todavía menos: lo que se congela es la clave **que la fila tenía ese día**,
+ * o sea un hecho del pasado, y un hecho del pasado no se valida contra el
+ * catálogo de hoy.
  */
 export interface ModuloCongelado {
-  tipo: TipoDeModulo;
+  tipo: string;
   rotulo: string;
   contenido: string;
 }

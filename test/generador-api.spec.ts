@@ -1431,8 +1431,9 @@ describe("una plantilla dada de baja no se le ofrece al modelo", () => {
    * `tipo_de_modulo_desconocido`, y **no queda ninguna fila**. Es la mitad que
    * hace que el filtro no dependa de que el modelo obedezca, y la que
    * demuestra que el motivo ya no se decide con una constante del código: la
-   * clave `exclusiones` sigue estando en `TIPOS_DE_MODULO` y en el `CHECK` de
-   * `0004`, así que hasta T-3 esta propuesta pasaba.
+   * clave `exclusiones` sigue teniendo su fila en `modulo_plantilla` —dar de
+   * baja no es borrar— así que hasta T-3 esta propuesta pasaba. Desde T-6 ya no
+   * hay constante alguna con la que pudiera decidirse.
    */
   it("y si el modelo la nombra igual, la propuesta se descarta entera", async () => {
     await conLaPlantilla("exclusiones", { activo: false }, async () => {

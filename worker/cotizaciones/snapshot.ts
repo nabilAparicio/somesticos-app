@@ -75,7 +75,6 @@ import type {
   LineaDeCotizacion,
   ModuloDeCotizacion,
   ClaseDeLinea,
-  TipoDeModulo,
   TotalesDeCotizacion,
 } from "../contract";
 import type { RegimenDeImpuesto } from "./lineas";
@@ -115,8 +114,14 @@ export interface ClienteCongelado {
  * Un módulo de prosa congelado.
  *
  * Lleva `tipo` **y** `rotulo`, que parecen lo mismo y no lo son: `tipo` es la
- * clave del catálogo cerrado, que un lector automático puede comparar;
- * `rotulo` es el encabezado que la persona leyó.
+ * clave de la plantilla, que un lector automático puede comparar; `rotulo` es
+ * el encabezado que la persona leyó.
+ *
+ * `tipo` es `string` desde T-6, que es cuando murió la unión, y acá el tipo
+ * angosto hacía todavía menos que en el módulo vivo: lo que este campo guarda
+ * es la clave **que la fila tenía ese día**, o sea un hecho del pasado, y un
+ * hecho del pasado no se valida contra el catálogo de hoy. Si el bufete retira
+ * una plantilla, este campo sigue diciendo lo que decía.
  *
  * **Y desde T-3 esta copia es la que de verdad importa.** Antes el rótulo
  * vivía en código y sólo un despliegue lo cambiaba; ahora el abogado lo
@@ -127,7 +132,7 @@ export interface ClienteCongelado {
  * única forma de guardar un hecho es copiarlo.
  */
 export interface ModuloCongelado {
-  tipo: TipoDeModulo;
+  tipo: string;
   rotulo: string;
   contenido: string;
 }
