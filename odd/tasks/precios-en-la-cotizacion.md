@@ -45,26 +45,48 @@ escribirlo.
 
 ## La secuencia, que cambia el orden de todo
 
-Hoy hay **cero** precios del bufete cargados: las 453 filas de
-`arancel_renglon` tienen `monto` en `NULL`. Entonces:
+**Esta sección decía otra cosa y estaba mal. Queda escrito el error, porque
+es instructivo.**
 
-- **Al agente viaja solo lo que el bufete ya tarifó**, nunca el monto
-  oficial. Inyectar el arancel sería pasarle **mínimos de 2001**, y el modelo
-  cotizaría más barato que inventando. El preset es una sugerencia para una
-  persona, no una referencia para una máquina.
-- Mientras no haya precios cargados, el agente se comporta **exactamente como
-  hoy**. La sección del prompt falla cerrada y lo dice, igual que ya hace
-  `catalogoDeTramites` con un bufete sin trámites.
-- Eso hace que la pantalla de precios no sea un accesorio de esta tajada:
-  **es su requisito**. Vale decirlo en voz alta en vez de descubrirlo cuando
-  el agente no cambie de comportamiento.
+Decía: «al agente viaja solo lo que el bufete ya tarifó, nunca el monto
+oficial; inyectar el arancel sería pasarle mínimos de 2001 y el modelo
+cotizaría más barato que inventando». Era mío, y T-2 bis lo desmintió desde
+arriba, con el principio que fijó el usuario:
 
-Y una consecuencia de tamaño que se resuelve sola: lo que viaja al prompt no
-son 453 renglones, son los que el bufete tarifó. Un bufete de dos personas
-tarifa decenas, no cientos. El día que no entren, `modelo.ts:71` ya reserva
-`antecedentes` como «el punto de enchufe del corpus» y dice a propósito que
-no se escribió una interfaz de recuperación contra un corpus que nadie
-definió. Sigue valiendo: **no se escribe hasta que el tamaño la pida.**
+> «Los preestablecidos son la norma hasta que se editen, **no son una
+> subcategoría**.»
+
+Si un renglón sin editar es el precio del bufete para la pantalla de precios,
+para el editor de líneas y para la base —que desde `0015` lo acepta como
+origen—, entonces **también lo es para el agente**. Retenerlo sería volver a
+poner dos criterios distintos para la misma pregunta en dos lugares del mismo
+sistema, que es exactamente el defecto que T-2 bis corrigió.
+
+Y el miedo de origen no se sostiene mirado de cerca: la alternativa a que el
+modelo use un preestablecido **no es un precio mejor, es un número
+inventado**. Entre una cifra trazable que el bufete puede editar y una que no
+sale de ningún lado, la primera gana. El borrador lo revisa una persona
+igual.
+
+Entonces:
+
+- **Al agente viajan los renglones con cifra** —282 en la base de
+  desarrollo—, los editados y los preestablecidos, exactamente el mismo
+  catálogo que ofrece el editor de líneas. Los 97 de regla por cuantía no,
+  porque no tienen cifra; los 74 rubros tampoco, porque son títulos.
+- **El prompt falla cerrado** cuando no hay ninguno, y lo dice, igual que ya
+  hace `catalogoDeTramites` con un bufete sin trámites.
+- **Nada distingue un editado de un preestablecido ante el modelo.** La marca
+  es para una persona que quiere saber de dónde viene un número; el modelo
+  recibe precios y nada más. Señalarle cuál es «sólo el del acuerdo» sería
+  pedirle que juzgue, y juzgar es lo que este sistema no hace.
+
+Queda una consecuencia de tamaño que ya **no** se resuelve sola: 282
+renglones en el prompt no son gratis. Medir cuánto ocupan es parte de la
+tarea. Si no entran, `modelo.ts:71` ya reserva `antecedentes` como «el punto
+de enchufe del corpus» y dice a propósito que no se escribió una interfaz de
+recuperación contra un corpus que nadie definió. Sigue valiendo: **no se
+escribe hasta que el tamaño la pida** —pero ahora hay que medir si la pide.
 
 ## La forma
 
