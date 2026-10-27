@@ -180,6 +180,29 @@ function aPlantilla(fila: FilaDePlantilla): PlantillaDeModulo {
   };
 }
 
+/**
+ * Las plantillas indexadas por su clave, con el rótulo vigente ya resuelto.
+ *
+ * Es lo que necesita quien tiene una `clave` en la mano y no una fila: las
+ * tres escrituras de módulo de `worker/cotizaciones/repositorio.ts`, que
+ * arman el `detalle` de la bitácora, y `emitir`, que le pasa los rótulos a
+ * `congelar`. Toma la lista del puerto —**la misma** `listar` que sirve el
+ * `GET`, con su `COALESCE` ya hecho por `valorVigente`— en vez de una consulta
+ * propia, porque una consulta propia sería la segunda implementación de la
+ * resolución del rótulo y la que nadie mira.
+ *
+ * **Incluye las dadas de baja**, y eso es deliberado: un módulo escrito con
+ * una plantilla que después se retiró tiene que seguir mostrando su rótulo.
+ * Esconderlo acá convertiría una baja en una pérdida de dato en las
+ * cotizaciones vivas. Qué se puede **elegir** es la otra pregunta, y la
+ * contesta la pantalla filtrando por `activo`.
+ */
+export function rotulosPorClave(
+  plantillas: readonly PlantillaDeModulo[],
+): ReadonlyMap<string, string> {
+  return new Map(plantillas.map((una) => [una.clave, una.rotuloVigente]));
+}
+
 export function plantillasSobreD1(base: BaseDeDatos): ServicioDePlantillas {
   const db = base.lectura;
 

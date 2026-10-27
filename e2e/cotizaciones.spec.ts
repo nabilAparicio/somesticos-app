@@ -736,8 +736,59 @@ const COTIZACIONES = [BORRADOR, BORRADOR_VIEJO, EMITIDA];
  */
 const DEL_CICLO = [GANADA, PERDIDA, DUPLICADA, COPIA, POR_ABRIR];
 
+/**
+ * El catálogo de plantillas de módulo, que desde T-3 el editor **tiene** que
+ * leer (`odd/tasks/plantillas-de-modulo.md`).
+ *
+ * De acá sale cada rótulo que la pantalla dibuja y la lista de lo que el
+ * desplegable ofrece. Las seis en el orden de la propuesta, todas activas y
+ * todas con el preset puesto: es el estado de un bufete que no tocó nada, que
+ * es el que miden casi todas las pruebas de abajo. La que mide la baja
+ * reemplaza esta respuesta por la suya.
+ *
+ * Los rótulos están escritos a mano acá, que es lo mismo que hacía la lista de
+ * la prueba del desplegable y por el mismo motivo: una expectativa calculada
+ * con la misma fuente que se prueba pasa aunque las dos estén mal
+ * (restricción 6). La diferencia con T-2 es cuál es la fuente: antes el
+ * desplegable los importaba del código, ahora los pide por HTTP, y lo que esta
+ * constante hace es ser ese HTTP.
+ */
+function plantillaDeModulo(
+  clave: string,
+  rotulo: string,
+  orden: number,
+  ajustes: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: `p0000000-0000-4000-8000-00000000000${String(orden)}`,
+    clave,
+    orden,
+    rotuloOficial: rotulo,
+    descripcionOficial: `Para qué sirve ${rotulo.toLowerCase()}.`,
+    rotulo: null,
+    descripcion: null,
+    rotuloVigente: rotulo,
+    descripcionVigente: `Para qué sirve ${rotulo.toLowerCase()}.`,
+    activo: true,
+    ...ajustes,
+  };
+}
+
+const PLANTILLAS_DE_MODULO = [
+  plantillaDeModulo("antecedentes", "Antecedentes", 0),
+  plantillaDeModulo("alcance", "Alcance", 1),
+  plantillaDeModulo("exclusiones", "Exclusiones", 2),
+  plantillaDeModulo("supuestos", "Supuestos", 3),
+  plantillaDeModulo("clausulas", "Cláusulas", 4),
+  plantillaDeModulo("nota_cliente", "Nota al cliente", 5),
+];
+
 function cuerpoDe(pathname: string): Record<string, unknown> | null {
   if (/^\/api\/cotizaciones\/[^/]+\/bitacora$/.test(pathname)) return BITACORA;
+
+  if (pathname === "/api/plantillas-modulo") {
+    return { plantillas: PLANTILLAS_DE_MODULO };
+  }
 
   const deModulos = /^\/api\/cotizaciones\/([^/]+)\/modulos$/.exec(pathname);
   if (deModulos !== null) {
@@ -1479,13 +1530,15 @@ test.describe("las cotizaciones del bufete", () => {
     await expect(tipo).toBeVisible();
 
     /*
-     * Los seis rótulos están escritos a mano y **no** importados de
-     * `worker/cotizaciones/modulos.ts`, que es de donde el desplegable los
-     * saca: una expectativa calculada con la misma fuente que se prueba
-     * pasa aunque las dos estén mal (restricción 6). Que agregar un tipo
-     * obligue a tocar esta lista es la gracia, no el costo: agregar un tipo
-     * es un despliegue, y el `CHECK` de la migración también hay que
-     * moverlo a mano.
+     * Los seis rótulos están escritos a mano y no derivados de
+     * `PLANTILLAS_DE_MODULO`, que es lo que el banco contesta: una
+     * expectativa calculada con la misma fuente que se prueba pasa aunque las
+     * dos estén mal (restricción 6).
+     *
+     * Y el orden es el de la respuesta, no el alfabético: el servidor ordena
+     * por `orden, clave` y la pantalla dibuja lo que llega. Desde T-3 esta
+     * lista se mueve cuando el bufete reordena su catálogo, no cuando alguien
+     * despliega.
      */
     await expect(tipo.locator("option")).toHaveText([
       "Elegir tipo…",
@@ -1496,6 +1549,125 @@ test.describe("las cotizaciones del bufete", () => {
       "Cláusulas",
       "Nota al cliente",
     ]);
+  });
+
+  test("el rótulo que el bufete editó es el que se ve en la cotización", async ({
+    page,
+  }) => {
+    /*
+     * **El criterio de aceptación 1 de la tajada, medido en el navegador.**
+     * Renombrar «Alcance» en `/catalogos/modulos` tiene que verse en el editor
+     * de una cotización, y hasta T-2 no se veía: el rótulo venía compilado.
+     *
+     * Se mira en los tres lugares donde aparece —el encabezado accesible de
+     * los controles de la fila, el desplegable y el nombre del botón de
+     * quitar— porque los tres salen de la misma resolución y un arreglo
+     * parcial pasaría una sola aserción.
+     */
+    const PROPIO = "Qué vamos a hacer";
+
+    await conCotizacionesCargadas(page);
+    // **Despues** del comodin de `/api/`, y no antes: en Playwright la ruta
+    // registrada mas tarde gana, asi que al reves este banco quedaria debajo
+    // del catalogo sin editar y la prueba mediria el estado limpio.
+    await page.route("**/api/plantillas-modulo", async (ruta) => {
+      await ruta.fulfill({
+        status: 200,
+        json: {
+          plantillas: PLANTILLAS_DE_MODULO.map((una) =>
+            una.clave === "alcance"
+              ? { ...una, rotulo: PROPIO, rotuloVigente: PROPIO }
+              : una,
+          ),
+        },
+      });
+    });
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    await expect(
+      page.getByLabel(`Texto del módulo 2: ${PROPIO}`),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: `Quitar el módulo 2: ${PROPIO}` }),
+    ).toBeVisible();
+    await expect(
+      page.getByLabel("Tipo", { exact: true }).locator("option"),
+    ).toHaveText([
+      "Elegir tipo…",
+      "Antecedentes",
+      PROPIO,
+      "Exclusiones",
+      "Supuestos",
+      "Cláusulas",
+      "Nota al cliente",
+    ]);
+
+    // Y el viejo no quedó en ninguna parte: con una sola de las cuatro
+    // resoluciones sin cambiar, «Alcance» seguiría dibujado en algún rincón.
+    await expect(page.getByText("Alcance", { exact: true })).toHaveCount(0);
+  });
+
+  test("una plantilla de baja no se ofrece, pero el módulo que la usa la sigue nombrando", async ({
+    page,
+  }) => {
+    /*
+     * **Las dos mitades de la baja, en una sola medida**, porque son una sola
+     * decisión y medirlas por separado dejaría pasar la mitad.
+     *
+     * Dar de baja «Alcance» significa «dejen de usar esto», así que el
+     * desplegable del alta —y el de los otros módulos— no lo ofrece. Pero el
+     * módulo 2 de este borrador **ya** es de alcance, y su desplegable sí lo
+     * tiene, marcado: sin eso el control quedaría puesto en «Antecedentes»
+     * —un `<select>` cuyo valor no está en la lista cae en la primera opción—
+     * y el primer «Guardar» le cambiaría el tipo al módulo. Eso no es un
+     * detalle de dibujo: es perder un dato.
+     */
+    await conCotizacionesCargadas(page);
+    // Despues del comodin, por lo mismo que la prueba de arriba.
+    await page.route("**/api/plantillas-modulo", async (ruta) => {
+      await ruta.fulfill({
+        status: 200,
+        json: {
+          plantillas: PLANTILLAS_DE_MODULO.map((una) =>
+            una.clave === "alcance" ? { ...una, activo: false } : una,
+          ),
+        },
+      });
+    });
+    await page.goto(`/cotizaciones/${BORRADOR_ID}`);
+
+    // El del alta: cinco opciones y «Alcance» no está, ni marcada ni sin
+    // marcar.
+    await expect(
+      page.getByLabel("Tipo", { exact: true }).locator("option"),
+    ).toHaveText([
+      "Elegir tipo…",
+      "Antecedentes",
+      "Exclusiones",
+      "Supuestos",
+      "Cláusulas",
+      "Nota al cliente",
+    ]);
+
+    // El del módulo que ya la usa: la tiene, al final y marcada, y es la que
+    // está elegida.
+    const suyo = page.getByLabel("Tipo del módulo 2: Alcance");
+    await expect(suyo.locator("option")).toHaveText([
+      "Elegir tipo…",
+      "Antecedentes",
+      "Exclusiones",
+      "Supuestos",
+      "Cláusulas",
+      "Nota al cliente",
+      "Alcance (de baja)",
+    ]);
+    await expect(suyo).toHaveValue("alcance");
+
+    // Y el de otro módulo no la tiene: lo que se conserva es poder nombrar lo
+    // que ya está escrito, no poder volver a elegirlo.
+    await expect(
+      page.getByLabel("Tipo del módulo 1: Antecedentes").locator("option"),
+    ).toHaveCount(6);
   });
 
   test("sobre lo que ya se emitió los módulos se leen y no se tocan", async ({

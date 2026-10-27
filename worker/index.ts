@@ -274,11 +274,29 @@ export async function manejar(
   );
   if (clientes !== null) return clientes;
 
+  // Un solo servicio de plantillas de módulo para las **tres** rutas que lo
+  // necesitan: la suya, la de su bitácora —que comprueba por el mismo puerto
+  // que la plantilla existe en este bufete y no por una segunda copia de la
+  // consulta— y, desde T-3, el de cotizaciones, que le pide el rótulo vigente
+  // de cada clave de módulo.
+  //
+  // **Esta línea es la que cerró el 404 que T-1 dejó debiendo.** El `case` de
+  // `modulo_plantilla` en `existeLaFila` devolvía `false` porque este puerto no
+  // existía; lo que faltaba era el repositorio y este parámetro.
+  //
+  // Se construye **antes** que el de cotizaciones y no al lado de su ruta, y
+  // ése es el único motivo por el que estas veinte líneas se mudaron en T-3:
+  // `cotizacionesSobreD1` lo recibe, y si se construyera después cada petición
+  // armaría dos adaptadores de plantillas sobre la misma `BaseDeDatos`.
+  const servicioDePlantillas =
+    dependencias.plantillas ?? plantillasSobreD1(base);
+
   // Un solo servicio de cotizaciones para las dos rutas que lo necesitan:
   // la suya y la de su bitácora, que comprueba por el mismo puerto que la
   // fila existe en este bufete y no por una segunda copia de la consulta.
   const servicioDeCotizaciones =
-    dependencias.cotizaciones ?? cotizacionesSobreD1(base, impuesto);
+    dependencias.cotizaciones ??
+    cotizacionesSobreD1(base, impuesto, servicioDePlantillas);
 
   // Un solo servicio de catálogos para las dos rutas: desde T-11, guardar el
   // plan de un proceso como plantilla escribe por el mismo puerto que la
@@ -309,17 +327,6 @@ export async function manejar(
   // y la de su bitácora, que comprueba por el mismo puerto que el renglón
   // existe en este bufete y no por una segunda copia de la consulta.
   const servicioDeArancel = dependencias.arancel ?? arancelSobreD1(base);
-
-  // Un solo servicio de plantillas para las dos rutas que lo necesitan: la
-  // suya y la de su bitácora, que comprueba por el mismo puerto que la
-  // plantilla existe en este bufete y no por una segunda copia de la consulta.
-  //
-  // **Esta línea es la que cierra el 404 que T-1 dejó debiendo.** El `case`
-  // de `modulo_plantilla` en `existeLaFila` devolvía `false` porque este
-  // puerto no existía; lo que faltaba era el repositorio y este parámetro, y
-  // están los dos.
-  const servicioDePlantillas =
-    dependencias.plantillas ?? plantillasSobreD1(base);
 
   const bitacora = await rutasDeBitacora(
     request,

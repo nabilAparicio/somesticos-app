@@ -1524,18 +1524,25 @@ export interface CotizacionNoEsEmitida {
  * `cotizacion_linea` y en `cuota`, y es donde la barandilla manda («el modelo
  * no suma, nunca»).
  *
- * El catálogo es **cerrado y vive en código**, no en una tabla editable:
- * agregar un tipo es un despliegue. El criterio del proyecto —catálogo en la
- * base cuando el valor es sólo una etiqueta, en código cuando hay código
- * detrás— apunta al código, igual que con el vocabulario de la bitácora:
- * detrás de cada tipo hay un rótulo, un lugar en el orden sugerido y, desde
- * T-9, un prompt. Y §5 obliga a que la base lo sostenga igual, así que
- * también está el `CHECK` de `migrations/0004_cotizaciones.sql`.
+ * **La unión es cerrada; lo que cada clave significa no.** Son dos cosas
+ * distintas y el proyecto tardó dos tajadas en separarlas:
  *
- * Las dos mitades se mueven juntas o no se mueven:
- * `test/modulos-api.spec.ts` las compara y falla si se separan. El rótulo y
- * el orden sugerido viven en `worker/cotizaciones/modulos.ts`; acá está sólo
- * la unión, que es lo que cruza el cable.
+ *  - La **clave** sigue cerrada y sigue en código, con el `CHECK` de
+ *    `migrations/0004_cotizaciones.sql` debajo porque §5 obliga a que la base
+ *    sostenga la regla igual. Agregar una clave sigue siendo un despliegue,
+ *    hasta la tajada 2 de `odd/tasks/plantillas-de-modulo.md`, donde
+ *    `cotizacion_modulo.tipo` pasa a ser una referencia y esta unión muere.
+ *  - El **rótulo y la descripción** viven en `modulo_plantilla` desde T-1 de
+ *    esa tajada, y el abogado los edita desde `/catalogos/modulos`. El
+ *    criterio del proyecto —catálogo en la base cuando el valor es sólo una
+ *    etiqueta, en código cuando hay código detrás— se midió contra los seis y
+ *    no había código detrás: se dibujan idénticos y difieren sólo en el
+ *    rótulo. `docs/diseno.md` §6 y §8 están corregidos con esa medición.
+ *
+ * Las dos mitades de la clave se mueven juntas o no se mueven:
+ * `test/modulos-api.spec.ts` compara el `CHECK` contra `TIPOS_DE_MODULO` y
+ * además enfrenta las dos a las claves de `modulo_plantilla`, en los dos
+ * sentidos. Acá está sólo la unión, que es lo que cruza el cable.
  */
 export type TipoDeModulo =
   | "alcance"
@@ -1548,10 +1555,27 @@ export type TipoDeModulo =
 /**
  * Un módulo tal como lo lee la pantalla.
  *
- * **No trae rótulo**, y la ausencia es el diseño: el rótulo sale del registro
- * tipado, que la pantalla importa igual que lo importa el servidor.
- * Mandarlo por el cable sería una segunda copia que el día que alguien
- * cambie un rótulo se queda vieja en las cotizaciones ya cargadas.
+ * **No trae rótulo**, y la ausencia sigue siendo el diseño — pero el motivo
+ * cambió entero en T-3 de `odd/tasks/plantillas-de-modulo.md` y el viejo ya no
+ * se sostiene. Decía: «el rótulo sale del registro tipado, que la pantalla
+ * importa igual que lo importa el servidor». Ese registro ya no tiene rótulos:
+ * el rótulo vigente es `COALESCE(rotulo, rotulo_oficial)` de
+ * `modulo_plantilla`, y el abogado lo cambia desde `/catalogos/modulos` sin
+ * desplegar nada.
+ *
+ * El motivo que **sí** se sostiene hoy es que la pantalla ya tiene la fila. El
+ * editor de módulos pide `GET /api/plantillas-modulo` igual que pide los demás
+ * catálogos, y **tiene que pedirlo de todas formas**: su desplegable ofrece
+ * las plantillas *activas*, y eso no se puede deducir de los módulos que la
+ * cotización ya tiene. Con el catálogo en la mano, un `rotulo` por módulo
+ * sería la misma cadena repetida una vez por fila —cinco módulos de una
+ * cotización traerían cinco copias de seis rótulos—, y dos de esas copias
+ * podrían discrepar dentro de una sola respuesta.
+ *
+ * Donde el rótulo **sí** viaja copiado es en `ModuloCongelado`, adentro del
+ * snapshot, y ahí la copia es la función: una cotización emitida muestra el
+ * encabezado que el cliente leyó, nunca el de hoy. La regla entera de este
+ * campo cabe en una línea: **lo vivo se resuelve, lo emitido se copia.**
  *
  * `orden` es la posición dentro de la cotización y **lo asigna el servidor**,
  * nunca el cuerpo. Se manda de vuelta porque es lo que ordena la lista, y
@@ -1848,19 +1872,19 @@ export interface RespuestaDeLineas {
 
    Y son una segunda declaración, que es justo lo que este proyecto evita.
    Está así porque el cable necesita nombrarlas y `snapshot.ts` no puede
-   entrar en el programa del navegador: importa `totalesDe` y los dos
-   `rotuloDe…` **como valores**, así que listarlo en `tsconfig.app.json`
-   arrastraría `congelar()` y su aritmética al bundle — la puerta de atrás
-   hacia sumar en el cliente, que es lo único que esta tajada prohíbe de
-   plano.
+   entrar en el programa del navegador: importa `totalesDe` y `rotuloDeClase`
+   **como valores**, así que listarlo en `tsconfig.app.json` arrastraría
+   `congelar()` y su aritmética al bundle — la puerta de atrás hacia sumar en
+   el cliente, que es lo único que esta tajada prohíbe de plano.
 
    **Las dos copias no pueden separarse en silencio**, y no por disciplina:
    `EL_DOCUMENTO_DEL_CABLE_ES_EL_SNAPSHOT`, en
    `worker/cotizaciones/repositorio.ts`, es una afirmación de
    asignabilidad en los dos sentidos que deja de compilar si una de las dos
    gana, pierde o renombra un campo. El día que `snapshot.ts` pueda importar
-   de acá —basta con que sus dos ayudantes de rótulo se separen de
-   `totalesDe`— estas interfaces se borran de allá y la guarda sobra.
+   de acá —basta con que `rotuloDeClase` se separe de `totalesDe`; T-3 ya se
+   llevó al otro ayudante, porque el rótulo del módulo lo resuelve la base—
+   estas interfaces se borran de allá y la guarda sobra.
    ========================================================================== */
 
 /**

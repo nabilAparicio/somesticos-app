@@ -236,18 +236,22 @@ acotado; el disparador es la regla de escritura y la de preparación.
 
 ### T-3 · El rótulo deja de vivir en el código
 
-- [ ] El rótulo vigente sale de la base en toda la aplicación: el editor de
+- [x] El rótulo vigente sale de la base en toda la aplicación: el editor de
       módulos, la hoja, el detalle, y el `detalle` de la bitácora que
       `repositorio.ts:1747` arma con `rotuloDeTipo`.
 - [ ] Los rótulos escritos a mano en `worker/cotizaciones/modulos.ts:80`
       quedan con **exactamente un uso**: la semilla de la migración. Si queda
       un segundo, son dos fuentes y una se va a quedar vieja.
-- [ ] La red del compilador que se pierde (`TiposSinRotulo`, `:126`) se
+      **Queda un segundo, y es `worker/ia/prompt.ts:238`**, que está fuera de
+      la superficie de esta tarea porque es T-4. Está dicho en el código, al
+      lado de la constante, y las dos fuentes quedan atadas por una prueba
+      bidireccional contra `rotulo_oficial`. Se cierra con T-4.
+- [x] La red del compilador que se pierde (`TiposSinRotulo`, `:126`) se
       reemplaza por una prueba que lee las claves de `modulo_plantilla` y las
       enfrenta a `TIPOS_DE_MODULO` **en los dos sentidos**, que es la forma que
       `test/modulos-api.spec.ts:77` ya usa contra el `CHECK`. La red no se
       pierde: cambia de lugar.
-- [ ] El snapshot sigue congelando el rótulo vigente al emitir, y las 6
+- [x] El snapshot sigue congelando el rótulo vigente al emitir, y las 6
       cotizaciones emitidas de la base local siguen mostrando el suyo. Se
       prueba contra esas filas, no contra una sembrada.
 
@@ -288,9 +292,17 @@ tienen que fallar; la pantalla y el prompt se miden.
 
 ## Entrega
 
-Forecast de la tajada 1: **~1.000 líneas propias** (migración ~350, worker
-~250, pantalla ~250, pruebas ~150+). Rama propia con un commit por tarea.
-Empujar y mezclar a `main` siguen siendo decisión del usuario.
+Forecast original de la tajada 1: ~1.000 líneas propias. **Medido tras T-2:
+6.874 insertadas en dos de las cuatro tareas** (`7c340aa` +1.399, `41cfffb`
++5.475). El forecast estaba mal por un factor de siete, y el motivo es
+identificable y no una sorpresa: se estimaron líneas de código, y este
+repositorio escribe alrededor de tres líneas de comentario y de prueba por
+cada una de código —de las 5.475 de T-2, 2.969 son pruebas y 201 documentación—.
+Queda anotado acá para que el forecast de la tajada 2 se haga sobre la
+medición y no sobre la intuición.
+
+Rama propia con un commit por tarea. Empujar y mezclar a `main` siguen siendo
+decisión del usuario.
 
 ## Progreso
 
@@ -496,3 +508,150 @@ entidad la escribe esta misma tarea. La dirección funciona y tiene prueba, así
 que cuando se quiera es una fila de tabla, no un camino nuevo.
 
 **Siguiente paso**: T-3, que saca el rótulo del código.
+
+### T-3 cerrada
+
+**Archivos.** Ninguno nuevo. Modificados, 17: `worker/cotizaciones/modulos.ts`
+(+237/−244 contando el encabezado reescrito), `worker/cotizaciones/repositorio.ts`
+(+95), `worker/cotizaciones/snapshot.ts` (+42), `worker/contract.ts` (+68),
+`worker/index.ts` (+31), `worker/plantillas/repositorio.ts` (+23),
+`src/pantallas/cotizaciones/modulos.ts` (+144),
+`src/pantallas/cotizaciones/EditorDeModulos.tsx` (+88), cinco de prueba y tres
+de punta a punta. **1.340 insertadas, 244 quitadas.**
+
+**La decisión que el enunciado pedía decidir: el rótulo no viaja en el cable.**
+Las dos opciones eran que la pantalla pidiera `GET /api/plantillas-modulo` o
+que `ModuloDeCotizacion` llevara el rótulo resuelto. Se eligió la primera, y
+lo que la decidió no fue la estética sino que **el editor tiene que pedir el
+catálogo de todas formas**: su desplegable ofrece las plantillas *activas*, y
+eso no se puede deducir de los módulos que la cotización ya tiene. Con el
+catálogo en la mano, un `rotulo` por módulo sería la misma cadena repetida una
+vez por fila —cinco módulos traerían cinco copias de seis rótulos— y dos de
+esas copias podrían discrepar dentro de una sola respuesta.
+
+El comentario de `contract.ts:1551` **se reescribió igual**, y eso es lo que
+importa: su conclusión sobrevive y su argumento no. Decía que el rótulo «sale
+del registro tipado, que la pantalla importa igual que lo importa el
+servidor», y ese registro ya no tiene rótulos. Ahora dice el motivo que se
+sostiene, y cierra con la regla entera en una línea: **lo vivo se resuelve, lo
+emitido se copia.**
+
+**La segunda fuente que sobrevive, y por qué.** El enunciado pedía que los
+rótulos escritos a mano quedaran con un solo uso. Quedaron con dos, y el
+segundo es `worker/ia/prompt.ts:238` —`CATALOGO_DE_MODULOS`—, que esta tarea
+**no puede tocar**: es la línea que T-4 pone a leer la base, con la medición
+del prompt antes y después que es su entrega. Cambiarla desde acá habría
+dejado media tarea hecha sin la prueba que la mide. Lo que se hizo en su lugar:
+
+1. Se apagaron los cinco consumidores que importaban. `rotuloDeTipo` y el
+   `Map` que lo sostenía **no existen más**.
+2. La constante quedó documentada con su único consumidor nombrado y su fecha
+   de muerte: el día que T-4 entre, se borra.
+3. Las dos fuentes quedaron **atadas por prueba**, en los dos sentidos, contra
+   los `rotulo_oficial` de `modulo_plantilla`. Renombrar un preset en una
+   migración y olvidarse del código pone la suite en rojo.
+
+**La red del compilador, mudada y medida.** `TiposSinRotulo` se borró: probaba
+que todo tipo tenía rótulo, y eso no se prueba con un tipo cuando el rótulo es
+una fila. Lo reemplazan tres pruebas en `test/modulos-api.spec.ts` que leen
+`modulo_plantilla` y la enfrentan a `TIPOS_DE_MODULO`. Lo que **no** se mudó es
+la pertenencia a la unión `TipoDeModulo`, que nunca tuvo que ver con el
+rótulo: sigue siendo cosa del compilador, renombrada a `TiposFueraDeLaLista`.
+
+Medido con las dos mutaciones, que son los dos sentidos de la red:
+
+| Mutación | Resultado |
+|---|---|
+| Séptima clave en `TipoDeModulo` y en `TIPOS_DE_MODULO`, sin fila | **3 fallando de 54**: el `CHECK`, «cada clave tiene su plantilla» y el orden |
+| Una fila de más en la lectura de `modulo_plantilla` | **3 fallando de 54**: «cada plantilla tiene su clave», el orden y el preset del código |
+
+El `typecheck` **no** nota la séptima clave, y es el punto: por eso la red
+tenía que cambiar de mecanismo y no de nombre.
+
+**RED donde hay regla que proteger.** Tres mutaciones más, sobre las tres
+reglas que carga la tarea:
+
+| Mutación | Resultado |
+|---|---|
+| `rotulosPorClave` devuelve `rotuloOficial` —o sea, ignora el renombre del bufete— | **2 fallando de 119** en `modulos-api` + `emitir-api` + `plantillas-api`: el `detalle` de la bitácora y el rótulo congelado |
+| `rotuloDeModulo` devuelve el preset en vez del vigente | **1 fallando de 48** en `modulos-ui` |
+| `opcionesParaModulo` = `opcionesParaNuevo` —se cae la plantilla de baja— | **2 fallando de 48** en `modulos-ui` |
+
+Las tres restauradas: 119, 48 y 48 pasando.
+
+**La plantilla dada de baja: decidido, y las dos mitades probadas.** Una
+plantilla de baja **no se ofrece** para un módulo nuevo ni en el desplegable de
+los otros módulos, y **sí aparece, marcada «(de baja)» y al final**, en el
+desplegable del módulo que ya la usa. La asimetría es el criterio: se conserva
+poder nombrar lo que ya está escrito, no poder volver a elegirlo.
+
+Sin esa segunda mitad el defecto es concreto y no estético: un
+`<select value="alcance">` cuya lista no tiene `alcance` **no queda vacío,
+queda en la primera opción**, así que la pantalla afirmaría que ese módulo es
+de antecedentes — y como el formulario manda el juego completo, el primer
+«Guardar» hecho para corregir una coma le cambiaría el tipo al módulo. Eso es
+perder un dato.
+
+Y **el servidor no la rechaza**, que es la decisión menos obvia: rechazar una
+clave de baja en el `PUT` dejaría congelado todo módulo cuya plantilla se
+retiró —nadie podría corregirle una coma— y habría exigido un `MotivoDeFalla`
+nuevo, o sea `src/mensajes.ts`, que está fuera de la superficie. Lo que impide
+elegirla de nuevo es qué ofrece el desplegable, no la validación.
+
+**Manejado a mano contra la base local** (API real, no interceptada), en
+`http://localhost:5174`, con «Alcance» renombrado a «Qué vamos a hacer» desde
+`/catalogos/modulos`:
+
+| Qué se midió | Resultado |
+|---|---|
+| `/catalogos/modulos` tras guardar | `<h2>` «Qué vamos a hacer» con **1** marca de editado |
+| Editor de `COT-2026-0011` (borrador), etiquetas de los 5 módulos | «Texto del módulo 2: **Qué vamos a hacer**»; las otras cuatro con su preset |
+| Desplegable del alta | 7 opciones, con «Qué vamos a hacer» en el lugar 2 |
+| Hoja de `COT-2026-0003` (emitida), encabezados | Antecedentes · **Alcance** · Exclusiones · Supuestos · Cláusulas |
+| «Qué vamos a hacer» en el HTML de la hoja emitida | **ausente** |
+| Con «Alcance» dado de baja, desplegable del alta | 6 opciones, sin «Alcance» ni marcada ni sin marcar |
+| Con «Alcance» dado de baja, desplegable del módulo 2 | 8 opciones, la última «**Qué vamos a hacer (de baja)**», y `value = "alcance"` |
+| Con «Alcance» dado de baja, desplegable del módulo 1 | 6 opciones: la retirada no está |
+
+**Las 6 cotizaciones emitidas de la base local, medidas antes y después.**
+Las **33** entradas congeladas de sus snapshots —5+6+5+6+6+5— idénticas letra
+por letra, y los seis `length(snapshot)` iguales al byte: 4.432 · 4.052 ·
+4.206 · 6.814 · 6.528 · 5.174. Es la medición contra esas filas y no contra
+una sembrada, y se tomó con el rótulo del bufete **puesto** en el medio, que
+es la única forma de que distinga algo.
+
+La base local quedó restaurada: las seis plantillas con `rotulo` y
+`descripcion` en NULL y `activo = 1`. Lo que **no** se puede restaurar son las
+**4 entradas de bitácora** que ese manejo escribió —`editado`,
+`dado_de_baja`, `reactivado`, `editado`—, y no es un descuido: la bitácora es
+inmutable por diseño y su razón de ser es justamente que lo que pasó quede
+escrito.
+
+**Dos cosas que no se tocaron, a propósito.** La hoja imprimible no cambió una
+línea: ya leía el rótulo del snapshot, así que T-3 la alcanzó por abajo —en
+`congelar`— y no por arriba. Y hay una prueba nueva de punta a punta que afirma
+que **no pide** `/api/plantillas-modulo`: ir a buscar el rótulo de hoy sería
+imprimir el nombre de hoy sobre el papel de marzo.
+
+**Tres archivos fuera de la superficie autorizada, y se dicen.** Los tres son
+bancos de punta a punta que ya montaban el editor de módulos y contestan la API
+entera desde un predicado, así que la lectura nueva del catálogo caía en su 404
+de reserva y el editor mostraba su aviso de lectura fallida:
+`e2e/generar.spec.ts` (+36), `e2e/precios-en-cotizacion.spec.ts` (+36) y
+`e2e/plan.spec.ts` (+44). La adición es la misma en los tres: la fixture de las
+seis plantillas y su rama. No hay forma de evitarlo —con el rótulo fuera del
+código, **cualquier** diseño obliga a que esos bancos lo sirvan—, y por eso no
+se intentó un camino degradado: un editor que dibujara claves crudas cuando el
+catálogo no contesta es una pantalla que miente sobre lo que sabe.
+
+Queda además una referencia desactualizada que esta tarea no puede corregir:
+`worker/ia/esquema.ts:230,276` nombra `TiposSinRotulo` en dos comentarios. Es
+`worker/ia/*`, o sea T-4.
+
+**Verificación.** `pnpm lint`: sin hallazgos. `pnpm typecheck`: 0 errores.
+`pnpm test`: **54 archivos, 2.706 pruebas, todas pasando** (desde 2.688: +18,
+sin archivos nuevos). `pnpm test:e2e`: **535 pasando** en 1,1 min (desde 532:
++3) —`e2e/sin-scroll-horizontal.spec.ts` pasó sin necesidad de repetirlo—.
+
+**Siguiente paso**: T-4, que le inyecta al prompt la descripción de cada
+módulo y, con eso, borra `CATALOGO_DE_MODULOS`.

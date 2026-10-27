@@ -77,30 +77,136 @@ describe("el catálogo de la base y el del código dicen lo mismo", () => {
     expect([...enLaBase].sort()).toEqual([...TIPOS_DE_MODULO].sort());
   });
 
-  it("cada tipo del registro trae su rótulo, y ninguno se repite", () => {
-    // El rótulo es lo único que una persona ve de un tipo. Dos tipos con el
-    // mismo rótulo son dos opciones indistinguibles en el desplegable, que es
-    // el mismo defecto que `VERBOS_DE_BITACORA` evita con sus verbos.
-    const rotulos = CATALOGO_DE_MODULOS.map((entrada) => entrada.rotulo);
+  it("no se repite ninguna clave en la lista", () => {
+    // El orden en que se sugieren **es** el orden del arreglo: no hay una
+    // columna `orden` en la lista porque sería un segundo lugar donde decir
+    // lo mismo, y el día que los dos no coincidan gana el que alguien mire
+    // primero. Una clave repetida son dos entradas indistinguibles.
+    expect(new Set(TIPOS_DE_MODULO).size).toBe(TIPOS_DE_MODULO.length);
+  });
+});
 
-    for (const rotulo of rotulos) {
-      expect(rotulo.trim(), "un rótulo en blanco no rotula nada").not.toBe("");
+// ---------------------------------------------------------------------------
+// La red del compilador que T-3 perdió, y dónde quedó
+// ---------------------------------------------------------------------------
+
+/**
+ * Las plantillas de módulo tal como las dejó `0016`.
+ *
+ * Se leen por SQL y no por `GET /api/plantillas-modulo`: lo que estas dos
+ * pruebas enfrentan es la **fila**, no la respuesta. Pasar por la ruta metería
+ * en el medio el adaptador que resuelve el rótulo vigente, y entonces una
+ * prueba sobre el preset estaría mirando el `COALESCE`.
+ */
+async function plantillasSembradas(): Promise<
+  { clave: string; rotulo_oficial: string | null }[]
+> {
+  const { results } = await env.DB.prepare(
+    "SELECT clave, rotulo_oficial FROM modulo_plantilla ORDER BY orden, clave",
+  ).all<{ clave: string; rotulo_oficial: string | null }>();
+
+  return results;
+}
+
+describe("las claves de la lista y las de modulo_plantilla dicen lo mismo", () => {
+  /*
+   * **Esto es `TiposSinRotulo` mudado de lugar** (T-3 de
+   * `odd/tasks/plantillas-de-modulo.md`).
+   *
+   * Hasta T-2 la red era un tipo: `Exclude<TipoDeModulo, …>` sobre un catálogo
+   * que tenía los rótulos adentro, y lo que probaba era que ningún tipo se
+   * quedara sin rótulo. Eso ya no se puede probar con un tipo, porque el
+   * rótulo es una fila y el compilador no lee filas. Así que la red cambia de
+   * mecanismo y **no desaparece**: lo que se compara es la lista contra las
+   * claves sembradas, en los dos sentidos, que es la misma forma que la prueba
+   * del `CHECK` de arriba ya usaba.
+   *
+   * Los dos sentidos son dos defectos distintos y por eso son dos pruebas:
+   *
+   *  - Una clave de la lista sin fila es un módulo que el editor ofrece y para
+   *    el que no hay rótulo: la pantalla dibujaría la clave cruda.
+   *  - Una fila sin clave en la lista es una plantilla que el abogado puede
+   *    editar en `/catalogos/modulos` y que ningún módulo puede usar, porque
+   *    el `CHECK` de `0004` la rechaza. Trabajo que no sirve de nada.
+   *
+   * Y la pertenencia a la unión `TipoDeModulo` sigue siendo cosa del
+   * compilador, en `TiposFueraDeLaLista`: eso nunca tuvo que ver con el
+   * rótulo.
+   */
+
+  it("cada clave de la lista tiene su plantilla sembrada", async () => {
+    const enLaBase = (await plantillasSembradas()).map((una) => una.clave);
+
+    for (const clave of TIPOS_DE_MODULO) {
+      expect(enLaBase, `«${clave}» no tiene fila en modulo_plantilla`).toContain(
+        clave,
+      );
     }
-
-    expect(new Set(rotulos).size, "hay dos tipos con el mismo rótulo").toBe(
-      rotulos.length,
-    );
   });
 
-  it("el orden sugerido es el del registro y no se repite ningún tipo", () => {
-    // El orden en que se sugieren **es** el orden del arreglo: no hay una
-    // columna `orden` en el registro porque sería un segundo lugar donde
-    // decir lo mismo, y el día que los dos no coincidan gana el que alguien
-    // mire primero.
-    expect(TIPOS_DE_MODULO).toEqual(
-      CATALOGO_DE_MODULOS.map((entrada) => entrada.tipo),
+  it("cada plantilla sembrada tiene su clave en la lista", async () => {
+    const enLaBase = (await plantillasSembradas()).map((una) => una.clave);
+
+    for (const clave of enLaBase) {
+      expect(
+        [...TIPOS_DE_MODULO] as string[],
+        `la plantilla «${clave}» no es una clave que un módulo pueda usar`,
+      ).toContain(clave);
+    }
+  });
+
+  it("el orden de la siembra es el orden sugerido de la lista", async () => {
+    // `0016` sembró `orden` 0..5 en el mismo orden de lectura de una
+    // propuesta, y el editor dibuja su desplegable con ese `ORDER BY`. Si los
+    // dos se separan, el orden que la lista documenta deja de ser el que se
+    // ve, y lo que se vería es el de la base: la lista pasaría a estar
+    // mintiendo en un comentario.
+    const enLaBase = (await plantillasSembradas()).map((una) => una.clave);
+
+    expect(enLaBase).toEqual([...TIPOS_DE_MODULO]);
+  });
+});
+
+describe("los rótulos que quedan en código son los de la siembra", () => {
+  /*
+   * `CATALOGO_DE_MODULOS` es la **última copia en código** de los seis
+   * rótulos, y le queda un solo consumidor: `worker/ia/prompt.ts`, que es de
+   * T-4. Mientras viva, esta prueba es lo que impide que las dos fuentes se
+   * separen; el día que T-4 la deje sin consumidores, la constante y estas dos
+   * pruebas se borran juntas.
+   *
+   * En los dos sentidos por lo mismo que arriba: un rótulo en código que la
+   * siembra no tiene es un rótulo inventado, y un `rotulo_oficial` que el
+   * código no tiene es un preset que el prompt no nombra.
+   */
+
+  it("cada rótulo del código es el preset de su plantilla", async () => {
+    const porClave = new Map(
+      (await plantillasSembradas()).map((una) => [una.clave, una.rotulo_oficial]),
     );
-    expect(new Set(TIPOS_DE_MODULO).size).toBe(TIPOS_DE_MODULO.length);
+
+    for (const entrada of CATALOGO_DE_MODULOS) {
+      expect(
+        porClave.get(entrada.tipo),
+        `el rótulo de «${entrada.tipo}» no es el que sembró 0016`,
+      ).toBe(entrada.rotulo);
+    }
+  });
+
+  it("cada preset de la siembra está escrito en el código", async () => {
+    const enElCodigo = new Map(
+      CATALOGO_DE_MODULOS.map((entrada) => [
+        entrada.tipo as string,
+        entrada.rotulo as string,
+      ]),
+    );
+
+    for (const fila of await plantillasSembradas()) {
+      expect(
+        enElCodigo.get(fila.clave),
+        `el preset de «${fila.clave}» no tiene copia en el código`,
+      ).toBe(fila.rotulo_oficial);
+    }
   });
 });
 
@@ -1205,6 +1311,59 @@ describe("cada operación deja su hecho contra la cotización", () => {
       { accion: "modulo_quitado", detalle: "Exclusiones" },
       { accion: "modulos_reordenados", detalle: null },
     ]);
+  });
+
+  it("el detalle es el rótulo que el bufete puso, no el de la siembra", async () => {
+    /*
+     * **La prueba de T-3 sobre la bitácora.** Lo que distingue «el rótulo sale
+     * de la base» de «el rótulo sale del código» no se puede ver con los
+     * presets puestos: los seis `rotulo_oficial` son letra por letra los
+     * mismos que `CATALOGO_DE_MODULOS`, así que las tres escrituras de módulo
+     * contestan igual por los dos caminos. Lo único que los separa es
+     * renombrar una plantilla y mirar qué quedó escrito.
+     *
+     * El `finally` devuelve la fila a NULL, que es «uso el preset»: esta tabla
+     * la siembra la migración y el `beforeEach` no la toca, así que una
+     * prueba que deje el rótulo cambiado se lo deja cambiado a las demás.
+     */
+    const PROPIO = "Qué vamos a hacer";
+
+    await env.DB.prepare(
+      "UPDATE modulo_plantilla SET rotulo = ? WHERE tenant_id = ? AND clave = ?",
+    )
+      .bind(PROPIO, TENANT_UNICO_ID, "alcance")
+      .run();
+
+    try {
+      const modulos = await agregar({
+        tipo: "alcance",
+        contenido: "Lo que se hace.",
+      });
+
+      await comoAutor(
+        peticion(`${rutaDeModulos()}/${modulos[0].id}`, { method: "DELETE" }),
+      );
+
+      expect(await bitacoraDe()).toEqual([
+        { accion: "modulo_agregado", detalle: PROPIO },
+        { accion: "modulo_quitado", detalle: PROPIO },
+      ]);
+
+      // Y la aserción que de verdad clava la tajada: lo escrito **no** es el
+      // rótulo que el código conoce. Sin ella, un `detalle` que siguiera
+      // saliendo de `CATALOGO_DE_MODULOS` pasaría la de arriba el día que
+      // alguien escribiera «Qué vamos a hacer» también en el código.
+      expect(
+        (await bitacoraDe()).map((hecho) => hecho.detalle),
+      ).not.toContain("Alcance");
+    } finally {
+      await env.DB.prepare(
+        "UPDATE modulo_plantilla SET rotulo = NULL" +
+          " WHERE tenant_id = ? AND clave = ?",
+      )
+        .bind(TENANT_UNICO_ID, "alcance")
+        .run();
+    }
   });
 
   it("un hecho de módulo no se registra contra ninguna otra entidad", async () => {

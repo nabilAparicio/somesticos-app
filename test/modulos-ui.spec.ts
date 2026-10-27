@@ -16,15 +16,22 @@
  * Las dos se prueban por separado a propósito: aflojar una tiene que matar
  * sus propias pruebas y no las de la otra.
  *
- * ## El catálogo se importa, no se copia
+ * ## Las claves se importan; los rótulos se inventan
  *
- * Los tipos salen de `worker/cotizaciones/modulos.ts`, que es el mismo
- * registro contra el que valida el servidor y la misma mitad acoplada del
- * `CHECK` de `migrations/0004_cotizaciones.sql`. Una tercera copia en `src/`
- * sería el defecto que esa migración y ese registro existen para impedir, y
- * por eso acá se recorre el catálogo de verdad en vez de escribir los seis
- * nombres a mano: una prueba que lista los tipos por su cuenta deja de
- * notar el día que aparezca el séptimo.
+ * Y la asimetría es de T-3 (`odd/tasks/plantillas-de-modulo.md`):
+ *
+ *  - **Las claves** salen de `worker/cotizaciones/modulos.ts`, que es la mitad
+ *    acoplada del `CHECK` de `migrations/0004_cotizaciones.sql`. Una tercera
+ *    copia en `src/` sería el defecto que esa migración existe para impedir, y
+ *    por eso se recorre la lista de verdad en vez de escribir las seis a mano:
+ *    una prueba que las lista por su cuenta deja de notar el día que aparezca
+ *    la séptima.
+ *  - **Los rótulos** se escriben acá a mano, en plantillas de juguete, y
+ *    ninguno de los seis presets reales aparece como expectativa. Es
+ *    deliberado: lo que estas funciones hacen es leer una fila, así que una
+ *    prueba armada con los presets pasaría igual si volvieran a salir del
+ *    código. Lo que las distingue es un rótulo que ningún código conoce, y de
+ *    ésos hay varios abajo.
  *
  * ## Ninguna expectativa se calcula con la función que se prueba
  *
@@ -34,8 +41,12 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { FallaDeValidacion, ModuloDeCotizacion } from "../worker/contract";
-import { CATALOGO_DE_MODULOS } from "../worker/cotizaciones/modulos";
+import type {
+  FallaDeValidacion,
+  ModuloDeCotizacion,
+  PlantillaDeModulo,
+} from "../worker/contract";
+import { TIPOS_DE_MODULO } from "../worker/cotizaciones/modulos";
 import {
   BORRADOR_DE_MODULO_VACIO,
   borradorDesdeModulo,
@@ -46,8 +57,11 @@ import {
   modulosOrdenados,
   moverModulo,
   normalizarBorradorDeModulo,
+  opcionesParaModulo,
+  opcionesParaNuevo,
   ordenDe,
   podarBorradores,
+  rotuloDeModulo,
   type BorradorDeModulo,
 } from "../src/pantallas/cotizaciones/modulos";
 
@@ -241,15 +255,13 @@ describe("borradorDesdeModulo", () => {
 });
 
 describe("normalizarBorradorDeModulo", () => {
-  it("acepta cada uno de los tipos del catálogo del servidor", () => {
-    for (const entrada of CATALOGO_DE_MODULOS) {
+  it("acepta cada una de las claves del catálogo del servidor", () => {
+    for (const clave of TIPOS_DE_MODULO) {
       const resultado = normalizarBorradorDeModulo(
-        borrador({ tipo: entrada.tipo, contenido: "Algo escrito." }),
+        borrador({ tipo: clave, contenido: "Algo escrito." }),
       );
 
-      expect(resultado.ok, `el tipo «${entrada.tipo}» tiene que pasar`).toBe(
-        true,
-      );
+      expect(resultado.ok, `la clave «${clave}» tiene que pasar`).toBe(true);
     }
   });
 
@@ -457,5 +469,188 @@ describe("exigeRecarga", () => {
         { campo: "orden", motivo: "orden_incompleto" },
       ]),
     ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// El rótulo, que desde T-3 sale del catálogo y no del código
+// ---------------------------------------------------------------------------
+
+/**
+ * Una plantilla del catálogo, tal como llega de `GET /api/plantillas-modulo`.
+ *
+ * El valor vigente viene **resuelto por el servidor**, así que acá se escribe
+ * a mano y no se calcula con un `??`: una expectativa que aplica la misma
+ * regla que prueba pasa aunque las dos estén mal (restricción 6).
+ */
+function plantilla(
+  ajustes: Partial<PlantillaDeModulo> = {},
+): PlantillaDeModulo {
+  return {
+    id: UNO,
+    clave: "alcance",
+    orden: 1,
+    rotuloOficial: "Alcance",
+    descripcionOficial: "Qué trabajo asume el bufete.",
+    rotulo: null,
+    descripcion: null,
+    rotuloVigente: "Alcance",
+    descripcionVigente: "Qué trabajo asume el bufete.",
+    activo: true,
+    ...ajustes,
+  };
+}
+
+/** Las tres con las que alcanza para los dos desplegables. */
+function tresPlantillas(): PlantillaDeModulo[] {
+  return [
+    plantilla({
+      clave: "antecedentes",
+      orden: 0,
+      rotuloOficial: "Antecedentes",
+      rotuloVigente: "Antecedentes",
+    }),
+    plantilla({ clave: "alcance", orden: 1 }),
+    plantilla({
+      clave: "exclusiones",
+      orden: 2,
+      rotuloOficial: "Exclusiones",
+      rotuloVigente: "Exclusiones",
+    }),
+  ];
+}
+
+describe("rotuloDeModulo", () => {
+  it("devuelve el rótulo vigente de la clave", () => {
+    expect(rotuloDeModulo(tresPlantillas(), "alcance")).toBe("Alcance");
+  });
+
+  it("devuelve el del bufete cuando lo editó, y no el preset", () => {
+    // Es la tajada entera vista desde la pantalla: renombrar «Alcance» a
+    // «Qué vamos a hacer» en `/catalogos/modulos` tiene que verse en el
+    // editor de cualquier cotización. Con el rótulo en código no se veía.
+    const propias = [
+      plantilla({
+        clave: "alcance",
+        rotulo: "Qué vamos a hacer",
+        rotuloVigente: "Qué vamos a hacer",
+      }),
+    ];
+
+    expect(rotuloDeModulo(propias, "alcance")).toBe("Qué vamos a hacer");
+  });
+
+  it("devuelve el rótulo de una plantilla dada de baja", () => {
+    // La otra mitad de la baja: un módulo ya escrito con una plantilla
+    // retirada sigue mostrando cómo se llama. Esconderlo convertiría una baja
+    // en pérdida de dato en las cotizaciones vivas.
+    const retirada = [
+      plantilla({ clave: "alcance", activo: false }),
+    ];
+
+    expect(rotuloDeModulo(retirada, "alcance")).toBe("Alcance");
+  });
+
+  it("con el catálogo vacío devuelve la clave, no una cadena vacía", () => {
+    // Rama inalcanzable —los dos `CHECK` de `0016` y su siembra cubren las
+    // seis claves— y escrita a propósito: lo que se ve es `alcance` en un
+    // encabezado, que se entiende y se reporta, en vez de un hueco.
+    expect(rotuloDeModulo([], "alcance")).toBe("alcance");
+  });
+});
+
+describe("opcionesParaNuevo", () => {
+  it("ofrece las activas, en el orden en que llegaron", () => {
+    expect(opcionesParaNuevo(tresPlantillas())).toEqual([
+      { tipo: "antecedentes", rotulo: "Antecedentes" },
+      { tipo: "alcance", rotulo: "Alcance" },
+      { tipo: "exclusiones", rotulo: "Exclusiones" },
+    ]);
+  });
+
+  it("no ofrece la que el bufete dio de baja", () => {
+    // La mitad visible de la baja. Dar de baja significa «dejen de usar
+    // esto», y un desplegable que la sigue ofreciendo convierte esa decisión
+    // en una sugerencia.
+    const conUnaDeBaja = tresPlantillas().map((una) =>
+      una.clave === "alcance" ? { ...una, activo: false } : una,
+    );
+
+    expect(opcionesParaNuevo(conUnaDeBaja)).toEqual([
+      { tipo: "antecedentes", rotulo: "Antecedentes" },
+      { tipo: "exclusiones", rotulo: "Exclusiones" },
+    ]);
+  });
+
+  it("muestra el rótulo del bufete y no el preset", () => {
+    const propias = [
+      plantilla({
+        clave: "alcance",
+        rotulo: "Qué vamos a hacer",
+        rotuloVigente: "Qué vamos a hacer",
+      }),
+    ];
+
+    expect(opcionesParaNuevo(propias)).toEqual([
+      { tipo: "alcance", rotulo: "Qué vamos a hacer" },
+    ]);
+  });
+});
+
+describe("opcionesParaModulo", () => {
+  it("con la plantilla activa ofrece exactamente lo mismo que el alta", () => {
+    const plantillas = tresPlantillas();
+
+    expect(opcionesParaModulo(plantillas, "alcance")).toEqual([
+      { tipo: "antecedentes", rotulo: "Antecedentes" },
+      { tipo: "alcance", rotulo: "Alcance" },
+      { tipo: "exclusiones", rotulo: "Exclusiones" },
+    ]);
+  });
+
+  it("agrega la suya, marcada, cuando la dieron de baja", () => {
+    /*
+     * El caso que esta función existe para resolver. Con sólo las activas, un
+     * `<select value="alcance">` cuya lista no tiene `alcance` **no queda
+     * vacío: queda en la primera opción**, así que la pantalla afirmaría que
+     * ese módulo es de antecedentes. Y como el formulario manda el juego
+     * completo, el primer «Guardar» —hecho para corregir una coma— le
+     * cambiaría el tipo al módulo sin que nadie lo pidiera.
+     *
+     * Va **al final** y con el sufijo: se puede nombrar lo que ya está
+     * escrito, y se ve que no es una opción como las otras.
+     */
+    const conUnaDeBaja = tresPlantillas().map((una) =>
+      una.clave === "alcance" ? { ...una, activo: false } : una,
+    );
+
+    expect(opcionesParaModulo(conUnaDeBaja, "alcance")).toEqual([
+      { tipo: "antecedentes", rotulo: "Antecedentes" },
+      { tipo: "exclusiones", rotulo: "Exclusiones" },
+      { tipo: "alcance", rotulo: "Alcance (de baja)" },
+    ]);
+  });
+
+  it("la de baja aparece sólo en el módulo que la usa", () => {
+    // La asimetría es el criterio: se conserva poder nombrar lo que ya está
+    // escrito, no poder volver a elegirlo. En el desplegable de otro módulo,
+    // la retirada no está.
+    const conUnaDeBaja = tresPlantillas().map((una) =>
+      una.clave === "alcance" ? { ...una, activo: false } : una,
+    );
+
+    expect(
+      opcionesParaModulo(conUnaDeBaja, "antecedentes").map(
+        (opcion) => opcion.tipo,
+      ),
+    ).toEqual(["antecedentes", "exclusiones"]);
+  });
+
+  it("una clave sin plantilla también se puede nombrar", () => {
+    // La misma rama inalcanzable de `rotuloDeModulo`: mejor un desplegable
+    // que dice una verdad fea que uno que dice una mentira prolija.
+    expect(opcionesParaModulo([], "alcance")).toEqual([
+      { tipo: "alcance", rotulo: "alcance (de baja)" },
+    ]);
   });
 });

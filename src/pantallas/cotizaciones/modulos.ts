@@ -14,12 +14,21 @@
  * (`worker/cotizaciones/rutas.ts`). Un «guardar» que mandara la lista
  * entera aplastaría las cuatro preguntas en un solo hecho.
  *
- * ## El catálogo se importa, no se copia
+ * ## El rótulo sale de la base, y la clave se importa
  *
- * `CATALOGO_DE_MODULOS` vive en `worker/cotizaciones/modulos.ts` y es la
- * mitad acoplada del `CHECK` de `migrations/0004_cotizaciones.sql`. Una
- * tercera copia en `src/` sería el mismo defecto una vez más: la pantalla
- * ofrecería un tipo que la base rechaza con un 500 que nadie puede leer.
+ * Son dos cosas distintas y conviene no confundirlas (T-3 de
+ * `odd/tasks/plantillas-de-modulo.md`):
+ *
+ *  - **El rótulo que se dibuja** sale de `GET /api/plantillas-modulo`, que es
+ *    el catálogo que el abogado administra en `/catalogos/modulos`. Hasta T-2
+ *    salía de un registro en código, y entonces renombrar un módulo no se veía
+ *    en ninguna cotización. Las tres funciones de abajo son las que lo
+ *    resuelven, y ninguna sabe ningún rótulo: lo reciben en una lista de filas.
+ *  - **La clave que se valida** se importa de `worker/cotizaciones/modulos.ts`,
+ *    que es la mitad acoplada del `CHECK` de
+ *    `migrations/0004_cotizaciones.sql`. Una tercera copia en `src/` sería el
+ *    defecto que esa migración existe para impedir: la pantalla ofrecería una
+ *    clave que la base rechaza con un 500 que nadie puede leer.
  *
  * Cruzar la frontera está permitido por la misma razón que lo está para
  * `worker/db/momentos.ts`: ese módulo **no importa nada en tiempo de
@@ -46,16 +55,117 @@ import type {
   FallaDeValidacion,
   ModuloDeCotizacion,
   MotivoDeFalla,
+  PlantillaDeModulo,
   TipoDeModulo,
 } from "../../../worker/contract";
-import {
-  CATALOGO_DE_MODULOS,
-  esTipoDeModulo,
-  rotuloDeTipo,
-} from "../../../worker/cotizaciones/modulos";
+import { esTipoDeModulo } from "../../../worker/cotizaciones/modulos";
 
-export { CATALOGO_DE_MODULOS, rotuloDeTipo };
 export { mensajeDeFalla } from "../../mensajes";
+
+/* ==========================================================================
+   El rótulo de un módulo, que desde T-3 sale de una fila
+   ========================================================================== */
+
+/**
+ * Lo que se le dice a la plantilla que el bufete retiró, dentro del
+ * desplegable.
+ *
+ * Es un literal propio y **no** el `ETIQUETA_DE_BAJA` de
+ * `src/pantallas/catalogos/plantillas.ts`, aunque diga casi lo mismo, y el
+ * motivo es gramatical y no de prolijidad: allá es un distintivo al lado de un
+ * encabezado —una insignia— y acá es parte del texto de una `<option>`, que se
+ * lee de corrido. «Alcance De baja» no es una frase.
+ */
+const SUFIJO_DE_BAJA = " (de baja)";
+
+/**
+ * El rótulo vigente de una clave, o la clave si el catálogo no la tiene.
+ *
+ * La reserva es la clave cruda y no una cadena vacía ni un `undefined`
+ * disfrazado: es inalcanzable —los dos `CHECK` de `0016` y su siembra cubren
+ * las seis claves que el `CHECK` de `0004` permite— y si algún día se alcanza,
+ * lo que se ve es `nota_cliente` en un encabezado, que se entiende y se
+ * reporta. Es la misma salida que toman el repositorio y `congelar`.
+ */
+export function rotuloDeModulo(
+  plantillas: readonly PlantillaDeModulo[],
+  tipo: string,
+): string {
+  const plantilla = plantillas.find((una) => una.clave === tipo);
+  return plantilla?.rotuloVigente ?? tipo;
+}
+
+/** Una opción del desplegable de tipos. */
+export interface OpcionDeTipo {
+  readonly tipo: string;
+  /** Ya con el sufijo de baja si hace falta: es lo que se dibuja tal cual. */
+  readonly rotulo: string;
+}
+
+function aOpcion(plantilla: PlantillaDeModulo): OpcionDeTipo {
+  return {
+    tipo: plantilla.clave,
+    rotulo: plantilla.activo
+      ? plantilla.rotuloVigente
+      : plantilla.rotuloVigente + SUFIJO_DE_BAJA,
+  };
+}
+
+/**
+ * Lo que se ofrece para un módulo **nuevo**: sólo las plantillas activas.
+ *
+ * Es la mitad visible de la baja. Dar de baja un módulo desde
+ * `/catalogos/modulos` significa «dejen de usar esto», y un desplegable que lo
+ * sigue ofreciendo convierte esa decisión en una sugerencia. El orden es el que
+ * trae el servidor —`ORDER BY orden, clave`—, que es el orden en que el bufete
+ * los puso.
+ */
+export function opcionesParaNuevo(
+  plantillas: readonly PlantillaDeModulo[],
+): OpcionDeTipo[] {
+  return plantillas.filter((una) => una.activo).map(aOpcion);
+}
+
+/**
+ * Lo que se ofrece para un módulo **que ya existe**: las activas, más la suya
+ * si la retiraron.
+ *
+ * Ésta es la otra mitad de la baja, y es la que hubo que decidir con cuidado.
+ * Un módulo escrito con una plantilla que después se dio de baja sigue
+ * existiendo en su cotización, y su desplegable tiene que poder mostrar lo que
+ * la fila dice. Con sólo las activas, un `<select value="exclusiones">` cuya
+ * lista no incluye `exclusiones` **no deja el control vacío: deja puesta la
+ * primera opción**, así que la pantalla afirmaría que ese módulo es de otro
+ * tipo. Y como el formulario manda el juego completo, el primer «Guardar»
+ * —hecho para corregir una coma del texto— le cambiaría el tipo al módulo sin
+ * que nadie lo pidiera. Eso no es una sutileza de dibujo: es perder un dato.
+ *
+ * Así que la plantilla retirada aparece, **marcada**, y sólo en el módulo que
+ * ya la usa: no se ofrece para uno nuevo y no aparece en los desplegables de
+ * los demás módulos. Lo que se conserva es poder nombrar lo que ya está
+ * escrito; lo que no se abre es poder volver a elegirlo.
+ *
+ * El `tipoActual` que no está en el catálogo —ninguna fila con esa clave—
+ * también entra, con la clave cruda como rótulo. Es la misma rama inalcanzable
+ * de `rotuloDeModulo`, y por el mismo motivo: mejor un desplegable que dice
+ * una verdad fea que uno que dice una mentira prolija.
+ */
+export function opcionesParaModulo(
+  plantillas: readonly PlantillaDeModulo[],
+  tipoActual: string,
+): OpcionDeTipo[] {
+  const opciones = opcionesParaNuevo(plantillas);
+  if (opciones.some((una) => una.tipo === tipoActual)) return opciones;
+
+  const suya = plantillas.find((una) => una.clave === tipoActual);
+
+  return [
+    ...opciones,
+    suya === undefined
+      ? { tipo: tipoActual, rotulo: tipoActual + SUFIJO_DE_BAJA }
+      : aOpcion(suya),
+  ];
+}
 
 /**
  * Lo que se escribe en los dos controles de un módulo.
@@ -236,8 +346,16 @@ function falla(campo: string, motivo: MotivoDeFalla): FallaDeValidacion {
  * formulario que nadie usa.
  *
  * Ausente, en blanco e inventado caen en el mismo motivo por lo mismo que
- * allá: el tipo sale de un desplegable dibujado con este mismo catálogo, así
- * que las tres situaciones son el mismo defecto desde donde está la persona.
+ * allá: el tipo sale de un desplegable, así que las tres situaciones son el
+ * mismo defecto desde donde está la persona.
+ *
+ * Lo que se comprueba es la **pertenencia a las seis claves cerradas**, no que
+ * la plantilla esté activa. Es deliberado: una plantilla de baja se puede
+ * seguir guardando en el módulo que ya la usa —ver `opcionesParaModulo`— y lo
+ * que impide elegirla de nuevo es qué ofrece el desplegable, no esta función.
+ * Rechazarla acá dejaría congelado todo módulo cuya plantilla se retiró: nadie
+ * podría corregirle una coma, porque el formulario manda el tipo junto con el
+ * texto.
  */
 export function normalizarBorradorDeModulo(
   borrador: BorradorDeModulo,

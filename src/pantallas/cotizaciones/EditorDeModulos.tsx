@@ -8,6 +8,21 @@
  * botón llama a qué, qué se dibuja mientras se espera y qué se muestra
  * cuando el servidor dice que no.
  *
+ * ## Dos lecturas al montar, y la segunda es de T-3
+ *
+ * Los módulos de la cotización **y** el catálogo de plantillas
+ * (`GET /api/plantillas-modulo`). El catálogo hace falta por dos cosas que no
+ * se pueden deducir de los módulos: el **rótulo vigente** de cada clave, que
+ * el abogado edita en `/catalogos/modulos`, y **cuáles se pueden elegir**, que
+ * es la lista de las activas.
+ *
+ * Van en un solo `Promise.all` y un fallo de cualquiera de las dos cae en la
+ * misma fase `problema`. Es a propósito y no comodidad: sin el catálogo esta
+ * pantalla no sabe cómo se llama ningún módulo, así que lo único que podría
+ * dibujar son las claves crudas —«nota_cliente»— debajo de un desplegable
+ * vacío. Eso no es una pantalla degradada, es una pantalla que miente sobre lo
+ * que sabe; se dice que no se pudo leer y se ofrece la puerta.
+ *
  * ## Una petición por operación, y no un «guardar» al final
  *
  * Es la diferencia con el editor del plan de un proceso, que acumula los
@@ -55,11 +70,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import type {
   FallaDeValidacion,
   ModuloDeCotizacion,
+  PlantillaDeModulo,
 } from "../../../worker/contract";
 import { Aviso } from "../../layout/Aviso";
 import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
 import type { Resultado } from "../../api/peticiones";
+import { cargarPlantillasDeModulo } from "../../api/plantillas";
 import {
   agregarModulo,
   cargarModulos,
@@ -73,7 +90,6 @@ import {
   AVISO_SIN_RELECTURA,
   AYUDA_DE_MODULOS,
   BORRADOR_DE_MODULO_VACIO,
-  CATALOGO_DE_MODULOS,
   borradorDesdeModulo,
   exigeRecarga,
   hayCambioEnModulo,
@@ -83,11 +99,14 @@ import {
   modulosOrdenados,
   moverModulo,
   normalizarBorradorDeModulo,
+  opcionesParaModulo,
+  opcionesParaNuevo,
   ordenDe,
   podarBorradores,
-  rotuloDeTipo,
+  rotuloDeModulo,
   type BorradorDeModulo,
   type BorradoresAbiertos,
+  type OpcionDeTipo,
 } from "./modulos";
 
 type Props = {
@@ -101,14 +120,21 @@ type Carga =
   | { fase: "listo" }
   | { fase: "problema"; mensaje: string };
 
-/** El desplegable de tipos, dibujado del mismo catálogo que valida el Worker. */
-function Tipos() {
+/**
+ * El desplegable de tipos, dibujado del catálogo que el bufete administra.
+ *
+ * Recibe las opciones y no las calcula, porque **no son las mismas para los
+ * dos lugares donde aparece**: el alta ofrece sólo las plantillas activas y el
+ * módulo existente ofrece además la suya si la retiraron. El argumento de esa
+ * asimetría está en `opcionesParaModulo`.
+ */
+function Tipos({ opciones }: { readonly opciones: readonly OpcionDeTipo[] }) {
   return (
     <>
       <option value="">Elegir tipo…</option>
-      {CATALOGO_DE_MODULOS.map((entrada) => (
-        <option key={entrada.tipo} value={entrada.tipo}>
-          {entrada.rotulo}
+      {opciones.map((opcion) => (
+        <option key={opcion.tipo} value={opcion.tipo}>
+          {opcion.rotulo}
         </option>
       ))}
     </>
@@ -118,6 +144,8 @@ function Tipos() {
 export function EditorDeModulos({ cotizacionId, editable }: Props) {
   const [carga, setCarga] = useState<Carga>({ fase: "cargando" });
   const [modulos, setModulos] = useState<ModuloDeCotizacion[]>([]);
+  /** El catálogo de plantillas: de acá sale cada rótulo que se dibuja (T-3). */
+  const [plantillas, setPlantillas] = useState<PlantillaDeModulo[]>([]);
   const [abiertos, setAbiertos] = useState<BorradoresAbiertos>({});
   const [nuevo, setNuevo] = useState<BorradorDeModulo>(
     BORRADOR_DE_MODULO_VACIO,
@@ -131,16 +159,33 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
   useEffect(() => {
     const control = new AbortController();
 
-    void cargarModulos(cotizacionId, control.signal).then((resultado) => {
+    // Las dos en paralelo y no una después de la otra: son independientes —el
+    // catálogo no depende de qué cotización es— y encadenarlas sumaría una
+    // ida y vuelta a una pantalla que ya espera dos.
+    void Promise.all([
+      cargarModulos(cotizacionId, control.signal),
+      cargarPlantillasDeModulo(control.signal),
+    ]).then(([deModulos, deCatalogo]) => {
       if (control.signal.aborted) return;
 
-      if (resultado.estado === "ok") {
-        setModulos(modulosOrdenados(resultado.valor));
-        setCarga({ fase: "listo" });
+      // El catálogo se mira primero, y no es arbitrario: sin él no hay forma
+      // de rotular nada, así que un fallo suyo es el que de verdad impide
+      // dibujar. Con el orden al revés, un error de módulos taparía el de
+      // catálogo y el mensaje hablaría de la cotización cuando el problema es
+      // el otro.
+      if (deCatalogo.estado !== "ok") {
+        setCarga({ fase: "problema", mensaje: textoDeProblema(deCatalogo) });
         return;
       }
 
-      setCarga({ fase: "problema", mensaje: textoDeProblema(resultado) });
+      if (deModulos.estado !== "ok") {
+        setCarga({ fase: "problema", mensaje: textoDeProblema(deModulos) });
+        return;
+      }
+
+      setPlantillas(deCatalogo.valor);
+      setModulos(modulosOrdenados(deModulos.valor));
+      setCarga({ fase: "listo" });
     });
 
     return () => {
@@ -418,7 +463,7 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
             ) : (
               <ol className="modulos">
                 {modulos.map((modulo, indice) => {
-                  const rotulo = rotuloDeTipo(modulo.tipo);
+                  const rotulo = rotuloDeModulo(plantillas, modulo.tipo);
                   const puesto = `${String(indice + 1)}: ${rotulo}`;
 
                   if (!editable) {
@@ -457,7 +502,19 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
                                   });
                                 }}
                               >
-                                <Tipos />
+                                {/*
+                                  Las opciones de **este** módulo, que incluyen
+                                  su propia plantilla si la dieron de baja.
+                                  Ver `opcionesParaModulo`: sin eso el control
+                                  mostraría otro tipo y el primer «Guardar» se
+                                  lo cambiaría.
+                                */}
+                                <Tipos
+                                  opciones={opcionesParaModulo(
+                                    plantillas,
+                                    modulo.tipo,
+                                  )}
+                                />
                               </select>
                             </div>
 
@@ -570,7 +627,8 @@ export function EditorDeModulos({ cotizacionId, editable }: Props) {
                         }));
                       }}
                     >
-                      <Tipos />
+                      {/* Para uno nuevo, sólo lo que sigue vigente. */}
+                      <Tipos opciones={opcionesParaNuevo(plantillas)} />
                     </select>
                   </div>
 

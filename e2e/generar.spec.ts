@@ -135,7 +135,43 @@ const TOTALES_GENERADOS = {
  * necesitan. Sólo lecturas: la escritura la contesta cada prueba, porque es
  * lo único que cambia entre ellas.
  */
+/**
+ * El catálogo de plantillas de módulo, que el editor de módulos lee desde T-3
+ * (`odd/tasks/plantillas-de-modulo.md`).
+ *
+ * Está acá porque esta pantalla monta el editor de módulos y este banco
+ * contesta la API entera desde un predicado: sin esta rama el catálogo caería
+ * en el 404 de reserva, y el editor —que sin rótulos no sabe cómo se llama
+ * ningún módulo— dibujaría su aviso de lectura fallida en vez de la lista.
+ *
+ * Los seis con su preset y activos: el estado de un bufete que no tocó nada.
+ * Lo que el rótulo propio y la baja cambian se mide en
+ * `e2e/cotizaciones.spec.ts`, que es el dueño de esa pantalla.
+ */
+const PLANTILLAS_DE_MODULO = [
+  ["antecedentes", "Antecedentes"],
+  ["alcance", "Alcance"],
+  ["exclusiones", "Exclusiones"],
+  ["supuestos", "Supuestos"],
+  ["clausulas", "Cláusulas"],
+  ["nota_cliente", "Nota al cliente"],
+].map(([clave, rotulo], orden) => ({
+  id: `p0000000-0000-4000-8000-00000000000${String(orden)}`,
+  clave,
+  orden,
+  rotuloOficial: rotulo,
+  descripcionOficial: `Para qué sirve ${String(rotulo).toLowerCase()}.`,
+  rotulo: null,
+  descripcion: null,
+  rotuloVigente: rotulo,
+  descripcionVigente: `Para qué sirve ${String(rotulo).toLowerCase()}.`,
+  activo: true,
+}));
+
 function lecturaDe(pathname: string): Record<string, unknown> | null {
+  if (pathname === "/api/plantillas-modulo") {
+    return { plantillas: PLANTILLAS_DE_MODULO };
+  }
   if (pathname === "/api/clientes") return { clientes: CLIENTES };
   if (pathname === "/api/tipos-proceso") return { tipos: [] };
   if (pathname === "/api/cotizaciones") return { cotizaciones: [] };

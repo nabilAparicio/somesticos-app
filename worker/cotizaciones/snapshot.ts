@@ -80,7 +80,6 @@ import type {
 } from "../contract";
 import type { RegimenDeImpuesto } from "./lineas";
 import { SIN_ITBMS, rotuloDeClase, totalesDe } from "./lineas";
-import { rotuloDeTipo } from "./modulos";
 
 /**
  * La forma de este snapshot.
@@ -116,11 +115,16 @@ export interface ClienteCongelado {
  * Un módulo de prosa congelado.
  *
  * Lleva `tipo` **y** `rotulo`, que parecen lo mismo y no lo son: `tipo` es la
- * cadena del catálogo cerrado, que un lector automático puede comparar;
- * `rotulo` es el encabezado que la persona leyó. `CATALOGO_DE_MODULOS` vive
- * en código y se puede renombrar en cualquier despliegue —«Nota al cliente»
- * puede pasar a llamarse de otra forma—, y el título que encabezaba el
- * documento que se mandó es un hecho, no una preferencia de hoy.
+ * clave del catálogo cerrado, que un lector automático puede comparar;
+ * `rotulo` es el encabezado que la persona leyó.
+ *
+ * **Y desde T-3 esta copia es la que de verdad importa.** Antes el rótulo
+ * vivía en código y sólo un despliegue lo cambiaba; ahora el abogado lo
+ * renombra desde `/catalogos/modulos` cuando quiera, así que el título que
+ * encabezaba el documento que se mandó no es recuperable por ninguna otra vía:
+ * sin este campo, una cotización emitida en marzo se imprimiría en septiembre
+ * con el rótulo de septiembre. Es un hecho, no una preferencia de hoy, y la
+ * única forma de guardar un hecho es copiarlo.
  */
 export interface ModuloCongelado {
   tipo: TipoDeModulo;
@@ -228,6 +232,22 @@ export interface DatosParaCongelar {
   cotizacion: Cotizacion;
   cliente: ClienteCongelado;
   modulos: readonly ModuloDeCotizacion[];
+  /**
+   * El rótulo vigente de cada clave de módulo, para congelarlo (T-3).
+   *
+   * Entra como dato y no se resuelve acá por lo mismo que `impuesto` y
+   * `emitidaEn`: esta función es pura, y congelar es el acto de fijar lo que
+   * era cierto en un instante. Lo lee el repositorio del puerto de plantillas
+   * —`rotulosPorClave(await plantillas.listar(…))`— un solo paso antes de
+   * escribir, que es lo más cerca de la emisión que se puede leer sin meter
+   * SQL en este archivo.
+   *
+   * No es opcional, al revés que `impuesto`. Omitir el impuesto deja el
+   * documento en el estado seguro; omitir los rótulos dejaría el documento
+   * **sin encabezados**, que no es un estado seguro sino un papel roto. Un
+   * llamador distraído tiene que no compilar.
+   */
+  rotulos: ReadonlyMap<string, string>;
   lineas: readonly LineaDeCotizacion[];
   emisor: EmisorCongelado;
   /** El mismo momento que va a quedar en la bitácora. */
@@ -302,7 +322,15 @@ export function congelar(datos: DatosParaCongelar): SnapshotDeCotizacion {
     cliente: datos.cliente,
     modulos: datos.modulos.map((modulo) => ({
       tipo: modulo.tipo,
-      rotulo: rotuloDeTipo(modulo.tipo),
+      // La clave como reserva, y no un `as string` sobre el `get`. Los dos
+      // `CHECK` de `0016` y la siembra hacen que toda clave del `CHECK` de
+      // `0004` tenga su fila con rótulo vigente, así que esta rama es
+      // inalcanzable; está escrita porque lo que un `as` taparía es un
+      // documento congelado con `undefined` donde va un encabezado, y eso no
+      // se puede corregir después: `cotizacion_snapshot_se_escribe_una_sola_vez`
+      // lo prohíbe. Un papel que dice «alcance» en minúscula es un papel feo;
+      // uno que dice «undefined» es un papel roto.
+      rotulo: datos.rotulos.get(modulo.tipo) ?? modulo.tipo,
       contenido: modulo.contenido,
     })),
     lineas: datos.lineas.map((linea) => ({

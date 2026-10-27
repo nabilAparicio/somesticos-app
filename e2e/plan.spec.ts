@@ -179,6 +179,39 @@ type Banco = {
  * blanco sin un solo error visible. Es la trampa que costó las 25 fallas
  * iniciales de T-6.
  */
+/**
+ * El catálogo de plantillas de módulo, que el editor de módulos lee desde T-3
+ * (`odd/tasks/plantillas-de-modulo.md`).
+ *
+ * Está acá porque esta pantalla monta el editor de módulos y este banco
+ * contesta la API entera desde un predicado: sin esta rama el catálogo caería
+ * en el 404 de reserva, y el editor —que sin rótulos no sabe cómo se llama
+ * ningún módulo— dibujaría su aviso de lectura fallida en vez de la lista.
+ *
+ * Los seis con su preset y activos: el estado de un bufete que no tocó nada.
+ * Lo que el rótulo propio y la baja cambian se mide en
+ * `e2e/cotizaciones.spec.ts`, que es el dueño de esa pantalla.
+ */
+const PLANTILLAS_DE_MODULO = [
+  ["antecedentes", "Antecedentes"],
+  ["alcance", "Alcance"],
+  ["exclusiones", "Exclusiones"],
+  ["supuestos", "Supuestos"],
+  ["clausulas", "Cláusulas"],
+  ["nota_cliente", "Nota al cliente"],
+].map(([clave, rotulo], orden) => ({
+  id: `p0000000-0000-4000-8000-00000000000${String(orden)}`,
+  clave,
+  orden,
+  rotuloOficial: rotulo,
+  descripcionOficial: `Para qué sirve ${String(rotulo).toLowerCase()}.`,
+  rotulo: null,
+  descripcion: null,
+  rotuloVigente: rotulo,
+  descripcionVigente: `Para qué sirve ${String(rotulo).toLowerCase()}.`,
+  activo: true,
+}));
+
 async function conElPlanCargado(page: Page, banco: Banco = {}): Promise<void> {
   const cuotas = `/api/cotizaciones/${COTIZACION_ID}/cuotas`;
 
@@ -205,6 +238,17 @@ async function conElPlanCargado(page: Page, banco: Banco = {}): Promise<void> {
           return;
         }
         await ruta.fulfill({ status: 200, json: banco.plan ?? PLAN });
+        return;
+      }
+
+      // El catálogo de plantillas sale antes de la cadena de abajo, en su
+      // propio `if`: metido como una rama más habría que correrle la sangría a
+      // las cinco que ya están, y eso convierte tres líneas en veinte.
+      if (url.pathname === "/api/plantillas-modulo") {
+        await ruta.fulfill({
+          status: 200,
+          json: { plantillas: PLANTILLAS_DE_MODULO },
+        });
         return;
       }
 

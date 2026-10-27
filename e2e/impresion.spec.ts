@@ -322,6 +322,34 @@ test.describe("la hoja imprime el documento congelado", () => {
     ).toEqual([`/api/cotizaciones/${EMITIDA_ID}/documento`]);
   });
 
+  test("tampoco le pregunta al catálogo de plantillas cómo se llama un módulo", async ({
+    page,
+  }) => {
+    /*
+     * **La prueba de T-3 sobre la hoja** (`odd/tasks/plantillas-de-modulo.md`).
+     *
+     * Desde T-3 el rótulo de un módulo sale de `modulo_plantilla`, que el
+     * abogado edita cuando quiera, y el editor de la cotización lo pide por
+     * `GET /api/plantillas-modulo`. La hoja **no**, y la ausencia de ese
+     * pedido es toda la diferencia entre lo vivo y lo emitido: el encabezado
+     * que el cliente leyó está adentro del documento congelado, y preguntarle
+     * al catálogo de hoy sería imprimir el nombre de hoy sobre el papel de
+     * marzo.
+     *
+     * Va aparte de la prueba de arriba y no como una línea más: aquélla filtra
+     * por el prefijo de esta cotización, así que una lectura del catálogo
+     * —que cuelga de otra dirección— le pasaría por al lado sin que nada se
+     * ponga rojo.
+     */
+    const pedidos = await conLaApiInterceptada(page);
+    await abrirLaHoja(page);
+
+    expect(
+      pedidos.filter((ruta) => ruta.startsWith("/api/plantillas-modulo")),
+      "la hoja fue a buscar el rótulo de hoy en vez de usar el congelado",
+    ).toEqual([]);
+  });
+
   test("los totales son los del documento y no los de las líneas vivas", async ({
     page,
   }) => {

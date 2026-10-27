@@ -550,10 +550,11 @@ describe("qué guarda el snapshot", () => {
   });
 
   it("guarda los módulos en su orden, con el rótulo que se leyó", async () => {
-    // `tipo` **y** `rotulo`: el primero es la cadena del catálogo cerrado,
-    // que un lector automático compara; el segundo es el encabezado que la
-    // persona leyó, y `CATALOGO_DE_MODULOS` vive en código y se puede
-    // renombrar en cualquier despliegue.
+    // `tipo` **y** `rotulo`: el primero es la clave del catálogo cerrado, que
+    // un lector automático compara; el segundo es el encabezado que la persona
+    // leyó. Desde T-3 el segundo sale de `modulo_plantilla`, que el abogado
+    // edita cuando quiera, así que copiarlo dejó de ser precaución y pasó a
+    // ser la única forma de conservar el dato.
     const borrador = await emitirUnaCompleta();
     const snapshot = await snapshotDe(borrador.id);
 
@@ -569,6 +570,85 @@ describe("qué guarda el snapshot", () => {
         contenido: "No incluye apelaciones.",
       },
     ]);
+  });
+
+  /* --- El rótulo congelado es el de la fila, en los dos sentidos (T-3) --- */
+
+  /** Pone un rótulo propio en una plantilla y lo devuelve al preset al salir. */
+  async function conElRotuloDe(
+    clave: string,
+    propio: string,
+    cuerpo: () => Promise<void>,
+  ): Promise<void> {
+    await env.DB.prepare(
+      "UPDATE modulo_plantilla SET rotulo = ? WHERE tenant_id = ? AND clave = ?",
+    )
+      .bind(propio, TENANT_UNICO_ID, clave)
+      .run();
+
+    try {
+      await cuerpo();
+    } finally {
+      // A NULL, que es «uso el preset». `modulo_plantilla` la siembra la
+      // migración y ningún `beforeEach` la limpia: una prueba que deje el
+      // rótulo cambiado se lo deja cambiado a toda la suite.
+      await env.DB.prepare(
+        "UPDATE modulo_plantilla SET rotulo = NULL" +
+          " WHERE tenant_id = ? AND clave = ?",
+      )
+        .bind(TENANT_UNICO_ID, clave)
+        .run();
+    }
+  }
+
+  it("congela el rótulo que el bufete puso, no el preset", async () => {
+    // Con los presets puestos, «sale de la base» y «sale del código» congelan
+    // lo mismo: los seis `rotulo_oficial` son letra por letra los del código.
+    // Lo único que los separa es renombrar la plantilla antes de emitir.
+    await conElRotuloDe("alcance", "Qué vamos a hacer", async () => {
+      const borrador = await emitirUnaCompleta();
+      const snapshot = await snapshotDe(borrador.id);
+
+      const modulos = snapshot.modulos as { tipo: string; rotulo: string }[];
+      const alcance = modulos.find((uno) => uno.tipo === "alcance");
+
+      expect(alcance?.rotulo).toBe("Qué vamos a hacer");
+      // La clave **no** se mueve: es lo que un lector automático compara y lo
+      // que `cotizacion_modulo.tipo` guarda. Renombrar cambia el encabezado,
+      // nunca la identidad.
+      expect(alcance?.tipo).toBe("alcance");
+    });
+  });
+
+  it("y el documento ya emitido no se mueve cuando se renombra después", async () => {
+    // El otro sentido, y es el que importa de verdad: lo que el cliente leyó
+    // es un hecho. Lo sostienen dos cosas y conviene que la prueba las vea
+    // juntas: que `congelar` copió el rótulo, y que
+    // `cotizacion_snapshot_se_escribe_una_sola_vez` (M-3 de `0006`) impide
+    // reescribirlo. Sin la copia, bastaría con que la lectura resolviera el
+    // rótulo de hoy para que el papel de marzo cambiara en septiembre.
+    const borrador = await emitirUnaCompleta();
+    const antes = await snapshotDe(borrador.id);
+
+    await conElRotuloDe("alcance", "Otro nombre, meses después", async () => {
+      expect(await snapshotDe(borrador.id)).toEqual(antes);
+
+      // Y por la ruta que la pantalla usa para imprimir, no sólo por la
+      // columna: lo que esta prueba vigila es lo que el navegador recibe.
+      const respuesta = await comoAutor(
+        peticion(`/api/cotizaciones/${borrador.id}/documento`),
+      );
+      expect(respuesta.status).toBe(200);
+
+      const cuerpo = (await respuesta.json()) as {
+        documento: { modulos: { tipo: string; rotulo: string }[] };
+      };
+      const alcance = cuerpo.documento.modulos.find(
+        (uno) => uno.tipo === "alcance",
+      );
+
+      expect(alcance?.rotulo).toBe("Alcance");
+    });
   });
 
   it("guarda las líneas con el nombre del trámite resuelto", async () => {

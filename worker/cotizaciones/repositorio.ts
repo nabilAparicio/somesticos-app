@@ -85,7 +85,21 @@ import {
   diaEnPanama,
   finDelDiaEnPanama,
 } from "../db/momentos";
-import { rotuloDeTipo } from "./modulos";
+/**
+ * T-3: el rótulo de un módulo sale de `modulo_plantilla` y no del código.
+ *
+ * Se importan el **constructor del adaptador** y el ayudante que indexa por
+ * clave, no una consulta propia: `COALESCE(rotulo, rotulo_oficial)` es una
+ * regla del sistema y vive una sola vez, en `worker/plantillas/`. Una segunda
+ * consulta acá sería la que se queda vieja el día que la resolución cambie
+ * —por ejemplo, si una plantilla pudiera heredar de otra—.
+ *
+ * La flecha va en este sentido y no al revés: una cotización sabe que sus
+ * módulos salen de un catálogo; el catálogo no tiene por qué saber que existen
+ * las cotizaciones. Es la misma dirección que la de procesos de más arriba.
+ */
+import type { ServicioDePlantillas } from "../plantillas/repositorio";
+import { plantillasSobreD1, rotulosPorClave } from "../plantillas/repositorio";
 import {
   congelar,
   type ClienteCongelado,
@@ -213,9 +227,10 @@ export type ResultadoDeDocumento =
  * `DocumentoCongelado` es la que `worker/contract.ts` publica para que la
  * pantalla que imprime pueda nombrarla. Son la misma forma escrita dos
  * veces, y la segunda existe por una razón concreta y no por descuido:
- * `snapshot.ts` importa `totalesDe` y los dos `rotuloDe…` **como valores**,
- * así que meterlo en el programa del navegador arrastraría `congelar()` y
- * su aritmética al bundle.
+ * `snapshot.ts` importa `totalesDe` y `rotuloDeClase` **como valores**, así
+ * que meterlo en el programa del navegador arrastraría `congelar()` y su
+ * aritmética al bundle. (Hasta T-3 eran los dos `rotuloDe…`: el de los tipos
+ * de módulo ya no existe, porque ese rótulo lo resuelve la base.)
  *
  * Esta constante es lo que impide que se separen en silencio. La condición
  * exige asignabilidad **en los dos sentidos**, y no en uno: con uno solo, el
@@ -225,9 +240,8 @@ export type ResultadoDeDocumento =
  * derecha pasa a ser `false`, `false` no es asignable a `true` y
  * `pnpm typecheck` se cae acá con el nombre de esta constante encima.
  *
- * Es la misma mecánica que `TODOS_LOS_TIPOS_TIENEN_ROTULO` en
- * `./modulos.ts`: una afirmación que el compilador ejerce, no un comentario
- * pidiendo cuidado.
+ * Es la misma mecánica que `TiposFueraDeLaLista` en `./modulos.ts`: una
+ * afirmación que el compilador ejerce, no un comentario pidiendo cuidado.
  *
  * **Se borra el día que `snapshot.ts` pueda importar del contrato**, que es
  * el día que sus ayudantes de rótulo se separen de `totalesDe`. Entonces las
@@ -825,12 +839,54 @@ function aCotizacion(fila: FilaDeCotizacion): Cotizacion {
  *   **Opcional, y la omisión es apagado**, igual que en `totalesDe` y en
  *   `congelar`: es el mismo interruptor en la misma posición por omisión, y
  *   un llamador distraído deja el sistema donde hoy corresponde que esté.
+ *
+ * @param plantillas
+ *   El catálogo de plantillas de módulo (T-3), de donde sale el **rótulo
+ *   vigente** de cada clave: el que va al `detalle` de la bitácora de las tres
+ *   escrituras de módulo y el que `emitir` congela.
+ *
+ *   **Opcional con el adaptador real por omisión**, y acá la omisión no es un
+ *   interruptor apagado sino el camino de producción escrito una vez. Es la
+ *   diferencia con `impuesto`: un régimen omitido es una decisión del bufete
+ *   que por omisión está en «no facturo ITBMS»; un catálogo omitido no es
+ *   ninguna decisión, es la misma base leída por el único puerto que sabe
+ *   resolver un rótulo. `worker/index.ts` pasa el suyo —uno solo para las tres
+ *   rutas que lo usan— para que una petición no construya dos adaptadores
+ *   sobre la misma `BaseDeDatos`.
  */
 export function cotizacionesSobreD1(
   base: BaseDeDatos,
   impuesto: RegimenDeImpuesto = SIN_ITBMS,
+  plantillas: ServicioDePlantillas = plantillasSobreD1(base),
 ): ServicioDeCotizaciones {
   const db = base.lectura;
+
+  /**
+   * El rótulo vigente de una clave de módulo, para una persona.
+   *
+   * Es `async` y pega una lectura, y eso es el precio de que el rótulo sea
+   * editable: antes de T-3 era un `Map` construido al cargar el módulo. Vale
+   * la pena —sin esto, renombrar «Alcance» a «Qué hacemos» deja la bitácora
+   * diciendo «Alcance» para siempre— y cuesta una consulta en tres
+   * operaciones que ya hacen dos o tres cada una.
+   *
+   * **No se memoiza por instancia**, a propósito: el adaptador vive lo que
+   * dura una petición, pero un caché acá sería un rótulo leído antes de una
+   * escritura que lo cambió, y la bitácora de esa escritura diría el viejo.
+   *
+   * La clave como reserva, por lo mismo que en `congelar`: la rama es
+   * inalcanzable —la siembra de `0016` cubre las seis claves del `CHECK` de
+   * `0004`— y escribirla evita que un `detalle` diga `undefined` el día que
+   * alguien ablande una de las dos cosas. Es la misma salida que
+   * `worker/plantillas/repositorio.ts` toma con `?? previa.clave`.
+   */
+  async function rotuloVigenteDe(
+    tenantId: string,
+    tipo: string,
+  ): Promise<string> {
+    const rotulos = rotulosPorClave(await plantillas.listar(tenantId));
+    return rotulos.get(tipo) ?? tipo;
+  }
 
   async function obtener(
     tenantId: string,
@@ -1744,7 +1800,11 @@ export function cotizacionesSobreD1(
           // El rótulo del tipo y no el contenido: `detalle` es el nombre de
           // cara al usuario de lo que el hecho señala, nunca una segunda
           // copia del dato. El texto del módulo sigue estando en su fila.
-          detalle: rotuloDeTipo(datos.tipo),
+          //
+          // Y el rótulo **vigente**, leído de `modulo_plantilla` (T-3): la
+          // bitácora guarda el nombre con el que esa persona vio el módulo, y
+          // antes de T-3 guardaba el que estaba compilado.
+          detalle: await rotuloVigenteDe(tenantId, datos.tipo),
         },
         sentencia(
           "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
@@ -1804,9 +1864,9 @@ export function cotizacionesSobreD1(
           entidad: "cotizacion",
           entidadId: cotizacionId,
           accion: "modulo_editado",
-          // El rótulo del tipo **nuevo**: es lo que quedó escrito. La
+          // El rótulo vigente del tipo **nuevo**: es lo que quedó escrito. La
           // bitácora guarda hechos, no diffs.
-          detalle: rotuloDeTipo(datos.tipo),
+          detalle: await rotuloVigenteDe(tenantId, datos.tipo),
         },
         sentencia(
           "UPDATE cotizacion_modulo SET tipo = ?, contenido = ?" +
@@ -1859,7 +1919,7 @@ export function cotizacionesSobreD1(
           entidad: "cotizacion",
           entidadId: cotizacionId,
           accion: "modulo_quitado",
-          detalle: rotuloDeTipo(quitado.tipo),
+          detalle: await rotuloVigenteDe(tenantId, quitado.tipo),
         },
         sentencia(
           "DELETE FROM cotizacion_modulo" +
@@ -2489,11 +2549,24 @@ export function cotizacionesSobreD1(
       // puerta por la que se puede fechar un hecho a mano.
       const emitidaEn = ahoraIso();
 
+      // Los rótulos vigentes, leídos **una sola vez y acá**, un paso antes de
+      // escribir. Es la misma disciplina que `emitidaEn` y que `impuesto`: lo
+      // que el documento congela es lo que era cierto en este instante, y
+      // `congelar` no puede ir a buscarlo porque es pura.
+      //
+      // Cae en la misma ventana que el comentario de arriba admite para las
+      // líneas: entre esta lectura y el `UPDATE`, otra petición puede renombrar
+      // una plantilla. Si pasa, el documento congela el rótulo de un
+      // milisegundo antes, que es el que esa persona tenía en pantalla cuando
+      // apretó «Emitir». No es el peor lado de la carrera.
+      const rotulos = rotulosPorClave(await plantillas.listar(tenantId));
+
       const snapshot = JSON.stringify(
         congelar({
           cotizacion: actual,
           cliente,
           modulos,
+          rotulos,
           lineas,
           emisor,
           emitidaEn,
