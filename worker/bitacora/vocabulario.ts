@@ -276,6 +276,38 @@ export const ACCIONES_POR_ENTIDAD = {
      no pares entidad+verbo, porque la entidad ya viaja en su columna. «Itzel
      editó «Visitantes Temporales (por persona)»» ya está bien dicho. */
   arancel_renglon: ["editado"],
+
+  /* Una plantilla de módulo de prosa (T-1 de
+     `odd/tasks/plantillas-de-modulo.md`). **Tres verbos**, y los tres tienen
+     sitio que los emita: el alcance de la tajada incluye la edición del rótulo
+     y la descripción, la baja y la reactivación.
+
+     Lo editable de una plantilla es el rótulo, la descripción, el orden y
+     `activo`. El preset —`rotulo_oficial` y `descripcion_oficial`— y la
+     `clave` los congelan los disparadores de
+     `migrations/0016_una_plantilla_de_modulo_dice_para_que_sirve.sql`, así que
+     no hay hecho que registrar sobre ellos: no pueden cambiar.
+
+     **`creado` no entra**, y es la misma regla que `arancel_renglon` aplica a
+     `dado_de_baja` arriba, leída al revés: la ausencia del verbo es cómo este
+     vocabulario dice que la operación no es de esta unidad. Crear plantillas
+     nuevas está fuera del alcance autorizado de esta tajada —la clave tendría
+     que derivarse del rótulo y `cotizacion_modulo.tipo` sigue cerrado por el
+     `CHECK` de `0004`—, y las seis que existen las siembra la migración, que
+     no pasa por `mutar`. El día que exista la ruta, el verbo entra con ella y
+     cuesta una línea, porque su frase ya está en `src/bitacora.ts`.
+
+     **`borrado` tampoco**, y éste no entra nunca: una plantilla no se borra.
+     `modulo_plantilla_no_se_borra` aborta todo `DELETE` en la base, y la
+     salida es `dado_de_baja`. Un verbo que la base no puede dejar ocurrir
+     sería una entrada del vocabulario que ninguna escritura puede producir.
+
+     Van **pelados** y no `plantilla_editada` por la regla de siempre: son
+     verbos y no pares entidad+verbo, porque la entidad ya viaja en su
+     columna. Y `plantilla_editada` además ya existe, con otro dueño: es el
+     hecho de guardar las etapas de un `tipo_proceso`, y reusarlo acá haría
+     que dos cosas distintas se leyeran igual. */
+  modulo_plantilla: ["editado", "dado_de_baja", "reactivado"],
 } as const satisfies Record<EntidadRegistrada, readonly AccionDeBitacora[]>;
 
 /**

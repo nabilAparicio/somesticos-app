@@ -2544,7 +2544,33 @@ export type EntidadRegistrada =
    * entran: un verbo sin sitio que lo emita es una entrada del vocabulario
    * que no significa nada.
    */
-  | "arancel_renglon";
+  | "arancel_renglon"
+  /**
+   * Una plantilla de módulo de prosa (T-1 de
+   * `odd/tasks/plantillas-de-modulo.md`).
+   *
+   * Entidad propia, y la regla que lo decide es la de siempre —«un hecho, una
+   * entidad», resuelta por si la cosa **se lee sola**—. Una plantilla se lee
+   * sola: tiene su fila en la tabla que es la pantalla de `/catalogos/modulos`,
+   * y la pregunta «¿quién le cambió la descripción que la IA está leyendo, y
+   * cuándo?» es exactamente la que el bufete va a hacer el día que el modelo
+   * empiece a escribir los alcances distinto. Colgarla de `cotizacion` haría
+   * que renombrar un módulo apareciera en la historia de las cotizaciones que
+   * lo usan, y la plantilla es anterior a todas ellas.
+   *
+   * Admite tres verbos —`editado`, `dado_de_baja` y `reactivado`—, y los tres
+   * tienen sitio que los emita: el alcance de la tajada 1 incluye la edición,
+   * la baja y la reactivación. Los campos del preset los congela un disparador
+   * de `migrations/0016_una_plantilla_de_modulo_dice_para_que_sirve.sql`, así
+   * que no hay hecho que registrar sobre ellos.
+   *
+   * **`creado` no entra**, al revés que en los catálogos: crear plantillas
+   * nuevas está fuera del alcance autorizado de esta tajada y las seis que
+   * existen las siembra la migración, que no pasa por `mutar`. La ausencia del
+   * verbo es cómo este vocabulario dice que la operación no es de esta unidad;
+   * el día que exista la ruta, el verbo entra con ella.
+   */
+  | "modulo_plantilla";
 
 /**
  * Qué pasó. El vocabulario cerrado de `accion`.

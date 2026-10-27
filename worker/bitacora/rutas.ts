@@ -9,6 +9,13 @@
  *   GET /api/cotizaciones/{id}/bitacora   qué le pasó a esta cotización
  *   GET /api/arancel/{id}/bitacora        quién le puso este precio
  *
+ * Hay una octava dirección reconocida y todavía sin contestar:
+ * `/api/plantillas-modulo/{id}/bitacora`. La entidad entró al vocabulario con
+ * su migración en T-1 de `odd/tasks/plantillas-de-modulo.md` —el `CHECK` y la
+ * unión no se pueden separar sin dejar la suite en rojo—, pero el puerto que
+ * comprueba la fila llega con T-2, así que hoy contesta 404. El porqué, y qué
+ * tiene que reemplazar T-2, están al lado del `case` en `existeLaFila`.
+ *
  * **Y nada más.** No hay `POST`, ni `PUT`, ni `PATCH`, ni `DELETE`, ni
  * `/api/bitacora`, ni dirección propia de una entrada. Es la misma forma que
  * T-8 le dio a las notas y por un argumento más fuerte: una entrada de
@@ -82,6 +89,12 @@ const COLECCION_POR_ENTIDAD = {
   // entera es `/api/arancel`: es **un** documento con renglones, no una
   // colección de aranceles.
   arancel_renglon: "arancel",
+  // Las plantillas de módulo (T-1 de `odd/tasks/plantillas-de-modulo.md`).
+  // `plantillas-modulo` y no `plantillas` a secas porque en este sistema
+  // «plantilla» ya está tomada dos veces —`etapa_plantilla` y los verbos
+  // `plantilla_editada` y `plantilla_guardada`, que son de las etapas de un
+  // tipo de proceso—, y una dirección ambigua es la que alguien lee al revés.
+  modulo_plantilla: "plantillas-modulo",
 } as const satisfies Record<EntidadRegistrada, string>;
 
 /**
@@ -196,6 +209,37 @@ async function existeLaFila(
       return (await puertos.cotizaciones.obtener(tenantId, id)) !== null;
     case "arancel_renglon":
       return (await puertos.arancel.obtener(tenantId, id)) !== null;
+    /*
+     * **Un `false` provisorio, con fecha de vencimiento y dicho a la vista.**
+     *
+     * `modulo_plantilla` entra al vocabulario en T-1 porque tiene que entrar
+     * con su migración: `test/bitacora-api.spec.ts` compara el `CHECK` de
+     * `entidad` contra `ENTIDADES_REGISTRADAS`, así que partir el par dejaría
+     * la suite en rojo entre una tarea y la otra. Y el `satisfies` de
+     * `COLECCION_POR_ENTIDAD` obliga a decir por qué dirección se lee, que es
+     * exactamente la red que este archivo quiere.
+     *
+     * Lo que **todavía no existe** es el puerto que contesta si la fila es de
+     * este bufete: vive en `worker/plantillas/repositorio.ts`, que es el
+     * primer archivo de T-2, y hace falta además pasarlo desde
+     * `worker/index.ts`. Hasta entonces esta dirección contesta 404 para una
+     * fila que sí existe, que es un defecto conocido y acotado: hoy **nadie
+     * la llama** —no hay pantalla ni cliente que la pida— y no hay una sola
+     * entrada de bitácora de esta entidad, porque la escritura también llega
+     * en T-2.
+     *
+     * No se devuelve `true` ni se afloja la comprobación: contestar 200 con
+     * una lista vacía confirmaría que ese identificador existe en alguna
+     * parte, que es justo la fuga que el 404 de este archivo niega. Entre
+     * «esconde una historia que todavía no tiene dueño» y «confirma un
+     * identificador ajeno», la primera se arregla en la tarea siguiente y la
+     * segunda no se arregla nunca.
+     *
+     * **T-2 reemplaza esta línea por `puertos.plantillas.obtener(…)`**, y es
+     * lo primero que tiene que hacer al abrir el repositorio.
+     */
+    case "modulo_plantilla":
+      return false;
   }
 }
 

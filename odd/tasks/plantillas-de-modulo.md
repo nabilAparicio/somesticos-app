@@ -172,22 +172,35 @@ bitácora**.
 
 ### T-1 · La plantilla existe, trae su descripción, y nadie la borra
 
-- [ ] `migrations/0016_…` crea `modulo_plantilla` con las siete columnas, el
+- [x] `migrations/0016_…` crea `modulo_plantilla` con las siete columnas, el
       único `(tenant_id, clave)`, y **sin** único en `orden` —por el mismo
       argumento que `0001` le aplicó a `etapa_plantilla`: reordenar
       incrementando viola el único fila por fila y SQLite no difiere
       restricciones—.
-- [ ] Los dos `CHECK` de vigencia: rótulo vigente y descripción vigente, los
+- [x] Los dos `CHECK` de vigencia: rótulo vigente y descripción vigente, los
       dos con `COALESCE` y la forma de `0015`.
-- [ ] Disparadores: `tenant` inmutable, `clave` inmutable, el preset no se
+- [x] Disparadores: `tenant` inmutable, `clave` inmutable, el preset no se
       edita, y la fila no se borra. Los cuatro con la forma de los de
       `arancel_renglon` (`0012:462,501,516`).
-- [ ] Los seis presets sembrados en la migración, con las descripciones de
+- [x] Los seis presets sembrados en la migración, con las descripciones de
       arriba y `clave` igual al `tipo` que `0004:218` ya permite.
-- [ ] `bitacora` reconstruida con `modulo_plantilla` en el `CHECK` de
+- [x] `bitacora` reconstruida con `modulo_plantilla` en el `CHECK` de
       `entidad`, copiando las filas y re-creando el índice y los tres
       disparadores letra por letra. Ningún verbo nuevo.
-- [ ] Sondas hostiles contra cada guarda, corridas a mano contra la base
+- [x] **Y la mitad de TypeScript en la misma tarea, no en T-2**:
+      `modulo_plantilla` entra a `EntidadRegistrada` (`contract.ts:2501`) y a
+      los dos `satisfies Record<EntidadRegistrada, …>`
+      (`bitacora/rutas.ts:85`, `bitacora/vocabulario.ts:279`) con los verbos
+      `editado`, `dado_de_baja`, `reactivado`. No es prolijidad: la prueba de
+      `test/bitacora-api.spec.ts:1598` lee el `CHECK` de `sqlite_master` y lo
+      enfrenta a `ENTIDADES_REGISTRADAS`, así que partir el par deja la suite
+      en rojo entre una tarea y la otra.
+      **`creado` no entra**: no hay ruta que lo escriba hasta la tajada 2, y
+      la ausencia del verbo es cómo este vocabulario dice que la operación no
+      es de esta unidad (`vocabulario.ts:240` lo argumenta para la cuota).
+      `src/bitacora.ts` **no se toca**: su `VERBOS_DE_BITACORA` está indexado
+      por acción, no por entidad, y no hay acción nueva.
+- [x] Sondas hostiles contra cada guarda, corridas a mano contra la base
       local: editar un `*_oficial`, cambiar la clave, borrar una fila, dejar
       una plantilla sin descripción vigente, mudar el tenant.
 
@@ -196,12 +209,17 @@ acotado; el disparador es la regla de escritura y la de preparación.
 
 ### T-2 · El rótulo y la descripción se editan desde catálogos
 
-- [ ] `modulo_plantilla` entra a `EntidadRegistrada` (`contract.ts:2501`) y a
-      los dos `satisfies Record<EntidadRegistrada, …>`
-      (`bitacora/rutas.ts:85`, `bitacora/vocabulario.ts:279`) con los verbos
-      `editado`, `dado_de_baja`, `reactivado`. **`creado` no entra**: no hay
-      ruta que lo escriba hasta la tajada 2, y la ausencia del verbo es cómo
-      este vocabulario dice que la operación no es de esta unidad.
+- [ ] **Lo que T-1 dejó debiendo, y es lo primero de esta tarea.**
+      `existeLaFila` de `worker/bitacora/rutas.ts` es un `switch` exhaustivo, y
+      agregar `modulo_plantilla` al vocabulario obligó a darle un `case`
+      **antes** de que exista el puerto que lo contesta. Quedó devolviendo
+      `false`, así que `/api/plantillas-modulo/{id}/bitacora` contesta 404 para
+      una fila que sí existe. Es un defecto conocido y acotado —hoy nadie llama
+      esa dirección y no hay una sola entrada de esta entidad—, y se cierra
+      reemplazando esa línea por `puertos.plantillas.obtener(…)` al abrir el
+      repositorio, más el parámetro nuevo en `worker/index.ts`. **No se dejó en
+      `true`** a propósito: contestar 200 con una lista vacía confirmaría un
+      identificador ajeno, que es la fuga que ese archivo niega.
 - [ ] `worker/plantillas/{rutas,dominio,repositorio}.ts` con la forma de
       `worker/arancel/`: `GET` de la colección, `PUT` del renglón, y la baja.
       Registradas en `worker/index.ts` **antes** de la bitácora o después según
@@ -276,5 +294,77 @@ Empujar y mezclar a `main` siguen siendo decisión del usuario.
 
 ## Progreso
 
-- Documento creado. Ninguna tarea cerrada. Secuencia elegida por el usuario:
-  dos tajadas, ésta primero.
+- Documento creado. Secuencia elegida por el usuario: dos tajadas, ésta
+  primero.
+
+### T-1 cerrada
+
+**Archivos.** `migrations/0016_una_plantilla_de_modulo_dice_para_que_sirve.sql`
+(561 líneas) y `test/plantillas-esquema.spec.ts` (631 líneas), nuevos, más 104
+líneas en `worker/contract.ts`, `worker/bitacora/vocabulario.ts` y
+`worker/bitacora/rutas.ts`. `src/bitacora.ts` no se tocó, como estaba previsto.
+
+**RED observado antes de la migración.** `npx vitest run
+test/plantillas-esquema.spec.ts` sobre el esquema sin `0016`: **25 fallando, 4
+pasando** de 29. El error era siempre el mismo —`D1_ERROR: no such table:
+modulo_plantilla`— salvo en la lista de disparadores, que comparaba `[]` contra
+los cuatro nombres. Las 4 que pasaban no tocan la tabla: las dos que leen el
+`CHECK` de `bitacora` buscando verbos que ya estaban, la que exige que ninguna
+entidad inventada entre, y la que afirma que no hay único sobre `orden` —que
+sobre cero índices pasa por vacuidad, y es por eso que no se la cuenta como
+prueba de nada hasta que la tabla existe—. Con la migración: **29 pasando**.
+
+**Siembra medida contra la base local.** Las seis filas, en el orden del
+documento, con `rotulo`/`descripcion` en NULL y `activo = 1`. Largo de cada
+`descripcion_oficial`, en caracteres: antecedentes 168, alcance 148,
+exclusiones 155, supuestos 216, cláusulas 162, nota al cliente 125. **Total:
+974.** El documento estimaba «unos 800»; lo medido es 974, y el orden de
+magnitud frente a los 30.304 de la sección del arancel no cambia. T-4 mide el
+prompt antes y después.
+
+**Reconstrucción de la bitácora.** Séptima. Las **158** entradas de la base
+local y las **11** cotizaciones siguen ahí después del `DROP TABLE`; el índice
+y los tres disparadores quedaron recreados y `test/bitacora-api.spec.ts` pasó
+**sin tocarse**, incluidas las dos pruebas que comparan el `CHECK` de `entidad`
+contra `ENTIDADES_REGISTRADAS` y las definiciones de los disparadores contra lo
+que escribieron `0002` y `0003`.
+
+**Las sondas hostiles, a mano, con el mensaje exacto que dio cada una.**
+`npx wrangler d1 execute app-cotizador --local --command …`:
+
+| Sonda | Qué contestó |
+|---|---|
+| `UPDATE … SET rotulo_oficial = 'Otro rotulo'` | `plantilla de módulo: el preset no se edita; lo editable es el rótulo y la descripción del bufete: SQLITE_CONSTRAINT_TRIGGER` |
+| `UPDATE … SET descripcion_oficial = 'Otra descripcion'` | el mismo |
+| `UPDATE … SET descripcion_oficial = NULL` | el mismo — **es el caso que `<>` dejaría pasar** |
+| `UPDATE … SET clave = 'alcance_nuevo'` | `plantilla de módulo: la clave no se edita; es lo que el snapshot congela y lo que la IA copia: SQLITE_CONSTRAINT_TRIGGER` |
+| `DELETE FROM modulo_plantilla` | `plantilla de módulo: una plantilla no se borra; se retira con activo = 0: SQLITE_CONSTRAINT_TRIGGER` |
+| `UPDATE … SET tenant_id = <otro>` | `columna inmutable: modulo_plantilla.tenant_id no se reasigna; una fila no cambia de bufete: SQLITE_CONSTRAINT_TRIGGER` |
+| `INSERT` sin descripción vigente | `CHECK constraint failed: la_plantilla_tiene_descripcion_vigente: SQLITE_CONSTRAINT_CHECK` |
+| `INSERT` sin rótulo vigente | `CHECK constraint failed: la_plantilla_tiene_rotulo_vigente: SQLITE_CONSTRAINT_CHECK` |
+| `INSERT` con una clave repetida | `UNIQUE constraint failed: modulo_plantilla.tenant_id, modulo_plantilla.clave: SQLITE_CONSTRAINT_UNIQUE` |
+
+**Y los contrapesos, también a mano**, porque una guarda que rechazara todo
+habría pasado las nueve de arriba: escribir `rotulo` y `descripcion` del
+bufete, vaciarlos y ver volver el preset (`COALESCE` devolvió «Alcance»),
+`activo = 0` y `activo = 1`, y —el que importa— **`UPDATE modulo_plantilla SET
+orden = orden + 1` sobre las seis filas en una sola sentencia**, que es
+exactamente la escritura que un único sobre `orden` habría hecho imposible. Las
+cuatro pasaron. La base local quedó restaurada al estado sembrado.
+
+**Verificación.** `pnpm lint`: sin hallazgos. `pnpm typecheck`: 0 errores.
+`pnpm test`: **50 archivos, 2.545 pruebas, todas pasando**. `pnpm test:e2e`:
+**509 pasando** en 1,4 min —`e2e/sin-scroll-horizontal.spec.ts` incluido, sin
+necesidad de repetirlo—.
+
+**Lo que quedó debiendo, anotado como primera tarea de T-2**: el `case` de
+`modulo_plantilla` en `existeLaFila` devuelve `false` porque el puerto no
+existe todavía, así que la dirección de bitácora de una plantilla contesta 404.
+Está argumentado al lado del `case` y en la lista de T-2.
+
+**Lo que no se tocó y se midió**: `src/bitacora.ts`, `cotizacion_modulo`, la
+unión `TipoDeModulo` y los rótulos de `worker/cotizaciones/modulos.ts` —que
+ahora tienen dos fuentes, la del código y la de la siembra, y es T-3 la que
+deja una sola—.
+
+**Siguiente paso**: T-2, empezando por cerrar el 404 de arriba.
