@@ -98,7 +98,7 @@ export function Catalogos() {
           <h2 id="catalogo-arancel">Arancel de honorarios</h2>
           <p className="texto-apagado">
             La tarifa del Acuerdo No 49 de 2001, completa y de solo lectura.
-            Es de donde sale cada valor sugerido.
+            Es de donde sale cada precio preestablecido.
           </p>
           <p>
             <Enlace href={enlaceDe({ nombre: "arancel" })} className="boton">
