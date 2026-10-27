@@ -1527,11 +1527,13 @@ export interface CotizacionNoEsEmitida {
  * **La unión es cerrada; lo que cada clave significa no.** Son dos cosas
  * distintas y el proyecto tardó dos tajadas en separarlas:
  *
- *  - La **clave** sigue cerrada y sigue en código, con el `CHECK` de
- *    `migrations/0004_cotizaciones.sql` debajo porque §5 obliga a que la base
- *    sostenga la regla igual. Agregar una clave sigue siendo un despliegue,
- *    hasta la tajada 2 de `odd/tasks/plantillas-de-modulo.md`, donde
- *    `cotizacion_modulo.tipo` pasa a ser una referencia y esta unión muere.
+ *  - La **clave** sigue cerrada y sigue en código, y **desde T-5 de la tajada
+ *    2 ya no tiene el `CHECK` de `migrations/0004_cotizaciones.sql` debajo**:
+ *    `0017` cambió `cotizacion_modulo.tipo` por `plantilla_id`, una referencia
+ *    a `modulo_plantilla`. La base sigue sosteniendo la regla como §5 obliga,
+ *    y con una guarda más fuerte que la lista —una clave inventada no es
+ *    rechazada, **no llega a existir**—. Esta unión es lo único que queda de
+ *    la mitad en código, y muere en T-6, que es el único cambio de ese día.
  *  - El **rótulo y la descripción** viven en `modulo_plantilla` desde T-1 de
  *    esa tajada, y el abogado los edita desde `/catalogos/modulos`. El
  *    criterio del proyecto —catálogo en la base cuando el valor es sólo una
@@ -1539,10 +1541,12 @@ export interface CotizacionNoEsEmitida {
  *    no había código detrás: se dibujan idénticos y difieren sólo en el
  *    rótulo. `docs/diseno.md` §6 y §8 están corregidos con esa medición.
  *
- * Las dos mitades de la clave se mueven juntas o no se mueven:
- * `test/modulos-api.spec.ts` compara el `CHECK` contra `TIPOS_DE_MODULO` y
- * además enfrenta las dos a las claves de `modulo_plantilla`, en los dos
- * sentidos. Acá está sólo la unión, que es lo que cruza el cable.
+ * Lo que ata esta unión a la base, mientras viva: `test/modulos-api.spec.ts`
+ * enfrenta `TIPOS_DE_MODULO` a las claves de `modulo_plantilla` en los dos
+ * sentidos. Ya no hay un `CHECK` con el que compararla —T-5 lo borró— y por
+ * eso esas dos pruebas se van con la unión en T-6: lo que las reemplaza es la
+ * llave foránea, que es más fuerte que las dos. Acá está sólo la unión, que es
+ * lo que cruza el cable.
  */
 export type TipoDeModulo =
   | "alcance"

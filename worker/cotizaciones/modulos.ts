@@ -28,16 +28,23 @@
  *
  * ## Lo que sí sigue acá, y por qué
  *
- * **La lista cerrada de claves.** El `CHECK` de `cotizacion_modulo.tipo` en
- * `migrations/0004_cotizaciones.sql` y `TIPOS_DE_MODULO` siguen siendo **una
- * sola decisión escrita dos veces**, exactamente como el vocabulario de la
- * bitácora:
+ * **La lista cerrada de claves, y ya sin su mitad en el esquema.** Hasta T-4
+ * el `CHECK` de `cotizacion_modulo.tipo` y `TIPOS_DE_MODULO` eran **una sola
+ * decisión escrita dos veces**, como el vocabulario de la bitácora. **T-5
+ * borró la primera**: `0017` cambió la columna por
+ * `plantilla_id REFERENCES modulo_plantilla (id)`.
  *
- *  - El **`CHECK`** es el que sobrevive al primer script de importación
- *    (§5). Sin él, en dos años conviven `clausulas`, `cláusulas` y `clauses`
- *    y la pregunta «¿qué solemos excluir?» no se contesta más.
+ *  - Lo que el `CHECK` sostenía —«en dos años conviven `clausulas`,
+ *    `cláusulas` y `clauses` y la pregunta *¿qué solemos excluir?* no se
+ *    contesta más» (§5)— lo sostiene ahora el único
+ *    `modulo_plantilla_clave_unica`: admite las tres claves pero una sola vez
+ *    cada una, y un módulo sólo puede apuntar a una fila que exista. El
+ *    `CHECK` prohibía claves **nuevas**; el único prohíbe claves
+ *    **repetidas**, que es el defecto real. Lo que de verdad se perdió es que
+ *    la lista sea de seis, y esa decisión pasa a ser del bufete desde T-7.
  *  - La **lista** es la que valida lo que entra por el cable y la que estrecha
- *    el tipo de lo que sale de la validación del generador.
+ *    el tipo de lo que sale de la validación del generador. Es lo único que
+ *    queda, y muere en T-6.
  *
  * Lo que la lista **no** contesta, y hace falta decirlo desde T-4: *cuáles
  * están vigentes*. Eso es una columna `activo` de una fila, no una unión, así
@@ -45,12 +52,16 @@
  * que el prompt le declaró — ver `CatalogosOfrecidos.modulos`. Una plantilla
  * dada de baja es una clave de esta lista que ya no se ofrece.
  *
- * Si se separan, la pantalla ofrece una clave que la base rechaza con un 500
- * que nadie puede leer. `test/modulos-api.spec.ts` las compara y falla.
+ * Si la lista y las filas se separan, la pantalla ofrece una clave sin
+ * plantilla y la escritura muere con un `NOT NULL constraint failed` que nadie
+ * puede leer. `test/modulos-api.spec.ts` las compara en los dos sentidos y
+ * falla.
  *
- * La clave muere en la tajada 2, cuando `cotizacion_modulo.tipo` pase a ser
- * una referencia a `modulo_plantilla.id`. Hasta entonces el `CHECK` manda y
- * esta lista es su mitad en TypeScript.
+ * **Esta lista muere en T-6**, que es el único cambio de ese día. Lo que la
+ * reemplaza no es otra lista sino la llave foránea de `0017`: la clave pasa a
+ * ser una cadena validada contra el catálogo inyectado —lo que `validarModulo`
+ * ya hace desde T-4 con `clavesOfrecidas`— y lo que impide inventar una es que
+ * no haya fila a la que apuntar.
  *
  * ## Lo que este archivo ya no contesta
  *

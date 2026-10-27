@@ -36,6 +36,17 @@ interface Contexto {
   areaId: string;
   tipoProcesoId: string;
   cotizacionId: string;
+  /**
+   * La plantilla de módulo a la que apunta la fila válida de
+   * `cotizacion_modulo` (`0017`).
+   *
+   * Es la que `0016` sembró para la clave `alcance`, y **se lee de la base en
+   * vez de escribirse el literal** aunque `0016:528` lo tenga fijo: lo que
+   * esta suite afirma es lo que el esquema sostiene, y un identificador
+   * copiado acá convertiría una siembra renumerada en 54 pruebas rojas sin
+   * decir por qué.
+   */
+  plantillaId: string;
 }
 
 /** El `RAISE(ABORT, …)` de los cinco disparadores de tenencia de `0004`. */
@@ -99,6 +110,20 @@ function sin(fila: Fila, columna: string): Fila {
  * tenant desde `0003`, y `cotizacion` la tiene de código desde `0004`. Un
  * choque del andamio sería un rechazo que no prueba nada.
  */
+async function plantillaSembrada(
+  tenantId: string,
+  clave: string,
+): Promise<string> {
+  const fila = await env.DB.prepare(
+    "SELECT id FROM modulo_plantilla WHERE tenant_id = ? AND clave = ?",
+  )
+    .bind(tenantId, clave)
+    .first<{ id: string }>();
+
+  expect(fila, `«${clave}» tiene que estar sembrada por 0016`).not.toBeNull();
+  return fila?.id ?? "";
+}
+
 async function sembrarContexto(): Promise<Contexto> {
   const ctx: Contexto = {
     usuarioId: nuevoId(),
@@ -107,6 +132,7 @@ async function sembrarContexto(): Promise<Contexto> {
     areaId: nuevoId(),
     tipoProcesoId: nuevoId(),
     cotizacionId: nuevoId(),
+    plantillaId: await plantillaSembrada(TENANT_UNICO_ID, "alcance"),
   };
   const ahora = ahoraIso();
 
@@ -174,6 +200,7 @@ async function sembrarVecino(): Promise<Contexto & { tenantId: string }> {
     areaId: nuevoId(),
     tipoProcesoId: nuevoId(),
     cotizacionId: nuevoId(),
+    plantillaId: nuevoId(),
   };
   const ahora = ahoraIso();
 
@@ -182,6 +209,19 @@ async function sembrarVecino(): Promise<Contexto & { tenantId: string }> {
       vecino.tenantId,
       "Bufete vecino",
     ),
+    // La plantilla del vecino, que `0017` hace imprescindible: `plantilla_id`
+    // es `NOT NULL` y la siembra de `0016` es de un solo bufete, así que sin
+    // esto el vecino no tiene ningún módulo posible y la mitad de las pruebas
+    // de tenencia no se pueden escribir.
+    //
+    // **Con la misma `clave` que la nuestra**, que es el caso que importa: las
+    // seis son presets, así que los dos bufetes las tienen iguales y una
+    // búsqueda por clave sin `tenant_id` devuelve la fila de cualquiera.
+    env.DB.prepare(
+      "INSERT INTO modulo_plantilla (id, tenant_id, clave, rotulo_oficial," +
+        " descripcion_oficial, orden, activo)" +
+        " VALUES (?, ?, 'alcance', 'Alcance del vecino', 'La del vecino.', 1, 1)",
+    ).bind(vecino.plantillaId, vecino.tenantId),
     env.DB.prepare(
       "INSERT INTO usuario (id, tenant_id, nombre, email) VALUES (?, ?, ?, ?)",
     ).bind(
@@ -285,7 +325,10 @@ function filaValida(tabla: Tabla, ctx: Contexto): Fila {
       return {
         ...base,
         cotizacion_id: ctx.cotizacionId,
-        tipo: "alcance",
+        // `plantilla_id` y no `tipo` desde `0017`: la columna es una
+        // referencia a `modulo_plantilla`, no una cadena de un catálogo
+        // cerrado.
+        plantilla_id: ctx.plantillaId,
         orden: 1,
         contenido: "Tramitación completa de la visa de trabajo.",
       };
@@ -426,21 +469,53 @@ describe("vocabularios cerrados con CHECK, no con ENUM", () => {
     );
   });
 
-  it("rechaza un tipo de módulo fuera del dominio", async () => {
-    const fila = { ...filaValida("cotizacion_modulo", ctx), tipo: "conclusiones" };
+  /*
+   * **El tipo de módulo ya no es un vocabulario cerrado con `CHECK`, y es la
+   * excepción de esta sección entera** (T-5).
+   *
+   * Hasta `0016` había acá dos pruebas con la forma de las otras cinco: una
+   * que rechazaba `conclusiones` contra
+   * `CHECK constraint failed: el_tipo_de_modulo_es_del_catalogo_cerrado`, y
+   * una que aceptaba los seis de la lista.
+   *
+   * `0017` cambió el mecanismo. La columna es `plantilla_id` y lo que cierra
+   * el juego es qué filas tiene `modulo_plantilla`, no una lista escrita en el
+   * esquema — que es lo que T-7 necesita para que el bufete pueda agregar un
+   * módulo sin un despliegue. Así que el reemplazo no es «otra clave fuera del
+   * dominio» sino «una plantilla que no existe», y el rechazo ya no viene de
+   * un `CHECK`.
+   *
+   * Lo que **sí** sigue cerrado con `CHECK` y por el mismo criterio de §8 es
+   * la moneda, un par de líneas arriba: agregar una es un despliegue. La
+   * diferencia entre los dos casos es la que esta tajada midió — detrás de un
+   * tipo de módulo no había código, y detrás de una moneda sí.
+   */
+  it("rechaza una plantilla que no existe, y no con un CHECK", async () => {
+    const fila = {
+      ...filaValida("cotizacion_modulo", ctx),
+      plantilla_id: nuevoId(),
+    };
 
+    // El mensaje es del disparador de tenencia y no de la llave foránea, y es
+    // medido: un `BEFORE INSERT` corre antes que las llaves foráneas, y con la
+    // plantilla inexistente la subconsulta del `WHEN` vale NULL —`NULL IS NOT
+    // <tenant real>` es verdadero—. Es exactamente el comportamiento que el
+    // `IS NOT` de `0017` compra, y con `<>` esta fila habría quedado en manos
+    // de la llave foránea, que un `PRAGMA` apaga.
     await expect(insertar("cotizacion_modulo", fila)).rejects.toThrow(
-      /CHECK constraint failed: el_tipo_de_modulo/,
+      TENENCIA_CRUZADA,
     );
   });
 
   it.each(TIPOS_DE_MODULO)(
-    "acepta el tipo de módulo %s, que es de los seis de §8",
-    async (tipo) => {
+    "acepta la plantilla de %s, que es de las seis que 0016 sembró",
+    async (clave) => {
+      // Contrapeso de la de arriba, y de las seis a la vez: lo que vale no es
+      // que una clave esté en una lista, es que su plantilla exista.
       const fila = {
         ...filaValida("cotizacion_modulo", ctx),
-        tipo,
-        orden: TIPOS_DE_MODULO.indexOf(tipo) + 1,
+        plantilla_id: await plantillaSembrada(TENANT_UNICO_ID, clave),
+        orden: TIPOS_DE_MODULO.indexOf(clave) + 1,
       };
 
       await expect(insertar("cotizacion_modulo", fila)).resolves.toBeTruthy();
@@ -701,8 +776,14 @@ describe("el código de una cotización no se repite dentro del bufete", () => {
 });
 
 describe("el orden es único dentro de cada cotización", () => {
+  // `segunda` es lo que hace que las dos filas difieran en algo además del
+  // `orden`, para que el rechazo no se pueda confundir con un duplicado
+  // entero. Para el módulo era `tipo: "exclusiones"`; desde `0017` la columna
+  // es `plantilla_id` y cambiarla pediría una lectura, así que lo que difiere
+  // es el texto — que es igual de distinto y no obliga a volver `hijas` en una
+  // promesa.
   const hijas = [
-    { tabla: "cotizacion_modulo", segunda: { tipo: "exclusiones" } },
+    { tabla: "cotizacion_modulo", segunda: { contenido: "El segundo módulo." } },
     { tabla: "cotizacion_linea", segunda: { clase: "gasto_estimado" } },
   ] as const;
 
@@ -894,6 +975,100 @@ describe("ninguna fila de la cotización referencia a otro bufete", () => {
         ...filaValida("cotizacion_modulo", ctx),
         cotizacion_id: vecino.cotizacionId,
       }),
+    ).rejects.toThrow(TENENCIA_CRUZADA);
+  });
+
+  /*
+   * **La arista octava, la que `0017` agrega.**
+   *
+   * Y es la primera de este proyecto sobre una tabla de catálogo
+   * **compartida**: los dos bufetes tienen una plantilla con la clave
+   * `alcance`, porque las seis son presets. Eso cambia qué clase de error
+   * atrapa el disparador. En las siete aristas anteriores, apuntar a la fila
+   * del vecino es teclear un UUID que no es el propio —algo que sólo un
+   * defecto produce—; acá es un `JOIN` al que se le olvidó el `tenant_id`, y
+   * ése se escribe solo.
+   *
+   * La llave foránea **no** sirve para esto: la plantilla del vecino existe,
+   * así que la referencia está satisfecha. Lo único que mira el bufete es el
+   * disparador.
+   */
+  it("rechaza un módulo que apunta a la plantilla del vecino", async () => {
+    await expect(
+      insertar("cotizacion_modulo", {
+        ...filaValida("cotizacion_modulo", ctx),
+        plantilla_id: vecino.plantillaId,
+      }),
+    ).rejects.toThrow(TENENCIA_CRUZADA);
+  });
+
+  it("rechaza mover un módulo a la plantilla del vecino", async () => {
+    // El `UPDATE`, que es el que obliga a que `0017` agregue un séptimo
+    // disparador a esta tabla. `0004` no lo tenía, y su argumento era que las
+    // dos únicas columnas que miraría eran inmutables — cierto entonces, y
+    // falso desde que hay una tercera columna mutable que cruza tablas.
+    //
+    // Sobre un **borrador** a propósito: en una cotización congelada
+    // `cotizacion_modulo_no_cambia_en_una_congelada` también querría abortar,
+    // y el orden de disparo entre disparadores del mismo evento no está
+    // definido en SQLite.
+    const modulo = filaValida("cotizacion_modulo", ctx);
+    await insertar("cotizacion_modulo", modulo);
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion_modulo SET plantilla_id = ? WHERE id = ?")
+        .bind(vecino.plantillaId, modulo.id)
+        .run(),
+    ).rejects.toThrow(TENENCIA_CRUZADA);
+
+    // El contrapeso, que es el que distingue «lo rechazó» de «lo rechazó y no
+    // dejó nada a medias»: el módulo sigue apuntando a la plantilla propia.
+    const guardado = await env.DB.prepare(
+      "SELECT plantilla_id FROM cotizacion_modulo WHERE id = ?",
+    )
+      .bind(modulo.id)
+      .first<{ plantilla_id: string }>();
+
+    expect(guardado?.plantilla_id).toBe(ctx.plantillaId);
+  });
+
+  it("contrapeso: un módulo sí cambia a otra plantilla propia", async () => {
+    // Sin esto, un disparador invertido —que abortara todo `UPDATE` de
+    // `plantilla_id`— dejaría las dos pruebas de arriba en verde y habría
+    // congelado el tipo de todo módulo de todo borrador, que es justamente la
+    // operación que `editarModulo` necesita.
+    const modulo = filaValida("cotizacion_modulo", ctx);
+    await insertar("cotizacion_modulo", modulo);
+
+    const otra = await plantillaSembrada(TENANT_UNICO_ID, "supuestos");
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion_modulo SET plantilla_id = ? WHERE id = ?")
+        .bind(otra, modulo.id)
+        .run(),
+    ).resolves.toBeTruthy();
+
+    const guardado = await env.DB.prepare(
+      "SELECT plantilla_id FROM cotizacion_modulo WHERE id = ?",
+    )
+      .bind(modulo.id)
+      .first<{ plantilla_id: string }>();
+
+    expect(guardado?.plantilla_id).toBe(otra);
+  });
+
+  it("rechaza mover un módulo a una plantilla que no existe", async () => {
+    // La otra mitad del `IS NOT` del disparador de `UPDATE`, igual que en el
+    // del `INSERT`: con `<>`, la subconsulta NULL de una plantilla inexistente
+    // haría que el `WHEN` diera falso y el rechazo quedaría en manos de la
+    // llave foránea, que un `PRAGMA` apaga.
+    const modulo = filaValida("cotizacion_modulo", ctx);
+    await insertar("cotizacion_modulo", modulo);
+
+    await expect(
+      env.DB.prepare("UPDATE cotizacion_modulo SET plantilla_id = ? WHERE id = ?")
+        .bind(nuevoId(), modulo.id)
+        .run(),
     ).rejects.toThrow(TENENCIA_CRUZADA);
   });
 
@@ -2359,6 +2534,13 @@ describe("los disparadores de 0004, 0006, 0007, 0011 y 0013 están todos y no ha
       "cotizacion_no_se_lleva_el_cliente_de_sus_procesos",
     ],
     cotizacion_modulo: [
+      /* Los seis de `0004` y `0006`. **`0017` borra y vuelve a escribir los
+         seis**, porque reconstruye la tabla para cambiar `tipo` por
+         `plantilla_id` y un `DROP TABLE` se lleva en silencio todo lo que
+         cuelga. Cinco vuelven con el mismo texto; el de tenencia al `INSERT`
+         vuelve con una arista más. Esta prueba es la que vería un `DROP` que
+         se quedó sin su `CREATE`, que es el defecto silencioso que esa forma
+         de migración existe para evitar. */
       "cotizacion_modulo_tenencia_coherente_al_insertar",
       "cotizacion_modulo_tenant_inmutable",
       "cotizacion_modulo_cotizacion_inmutable",
@@ -2366,6 +2548,17 @@ describe("los disparadores de 0004, 0006, 0007, 0011 y 0013 están todos y no ha
       "cotizacion_modulo_no_entra_en_una_congelada",
       "cotizacion_modulo_no_cambia_en_una_congelada",
       "cotizacion_modulo_no_sale_de_una_congelada",
+      /* **El séptimo, y lo agrega `0017`.** `0004` dejó a esta tabla sin
+         disparador de tenencia al `UPDATE` con un argumento explícito: «las
+         dos únicas columnas que ese disparador miraría», `tenant_id` y
+         `cotizacion_id`, son inmutables, así que la condición no podría dar
+         verdadero nunca y un disparador que no puede disparar es un adorno.
+         El argumento era correcto y `0017` le quitó la premisa: `plantilla_id`
+         es una tercera columna que ese disparador mira y **es mutable**
+         —`editarModulo` la escribe cada vez que alguien cambia el tipo de un
+         módulo en un borrador—. Sin él, mover un módulo a la plantilla del
+         vecino sólo lo rechazaría la llave foránea, que no mira el bufete. */
+      "cotizacion_modulo_tenencia_coherente_al_actualizar",
     ],
     cotizacion_linea: [
       /* Los cuatro de `0004`. `0013` **borra y vuelve a escribir estos
@@ -2802,5 +2995,237 @@ describe("lo que 0011 declara está todo en la base", () => {
     // El contrapeso al lado de la ausencia: sin afirmar que el índice nuevo
     // sí está, una base sin ninguno de los dos pasaría la mitad de arriba.
     expect(results.map((fila) => fila.name)).toEqual(["proceso_cotizacion"]);
+  });
+});
+
+describe("lo que 0017 declara está todo en la base", () => {
+  // **La misma pregunta que los bloques de `0004`, `0006`, `0007` y `0011`, y
+  // acá es la que más hace falta de las cinco.**
+  //
+  // `0017` reconstruye `cotizacion_modulo` para cambiar `tipo` por
+  // `plantilla_id`, y un `DROP TABLE` se lleva en silencio todo lo que cuelga
+  // de la tabla: el índice único de `orden` y los seis disparadores que
+  // escribieron `0004` y `0006`. Siete objetos de dos archivos que esta
+  // migración no escribió. Perder uno no cambia ningún comportamiento que una
+  // prueba de rechazo note **mientras nadie intente la escritura que ese
+  // disparador vigilaba**, y entonces el defecto vive en la base hasta que
+  // alguien edita una cotización emitida.
+  //
+  // Lo que lo nota es la lista exacta de nombres —«`cotizacion_modulo` lleva
+  // exactamente sus disparadores», más arriba— y este bloque, que mira el
+  // archivo: un `CREATE TRIGGER` que quedara dentro de un comentario, o un
+  // punto y coma de menos, se ve acá y no en producción.
+  const MIGRACION = "0017_un_modulo_apunta_a_su_plantilla.sql";
+
+  /**
+   * Las tres tablas de andamio, que el propio archivo borra: las dos de las
+   * verificaciones y la tabla intermedia de la reconstrucción.
+   *
+   * Se excluyen por nombre y no con una expresión regular más floja, para que
+   * la exclusión sea una decisión visible — es el mismo criterio con el que
+   * los bloques de `0006` y `0011` excluyen las suyas.
+   */
+  const EFIMERAS = ["verificacion_previa_plantilla", "verificacion_del_relleno"];
+
+  /**
+   * La tabla intermedia de la reconstrucción, que **no se borra: se
+   * renombra**. Va aparte de las dos de arriba por eso mismo, y es la misma
+   * distinción que el bloque de `0006` hace con `bitacora_nueva`: el
+   * `ALTER TABLE … RENAME TO` no cuenta como declaración, así que
+   * `cotizacion_modulo_nueva` no existe al final y `cotizacion_modulo` sí
+   * —aunque ningún `CREATE` lo nombre—.
+   */
+  const RENOMBRADA = "cotizacion_modulo_nueva";
+
+  function sinComentarios(): string[] {
+    const migracion = env.TEST_MIGRATIONS.find(
+      (candidata) => candidata.name === MIGRACION,
+    );
+    if (migracion === undefined) {
+      throw new Error(`${MIGRACION} no está en TEST_MIGRATIONS`);
+    }
+
+    return migracion.queries.map((consulta) =>
+      consulta.replace(/^\s*--.*$/gm, ""),
+    );
+  }
+
+  function objetosQueCrea(): { clase: string; nombre: string }[] {
+    return sinComentarios().flatMap((sql) => {
+      const hallazgo =
+        /CREATE\s+TABLE\s+(\w+)/i.exec(sql) ??
+        /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(\w+)/i.exec(sql) ??
+        /CREATE\s+TRIGGER\s+(\w+)/i.exec(sql);
+
+      return hallazgo === null
+        ? []
+        : [
+            {
+              clase: hallazgo[0].split(/\s+/)[1].toUpperCase(),
+              nombre: hallazgo[1],
+            },
+          ];
+    });
+  }
+
+  it("declara los siete disparadores, el índice y las tablas de andamio", () => {
+    // El contrapeso de siempre: si la expresión regular dejara de encontrar
+    // nada, las pruebas de abajo pasarían comparando listas vacías.
+    //
+    // El índice se cuenta por nombre y no por `clase`: el de `0017` es
+    // `CREATE UNIQUE INDEX`, así que la segunda palabra de la coincidencia es
+    // «UNIQUE» y no «INDEX». Es la trampa que los bloques de `0006` y `0011`
+    // no tienen porque los suyos son índices simples, y se resuelve acá
+    // mirando el nombre en vez de ablandar la derivación de la clase.
+    const declarados = objetosQueCrea();
+
+    expect(declarados.filter((objeto) => objeto.clase === "TRIGGER")).toHaveLength(7);
+    expect(declarados.map((objeto) => objeto.nombre)).toContain(
+      "cotizacion_modulo_orden_unico",
+    );
+    expect(
+      declarados
+        .filter((objeto) => objeto.clase === "TABLE")
+        .map((objeto) => objeto.nombre)
+        .sort(),
+    ).toEqual([...EFIMERAS, RENOMBRADA].sort());
+  });
+
+  it("y todos los permanentes existen en la base", async () => {
+    const nombres = objetosQueCrea()
+      .map((objeto) => objeto.nombre)
+      .filter((nombre) => ![...EFIMERAS, RENOMBRADA].includes(nombre));
+
+    const { results } = await env.DB.prepare(
+      `SELECT name FROM sqlite_master WHERE name IN (${nombres
+        .map(() => "?")
+        .join(", ")})`,
+    )
+      .bind(...nombres)
+      .all<{ name: string }>();
+
+    expect(results.map((fila) => fila.name).sort()).toEqual([...nombres].sort());
+  });
+
+  it("las dos tablas de verificación se borran a sí mismas y no quedan en el esquema", async () => {
+    // La mitad que se puede afirmar sin desarmar la migración. Si un `DROP`
+    // se perdiera, quedaría una tabla de andamio viva en producción, que es la
+    // clase de resto que nadie se anima a borrar seis meses después.
+    const declarado = sinComentarios().join("\n");
+
+    for (const efimera of EFIMERAS) {
+      expect(declarado).toMatch(new RegExp(`DROP\\s+TABLE\\s+${efimera}`, "i"));
+
+      const fila = await env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE name = ?",
+      )
+        .bind(efimera)
+        .first<{ name: string }>();
+
+      expect(fila).toBeNull();
+    }
+  });
+
+  it("y la intermedia se renombra: queda `cotizacion_modulo` y no la `_nueva`", async () => {
+    const declarado = sinComentarios().join("\n");
+
+    expect(declarado).toMatch(
+      /ALTER\s+TABLE\s+cotizacion_modulo_nueva\s+RENAME\s+TO\s+cotizacion_modulo/i,
+    );
+
+    const { results } = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN" +
+        " ('cotizacion_modulo', 'cotizacion_modulo_nueva')",
+    ).all<{ name: string }>();
+
+    // El contrapeso al lado de la ausencia: sin afirmar que la buena sí está,
+    // una base sin ninguna de las dos pasaría la mitad de arriba.
+    expect(results.map((fila) => fila.name)).toEqual(["cotizacion_modulo"]);
+  });
+
+  it("verifica antes de destruir, y las dos restricciones van nombradas", () => {
+    // **Por qué `0017` lleva verificación previa, y acá no es ceremonia.**
+    //
+    // Las siete reconstrucciones anteriores de este repositorio son todas de
+    // `bitacora` y copian las columnas derecho: un `INSERT … SELECT` sin
+    // predicado no puede perder una fila sin morir. Acá el relleno es un
+    // `JOIN`, y un `JOIN` que no encuentra nada no grita, devuelve nada — la
+    // misma frase que `0011` dejó escrita al pagar este precio.
+    //
+    // Si perdiera una fila, una cotización **emitida** quedaría con un módulo
+    // menos: un documento que ya se mandó al cliente y que después de esto se
+    // imprimiría distinto, sin forma de reconstruirlo porque la columna que
+    // decía el tipo ya no existiría.
+    //
+    // Son dos verificaciones y ninguna sobra. La primera razona sobre lo que
+    // el relleno *debería* encontrar; la segunda cuenta lo que *encontró*, y
+    // atrapa además lo que la primera no puede ver: un `JOIN` que trae una
+    // fila de más.
+    //
+    // **Y no se pueden probar por rechazo acá, y hay que decirlo en vez de
+    // fingir que sí.** La base de esta suite se migra vacía, así que no existe
+    // la fila que la primera vigila ni el conteo distinto de cero que la
+    // segunda compara. Lo que se afirma es lo verificable desde adentro: que
+    // las dos estén escritas, que sus restricciones vayan **nombradas**
+    // —porque un `CHECK` anónimo aborta con «CHECK constraint failed» a secas
+    // y el nombre es el mensaje de error— y que sus consultas busquen lo que
+    // tienen que buscar. Sin lo último bastaría con vaciar un `INSERT` para
+    // que esta prueba siguiera verde con la guarda muerta.
+    //
+    // La medición contra datos de verdad está en el progreso de T-5: 54 filas
+    // antes y 54 después sobre la base local, con las 11 cotizaciones y las 6
+    // emitidas intactas.
+    const declarado = sinComentarios().join("\n");
+
+    expect(declarado).toMatch(
+      /CONSTRAINT\s+hay_modulos_cuyo_tipo_no_tiene_plantilla_en_su_bufete/,
+    );
+    expect(declarado).toMatch(
+      /CONSTRAINT\s+el_relleno_de_cotizacion_modulo_perdio_o_duplico_filas/,
+    );
+
+    // La primera: el complemento exacto del `JOIN` del relleno, con el filtro
+    // de tenencia incluido. Una verificación más floja que el relleno que
+    // vigila deja pasar exactamente las filas que el relleno va a perder.
+    expect(declarado).toMatch(
+      /NOT EXISTS \(SELECT 1 FROM modulo_plantilla p[\s\S]*?p\.tenant_id = m\.tenant_id[\s\S]*?p\.clave = m\.tipo/,
+    );
+
+    // La segunda: los dos conteos, con las dos tablas todavía vivas.
+    expect(declarado).toMatch(
+      /\(SELECT count\(\*\) FROM cotizacion_modulo_nueva\)[\s\S]*?IS NOT[\s\S]*?\(SELECT count\(\*\) FROM cotizacion_modulo\)/,
+    );
+  });
+
+  it("el relleno es un JOIN por (tenant_id, clave) y nunca un CASE", () => {
+    // La alternativa rechazada, fijada por prueba para que no se vuelva a
+    // proponer. Un `CASE` con los seis identificadores literales de la siembra
+    // de `0016` es más corto y es peor por dos motivos: una rama que falta
+    // devuelve NULL y muere con un mensaje que no nombra la clave, y **no mira
+    // el bufete** — ataría los módulos del segundo bufete a las plantillas del
+    // primero.
+    const declarado = sinComentarios().join("\n");
+
+    expect(declarado).toMatch(
+      /JOIN modulo_plantilla p ON p\.tenant_id = m\.tenant_id\s+AND p\.clave = m\.tipo/,
+    );
+    expect(declarado, "nada de CASE en el relleno").not.toMatch(/\bCASE\b/i);
+  });
+
+  it("y suelta la columna vieja: `tipo` no queda en el esquema", async () => {
+    // La mitad que distingue esta migración de una que sólo agregara. Sin
+    // soltar `tipo`, la tabla quedaría con dos fuentes para la misma pregunta
+    // y las dos se desincronizan en el primer `UPDATE` que se olvide de una.
+    const fila = await env.DB.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table'" +
+        " AND name = 'cotizacion_modulo'",
+    ).first<{ sql: string }>();
+
+    expect(fila?.sql ?? "").toMatch(
+      /plantilla_id\s+TEXT\s+NOT\s+NULL\s+REFERENCES\s+modulo_plantilla/i,
+    );
+    expect(fila?.sql ?? "", "la columna `tipo` tiene que haberse ido").not.toMatch(
+      /\btipo\b/i,
+    );
   });
 });

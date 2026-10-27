@@ -45,21 +45,27 @@
  *
  * ## Por qué no hay `crear` ni `borrar`
  *
- * **`crear` no**, porque está fuera del alcance autorizado de la tajada: una
- * plantilla nueva necesita una `clave` derivada del rótulo, y
- * `cotizacion_modulo.tipo` sigue cerrado por el `CHECK` de `0004` durante toda
- * esta tajada. Una clave que el editor ofreciera y la base rechazara al
- * guardar un módulo es peor que no poder crear plantillas. Es también por eso
- * que `creado` no está en el vocabulario de bitácora de esta entidad: la
- * ausencia del verbo es cómo se dice que la operación no es de esta unidad.
+ * **`crear` no todavía**, porque está fuera del alcance autorizado de la
+ * tajada 1: una plantilla nueva necesita una `clave` derivada del rótulo, y
+ * mientras `cotizacion_modulo.tipo` estuvo cerrado por el `CHECK` de `0004`
+ * una clave nueva era una plantilla **inservible** —el editor la ofrecía y la
+ * base rechazaba el primer módulo que la usara—. **`0017` quitó ese techo**:
+ * la columna es `plantilla_id`, una referencia a esta tabla, así que una
+ * plantilla nueva ya se puede usar. El alta es T-7, y lo que falta ahora es la
+ * ruta y la acuñación de la clave, no un cambio de esquema. Es también por eso
+ * que `creado` no está todavía en el vocabulario de bitácora de esta entidad:
+ * la ausencia del verbo es cómo se dice que la operación no es de esta unidad,
+ * y entra con la ruta que lo emita.
  *
  * **`borrar` nunca**, y acá el argumento es más fuerte que en el arancel: una
  * plantilla borrada deja sin rótulo los módulos de las cotizaciones vivas.
- * Hoy `cotizacion_modulo.tipo` es texto, así que el daño sería un desplegable
- * que no puede mostrar lo que la fila dice; después de la tajada 2, con la
- * referencia puesta, sería una llave foránea rota. La salida es `activo = 0`, y
- * `modulo_plantilla_no_se_borra` aborta todo `DELETE` por si algún día apareciera
- * el camino.
+ * Hasta T-4 el daño era un desplegable que no podía mostrar lo que la fila
+ * decía, porque la columna era texto; **desde `0017` es una llave foránea
+ * rota**, o sea que el borrado ya no rebota sólo en el disparador de esta
+ * tabla. Las dos guardas se dejan puestas y no es redundancia: la llave
+ * foránea es la que un `PRAGMA` apaga. La salida sigue siendo `activo = 0`, y
+ * `modulo_plantilla_no_se_borra` aborta todo `DELETE` por si algún día
+ * apareciera el camino.
  *
  * ## El registro de bitácora
  *

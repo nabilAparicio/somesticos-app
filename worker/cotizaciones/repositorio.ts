@@ -648,12 +648,92 @@ function aDia(momento: string | null): string | null {
   return momento === null ? null : diaEnPanama(momento);
 }
 
+/**
+ * La fila de un módulo **ya resuelta a su clave**.
+ *
+ * `tipo` no es una columna desde `0017`: la columna es `plantilla_id`, y la
+ * clave sale del `JOIN` contra `modulo_plantilla`. El nombre del campo se
+ * conserva porque es el de `ModuloDeCotizacion.tipo`, que es lo que viaja por
+ * el cable y lo que el snapshot congela — la referencia es cómo la fila
+ * guarda el dato, no cómo el resto del sistema lo nombra.
+ */
 interface FilaDeModulo {
   id: string;
   tipo: TipoDeModulo;
   orden: number;
   contenido: string;
 }
+
+/**
+ * **Cómo una clave de módulo se convierte en una plantilla, dicho una sola
+ * vez** (`0017`).
+ *
+ * Toma dos parámetros en este orden: el bufete y la clave. El filtro de
+ * tenencia no es decorativo y no se puede omitir «porque la clave es única»:
+ * las seis claves son presets, así que son las **mismas** en los dos bufetes,
+ * y una búsqueda por clave sin tenant devuelve la plantilla de cualquiera de
+ * los dos. Es el mismo término que el relleno de `0017` lleva en su `JOIN`, y
+ * por el mismo motivo.
+ *
+ * Va como subconsulta dentro de la sentencia de escritura y no como una
+ * lectura previa, por lo mismo que el `orden` del alta: entre leer el
+ * identificador y escribirlo hay una ventana, y resolver adentro hace que la
+ * fila que se referencia sea la que existe en el instante de la escritura.
+ *
+ * ## Si la clave no tiene plantilla, esto es NULL y la fila muere
+ *
+ * Con el mensaje `NOT NULL constraint failed: cotizacion_modulo.plantilla_id`,
+ * o sea un 500. Es deliberado y es la frontera de siempre de este archivo: se
+ * cuenta lo que una persona puede equivocar y se deja saltar lo que sólo un
+ * defecto produce. La clave llega de un desplegable que la pantalla dibuja de
+ * esta misma tabla, y `normalizarModulo` ya rechaza con 422 cualquier cadena
+ * que no sea del catálogo, así que una clave sin fila no es una mano torpe:
+ * es una incoherencia entre el catálogo que la pantalla leyó y las filas que
+ * hay, y disfrazarla de respuesta de negocio la volvería invisible.
+ *
+ * **Una plantilla dada de baja sí resuelve**, y no lleva `AND p.activo = 1`.
+ * Es la decisión de T-3 y su argumento sigue en pie: rechazar una clave
+ * retirada dejaría congelado todo módulo cuya plantilla se dio de baja —nadie
+ * podría corregirle una coma—. Lo que impide **elegirla de nuevo** es qué
+ * ofrece el desplegable, no esta subconsulta.
+ */
+const PLANTILLA_DE_LA_CLAVE =
+  " (SELECT p.id FROM modulo_plantilla p" +
+  " WHERE p.tenant_id = ? AND p.clave = ?)";
+
+/**
+ * Los módulos de una cotización, con la clave resuelta desde su plantilla
+ * (`0017`).
+ *
+ * El `JOIN` lleva **su propio `tenant_id`**, como todos los de este archivo:
+ * con el filtro repetido en la unión, una `plantilla_id` que cruzara la
+ * frontera no devolvería la clave ajena, no devolvería nada.
+ *
+ * **Y ese término no tiene prueba, lo que se dice en vez de descubrirse.**
+ * Medido quitándolo: la suite entera queda en verde. El motivo es que la fila
+ * incoherente que atraparía **no se puede fabricar**: su `tenant_id` ya está
+ * filtrado en el `WHERE`, y `cotizacion_modulo_tenencia_coherente_al_insertar`
+ * y su gemelo de `UPDATE` (`0017`) impiden que el módulo y su plantilla sean
+ * de bufetes distintos. Queda por lo que pasaría el día que alguien ablande un
+ * disparador o repare la base a mano, que es el mismo día para el que `0003`
+ * eligió su `IS NOT`; y queda además porque el filtro repetido en la unión es
+ * la regla de este archivo y escribirla de dos formas según la consulta es
+ * peor que cualquiera de las dos. No se escribe una prueba que no se puede
+ * escribir.
+ *
+ * Es un `JOIN` y
+ * no un `LEFT JOIN` a propósito: `plantilla_id` es `NOT NULL` y referencia una
+ * tabla cuyas filas no se pueden borrar (`modulo_plantilla_no_se_borra`), así
+ * que una fila sin plantilla no existe — y si existiera, un `LEFT JOIN` la
+ * devolvería con `tipo` en NULL, o sea un módulo que el resto del sistema
+ * trataría como si tuviera un tipo que no es ninguno.
+ */
+const SELECCION_DE_MODULOS =
+  "SELECT m.id, p.clave AS tipo, m.orden, m.contenido" +
+  " FROM cotizacion_modulo m" +
+  " JOIN modulo_plantilla p ON p.id = m.plantilla_id" +
+  " AND p.tenant_id = m.tenant_id" +
+  " WHERE m.tenant_id = ? AND m.cotizacion_id = ? ORDER BY m.orden";
 
 /**
  * La subconsulta que exige que la cotización siga siendo un borrador.
@@ -992,17 +1072,15 @@ export function cotizacionesSobreD1(
 
   /**
    * Los módulos de la cotización, en su orden. Con el filtro de tenencia
-   * puesto, igual que todas las demás consultas de este archivo (I-8).
+   * puesto —dos veces, porque la unión lleva el suyo— igual que todas las
+   * demás consultas de este archivo (I-8).
    */
   async function leerModulos(
     tenantId: string,
     cotizacionId: string,
   ): Promise<ModuloDeCotizacion[]> {
     const { results } = await db
-      .prepare(
-        "SELECT id, tipo, orden, contenido FROM cotizacion_modulo" +
-          " WHERE tenant_id = ? AND cotizacion_id = ? ORDER BY orden",
-      )
+      .prepare(SELECCION_DE_MODULOS)
       .bind(tenantId, cotizacionId)
       .all<FilaDeModulo>();
 
@@ -1567,13 +1645,21 @@ export function cotizacionesSobreD1(
         ahora,
       );
 
+      // La clave que el modelo devolvió se resuelve a su plantilla dentro de
+      // la sentencia (`0017`). Lo que el validador de `worker/ia/esquema.ts`
+      // garantizó es que la clave sea del catálogo **ofrecido**, que es un
+      // juego de filas vivas, así que acá no hace falta volver a preguntarlo:
+      // la subconsulta encuentra la fila o la escritura muere, y las dos cosas
+      // son correctas.
       const modulos = propuesta.modulos.map((modulo, posicion) =>
         sentencia(
           "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
-            " tipo, orden, contenido) VALUES (?, ?, ?, ?, ?, ?)",
+            " plantilla_id, orden, contenido) VALUES (?, ?, ?," +
+            `${PLANTILLA_DE_LA_CLAVE}, ?, ?)`,
           nuevoId(),
           tenantId,
           id,
+          tenantId,
           modulo.tipo,
           posicion,
           modulo.contenido,
@@ -1808,13 +1894,15 @@ export function cotizacionesSobreD1(
         },
         sentencia(
           "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
-            " tipo, orden, contenido) SELECT ?, ?, ?, ?," +
+            " plantilla_id, orden, contenido) SELECT ?, ?, ?," +
+            `${PLANTILLA_DE_LA_CLAVE},` +
             " (SELECT COALESCE(MAX(orden), -1) + 1 FROM cotizacion_modulo" +
             " WHERE tenant_id = ? AND cotizacion_id = ?), ? WHERE" +
             SOBRE_UN_BORRADOR,
           nuevoId(),
           tenantId,
           cotizacionId,
+          tenantId,
           datos.tipo,
           tenantId,
           cotizacionId,
@@ -1869,9 +1957,11 @@ export function cotizacionesSobreD1(
           detalle: await rotuloVigenteDe(tenantId, datos.tipo),
         },
         sentencia(
-          "UPDATE cotizacion_modulo SET tipo = ?, contenido = ?" +
+          "UPDATE cotizacion_modulo SET plantilla_id =" +
+            `${PLANTILLA_DE_LA_CLAVE}, contenido = ?` +
             " WHERE tenant_id = ? AND cotizacion_id = ? AND id = ? AND" +
             SOBRE_UN_BORRADOR,
+          tenantId,
           datos.tipo,
           datos.contenido,
           tenantId,
@@ -2850,13 +2940,26 @@ export function cotizacionesSobreD1(
       // el orden relativo, el índice único es por cotización, y quitar un
       // módulo del original pudo dejar un hueco que renumerar silenciaría.
       // La copia tiene que leerse igual que el original, huecos incluidos.
+      //
+      // La plantilla se **vuelve a resolver desde la clave** y no se copia
+      // como identificador, y eso no es una vuelta larga: es la misma fila,
+      // demostrablemente. `modulo_plantilla_clave_unica` hace que
+      // `(tenant_id, clave)` identifique una sola plantilla y
+      // `modulo_plantilla_clave_inmutable` hace que esa correspondencia no se
+      // pueda mover, así que resolver la clave devuelve la plantilla del
+      // original o no devuelve nada. A cambio, `ModuloDeCotizacion` no tiene
+      // que llevar el identificador de la plantilla sólo para que esta
+      // función lo copie — y ese campo en el contrato sería un dato de la base
+      // viajando por el cable sin que ninguna pantalla lo use.
       const copiaDeModulos = modulos.map((modulo) =>
         sentencia(
           "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
-            " tipo, orden, contenido) VALUES (?, ?, ?, ?, ?, ?)",
+            " plantilla_id, orden, contenido) VALUES (?, ?, ?," +
+            `${PLANTILLA_DE_LA_CLAVE}, ?, ?)`,
           nuevoId(),
           tenantId,
           copiaId,
+          tenantId,
           modulo.tipo,
           modulo.orden,
           modulo.contenido,

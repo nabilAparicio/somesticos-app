@@ -162,29 +162,44 @@ describe("los seis presets se siembran en la migración", () => {
     }
   });
 
-  it("las seis claves son exactamente las seis que el CHECK de `0004` permite", async () => {
-    // En los dos sentidos, que es la forma que `test/modulos-api.spec.ts` ya
-    // usa contra este mismo `CHECK`. Importa en las dos direcciones: una clave
-    // sembrada que el `CHECK` no admita sería una plantilla que el editor
-    // ofrece y la base rechaza al guardar; y una del `CHECK` sin plantilla
-    // sembrada es un módulo que la IA sigue sin saber para qué sirve, que es el
-    // defecto que esta tajada vino a cerrar.
+  /*
+   * **Esta prueba cambió de objeto en T-5, y el motivo es que su objeto
+   * desapareció.**
+   *
+   * Hasta T-4 leía el `CHECK` `el_tipo_de_modulo_es_del_catalogo_cerrado` de
+   * `cotizacion_modulo` y exigía que nombrara exactamente las seis claves
+   * sembradas, en los dos sentidos. Lo que vigilaba era una decisión escrita
+   * dos veces: la lista del esquema y las filas de la siembra.
+   *
+   * `0017` borró una de las dos mitades. La columna es `plantilla_id` y
+   * referencia esta tabla, así que ya no hay dos listas que comparar: **la
+   * siembra es la única fuente**. Lo que queda por afirmar no es que las dos
+   * coincidan sino que un módulo pueda apuntar a cada una de las seis, que es
+   * lo que de verdad importaba de la dirección que la prueba vigilaba —una
+   * plantilla sembrada que la base rechazara al guardar sería trabajo que no
+   * sirve de nada—.
+   *
+   * La otra dirección —una clave del `CHECK` sin plantilla sembrada— no se
+   * puede dar más: no hay `CHECK`.
+   */
+  it("un módulo puede apuntar a cada una de las seis, que era lo que el CHECK compraba", async () => {
     const definicion = await env.DB.prepare(
       "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cotizacion_modulo'",
     ).first<{ sql: string }>();
 
-    const clausula = /tipo\s+TEXT\s+NOT\s+NULL[\s\S]*?IN\s*\(([^)]*)\)/i.exec(
+    expect(
       definicion?.sql ?? "",
-    );
-    expect(clausula, "el CHECK de `tipo` tiene que estar").not.toBeNull();
+      "`cotizacion_modulo` tiene que referenciar esta tabla",
+    ).toMatch(/plantilla_id\s+TEXT\s+NOT\s+NULL\s+REFERENCES\s+modulo_plantilla/i);
 
-    const enElCheck = [...(clausula?.[1] ?? "").matchAll(/'([^']*)'/g)].map(
-      (coincidencia) => coincidencia[1],
-    );
+    // Y las seis existen con su identificador, que es lo que la referencia
+    // necesita. Leído por clave, que es como el relleno de `0017` y la
+    // escritura de la aplicación las buscan.
+    for (const preset of PRESETS) {
+      const fila = await leerPorClave(preset.clave);
 
-    expect([...enElCheck].sort()).toEqual(
-      PRESETS.map((preset) => preset.clave as string).sort(),
-    );
+      expect(fila.id, preset.clave).toEqual(expect.any(String));
+    }
   });
 });
 

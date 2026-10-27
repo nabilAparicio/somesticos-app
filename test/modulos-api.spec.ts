@@ -11,12 +11,14 @@
  *
  * Lo que sí se prueba acá:
  *
- *  - **Las dos mitades acopladas del catálogo.** El `CHECK` de
- *    `cotizacion_modulo.tipo` y el registro tipado de
- *    `worker/cotizaciones/modulos.ts` tienen que nombrar exactamente lo
- *    mismo. Es la misma prueba que `test/bitacora-api.spec.ts` ya hace con
- *    el vocabulario de la bitácora, y por el mismo motivo: si se separan, el
- *    sistema rechaza un tipo que la pantalla ofrece.
+ *  - **Que la columna es una referencia y no una cadena** (T-5). Hasta T-4
+ *    acá se comparaba el `CHECK` de `cotizacion_modulo.tipo` contra el
+ *    registro tipado de `worker/cotizaciones/modulos.ts`, en los dos
+ *    sentidos, porque eran una decisión escrita dos veces. `0017` borró una
+ *    de las dos mitades: la columna es `plantilla_id` y lo que cierra el juego
+ *    son las filas de `modulo_plantilla`. Lo que se afirma ahora es que la
+ *    referencia esté, que la columna vieja no esté, y que una plantilla
+ *    inexistente no llegue a existir.
  *  - **La forma de la entrada**, con la lista entera de fallas.
  *  - **Que sólo se escribe sobre un borrador**, por la ruta y por el puerto.
  *    Las dos, porque T-4 y T-5 van a llamar al puerto directo.
@@ -55,25 +57,68 @@ describe("el catálogo de la base y el del código dicen lo mismo", () => {
     return fila?.sql ?? "";
   }
 
-  it("el CHECK de tipo nombra exactamente los tipos del registro", async () => {
-    // Las dos mitades existen a propósito y hacen cosas distintas: el `CHECK`
-    // es el que sobrevive a un script de importación (§5), y el registro
-    // tipado es el que le da rótulo y orden a cada tipo y el que impide que
-    // el generador de T-9 invente uno. Lo que no puede pasar es que se
-    // separen sin que nadie se entere: la pantalla ofrecería un tipo que la
-    // base rechaza con un 500 que nadie puede leer.
+  /*
+   * **Acá había una prueba que `0017` jubiló, y conviene decir cuál.**
+   *
+   * Hasta T-4 esta prueba leía el `CHECK` `el_tipo_de_modulo_es_del_catalogo_cerrado`
+   * de `sqlite_master` y exigía que nombrara exactamente las claves de
+   * `TIPOS_DE_MODULO`, en los dos sentidos. Era la mitad verificable de «las
+   * dos mitades acopladas del catálogo».
+   *
+   * `0017` **borró esa mitad**: la columna `tipo` no existe y en su lugar hay
+   * `plantilla_id` con una llave foránea. Lo que la reemplaza no es otra lista
+   * que comparar sino una garantía más fuerte, y por eso la prueba cambia de
+   * forma y no de nombre: una clave inventada ya no es rechazada por un
+   * `CHECK` que alguien tiene que mantener al día, **no llega a existir**,
+   * porque no hay fila en `modulo_plantilla` a la que apuntar.
+   *
+   * Las dos pruebas que quedan de esa familia —las de más abajo, que comparan
+   * la lista con las filas— mueren en T-6 junto con `TipoDeModulo`. Esta no:
+   * afirma algo de la base que va a seguir siendo cierto después.
+   */
+  it("la columna es una referencia a modulo_plantilla y no una cadena", async () => {
     const definicion = await definicionDeModulo();
 
-    const clausula = /tipo\s+TEXT\s+NOT\s+NULL[\s\S]*?IN\s*\(([^)]*)\)/i.exec(
+    expect(
       definicion,
-    );
-    expect(clausula, "el CHECK de `tipo` tiene que estar").not.toBeNull();
+      "`plantilla_id` tiene que referenciar `modulo_plantilla`",
+    ).toMatch(/plantilla_id\s+TEXT\s+NOT\s+NULL\s+REFERENCES\s+modulo_plantilla/i);
 
-    const enLaBase = [...(clausula?.[1] ?? "").matchAll(/'([^']*)'/g)].map(
-      (coincidencia) => coincidencia[1],
+    // La otra mitad, y es la que de verdad importa: la columna vieja **no
+    // está**. Sin esto, una migración que agregara `plantilla_id` y se
+    // olvidara de quitar `tipo` dejaría dos fuentes para la misma pregunta, y
+    // las dos se desincronizan en el primer `UPDATE` que se olvide de una.
+    expect(definicion, "la columna `tipo` tiene que haberse ido").not.toMatch(
+      /\btipo\b/i,
+    );
+  });
+
+  it("una plantilla inexistente no llega a existir, y habla el disparador", async () => {
+    // Lo que reemplaza al `CHECK`, medido y no supuesto (T-5). Y lo medido
+    // corrige lo que se habría escrito de memoria: **el rechazo no sale de la
+    // llave foránea**, sale de
+    // `cotizacion_modulo_tenencia_coherente_al_insertar`.
+    //
+    // El motivo es el `IS NOT` que `0017` argumenta en M-5. Un `BEFORE INSERT`
+    // se evalúa antes que las llaves foráneas, y con la plantilla inexistente
+    // la subconsulta del disparador vale NULL: `NULL IS NOT <tenant real>` es
+    // verdadero, así que aborta ahí. Con `<>` habría dado NULL, el `WHEN`
+    // falso, y el rechazo habría quedado en manos de la llave foránea — la que
+    // un `PRAGMA` apaga. O sea que este mensaje **es** la prueba de que el
+    // operador correcto está puesto, y no un detalle de cuál de las dos
+    // guardas llegó primero.
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
+          " plantilla_id, orden, contenido) VALUES (?, ?, ?, ?, 0, ?)",
+      )
+        .bind(nuevoId(), TENANT_UNICO_ID, cotizacionId, nuevoId(), "Da igual.")
+        .run(),
+    ).rejects.toThrow(
+      /tenencia cruzada: cotizacion_modulo debe compartir tenant_id/,
     );
 
-    expect([...enLaBase].sort()).toEqual([...TIPOS_DE_MODULO].sort());
+    expect(await listar(), "no entró nada").toHaveLength(0);
   });
 
   it("no se repite ninguna clave en la lista", () => {
@@ -96,13 +141,22 @@ describe("el catálogo de la base y el del código dicen lo mismo", () => {
  * pruebas enfrentan es la **fila**, no la respuesta. Pasar por la ruta metería
  * en el medio el adaptador que resuelve el rótulo vigente, y entonces una
  * prueba sobre el preset estaría mirando el `COALESCE`.
+ *
+ * **Con el filtro de tenencia puesto desde T-5**, y no es cosmético: el banco
+ * de esta suite siembra una plantilla del bufete vecino —la que `0017` obliga
+ * a que exista para que su módulo pueda apuntar a algo— y sin el filtro esa
+ * fila entraría en las tres comparaciones de abajo. La primera que se cae es
+ * la del orden, que es la que no puede tolerar una fila de más.
  */
 async function plantillasSembradas(): Promise<
   { clave: string; rotulo_oficial: string | null }[]
 > {
   const { results } = await env.DB.prepare(
-    "SELECT clave, rotulo_oficial FROM modulo_plantilla ORDER BY orden, clave",
-  ).all<{ clave: string; rotulo_oficial: string | null }>();
+    "SELECT clave, rotulo_oficial FROM modulo_plantilla" +
+      " WHERE tenant_id = ? ORDER BY orden, clave",
+  )
+    .bind(TENANT_UNICO_ID)
+    .all<{ clave: string; rotulo_oficial: string | null }>();
 
   return results;
 }
@@ -225,6 +279,31 @@ const EMAIL_AUTOR = "itzel@bufete.test";
 
 /** El tenant vecino. Existe solo para que la fuga sea expresable. */
 const OTRO_TENANT_ID = "0a5a6e0a-9f1e-4a6e-9f03-3b6a2a0e1d77";
+
+/**
+ * La plantilla de módulo **del bufete vecino**, con identificador fijo.
+ *
+ * Existe desde `0017` y no es decoración del banco. `plantilla_id` es
+ * `NOT NULL` y referencia `modulo_plantilla`, y la siembra de `0016` escribe
+ * las seis filas de **un** bufete —el que `0001` crea—. Un módulo del vecino
+ * no puede apuntar a ninguna de esas seis: lo rechaza
+ * `cotizacion_modulo_tenencia_coherente_al_insertar`, que es la arista nueva
+ * de `0017`. Así que el vecino necesita su propia plantilla, igual que ya
+ * necesitaba su propio usuario y su propio cliente.
+ *
+ * **Su `clave` es la misma que la propia, `alcance`**, y eso es el caso que
+ * importa: las seis son presets, así que los dos bufetes las tienen iguales.
+ * Es lo que hace que una búsqueda por clave sin filtro de tenencia devuelva
+ * la fila equivocada, y es por eso que `PLANTILLA_DE_LA_CLAVE` lleva su
+ * `tenant_id`.
+ *
+ * El identificador es **fijo y no `nuevoId()`**, y la siembra va con
+ * `INSERT OR IGNORE`: la fila sobrevive a la limpieza de cada prueba, porque
+ * `modulo_plantilla_no_se_borra` (`0016:459`) prohíbe borrarla. Con un
+ * identificador nuevo por prueba, la segunda chocaría contra
+ * `modulo_plantilla_clave_unica`.
+ */
+const PLANTILLA_AJENA_ID = "0a5a6e0a-9f1e-4a6e-9f03-3b6a2a0e1d78";
 
 /**
  * La forma del módulo en el cable. Se declara acá, y no se importa del
@@ -413,11 +492,17 @@ beforeEach(async () => {
   )
     .bind(TENANT_UNICO_ID)
     .run();
+  // `modulo_plantilla` entra a la lista de lo que retiene un tenant desde
+  // `0017`: el vecino tiene su plantilla (ver `PLANTILLA_AJENA_ID`) y esa fila
+  // **no se puede borrar** —`modulo_plantilla_no_se_borra`—, así que su bufete
+  // es indeleble mientras exista. Sin este término el borrado del tenant muere
+  // con `FOREIGN KEY constraint failed` y se lleva el banco entero.
   await env.DB.prepare(
     "DELETE FROM tenant WHERE id <> ?" +
       " AND id NOT IN (SELECT tenant_id FROM cotizacion)" +
       " AND id NOT IN (SELECT tenant_id FROM cliente)" +
-      " AND id NOT IN (SELECT tenant_id FROM usuario)",
+      " AND id NOT IN (SELECT tenant_id FROM usuario)" +
+      " AND id NOT IN (SELECT tenant_id FROM modulo_plantilla)",
   )
     .bind(TENANT_UNICO_ID)
     .run();
@@ -441,6 +526,13 @@ beforeEach(async () => {
       "INSERT INTO usuario (id, tenant_id, nombre, email, activo)" +
         " VALUES (?, ?, ?, ?, 1)",
     ).bind(autorAjenoId, OTRO_TENANT_ID, "Ajena", "ajena@otro-bufete.test"),
+    // La plantilla del vecino, que sobrevive a la limpieza. Ver
+    // `PLANTILLA_AJENA_ID`.
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO modulo_plantilla (id, tenant_id, clave," +
+        " rotulo_oficial, descripcion_oficial, orden, activo)" +
+        " VALUES (?, ?, 'alcance', 'Alcance del vecino', 'La del vecino.', 1, 1)",
+    ).bind(PLANTILLA_AJENA_ID, OTRO_TENANT_ID),
     env.DB.prepare(
       "INSERT INTO cliente (id, tenant_id, nombre, telefono, creado_por," +
         " creado_en) VALUES (?, ?, ?, ?, ?, ?)",
@@ -491,12 +583,13 @@ beforeEach(async () => {
       ahora,
     ),
     env.DB.prepare(
-      "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, tipo," +
-        " orden, contenido) VALUES (?, ?, ?, 'alcance', 0, ?)",
+      "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
+        " plantilla_id, orden, contenido) VALUES (?, ?, ?, ?, 0, ?)",
     ).bind(
       moduloAjenoId,
       OTRO_TENANT_ID,
       cotizacionAjenaId,
+      PLANTILLA_AJENA_ID,
       "El alcance del vecino.",
     ),
   ]);
@@ -1131,9 +1224,17 @@ describe("el orden del alta se decide dentro del batch", () => {
     const resultado = await servicioConIntruso(() =>
       env.DB.prepare(
         "INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id," +
-          " tipo, orden, contenido) VALUES (?, ?, ?, 'clausulas', 1, ?)",
+          " plantilla_id, orden, contenido) SELECT ?, ?, ?, p.id, 1, ?" +
+          " FROM modulo_plantilla p" +
+          " WHERE p.tenant_id = ? AND p.clave = 'clausulas'",
       )
-        .bind(nuevoId(), TENANT_UNICO_ID, cotizacionId, "El intruso.")
+        .bind(
+          nuevoId(),
+          TENANT_UNICO_ID,
+          cotizacionId,
+          "El intruso.",
+          TENANT_UNICO_ID,
+        )
         .run(),
     ).agregarModulo(TENANT_UNICO_ID, cotizacionId, {
       tipo: "alcance",

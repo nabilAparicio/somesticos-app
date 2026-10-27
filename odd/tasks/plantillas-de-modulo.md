@@ -159,14 +159,27 @@ y la descripción inyectada al prompt.
 `cotizacion_modulo`. El editor de la cotización sigue ofreciendo exactamente
 las plantillas activas de las seis claves que el `CHECK` de `0004` ya permite.
 
-### Tajada 2 — después, documentada acá y no agendada
+### Tajada 2 — agendada
 
-`cotizacion_modulo.tipo` pasa a `plantilla_id` —reconstrucción de la tabla con
-backfill de las 54 filas vivas, su índice único y sus seis disparadores
-re-creados—, `TipoDeModulo` desaparece, y recién ahí se pueden crear
-plantillas nuevas con clave derivada del rótulo. El verbo `creado` ya está en
-el `CHECK` de `accion`, así que **la tajada 2 no necesita migración de
-bitácora**.
+La pidió el usuario al mirar la pantalla terminada: «No veo la opción de crear
+un módulo, sólo editar y dar de baja.» Es correcto y era el plan, y conviene
+dejar escrito por qué no podía estar antes.
+
+**Medido en la base local, no supuesto.** `modulo_plantilla` ya no tiene
+límite de claves; `cotizacion_modulo` sí lo tiene:
+
+```
+tipo  CHECK (tipo IN ('alcance', 'exclusiones', 'antecedentes',
+                      'supuestos', 'clausulas', 'nota_cliente'))
+```
+
+Un botón «crear» sobre la tajada 1 habría creado una plantilla **inservible**:
+la fila nacería bien, y el primer módulo de ese tipo en una cotización lo
+rechazaría la base. Una pantalla que ofrece crear algo que después no se puede
+usar es peor que una pantalla sin el botón.
+
+El verbo `creado` ya está en el `CHECK` de `accion` (`0012:132`), así que
+**esta tajada no necesita migración de bitácora**.
 
 ## Las tareas
 
@@ -268,6 +281,73 @@ acotado; el disparador es la regla de escritura y la de preparación.
       lo que cambió es de dónde sale la lista.
 
 **Ruta: inline.** Es un archivo y el cambio está entendido.
+
+### T-5 · Un módulo apunta a su plantilla, no a una cadena
+
+- [x] `migrations/0017_…` reconstruye `cotizacion_modulo`: `tipo TEXT CHECK(…)`
+      pasa a `plantilla_id TEXT NOT NULL REFERENCES modulo_plantilla (id)`.
+      La forma es la que `0012:112-200` ya usó siete veces sobre `bitacora`,
+      pero **acá hay un backfill de verdad**: las 54 filas vivas se mapean por
+      `JOIN` entre el `tipo` viejo y la `clave` de la plantilla. Cero filas sin
+      plantilla, verificado antes del `DROP` y no después.
+- [x] Se re-crean letra por letra el índice `cotizacion_modulo_orden_unico` y
+      los **seis** disparadores: tres de `0004` (:419, :548, :562) y tres de
+      `0006` (:439, :448, :456). Ninguno nombra `tipo`, así que ninguno cambia
+      de texto — pero perder uno en el `DROP` es el defecto silencioso que esta
+      forma de migración existe para evitar.
+- [x] **Y un séptimo que el enunciado no pedía**, decidido al escribirlo:
+      `cotizacion_modulo_tenencia_coherente_al_actualizar`. `0004:300` dejó
+      escrito por qué esta tabla no lo llevaba —las dos únicas columnas que
+      miraría son inmutables— y esta migración le quita la premisa, porque
+      `plantilla_id` es una tercera columna mutable que cruza tablas. El
+      argumento entero está en el progreso.
+- [x] **Una arista nueva de tenencia.** `plantilla_id` cruza tablas, así que
+      entra a `cotizacion_modulo_tenencia_coherente_al_insertar`. La tabla de
+      siete aristas de `0004:300` pasa a ocho, y se dice ahí.
+- [x] El lado de TypeScript lee la plantilla en vez de la cadena. `TipoDeModulo`
+      **sobrevive esta tarea** como el tipo de la clave: su muerte es T-6.
+- [x] El snapshot sigue congelando clave y rótulo vigente, y las 6 cotizaciones
+      emitidas siguen mostrando el suyo. Se mide antes y después mutando la
+      fuente viva en el medio, como ya hizo T-3: con presets idénticos los dos
+      caminos son indistinguibles y la prueba no probaría nada.
+- [x] Sondas hostiles: un módulo apuntando a una plantilla de otro bufete, y
+      uno apuntando a una plantilla inexistente.
+
+**Ruta: delegada.**
+
+### T-6 · Muere `TipoDeModulo`, y es el único cambio del día
+
+- [ ] Se van la unión de `worker/contract.ts`, `TIPOS_DE_MODULO`,
+      `esTipoDeModulo` y `TiposFueraDeLaLista`. La clave pasa a ser una cadena
+      validada contra el catálogo inyectado, que es lo que `validarModulo` ya
+      hace desde T-4 con `clavesOfrecidas`.
+- [ ] Las tres pruebas bidireccionales que enfrentan `TIPOS_DE_MODULO` a
+      `modulo_plantilla` se van con ella: ya no hay dos listas que comparar.
+      **Lo que las reemplaza es la llave foránea de T-5**, que es más fuerte
+      que las tres: una clave inventada no llega a existir.
+- [ ] Nada más entra en este commit. Es deliberado: el día que se pierde una
+      red del compilador conviene que no haya nada más que culpar.
+
+**Ruta: delegada.**
+
+### T-7 · Una plantilla nueva nace desde catálogos
+
+- [ ] `POST /api/plantillas-modulo` con la clave **derivada del rótulo** y no
+      tecleada: el abogado nombra «Observaciones del cliente» y el sistema
+      acuña `observaciones_del_cliente`. Única por bufete, e inmutable desde
+      que nace — el disparador de T-1 ya lo impide.
+- [ ] El verbo `creado` entra a `ACCIONES_POR_ENTIDAD`. **Sin migración**: ya
+      está en el `CHECK` de `accion`.
+- [ ] Choque de claves resuelto y dicho: dos rótulos que acuñan la misma clave
+      no pueden ser un 500 de la base.
+- [ ] La pantalla gana el alta, con la descripción **obligatoria** desde el
+      formulario: es lo que la IA va a leer, y una plantilla nueva no tiene
+      preset debajo que la cubra.
+- [ ] La plantilla nueva se ofrece en el editor de la cotización **y llega al
+      prompt**. Se prueba de punta a punta: crear, usar en una cotización, y
+      ver su descripción en el encargo al modelo.
+
+**Ruta: delegada.**
 
 ## Criterios de aceptación
 
@@ -872,3 +952,193 @@ de `scripts/semilla-demo.sql`—.
 
 **Empujar la rama, abrir el pull request y mezclar siguen siendo decisión del
 usuario.**
+
+### T-5 cerrada
+
+**Archivos.** Uno nuevo —`migrations/0017_un_modulo_apunta_a_su_plantilla.sql`
+(607 líneas)— y nueve modificados: `worker/cotizaciones/repositorio.ts` (+121),
+`test/esquema-cotizaciones.spec.ts` (+443), `test/modulos-api.spec.ts` (+153),
+`test/plantillas-esquema.spec.ts` (+47), `worker/cotizaciones/modulos.ts` (+37),
+`worker/plantillas/repositorio.ts` (+30), `worker/contract.ts` (+22),
+`worker/ia/esquema.ts` (+21) y `test/emitir-api.spec.ts` (+7). **1.463
+insertadas, 113 quitadas.** De los nueve, cinco son sólo comentario que la
+migración volvió falso.
+
+**El cable no cambió una letra, y eso es el titular.** `ModuloDeCotizacion.tipo`
+sigue siendo la clave, el `GET` y el `PUT` siguen con la misma forma, y por eso
+`src/`, `e2e/` y la hoja imprimible **no se tocaron**: la referencia es cómo la
+fila guarda el dato, no cómo el resto del sistema lo nombra. El lado de
+TypeScript entero son cinco sentencias de SQL en un archivo —una lectura con
+`JOIN` y cuatro escrituras que resuelven la clave con una subconsulta—, dicha
+una sola vez en `PLANTILLA_DE_LA_CLAVE`.
+
+**RED observado.** Con `0017` puesta y ningún cambio de TypeScript:
+`esquema-cotizaciones` + `modulos-api` + `emitir-api` dieron **127 fallando y
+156 pasando de 283**, con `table cotizacion_modulo has no column named tipo`.
+Después de las cinco sentencias quedaron 52 de 218, todas en `modulos-api` y por
+su propio banco. La migración se aplica limpia en el corredor de pruebas, que es
+además la prueba de que las dos verificaciones previas no abortan sobre una base
+vacía.
+
+**Las 54 filas, medidas antes y después sobre la base local.**
+
+| Qué se midió | Antes | Después |
+|---|---|---|
+| Filas de `cotizacion_modulo` | 54 | **54** |
+| Cotizaciones con módulos | 11 | **11** |
+| Cotizaciones con snapshot | 6 | **6** |
+| Filas cuya plantilla resuelve en su propio bufete | — | **54** |
+| Disparadores sobre la tabla | 6 | **7** |
+
+Y la comparación que de verdad cierra el relleno: el juego de las 54 filas
+—`id`, `cotizacion_id`, clave resuelta, `orden` y largo del contenido— con el
+**mismo SHA-256** antes y después, `9f933d6e…981efb65`. No es que haya 54 filas:
+son las mismas 54. Los seis `tipo` distintos se reparten 11·10·10·9·7·7.
+
+**La verificación previa, probada contra el estado que vigila, y con un hallazgo
+que no se adivina.** Se fabricó el caso sobre una copia de la base local con sus
+54 filas: se soltó `modulo_plantilla_no_se_borra` y se borró la plantilla de
+`clausulas`, dejando 7 módulos sin plantilla. Después se aplicó `0017` por los
+dos caminos:
+
+| Corredor | Qué pasó |
+|---|---|
+| `wrangler d1 execute --local --file` | Aborta con `CHECK constraint failed: hay_modulos_cuyo_tipo_no_tiene_plantilla_en_su_bufete` y la base queda **intacta**: 54 filas, columna `tipo` puesta, sin `plantilla_id`, sin andamios, los 6 disparadores originales |
+| `sqlite3 … ".read"` | Aborta **y sigue**: el `DROP TABLE` corre igual y quedan 47 filas. Se pierden 7 |
+
+**La guarda sólo protege dentro de una transacción**, y los dos corredores de D1
+lo son; `sqlite3 .read` no, porque cada sentencia confirma sola. No hay nada que
+se pueda escribir dentro de un archivo de SQL que detenga a un corredor que no
+vuelve atrás, así que queda dicho en el encabezado de la migración, que es el
+único lugar donde quien la aplique a mano lo va a leer. El consuelo, y es lo que
+justifica la **segunda** verificación: en la corrida de `sqlite3` el segundo
+`CHECK` también disparó antes del `DROP`, así que la pérdida quedó nombrada dos
+veces y en el registro en vez de ser 7 filas que nadie cuenta.
+
+**Un disparador de más, y la decisión es la que el enunciado no pedía.** El
+enunciado pedía re-crear seis y agregarle una arista al de tenencia al
+`INSERT`. Se re-crearon los seis y **se agregó un séptimo**,
+`cotizacion_modulo_tenencia_coherente_al_actualizar`, porque `0004:300` había
+dejado escrito con todas las letras por qué esta tabla no lo llevaba —«las dos
+únicas columnas que ese disparador miraría», `tenant_id` y `cotizacion_id`, son
+inmutables, así que la condición no puede dar verdadero nunca— y **esta
+migración le quita la premisa**: `plantilla_id` es una tercera columna que ese
+disparador mira y es mutable, porque `editarModulo` la escribe cada vez que
+alguien cambia el tipo de un módulo en un borrador. Sin él, `UPDATE
+cotizacion_modulo SET plantilla_id = <la del vecino>` sobre un borrador sólo lo
+rechazaría la llave foránea — que no mira el bufete, así que la plantilla del
+vecino existe y no lo rechazaría en absoluto. La forma copiada es la de
+`cotizacion_linea_tenencia_coherente_al_actualizar`, que existe «únicamente por
+`tipo_proceso_id`» por este mismo motivo.
+
+**Las cuatro sondas hostiles, con su mensaje exacto.** Corridas a mano sobre una
+copia de la base local con sus 54 filas, con un segundo bufete sembrado y su
+propia plantilla de clave `alcance` —el caso que importa, porque las seis son
+presets y los dos bufetes las tienen iguales—:
+
+| Sonda | Resultado |
+|---|---|
+| `INSERT` apuntando a la plantilla del vecino | `tenencia cruzada: cotizacion_modulo debe compartir tenant_id con las filas que referencia` |
+| `INSERT` apuntando a una plantilla inexistente | el **mismo** mensaje, y es el punto del `IS NOT` |
+| `UPDATE` moviendo un módulo a la plantilla del vecino | el mismo mensaje, desde el disparador nuevo |
+| `UPDATE` moviéndolo a una plantilla inexistente | el mismo mensaje |
+
+Las 54 filas intactas después de las cuatro, y los dos contrapesos al lado: un
+`INSERT` con la plantilla propia entra y resuelve a su clave (55 filas), y un
+`UPDATE` a **otra plantilla propia** pasa — que es la operación que
+`editarModulo` necesita y que un disparador invertido habría congelado.
+
+**Que la plantilla inexistente conteste «tenencia cruzada» y no `FOREIGN KEY
+constraint failed` es la medición que prueba el operador**, y corrige lo que se
+habría escrito de memoria: un `BEFORE INSERT` corre antes que las llaves
+foráneas, y con la plantilla ausente la subconsulta del `WHEN` vale NULL, así que
+`NULL IS NOT <tenant real>` es verdadero y aborta ahí. Con `<>` el mensaje pasa a
+`FOREIGN KEY constraint failed` —el rechazo se muda a la guarda que un `PRAGMA`
+apaga— y los dos casos del vecino siguen abortando, porque ahí ninguno de los dos
+lados es nulo.
+
+**Las sondas no dejaron residuo en la base del usuario**, y es la diferencia con
+T-3: se corrieron sobre copias. El bufete vecino y su plantilla habrían sido
+indelebles —`modulo_plantilla_no_se_borra` prohíbe el `DELETE` y la llave foránea
+vuelve indeleble a su tenant—, así que sembrarlos en la base de demostración
+habría dejado un segundo bufete para siempre. La base local quedó con 1 bufete, 6
+plantillas con `rotulo` y `descripcion` en NULL y `activo = 1`, y 54 módulos.
+
+**El snapshot, medido mutando la fuente viva en el medio.** Con «Alcance»
+renombrado a «Qué vamos a hacer» desde la base y la migración puesta:
+
+| Qué se midió | Resultado |
+|---|---|
+| Entradas congeladas de los 6 snapshots | **33** (5+6+5+6+6+5), idénticas letra por letra a las de T-3 |
+| `length(snapshot)` de las 6 | **4.432 · 4.052 · 4.206 · 6.814 · 6.528 · 5.174**, iguales al byte |
+| «Qué vamos a hacer» en algún snapshot | **ausente** |
+| `rotuloVigente` de `alcance` por la API real | «**Qué vamos a hacer**», con su marca de editado |
+| Encabezados del documento de `COT-2026-0003` (emitida) por la API real | Antecedentes · **Alcance** · Exclusiones · Supuestos · Cláusulas |
+| «Qué vamos a hacer» en ese documento | **ausente** |
+
+La mutación en el medio es lo que hace que la medición distinga algo: con los
+seis presets intactos, el camino que resuelve y el que copia devuelven lo mismo y
+la prueba no probaría nada. Es el motivo que T-3 encontró y acá vale igual.
+
+**Mutaciones, donde hay regla que proteger.**
+
+| Mutación | Resultado |
+|---|---|
+| Se borra `cotizacion_modulo_tenencia_coherente_al_actualizar` | **4 fallando de 255**: las dos sondas de `UPDATE`, la lista exacta de disparadores y el inventario de `0017` |
+| Se le quita la arista de `plantilla_id` al disparador de `INSERT` | **3 fallando de 255** |
+| `IS NOT` → `<>` en las dos aristas de plantilla | **3 fallando de 255**, y son exactamente las tres de plantilla inexistente |
+| Se pierde un disparador copiado (`no_sale_de_una_congelada`) | **4 fallando de 2.736** |
+| `PLANTILLA_DE_LA_CLAVE` ignora el `tenant_id` | **32 fallando de 2.736** |
+| El `JOIN` del relleno pierde `p.tenant_id = m.tenant_id` | **1 fallando de 202**, y es la aserción de texto |
+
+La última es la honesta de la tabla: sobre la base vacía del corredor de pruebas
+no hay comportamiento que la note, así que lo único que la atrapa es una prueba
+que lee el archivo de la migración. Por eso esa prueba existe y por eso además
+afirma que el relleno **no** tiene un `CASE` — que es la alternativa rechazada,
+fijada para que no se vuelva a proponer: una rama que falta devuelve NULL con un
+mensaje que no nombra la clave, y un `CASE` **no mira el bufete**.
+
+Y una que **no** tiene prueba, dicho en vez de descubierto: el `tenant_id`
+repetido en el `JOIN` de lectura. Quitándolo, la suite entera queda en verde,
+porque la fila incoherente que atraparía no se puede fabricar —el `WHERE` ya
+filtra y los dos disparadores de tenencia impiden el cruce—. Queda por lo que
+pasaría el día que alguien ablande un disparador, y porque el filtro repetido en
+la unión es la regla de ese archivo. Está escrito al lado de la consulta.
+
+**Tres referencias fuera de la superficie autorizada, y no se tocaron.** Las
+tres afirman que «`cotizacion_modulo.tipo` sigue cerrado por el `CHECK` de
+`0004`», que esta migración volvió falso:
+
+- `scripts/semilla-demo.sql:137,152,167,185,200` — **y acá no es un comentario
+  sino SQL**: cinco `INSERT INTO cotizacion_modulo (… tipo …)` que sobre una base
+  nueva ya fallan. Sobre la base local no es alcanzable —el script aborta si la
+  base ya tiene cotizaciones, y las tiene— pero la semilla de demostración queda
+  **inservible para una base limpia** hasta que se corrija.
+- `worker/plantillas/rutas.ts:17` y `worker/bitacora/vocabulario.ts:295` —
+  comentarios que explican por qué no hay `POST` ni verbo `creado`. El argumento
+  cambió de forma: el techo ya no es el `CHECK` sino que falta la ruta. Las dos
+  las toca T-7, que es la que abre el alta.
+
+Los cinco comentarios **dentro** de la superficie que decían lo mismo sí se
+corrigieron: `worker/contract.ts`, `worker/cotizaciones/modulos.ts`,
+`worker/plantillas/repositorio.ts`, `worker/ia/esquema.ts` y
+`test/emitir-api.spec.ts`.
+
+**Verificación.** `pnpm lint`: sin hallazgos. `pnpm typecheck`: 0 errores.
+`pnpm test`: **54 archivos, 2.736 pruebas, todas pasando** (desde 2.724: +12, sin
+archivos nuevos). `pnpm test:e2e`: **535 pasando** en 1,2 min y otra vez en 2,0
+min, sin cambios en `e2e/` ni en `src/` —`e2e/sin-scroll-horizontal.spec.ts` pasó
+sin necesidad de repetirlo—.
+
+**Una corrida intermedia de `test:e2e` dio 389 fallando, y no era del cambio.**
+Se deja anotado porque el número asusta y la causa es del entorno: el servidor
+de desarrollo que la configuración reutiliza
+(`reuseExistingServer`) estaba escuchando sólo en `[::1]:5174`, así que
+Playwright no lo encontró en `127.0.0.1:5174` y levantó el suyo; esa corrida fue
+pegada a la anterior y las dos se pisaron en el puerto. Los fallos eran todos
+`toHaveCount` sobre una página que no se servía. La corrida inmediatamente
+siguiente, sin tocar nada, dio los 535. El servidor del usuario quedó vivo y
+contestando.
+
+**Siguiente paso**: T-6, que se lleva `TipoDeModulo` y es el único cambio de ese
+día. Lo que la habilita es la llave foránea de esta tarea.

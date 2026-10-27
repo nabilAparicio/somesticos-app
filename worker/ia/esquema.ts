@@ -406,17 +406,20 @@ function validarModulo(
   // **Dos comprobaciones y un solo motivo** (T-4), y ninguna sobra:
   //
   //  - `esTipoDeModulo` es la que **estrecha el tipo**. `DatosDeModulo.tipo`
-  //    es `TipoDeModulo`, una unión que sigue viva durante la tajada 1, así
-  //    que sin esta guarda el `return` de abajo necesitaría un `as` — y un
-  //    `as` acá sería afirmarle al compilador algo que viene del cable.
+  //    es `TipoDeModulo`, una unión que sigue viva hasta T-6, así que sin esta
+  //    guarda el `return` de abajo necesitaría un `as` — y un `as` acá sería
+  //    afirmarle al compilador algo que viene del cable.
   //  - `clavesOfrecidas.includes` es la que dice **qué está vigente**. La anterior no
-  //    puede: la unión y el `CHECK` de `0004` enumeran las claves *posibles*,
-  //    no las plantillas que el bufete tiene activas, así que una dada de baja
-  //    pasaría. Ésta es la que falla cerrada con el catálogo vacío.
+  //    puede: la unión enumera las claves *posibles*, no las plantillas que el
+  //    bufete tiene activas, así que una dada de baja pasaría. Ésta es la que
+  //    falla cerrada con el catálogo vacío.
   //
-  // Cuando la tajada 2 convierta `cotizacion_modulo.tipo` en una referencia y
-  // `TipoDeModulo` desaparezca, la primera se va y queda sólo la segunda, que
-  // es la que lleva la regla.
+  // **El `CHECK` de `0004` ya no es la tercera pata**: T-5 lo borró —`0017`
+  // cambió `cotizacion_modulo.tipo` por `plantilla_id`, una referencia a
+  // `modulo_plantilla`— así que la red de abajo del modelo pasó de ser una
+  // lista en el esquema a ser una fila que tiene que existir. Es más fuerte, y
+  // es lo que deja que T-6 se lleve `TipoDeModulo`: ese día la primera
+  // comprobación se va y queda sólo la segunda, que es la que lleva la regla.
   const tipo = crudo.tipo;
   const tipoConocido = esTipoDeModulo(tipo) && clavesOfrecidas.includes(tipo);
   if (!tipoConocido) {

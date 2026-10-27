@@ -613,9 +613,10 @@ describe("qué guarda el snapshot", () => {
       const alcance = modulos.find((uno) => uno.tipo === "alcance");
 
       expect(alcance?.rotulo).toBe("Qué vamos a hacer");
-      // La clave **no** se mueve: es lo que un lector automático compara y lo
-      // que `cotizacion_modulo.tipo` guarda. Renombrar cambia el encabezado,
-      // nunca la identidad.
+      // La clave **no** se mueve: es lo que un lector automático compara, y es
+      // lo que el módulo guarda — desde `0017`, a través de su `plantilla_id`,
+      // y la clave es inmutable por `modulo_plantilla_clave_inmutable`.
+      // Renombrar cambia el encabezado, nunca la identidad.
       expect(alcance?.tipo).toBe("alcance");
     });
   });
