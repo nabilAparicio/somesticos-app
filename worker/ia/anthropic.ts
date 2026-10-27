@@ -214,6 +214,11 @@ export function proveedorAnthropic(
       // Fuera del `try`, a propósito: ver el bloque de arriba.
       const validacion = validarTextoDePropuesta(texto, {
         tiposDeProceso: peticion.tiposDeProcesoOfrecidos,
+        // Los dos catálogos que el prompt declaró, no uno: desde T-3 el monto
+        // de una línea tarifada sale de `servicios`, así que omitirlo acá
+        // dejaría toda línea con servicio rechazada por `servicio_no_ofrecido`
+        // aunque el prompt la hubiera ofrecido.
+        servicios: peticion.serviciosOfrecidos,
       });
 
       if (!validacion.ok) {

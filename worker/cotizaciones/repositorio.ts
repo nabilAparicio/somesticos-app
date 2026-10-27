@@ -51,6 +51,11 @@ import type { BaseDeDatos, Sentencia } from "../db/base";
  * produce un formulario, agrupados.
  */
 import type { PropuestaDelModelo } from "../ia/esquema";
+/**
+ * T-3 de `odd/tasks/precios-en-la-cotizacion.md`: la forma en que un servicio
+ * tarifado le llega al prompt. Es un tipo y nada más, igual que el de arriba.
+ */
+import type { ServicioTarifado } from "../ia/prompt";
 import { recorte, sentencia } from "../db/base";
 import { nuevoId } from "../db/ids";
 /**
@@ -324,6 +329,37 @@ export interface ServicioDeCotizaciones {
     datos: DatosDeCotizacion,
     propuesta: PropuestaDelModelo,
   ): Promise<ResultadoDeEscritura>;
+
+  /**
+   * Los servicios que este bufete tarifa, con su cifra: **el catálogo que
+   * viaja al modelo** (T-3 de `odd/tasks/precios-en-la-cotizacion.md`).
+   *
+   * Lo ofrecible son los renglones **con cifra** —`COALESCE(monto,
+   * monto_oficial)`—, que es exactamente el mismo catálogo que el editor de
+   * líneas ofrece a una persona. No es una elección de comodidad: «los
+   * preestablecidos son la norma hasta que se editen, no son una subcategoría»
+   * (T-2 bis), y dos criterios distintos para la misma pregunta en dos
+   * lugares del mismo sistema es el defecto que esa corrección deshizo.
+   *
+   * ## Por qué vive en el puerto de cotizaciones y no en el del arancel
+   *
+   * Porque el único que necesita esta lectura es el generador, y lo único que
+   * el ruteo de cotizaciones recibe son este puerto, el de catálogos y el
+   * modelo. La alternativa —un método en `ServicioDeArancel`— es la que
+   * ordenaría mejor las consultas por tabla, pero obliga a pasarle a
+   * `rutasDeCotizaciones` un cuarto servicio desde `worker/index.ts`, que
+   * queda fuera de la superficie de esta tarea. La consulta se queda al lado
+   * de `validarOrigenDelPrecio`, que ya lee `arancel_renglon` desde acá, y
+   * **las dos comparten la expresión que define qué es una cifra** para que no
+   * puedan discrepar.
+   *
+   * Los 74 rubros y las 97 reglas sin número quedan afuera por donde ya
+   * quedaban: preguntar si hay cifra excluye a los encabezados siempre, sin
+   * nombrarlos. Y no se filtra por `activo`, que es la otra pregunta que
+   * parece razonable: ninguna ruta lo escribe hoy y el editor de líneas
+   * tampoco lo mira, así que filtrarlo acá sería el segundo criterio otra vez.
+   */
+  listarServiciosTarifados(tenantId: string): Promise<ServicioTarifado[]>;
 
   /* --- Los módulos de prosa (T-2 C) --- */
 
@@ -625,6 +661,24 @@ interface FilaDeModulo {
 const SOBRE_UN_BORRADOR =
   " EXISTS (SELECT 1 FROM cotizacion c WHERE c.tenant_id = ?" +
   " AND c.id = ? AND c.estado = 'borrador')";
+
+/**
+ * **Qué cuenta como el precio de un renglón del arancel, dicho una sola vez.**
+ *
+ * Es la misma expresión que
+ * `migrations/0015_un_precio_es_una_cifra.sql` puso en los dos disparadores del
+ * origen del precio, y la usan los dos lectores de `arancel_renglon` que hay
+ * en este archivo: el que valida lo que una persona manda
+ * —`validarOrigenDelPrecio`— y el que arma el catálogo que viaja al modelo
+ * —`listarServiciosTarifados`—. Escrita dos veces serían dos criterios para la
+ * misma pregunta, que es el defecto que T-2 bis deshizo entre dos pantallas y
+ * que acá volvería a aparecer entre dos caminos de escritura.
+ *
+ * El `COALESCE` **no compara nada**: elige cuál de los dos números existe,
+ * nunca cuál es mayor. La regla de `odd/tasks/arancel-de-honorarios.md` no se
+ * renegocia.
+ */
+const CIFRA_DEL_RENGLON = "COALESCE(monto, monto_oficial)";
 
 interface FilaDeLinea {
   id: string;
@@ -1021,11 +1075,11 @@ export function cotizacionesSobreD1(
 
     const fila = await db
       .prepare(
-        "SELECT monto, monto_oficial FROM arancel_renglon" +
+        `SELECT ${CIFRA_DEL_RENGLON} AS cifra FROM arancel_renglon` +
           " WHERE tenant_id = ? AND id = ?",
       )
       .bind(tenantId, elegido)
-      .first<{ monto: number | null; monto_oficial: number | null }>();
+      .first<{ cifra: number | null }>();
 
     if (fila === null) {
       return [
@@ -1038,7 +1092,7 @@ export function cotizacionesSobreD1(
     // y el `CHECK un_rubro_no_lleva_precio` de `0012` les prohíbe el propio—.
     // Preguntar además por la clase sería la segunda guarda para el mismo
     // hecho.
-    if ((fila.monto ?? fila.monto_oficial) === null) {
+    if (fila.cifra === null) {
       return [
         { campo: "arancelRenglonId", motivo: "arancel_renglon_sin_precio" },
       ];
@@ -1408,9 +1462,9 @@ export function cotizacionesSobreD1(
      * pueda estar insertando en ella: la tabla no tiene una sola fila suya
      * y nadie más conoce todavía su identificador.
      *
-     * ## Por qué no se revalida el trámite
+     * ## Por qué no se revalida el trámite, ni el servicio tarifado
      *
-     * Porque ya está cerrado, y una segunda guarda sobre lo mismo se anula
+     * Porque ya están cerrados, y una segunda guarda sobre lo mismo se anula
      * con la primera. `tipoProcesoId` sólo puede ser uno de los que el
      * prompt declaró haber ofrecido —`worker/ia/esquema.ts` lo rechaza si
      * no—, y esos salieron de `tipo_proceso` de este tenant en esta misma
@@ -1420,6 +1474,16 @@ export function cotizacionesSobreD1(
      * la restricción 2 de la tajada, y además **es la guarda que hace cierta
      * la atomicidad** — es la que esa prueba usa para provocar que una línea
      * no entre.
+     *
+     * `arancelRenglonId` entra por la misma puerta desde T-3, y por eso no se
+     * llama acá a `validarOrigenDelPrecio`: el esquema rechaza todo servicio
+     * que el prompt no haya ofrecido, y lo ofrecible es exactamente lo que
+     * tiene cifra —`listarServiciosTarifados` lo filtra con la misma
+     * expresión con la que esa validación pregunta—. Un rubro y un renglón sin
+     * número no llegan hasta acá. La ventana que queda es que el bufete le
+     * borre el precio a un servicio **mientras** el modelo piensa, y ahí el
+     * que manda es el disparador de `0013`/`0015`: la guarda de la base es el
+     * respaldo, no la única defensa.
      *
      * Es la misma frontera de siempre: se cuenta lo que una persona puede
      * equivocar —el cliente, que sale de un desplegable— y se deja saltar lo
@@ -1463,8 +1527,9 @@ export function cotizacionesSobreD1(
       const lineas = propuesta.lineas.map((linea, posicion) =>
         sentencia(
           "INSERT INTO cotizacion_linea (id, tenant_id, cotizacion_id," +
-            " clase, concepto, monto, tipo_proceso_id, orden)" +
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " clase, concepto, monto, tipo_proceso_id, arancel_renglon_id," +
+            " orden)" +
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
           nuevoId(),
           tenantId,
           id,
@@ -1476,8 +1541,19 @@ export function cotizacionesSobreD1(
           // de `0004` rechazaría con un 500. **Y no se suma nada**: el total
           // no existe como columna, y esta función no lo calcula ni lo
           // podría guardar.
+          //
+          // **Desde T-3, cuando la línea nombra un servicio tarifado este
+          // número es el del catálogo**, resuelto en `validarPropuesta` con la
+          // cifra que viajó con el identificador. Esta función no vuelve a
+          // mirar el arancel, y no es un olvido: una segunda lectura podría
+          // devolver otro número que el de la propuesta que el modelo leyó, y
+          // entonces el borrador diría en la prosa un precio y en la línea
+          // otro.
           linea.monto,
           linea.tipoProcesoId,
+          // De dónde salió el precio. Nulo es el caso corriente: una consulta
+          // o una mensajería no sale de ningún renglón tarifado.
+          linea.arancelRenglonId,
           posicion,
         ),
       );
@@ -1511,6 +1587,39 @@ export function cotizacionesSobreD1(
       }
 
       return { estado: "guardado", cotizacion };
+    },
+
+    async listarServiciosTarifados(tenantId) {
+      // `ORDER BY orden` y no por concepto ni por categoría: es el orden del
+      // acuerdo, el mismo con el que la pantalla de precios y la vista
+      // expandida los muestran, y el único que no se puede derivar de otra
+      // cosa. Lo que el modelo lee tiene que poder cotejarse con lo que una
+      // persona ve.
+      const filas = await db
+        .prepare(
+          `SELECT id, categoria, concepto, ${CIFRA_DEL_RENGLON} AS monto` +
+            " FROM arancel_renglon" +
+            ` WHERE tenant_id = ? AND ${CIFRA_DEL_RENGLON} IS NOT NULL` +
+            " ORDER BY orden",
+        )
+        .bind(tenantId)
+        .all<{
+          id: string;
+          categoria: string;
+          concepto: string;
+          monto: number;
+        }>();
+
+      // El `monto` no se recorta ni se convierte: el `CHECK` de `0012` ya
+      // garantiza que las dos columnas son enteros no negativos, y cualquier
+      // aritmética acá lo volvería un flotante que el modelo leería con punto
+      // decimal.
+      return filas.results.map((fila) => ({
+        id: fila.id,
+        categoria: fila.categoria,
+        concepto: fila.concepto,
+        monto: fila.monto,
+      }));
     },
 
     async actualizar(tenantId, id, datos) {

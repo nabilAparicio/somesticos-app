@@ -13,23 +13,36 @@
  * modelo que inventa un tipo de módulo, agrega un campo, manda un monto como
  * texto o calcula un total quede rechazado acá, y no en quien llama.
  *
- * ## Las tres cosas que lo hacen imposible, y no tres guardas para lo mismo
+ * ## Las cuatro cosas que lo hacen imposible, y no cuatro guardas para lo mismo
  *
  * 1. **El tipo de salida es el mismo que usa el camino a mano.**
  *    `PropuestaDelModelo` no define una forma propia: son `DatosDeModulo[]` y
- *    `DatosDeLinea[]`, exactamente lo que `normalizarModulo` y
+ *    `DatosDeLineaConOrigen[]`, exactamente lo que `normalizarModulo` y
  *    `normalizarLinea` producen desde un formulario. No hay un sitio donde
  *    poner un total porque esos tipos no lo tienen, y no lo tienen porque
  *    `migrations/0004_cotizaciones.sql` no tiene columna de total ni de
  *    subtotal. La aritmética vive en `totalesDe`, en
  *    `worker/cotizaciones/lineas.ts`, y se calcula **sobre las líneas ya
  *    validadas**.
- * 2. **El juego de claves es cerrado**, y se comprueba. Es la única guarda de
- *    las tres —las otras dos son una red de compilación y una elección de
- *    tipos—, y es la que convierte un campo inventado en un rechazo.
+ *
+ *    Nótese que el tipo de salida **no es la forma que el modelo escribe**: el
+ *    modelo manda un servicio tarifado *o* un monto, y lo que sale de acá
+ *    siempre tiene su `monto`. Esa es la cuarta cosa, abajo.
+ * 2. **El juego de claves es cerrado**, y se comprueba. De las cuatro, es la
+ *    que convierte un campo inventado en un rechazo: la 1 es una elección de
+ *    tipos, la 3 una red de compilación y la 4 una lectura del catálogo.
  * 3. **Los catálogos son los que ya existen.** `esTipoDeModulo` y
  *    `esClaseDeLinea` se importan de donde viven; no hay una segunda lista
  *    acá, que es la que se desincroniza.
+ * 4. **El precio de un servicio tarifado no es un campo que el modelo
+ *    rellena** (T-3 de `odd/tasks/precios-en-la-cotizacion.md`). Una línea
+ *    trae *o* el identificador de un servicio del catálogo *o* un monto,
+ *    nunca las dos y nunca ninguna, y cuando trae el servicio **el monto lo
+ *    pone este archivo leyendo la cifra que viajó con el identificador**.
+ *    Para todo lo que el bufete tarifó, un monto alucinado deja de ser
+ *    posible: no hay clave donde escribirlo. Las dos del medio —el juego de
+ *    claves cerrado y la red de compilación— son lo que sostiene que la
+ *    cuarta no se pueda rodear agregando un campo.
  *
  * ## Por qué esto es más estricto que el formulario, a propósito
  *
@@ -54,7 +67,10 @@
  * `worker/ia/modelo.ts` para el campo donde el material de referencia viaja.
  */
 
-import type { DatosDeLinea, DatosDeModulo } from "../contract";
+import type {
+  DatosDeLineaConOrigen,
+  DatosDeModulo,
+} from "../contract";
 import { esClaseDeLinea } from "../cotizaciones/lineas";
 import { esTipoDeModulo } from "../cotizaciones/modulos";
 
@@ -72,7 +88,7 @@ import { esTipoDeModulo } from "../cotizaciones/modulos";
  */
 export interface PropuestaDelModelo {
   readonly modulos: readonly DatosDeModulo[];
-  readonly lineas: readonly DatosDeLinea[];
+  readonly lineas: readonly DatosDeLineaConOrigen[];
 }
 
 export type MotivoDeRechazoDeSalida =
@@ -94,10 +110,52 @@ export type MotivoDeRechazoDeSalida =
   | "clase_de_linea_desconocida"
   /** Prosa vacía, de puros espacios, ausente o que no es cadena. */
   | "texto_requerido"
-  /** No es un entero de centavos, cero o más. Nunca coma flotante. */
+  /**
+   * No es un entero de centavos, cero o más. Nunca coma flotante.
+   *
+   * **Y también la línea que no trae precio de ningún lado** (T-3): ni un
+   * servicio tarifado ni un monto. Es el mismo motivo y no uno nuevo porque
+   * desde donde está quien tiene que arreglarlo —el prompt— «esto no es un
+   * importe» y «acá no hay importe» son el mismo defecto y la corrección es la
+   * misma. Es el reparto que `monto_invalido` ya hacía en `worker/contract.ts`
+   * con sus cuatro formas de no ser un número.
+   */
   | "monto_invalido"
   /** Un trámite que quien llamó no declaró haber ofrecido en el prompt. */
   | "tipo_de_proceso_no_ofrecido"
+  /* --- El precio de una línea sale de un solo lugar (T-3 de
+     `odd/tasks/precios-en-la-cotizacion.md`) --- */
+  /**
+   * Un servicio tarifado que quien llamó no declaró haber ofrecido.
+   *
+   * El gemelo exacto de `tipo_de_proceso_no_ofrecido`, y por el mismo motivo:
+   * `arancelRenglonId` es una llave foránea contra `arancel_renglon` **de este
+   * bufete**, así que no hay catálogo en código que la pueda cerrar. La cierra
+   * quien llama diciendo qué ids puso en el prompt, y **con ellos la cifra**,
+   * porque el precio sale de esa misma lista.
+   *
+   * Cubre cuatro situaciones que desde acá son una sola —el identificador
+   * inventado, el del bufete vecino, el encabezado del acuerdo y el renglón
+   * sin ninguna cifra—: lo ofrecible son los renglones con cifra, así que
+   * cualquiera de los cuatro es, desde este archivo, un identificador que no
+   * está en la lista. Un motivo por situación serían cuatro guardas para el
+   * mismo hecho.
+   */
+  | "servicio_no_ofrecido"
+  /**
+   * La línea nombra un servicio tarifado **y** escribe un monto.
+   *
+   * Tiene motivo propio y no se resuelve eligiendo uno de los dos en
+   * silencio: un modelo que manda los dos campos está diciendo dos cosas
+   * distintas sobre quién pone el precio, y quedarse con el del catálogo
+   * dejaría al prompt pidiendo una cosa y al esquema aceptando otra sin que
+   * nadie se entere hasta que el modelo empiece a mandar siempre los dos.
+   *
+   * **El defecto es que tarifó, no que tarifó mal**, así que éste gana sobre
+   * `monto_invalido` incluso cuando el número que mandó no es un importe: la
+   * corrección es sacar el campo, no arreglarlo.
+   */
+  | "servicio_y_monto_a_la_vez"
   /** Ni un módulo ni una línea: una página en blanco. */
   | "propuesta_vacia";
 
@@ -121,8 +179,42 @@ export type ValidacionDePropuesta =
  * trámite, porque un identificador que el modelo compuso solo es la definición
  * de un dato inventado.
  */
+/**
+ * Un servicio tarifado que quien llama declara haber ofrecido, **con su
+ * cifra**.
+ *
+ * El identificador y el monto viajan juntos, y eso es toda la decisión de
+ * T-3: con la lista de ids de un lado y los precios del otro habría dos
+ * valores que se tienen que corresponder y se piden por separado, que es el
+ * defecto contra el que `worker/ia/prompt.ts` ya existe. Acá el precio de una
+ * línea tarifada sale **de la misma fila** que la autorizó, así que no hay
+ * ninguna ventana en la que el catálogo que validó y el que tarifó puedan
+ * decir cosas distintas.
+ *
+ * `monto` es la cifra del bufete —`COALESCE(monto, monto_oficial)`, el mismo
+ * criterio de `migrations/0015_un_precio_es_una_cifra.sql`— en centavos
+ * enteros. **No hay un segundo número acá**, y la ausencia es deliberada: un
+ * `montoOficial` al lado sería la comparación con el arancel que
+ * `odd/tasks/arancel-de-honorarios.md` dejó prohibida, metida en el único
+ * lugar del sistema que no tiene pantalla.
+ */
+export interface ServicioOfrecido {
+  readonly id: string;
+  /** Centavos enteros, cero o más. La cifra del bufete para ese servicio. */
+  readonly monto: number;
+}
+
 export interface CatalogosOfrecidos {
   readonly tiposDeProceso?: readonly string[];
+  /**
+   * Los servicios tarifados que el prompt nombró, con su precio.
+   *
+   * **Falla cerrada igual que `tiposDeProceso`**: sin catálogo declarado
+   * ninguna línea puede nombrar un servicio, porque un identificador que el
+   * modelo compuso solo es la definición de un dato inventado — y acá peor,
+   * porque de ese identificador sale el precio.
+   */
+  readonly servicios?: readonly ServicioOfrecido[];
 }
 
 /* ==========================================================================
@@ -152,12 +244,26 @@ export const CLAVES_DE_MODULO = [
   "contenido",
 ] as const satisfies readonly (keyof DatosDeModulo)[];
 
+/**
+ * **La frontera que T-3 movió, y queda escrito que fue una decisión.**
+ *
+ * Hasta T-2 esta lista se cerraba contra `DatosDeLinea` —las cuatro claves de
+ * lo que una línea lleva sin su procedencia— y el contrato dejó anotado por
+ * qué: declarar `arancelRenglonId` acá era abrirle la puerta al modelo
+ * **antes** de la regla del `xor`. Esa regla ya está escrita unas líneas más
+ * abajo, así que la puerta se abre ahora, y se cierra contra el tipo ancho.
+ *
+ * Que la red de `DebeSerVacio` mire `DatosDeLineaConOrigen` es estrictamente
+ * más fuerte que antes: hasta hoy un campo agregado **sólo** al tipo ancho no
+ * ponía nada en rojo, porque la exclusión se calculaba sobre el angosto.
+ */
 export const CLAVES_DE_LINEA = [
   "clase",
   "concepto",
   "monto",
   "tipoProcesoId",
-] as const satisfies readonly (keyof DatosDeLinea)[];
+  "arancelRenglonId",
+] as const satisfies readonly (keyof DatosDeLineaConOrigen)[];
 
 /**
  * La red: la exclusión **bajo una restricción**.
@@ -184,7 +290,7 @@ export type ClavesDeModuloSinDeclarar = DebeSerVacio<
   Exclude<keyof DatosDeModulo, (typeof CLAVES_DE_MODULO)[number]>
 >;
 export type ClavesDeLineaSinDeclarar = DebeSerVacio<
-  Exclude<keyof DatosDeLinea, (typeof CLAVES_DE_LINEA)[number]>
+  Exclude<keyof DatosDeLineaConOrigen, (typeof CLAVES_DE_LINEA)[number]>
 >;
 
 /* ==========================================================================
@@ -285,8 +391,9 @@ function validarLinea(
   crudo: unknown,
   ruta: string,
   tiposDeProceso: readonly string[],
+  servicios: readonly ServicioOfrecido[],
   rechazos: RechazoDeSalida[],
-): DatosDeLinea | null {
+): DatosDeLineaConOrigen | null {
   if (!esObjeto(crudo)) {
     rechazos.push(rechazo(ruta, "linea_no_es_objeto"));
     return null;
@@ -307,9 +414,52 @@ function validarLinea(
     rechazos.push(rechazo(`${ruta}.concepto`, "texto_requerido"));
   }
 
-  const monto = crudo.monto;
-  const montoValido = esMontoEnCentavos(monto);
-  if (!montoValido) {
+  // ====================================================================
+  // El precio: **o el catálogo, o el modelo. Nunca los dos, nunca ninguno.**
+  //
+  // Es la frontera de `docs/diseno.md` §8 corrida un paso. Ya decía «la IA
+  // rellena campos tipados; el sistema hace la aritmética»; acá el precio de
+  // un servicio conocido deja de ser un campo que la IA rellena. Para todo lo
+  // que está en el catálogo, un monto alucinado deja de ser posible — no
+  // porque el modelo se porte bien, sino porque **no hay dónde escribirlo**.
+  // ====================================================================
+
+  // El servicio es opcional, igual que el trámite: una consulta o una
+  // mensajería no sale de ningún renglón tarifado, y es el caso corriente.
+  // Ausente y nulo son lo mismo y no son una falla.
+  const servicio = crudo.arancelRenglonId;
+  const nombraServicio = servicio !== undefined && servicio !== null;
+  const tarifado =
+    typeof servicio === "string"
+      ? (servicios.find((uno) => uno.id === servicio) ?? null)
+      : null;
+
+  if (nombraServicio && tarifado === null) {
+    rechazos.push(rechazo(`${ruta}.arancelRenglonId`, "servicio_no_ofrecido"));
+  }
+
+  // `monto` nulo es `monto` ausente, por lo mismo que arriba: un modelo que
+  // escribe el campo en nulo no está tarifando nada, así que al lado de un
+  // servicio no es la contradicción sino la forma correcta.
+  const montoDelModelo = crudo.monto;
+  const modeloTarifo = montoDelModelo !== undefined && montoDelModelo !== null;
+
+  // `null` hasta que alguno de los dos caminos lo ponga, y es lo que estrecha
+  // el tipo abajo: una línea sin precio no se construye.
+  let monto: number | null = null;
+
+  if (nombraServicio && modeloTarifo) {
+    // La contradicción gana sobre `monto_invalido` aunque el número sea
+    // basura: el defecto es que tarifó, y la corrección es sacar el campo.
+    rechazos.push(rechazo(`${ruta}.monto`, "servicio_y_monto_a_la_vez"));
+  } else if (nombraServicio) {
+    // **Acá tarifa el sistema.** El número sale de la fila que autorizó el
+    // identificador, no de una segunda lectura que podría discrepar.
+    if (tarifado !== null) monto = tarifado.monto;
+  } else if (esMontoEnCentavos(montoDelModelo)) {
+    monto = montoDelModelo;
+  } else {
+    // Ausente, nulo e inválido caen en el mismo motivo: ver su comentario.
     rechazos.push(rechazo(`${ruta}.monto`, "monto_invalido"));
   }
 
@@ -330,10 +480,18 @@ function validarLinea(
   }
 
   // Construcción, no guarda: ver el comentario gemelo en `validarModulo`.
-  if (!claseConocida || concepto === null || !montoValido || !tramiteValido) {
+  // `monto === null` es la condición que lo estrecha a `number`, y de paso
+  // cubre sola los tres caminos por los que una línea se queda sin precio.
+  if (!claseConocida || concepto === null || monto === null || !tramiteValido) {
     return null;
   }
-  return { clase, concepto, monto, tipoProcesoId };
+  return {
+    clase,
+    concepto,
+    monto,
+    tipoProcesoId,
+    arancelRenglonId: tarifado === null ? null : tarifado.id,
+  };
 }
 
 function validarColeccion<T>(
@@ -383,6 +541,7 @@ export function validarPropuesta(
 
   const rechazos: RechazoDeSalida[] = [];
   const tiposDeProceso = catalogos.tiposDeProceso ?? [];
+  const servicios = catalogos.servicios ?? [];
 
   for (const clave of clavesDeMas(crudo, CLAVES_DE_PROPUESTA)) {
     rechazos.push(rechazo(`propuesta.${clave}`, "campo_desconocido"));
@@ -398,7 +557,8 @@ export function validarPropuesta(
   const lineas = validarColeccion(
     crudo.lineas,
     "lineas",
-    (elemento, ruta) => validarLinea(elemento, ruta, tiposDeProceso, rechazos),
+    (elemento, ruta) =>
+      validarLinea(elemento, ruta, tiposDeProceso, servicios, rechazos),
     rechazos,
   );
 

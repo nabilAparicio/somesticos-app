@@ -716,9 +716,22 @@ async function rutaDeGeneracion(
     ]);
   }
 
+  // Las dos lecturas en paralelo: son dos tablas distintas y ninguna depende
+  // de la otra, así que encadenarlas sumaría una ida a la base al costo de una
+  // generación que ya va a esperar decenas de segundos al modelo.
+  const [tipos, servicios] = await Promise.all([
+    catalogos.listarTiposProceso(tenantId),
+    servicio.listarServiciosTarifados(tenantId),
+  ]);
+
   const propuesta = await generarPropuesta(modelo, {
     descripcion: prosa.descripcion,
-    tramites: tramitesOfrecidos(await catalogos.listarTiposProceso(tenantId)),
+    tramites: tramitesOfrecidos(tipos),
+    // Sin mapear: `listarServiciosTarifados` ya devuelve la forma que el
+    // prompt nombra, con la cifra resuelta en SQL. Un `map` acá que eligiera
+    // entre el precio del bufete y el del acuerdo sería el segundo lugar
+    // donde se decide cuál es el precio de un servicio.
+    servicios,
   });
 
   if (!propuesta.ok) return generacionFallida(propuesta.falla.motivo);

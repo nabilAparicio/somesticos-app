@@ -1685,35 +1685,38 @@ export interface DatosDeLinea {
 }
 
 /**
- * Lo que una **persona** manda al agregar o editar una línea: lo de arriba,
- * más de dónde salió el precio (T-2 de
+ * Una línea con **de dónde salió su precio** (T-2 de
  * `odd/tasks/precios-en-la-cotizacion.md`).
  *
- * ## Por qué son dos tipos y no un campo más en `DatosDeLinea`
+ * ## La frontera que esto marcaba se movió en T-3, y queda escrito
  *
- * Porque hoy hay **dos escritores de líneas y escriben cosas distintas**, y el
- * tipo lo dice en vez de dejarlo en un comentario:
+ * Hasta T-2 este tipo decía que había **dos escritores de líneas que escribían
+ * cosas distintas**: una persona en el editor elegía un servicio tarifado del
+ * catálogo, y el modelo **no podía** nombrar ninguno. Lo que sostenía esa
+ * mitad era mecánico y no una convención: `worker/ia/esquema.ts` declara el
+ * juego de claves que la salida del modelo admite con un `satisfies readonly
+ * (keyof …)[]` y una red `DebeSerVacio`, así que meter el campo en
+ * `DatosDeLinea` obligaba a declararlo allá — o sea, a abrirle la puerta al
+ * modelo **antes** de la regla que T-3 existía para escribir.
  *
- *  - una persona en el editor —esta tarea— elige un servicio tarifado del
- *    catálogo del bufete, y el sistema le propone concepto y monto para que
- *    los edite encima;
- *  - el modelo —T-3— todavía **no puede** nombrar un servicio.
- *    `worker/ia/esquema.ts` declara el juego de claves que la salida del
- *    modelo admite con un `satisfies readonly (keyof DatosDeLinea)[]` y una
- *    red `DebeSerVacio` que impide que la unión y la lista se separen. Meter
- *    el campo en `DatosDeLinea` obligaría a declararlo allá, y eso es abrirle
- *    la puerta al modelo **antes** de la regla que T-3 existe para escribir:
- *    o un servicio tarifado sin monto, o un monto sin servicio tarifado, nunca
- *    las dos y nunca ninguna. Sin esa regla, un modelo que mandara las dos
- *    cosas estaría contradiciéndose sobre quién pone el precio y nadie se
- *    enteraría.
+ * Esa regla ya está escrita: una línea del modelo trae *o* un servicio
+ * tarifado *o* un monto, nunca las dos y nunca ninguna, y cuando trae el
+ * servicio **el monto lo pone el sistema** desde el catálogo. Así que el juego
+ * de claves de la salida del modelo se cierra ahora contra **este** tipo, y
+ * los dos escritores escriben la misma forma.
  *
- * O sea: la separación no es una comodidad para no tocar `worker/ia/`, es la
- * frontera que esa tarea tiene que mover a conciencia. **Cuando T-3 la mueva,
- * los dos tipos se colapsan en uno** y esta interfaz desaparece; queda escrito
- * acá para que el día que eso pase sea una decisión y no un descubrimiento.
+ * ## Por qué siguen siendo dos nombres, y qué queda pendiente
  *
- * `extends` y no una copia, para que todo lo que ya recibe `DatosDeLinea`
+ * Porque lo único que separa a los dos tipos es el nombre: `DatosDeLinea` es
+ * esto sin el campo, y nadie construye ya una línea sin él. Colapsarlos es un
+ * renombre sin conducta, y sus tres usos restantes viven en
+ * `src/pantallas/cotizaciones/`, fuera de la superficie autorizada de T-3.
+ * **La red de compilación ya se mudó al tipo ancho**, que es la mitad que
+ * importaba: un campo nuevo acá pone el `typecheck` en rojo hasta que la
+ * salida del modelo lo declare. El renombre queda anotado como deuda, no como
+ * frontera.
+ *
+ * `extends` y no una copia, para que todo lo que recibe `DatosDeLinea`
  * —`validarTipoDeProceso`, `totalesDe`— siga sirviendo sin un solo cambio.
  */
 export interface DatosDeLineaConOrigen extends DatosDeLinea {
@@ -1723,10 +1726,18 @@ export interface DatosDeLineaConOrigen extends DatosDeLinea {
    * Nulo es el caso corriente: una consulta, una mensajería, un cobro que no
    * corresponde a ningún servicio tarifado.
    *
-   * **No es una restricción sobre `monto`.** El prellenado del editor es una
-   * propuesta y editarla encima es legítimo, así que el servidor guarda el
-   * importe que llegó y no vuelve a mirar el catálogo. Lo que la referencia
-   * registra es de dónde salió el precio, no cuánto vale.
+   * **No es una restricción sobre `monto` cuando escribe una persona.** El
+   * prellenado del editor es una propuesta y editarla encima es legítimo, así
+   * que el servidor guarda el importe que llegó y no vuelve a mirar el
+   * catálogo: lo que la referencia registra es de dónde salió el precio, no
+   * cuánto vale.
+   *
+   * **Cuando escribe el modelo sí lo es** (T-3), y los dos tratos conviven sin
+   * contradecirse: «el sistema pone el precio» es la regla para el modelo, no
+   * para una persona tecleando. Lo que la hace cierta es que el modelo no
+   * tiene cómo mandar las dos cosas —`worker/ia/esquema.ts` rechaza la línea
+   * que trae servicio y monto—, así que el único número que puede llegar con
+   * una referencia es el del catálogo.
    */
   arancelRenglonId: string | null;
 }

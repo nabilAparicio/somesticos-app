@@ -172,11 +172,11 @@ mover acá.
 
 ### T-3 · El agente elige y el sistema tarifa
 
-- [ ] El prompt lleva los servicios tarifados, fallando cerrada si no hay.
-- [ ] El esquema de salida: servicio tarifado **xor** monto. Motivo de
+- [x] El prompt lleva los servicios tarifados, fallando cerrada si no hay.
+- [x] El esquema de salida: servicio tarifado **xor** monto. Motivo de
       rechazo propio para el modelo que manda los dos.
-- [ ] El generador pone el precio desde el catálogo.
-- [ ] Una prueba que **el modelo no puede cambiar un precio del catálogo**,
+- [x] El generador pone el precio desde el catálogo.
+- [x] Una prueba que **el modelo no puede cambiar un precio del catálogo**,
       ni mandando un monto, ni mandando los dos campos.
 
 ## Criterios de aceptación
@@ -734,3 +734,168 @@ el mismo principio esa frase debería hablar de preestablecidos.
   `CLAVES_DE_LINEA` siguen siendo las dos puntas que esa tarea tiene que unir, y
   ahora el catálogo que viaje al modelo son **282 servicios y no 7**, que es un
   tamaño distinto para la decisión de `modelo.ts:71` sobre la recuperación.
+
+### T-3 cerrada · el agente elige y el sistema tarifa
+
+**Qué entró.** El prompt gana una sección con los precios del bufete
+(`catalogoDeServicios`, que **falla cerrada** y lo dice), el esquema de salida
+cambia de «el `monto` es obligatorio» a **servicio tarifado *xor* monto** con
+dos motivos nuevos, y **el monto de una línea tarifada lo pone
+`validarPropuesta`** leyendo la cifra que viajó con el identificador. La ruta de
+generación lee el catálogo por un puerto nuevo —
+`ServicioDeCotizaciones.listarServiciosTarifados`— y `crearDesdePropuesta`
+escribe por fin `arancel_renglon_id`, que es la columna que T-1 dejó sin
+escritor del lado de la IA.
+
+**Checks observados, en primer plano.** `pnpm lint`: limpio. `pnpm typecheck`:
+limpio. `pnpm test`: **2478 en 47 archivos** (eran 2452; +26). `pnpm test:e2e`:
+**487 de 487**, incluido el intermitente de `e2e/sin-scroll-horizontal.spec.ts`
+que las dos tajadas anteriores vieron caer. La base local quedó exactamente
+como se encontró y está medido después de las corridas: 453 renglones con **7
+precios del bufete** —282 con cifra—, 49 líneas con **1 origen**, 10
+cotizaciones, 8 clientes, 9 procesos, 57 notas y 157 asientos de bitácora. Esta
+tarea no escribe nada contra la D1 de desarrollo: las pruebas corren sobre el
+almacenamiento aislado del runner.
+
+#### El sistema tarifa **en la puerta**, y no en el generador
+
+El documento decía «el sistema tarifa al componer la propuesta» y había dos
+lugares donde eso podía significar algo. Se eligió `validarPropuesta`, que es la
+única puerta por la que la salida del modelo entra al sistema, y el argumento es
+el que ya estaba escrito en `worker/ia/prompt.ts` para los trámites: el catálogo
+que **autoriza** un identificador y el que le **pone el precio** tienen que ser
+la misma lista. Por eso `ServicioOfrecido` lleva `{ id, monto }` juntos y no una
+lista de ids por un lado y los precios por otro: con dos listas, la que validó y
+la que tarifó podrían decir cosas distintas y el borrador saldría con un monto
+que no es el que el modelo leyó para escribir la prosa.
+
+Tarifar en `generarPropuesta` habría obligado además a recorrer las líneas ya
+validadas para rellenarles un campo, y entonces existiría el estado intermedio
+—una propuesta validada sin precio— que alguien podría guardar.
+
+#### Los dos motivos nuevos, y por qué el tercero no existe
+
+- **`servicio_no_ofrecido`**, el gemelo exacto de
+  `tipo_de_proceso_no_ofrecido`. Cubre cuatro situaciones que desde el esquema
+  son una sola —el identificador inventado, el del bufete vecino, el rubro y el
+  renglón sin cifra—, porque lo ofrecible son los renglones con cifra y
+  cualquiera de los cuatro es, desde ahí, un id que no está en la lista. Cuatro
+  motivos serían cuatro guardas para el mismo hecho.
+- **`servicio_y_monto_a_la_vez`**, para el modelo que se contradice sobre quién
+  pone el precio. **Gana sobre `monto_invalido` incluso cuando el número que
+  mandó no es un importe**, y hay una prueba con `"180000"` como texto: el
+  defecto es que tarifó, no que tarifó mal, y la corrección es sacar el campo.
+- **No hay un motivo para «ninguno de los dos»**: ésa es la línea sin precio y
+  sigue siendo `monto_invalido`, que es el reparto que ese motivo ya hacía con
+  sus cuatro formas de no ser un número. Desde donde está quien tiene que
+  arreglarlo —el prompt— «esto no es un importe» y «acá no hay importe» mandan a
+  hacer lo mismo.
+
+#### El tamaño, medido, y es la consecuencia que no se resuelve sola
+
+Contra los 282 servicios de la D1 local, con el catálogo renderizado de verdad:
+
+| | Caracteres | KB | Tokens (~3,5 car.) |
+|---|---|---|---|
+| Prompt **sin** catálogo | 3.195 | 3,1 | ~910 |
+| Prompt **con** catálogo | 33.499 | 32,7 | ~9.570 |
+| **La sección sola** | 30.304 | 29,6 | ~8.660 |
+
+O sea: el encargo pasa de ~900 a ~9.600 tokens, **diez veces**, y son 107,5
+caracteres por servicio. Queda escrito que es un número grande y **no se
+escribió ninguna capa de recuperación**: `modelo.ts` explica a lo largo por qué
+no se escribe una interfaz contra un corpus que nadie definió, y eso sigue
+valiendo —esto no es un corpus, es el catálogo entero del bufete, y recortarlo
+por relevancia sería decidir por el modelo qué servicios existen—.
+
+Lo que sí queda anotado son las dos salidas baratas, en orden de costo:
+
+1. **El bloque de sistema es un prefijo estable.** El catálogo es idéntico entre
+   generaciones, así que `cache_control` sobre el bloque de instrucciones lo
+   cobra una vez. Es una decisión de `worker/ia/anthropic.ts` **con su prueba**,
+   porque ese archivo afirma que el cuerpo manda exactamente cuatro claves y esa
+   aserción existe justamente para que agregar un parámetro sea deliberado.
+2. **La categoría se repite 282 veces y cuesta 11.612 caracteres.** Impresa una
+   vez por grupo —son 24 categorías, 1.106 caracteres— se ahorran **10.506
+   caracteres, unos 3.000 tokens**, un tercio de la sección. No se hizo acá
+   porque agrupar cambia la forma de la lista que el modelo lee y esta tarea ya
+   cambió el esquema de salida; es una tajada de dibujo del prompt con su propia
+   medición.
+
+#### Nada distingue un editado de un preestablecido, y se prueba por los dos lados
+
+Al modelo le llegan 282 precios y ninguna etiqueta: hay una prueba que recorre
+el texto del prompt buscando «preestablecido», «sugerido» y «monto oficial» y
+exige que no aparezcan, y otra que afirma que de un renglón editado viaja el
+precio del bufete —320.000 en la muestra— y **no** la cita del acuerdo —18.755—.
+Los dos importes de la muestra son distintos a propósito: si coincidieran, un
+catálogo que le pasara al modelo la tarifa mínima de 2001 pasaría sin que nada
+lo notara.
+
+#### Qué se decidió sobre `DatosDeLineaConOrigen`, que el documento dejaba abierto
+
+T-2 escribió que «cuando T-3 mueva esa frontera, los dos tipos se colapsan en
+uno y `DatosDeLineaConOrigen` desaparece». **La frontera se movió y el tipo se
+quedó**, y el reparto es éste:
+
+- **La mitad que importaba ya se mudó**: `CLAVES_DE_LINEA` se cierra ahora
+  contra `keyof DatosDeLineaConOrigen` y la red `DebeSerVacio` mira el tipo
+  ancho. Eso es **estrictamente más fuerte** que antes: hasta hoy un campo
+  agregado sólo al tipo ancho no ponía nada en rojo, porque la exclusión se
+  calculaba sobre el angosto.
+- **El renombre no entró**, y es deuda y no frontera: lo único que separa a los
+  dos tipos es el nombre, y sus tres usos restantes viven en
+  `src/pantallas/cotizaciones/lineas.ts` y `api.ts`, fuera de la superficie
+  autorizada de esta tarea. Es un renombre sin conducta y conviene hacerlo
+  entero, no a medias.
+
+#### Dónde quedó la lectura del catálogo, y la alternativa que no se pudo tomar
+
+`listarServiciosTarifados` vive en el puerto de **cotizaciones** y no en el del
+arancel. La forma mejor ordenada es la otra —la tabla `arancel_renglon` tiene su
+propio adaptador—, pero el ruteo de cotizaciones recibe tres cosas y ninguna es
+el servicio de arancel: pasárselo es un parámetro más en `worker/index.ts`, que
+está fuera de la superficie de esta tarea. La consulta quedó al lado de
+`validarOrigenDelPrecio`, que ya leía `arancel_renglon` desde ahí, y **las dos
+comparten ahora una sola expresión** —`CIFRA_DEL_RENGLON`— para que no puedan
+discrepar sobre qué es un precio. Eso último es ganancia y no concesión: antes
+la expresión estaba escrita una vez en SQL y una vez en TypeScript.
+
+#### Lo que el documento decía y resultó estar mal
+
+- **`src/mensajes.ts` no obligó a nada.** El documento y el encargo advertían
+  que su `Record` exhaustivo forzaría una frase para cada motivo nuevo, y no es
+  así: los exhaustivos de ese archivo son sobre `MotivoDeFalla` —las fallas de
+  validación de un cuerpo— y `MotivoDeFallaDelModelo` —los siete de la costura—.
+  `MotivoDeRechazoDeSalida` **no se dibuja en ninguna pantalla**: lo que viaja en
+  el 502 es el motivo de la falla, y los rechazos del esquema son para el
+  operador. El archivo no se tocó.
+- **«El generador pone el precio»** quedó dicho con una precisión distinta a la
+  del documento: lo pone el esquema, que es la puerta, y el generador es quien
+  hace llegar el catálogo entero hasta ahí. Ver más arriba.
+
+#### Deuda que T-3 deja a la vista
+
+- **El prompt no tiene caché y la categoría se repite.** Los dos números están
+  medidos arriba.
+- **Una generación no revalida el servicio contra la base**, igual que no
+  revalida el trámite, y por el mismo argumento: el esquema ya rechaza todo id
+  que el prompt no ofreció, y lo ofrecible se filtra con la misma expresión con
+  la que la ruta valida. La ventana que queda —que el bufete le borre el precio a
+  un servicio **mientras** el modelo piensa— la cierra el disparador de
+  `0013`/`0015`: la guarda de la base es el respaldo, no la única defensa.
+- **El catálogo que viaja al modelo no mira `activo`.** La columna existe y
+  significa «retirado», pero ninguna ruta la escribe y el editor de líneas
+  tampoco la filtra, así que filtrarla sólo acá sería otra vez dos criterios
+  distintos para la misma pregunta. El día que algo escriba `activo`, son tres
+  lugares a tocar y están nombrados: este puerto, el editor y
+  `validarOrigenDelPrecio`.
+- **El prompt imprime los montos en centavos enteros** —`50000` y no
+  «B/.500.00»— y eso es deliberado: formatear obligaría a dividir por cien en el
+  prompt, que es aritmética donde no va, y le enseñaría al modelo dos formatos de
+  dinero a la vez. Si alguna vez la prosa generada sale con cifras raras, éste es
+  el primer lugar donde mirar.
+
+- Próximo paso: ninguno dentro de esta tajada. Las cuatro tareas están cerradas
+  y los criterios de aceptación se cumplen. Lo que queda son las deudas
+  anotadas, y la de `/catalogos/Catalogos.tsx` que T-2 ter dejó escrita.

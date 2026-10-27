@@ -50,7 +50,11 @@
  */
 
 import type { MotivoDeFallaDelModelo } from "../contract";
-import type { PropuestaDelModelo, RechazoDeSalida } from "./esquema";
+import type {
+  PropuestaDelModelo,
+  RechazoDeSalida,
+  ServicioOfrecido,
+} from "./esquema";
 import { proveedorAnthropic } from "./anthropic";
 
 /* ==========================================================================
@@ -79,6 +83,23 @@ export interface PeticionDeCompletado {
    * que `acceso_no_configurado`.
    */
   readonly tiposDeProcesoOfrecidos?: readonly string[];
+
+  /**
+   * Los servicios tarifados que el prompt le ofreció al modelo, **con su
+   * precio** (T-3 de `odd/tasks/precios-en-la-cotizacion.md`).
+   *
+   * Falla cerrada igual que el campo de arriba, y por el mismo motivo:
+   * `arancel_renglon` es una tabla de este bufete y no hay catálogo en código
+   * que la pueda cerrar. Lo que esta lista agrega es que **de acá sale el
+   * monto** de toda línea que nombre un servicio: el modelo elige qué servicio
+   * aplica y el sistema le pone el precio, así que una petición sin esta lista
+   * no tarifa nada, no es que tarife mal.
+   *
+   * Viaja junto con las instrucciones y no en otra llamada, porque el precio
+   * que el prompt imprimió y el que el sistema guarda tienen que ser el mismo
+   * número. Ver el encabezado de `worker/ia/prompt.ts`.
+   */
+  readonly serviciosOfrecidos?: readonly ServicioOfrecido[];
 
   /** Techo de tokens de salida. Sin esto, el del adaptador. */
   readonly maximoDeTokens?: number;

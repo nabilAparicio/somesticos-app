@@ -2,10 +2,19 @@
  * El generador: de una descripción en prosa a una propuesta validada (T-9,
  * `docs/diseno.md` §8 «La entrada»).
  *
- * No toca D1 y no sabe que existe HTTP. Lo que hace es juntar las tres
- * piezas que ya existían y que nadie había juntado: el catálogo de trámites
- * del bufete, el prompt que lo nombra, y la costura de T-8 que valida lo que
- * vuelve. Guardar el borrador es de `worker/cotizaciones/repositorio.ts`.
+ * No toca D1 y no sabe que existe HTTP. Lo que hace es juntar las piezas que
+ * ya existían y que nadie había juntado: los dos catálogos del bufete —sus
+ * trámites y sus servicios tarifados—, el prompt que los nombra, y la costura
+ * de T-8 que valida lo que vuelve. Guardar el borrador es de
+ * `worker/cotizaciones/repositorio.ts`.
+ *
+ * **Quién pone el precio de una línea tarifada se decide una sola vez y no
+ * acá** (T-3): el catálogo con su cifra viaja hasta `validarPropuesta`, que es
+ * la única puerta por la que la salida del modelo entra al sistema, y es ahí
+ * donde el monto se lee. Tarifar en esta función obligaría a recorrer de nuevo
+ * las líneas ya validadas para rellenarles un campo, y entonces existiría el
+ * estado intermedio —una propuesta validada sin precio— que alguien podría
+ * guardar.
  *
  * ## Por qué esto existe en vez de llamar a `proponer` desde la ruta
  *
@@ -39,7 +48,11 @@
 import type { FallaDeValidacion, MotivoDeFalla } from "../contract";
 import type { PropuestaDelModelo } from "./esquema";
 import type { ModeloDeLenguaje, ResultadoDelModelo } from "./modelo";
-import { encargoAlModelo, type TramiteOfrecido } from "./prompt";
+import {
+  encargoAlModelo,
+  type ServicioTarifado,
+  type TramiteOfrecido,
+} from "./prompt";
 
 /* ==========================================================================
    La descripción
@@ -119,6 +132,12 @@ export interface PedidoDeGeneracion {
   readonly descripcion: string;
   /** Los trámites de **este** bufete. Vacío es válido y falla cerrada. */
   readonly tramites: readonly TramiteOfrecido[];
+  /**
+   * Los servicios tarifados de **este** bufete, con su cifra. Vacío es válido
+   * y falla cerrada: el prompt lo dice y ninguna línea puede nombrar un
+   * servicio, con lo que el modelo tarifa todo como lo hacía antes de T-3.
+   */
+  readonly servicios: readonly ServicioTarifado[];
 }
 
 /**
@@ -135,7 +154,7 @@ export function generarPropuesta(
   modelo: ModeloDeLenguaje,
   pedido: PedidoDeGeneracion,
 ): Promise<ResultadoDelModelo<PropuestaDelModelo>> {
-  const encargo = encargoAlModelo(pedido.tramites);
+  const encargo = encargoAlModelo(pedido.tramites, pedido.servicios);
 
   return modelo.proponer({
     instrucciones: encargo.instrucciones,
@@ -144,5 +163,10 @@ export function generarPropuesta(
     // objeto. Separar estas dos líneas es abrir el círculo de T-7 en
     // silencio: ver el encabezado de `worker/ia/prompt.ts`.
     tiposDeProcesoOfrecidos: encargo.tiposDeProcesoOfrecidos,
+    // Y los precios, del mismo objeto y por la misma razón, que acá cuesta
+    // más: de esta lista sale el monto de cada línea tarifada, así que un
+    // camino que la recompusiera aparte podría guardar un número distinto del
+    // que el prompt le mostró al modelo.
+    serviciosOfrecidos: encargo.serviciosOfrecidos,
   });
 }

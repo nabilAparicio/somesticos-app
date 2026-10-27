@@ -51,7 +51,11 @@ import { CATALOGO_DE_MODULOS } from "../worker/cotizaciones/modulos";
 import { baseSobreD1 } from "../worker/db/base";
 import { TENANT_UNICO_ID, nuevoId } from "../worker/db/ids";
 import { normalizarDescripcion } from "../worker/ia/generador";
-import { encargoAlModelo, type TramiteOfrecido } from "../worker/ia/prompt";
+import {
+  encargoAlModelo,
+  type ServicioTarifado,
+  type TramiteOfrecido,
+} from "../worker/ia/prompt";
 import type { PropuestaDelModelo } from "../worker/ia/esquema";
 import type {
   ModeloDeLenguaje,
@@ -84,6 +88,74 @@ let tramiteDeBajaId: string;
 /** La descripción que el abogado escribe. Es la entrada de toda la tarea. */
 const DESCRIPCION =
   "Divorcio de mutuo acuerdo, hay bienes, el cliente pide pago diferido.";
+
+/* --- El arancel, que es de dónde sale el precio de una línea tarifada (T-3 de
+       `odd/tasks/precios-en-la-cotizacion.md`) ---
+
+   Se siembran **una sola vez**, en `beforeAll`, y no en `beforeEach` como todo
+   lo demás de esta suite, por el mismo motivo que en `test/lineas-api.spec.ts`:
+   el disparador `arancel_renglon_no_se_borra` de
+   `migrations/0012_arancel_de_honorarios.sql` aborta todo `DELETE` sobre esa
+   tabla, así que una siembra por prueba no tendría forma de limpiar la anterior
+   y chocaría contra `arancel_renglon_orden_unico`. Ninguna prueba de acá
+   escribe su `monto`, y hay una que lo comprueba. */
+
+/** Un servicio con precio **del bufete**: el que editó. */
+const SERVICIO_EDITADO_ID = "c1000000-0000-4000-8000-000000000001";
+/**
+ * Un servicio que el bufete **todavía no editó** y que ofrece igual.
+ *
+ * «Los preestablecidos son la norma hasta que se editen, no son una
+ * subcategoría» (T-2 bis). Al modelo le viaja exactamente como el otro: nada
+ * en el prompt distingue uno de otro.
+ */
+const SERVICIO_PREESTABLECIDO_ID = "c1000000-0000-4000-8000-000000000002";
+/** Una de las 97 reglas por cuantía **sin ninguna cifra**. No se ofrece. */
+const REGLA_SIN_CIFRA_ID = "c1000000-0000-4000-8000-000000000003";
+/** Uno de los 74 encabezados del acuerdo. Un título no tiene precio. */
+const RUBRO_ID = "c1000000-0000-4000-8000-000000000004";
+
+/** Lo que el bufete cobra por el servicio que editó. */
+const PRECIO_DEL_BUFETE = 320_000;
+/**
+ * El monto del acuerdo del **mismo** renglón, distinto del anterior.
+ *
+ * Distinto a propósito: si coincidieran, un catálogo que le pasara al modelo
+ * la cita de 2001 en lugar del precio del bufete pasaría sin que nada lo
+ * notara.
+ */
+const MONTO_OFICIAL_DEL_EDITADO = 18_755;
+/** La cifra del renglón que el bufete no editó: la del acuerdo, y es precio. */
+const PRECIO_PREESTABLECIDO = 75_000;
+
+function sembrarRenglon(fila: {
+  id: string;
+  orden: number;
+  concepto: string;
+  clase: "monto" | "regla" | "rubro";
+  montoOficial: number | null;
+  monto: number | null;
+  /* El `CHECK` `el_renglon_trae_lo_que_su_clase_promete` de `0012` exige que
+     una regla traiga su texto y que un rubro no traiga nada. */
+  reglaOficial?: string;
+}): D1PreparedStatement {
+  return env.DB.prepare(
+    "INSERT INTO arancel_renglon (id, tenant_id, orden, categoria, numeral," +
+      " concepto, clase, monto_oficial, regla_oficial, monto, activo)" +
+      " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+  ).bind(
+    fila.id,
+    TENANT_UNICO_ID,
+    fila.orden,
+    "ACTUACIONES ANTE EL SERVICIO NACIONAL DE MIGRACIÓN",
+    "a",
+    fila.concepto,
+    fila.clase,
+    fila.montoOficial,
+    fila.reglaOficial ?? null,
+    fila.monto,
+  );
+}
 
 /* ==========================================================================
    El entorno y las peticiones
@@ -172,6 +244,12 @@ function modeloQueEscribe(
         const validacion = validarTextoDePropuesta(texto, {
           tiposDeProceso:
             tramitesOfrecidos ?? peticionAlModelo.tiposDeProcesoOfrecidos,
+          // Los servicios tarifados viajan **tal como los declaró el
+          // generador**, sin que la prueba pueda sustituirlos: son los que
+          // ponen el precio de una línea tarifada, así que un doble que los
+          // reemplazara estaría probando su propio catálogo en vez del que el
+          // bufete tiene en la base.
+          servicios: peticionAlModelo.serviciosOfrecidos,
         });
 
         if (!validacion.ok) {
@@ -232,6 +310,7 @@ interface LineaEnElCable {
   concepto: string;
   monto: number;
   tipoProcesoId: string | null;
+  arancelRenglonId: string | null;
   orden: number;
 }
 
@@ -302,6 +381,42 @@ beforeAll(async () => {
   )
     .bind(autorId, TENANT_UNICO_ID, "Itzel", EMAIL_AUTOR)
     .run();
+
+  await env.DB.batch([
+    sembrarRenglon({
+      id: SERVICIO_EDITADO_ID,
+      orden: 1,
+      concepto: "Visa de trabajo · primer año",
+      clase: "monto",
+      montoOficial: MONTO_OFICIAL_DEL_EDITADO,
+      monto: PRECIO_DEL_BUFETE,
+    }),
+    sembrarRenglon({
+      id: SERVICIO_PREESTABLECIDO_ID,
+      orden: 2,
+      concepto: "Naturalización · persona natural",
+      clase: "monto",
+      montoOficial: PRECIO_PREESTABLECIDO,
+      monto: null,
+    }),
+    sembrarRenglon({
+      id: REGLA_SIN_CIFRA_ID,
+      orden: 3,
+      concepto: "De B/.0.01 hasta B/.3,000.00",
+      clase: "regla",
+      montoOficial: null,
+      monto: null,
+      reglaOficial: "El 20% sobre la cuantía",
+    }),
+    sembrarRenglon({
+      id: RUBRO_ID,
+      orden: 4,
+      concepto: "Residencias permanentes",
+      clase: "rubro",
+      montoOficial: null,
+      monto: null,
+    }),
+  ]);
 });
 
 beforeEach(async () => {
@@ -386,9 +501,34 @@ function tramites(): TramiteOfrecido[] {
   ];
 }
 
+/**
+ * Los servicios tarifados del bufete, tal como el prompt los va a nombrar.
+ *
+ * Se arman a mano y no se leen de la base en las pruebas del prompt, por lo
+ * mismo que `tramites()`: el prompt es puro y lo que se mide acá es el texto
+ * que produce. Que la lista salga del catálogo de verdad lo miden las pruebas
+ * de la generación, contra la D1.
+ */
+function servicios(): ServicioTarifado[] {
+  return [
+    {
+      id: SERVICIO_EDITADO_ID,
+      concepto: "Visa de trabajo · primer año",
+      categoria: "ACTUACIONES ANTE EL SERVICIO NACIONAL DE MIGRACIÓN",
+      monto: PRECIO_DEL_BUFETE,
+    },
+    {
+      id: SERVICIO_PREESTABLECIDO_ID,
+      concepto: "Naturalización · persona natural",
+      categoria: "ACTUACIONES ANTE EL SERVICIO NACIONAL DE MIGRACIÓN",
+      monto: PRECIO_PREESTABLECIDO,
+    },
+  ];
+}
+
 describe("el prompt del generador", () => {
   it("nombra los seis tipos de módulo, y los saca del catálogo", () => {
-    const { instrucciones } = encargoAlModelo(tramites());
+    const { instrucciones } = encargoAlModelo(tramites(), servicios());
 
     for (const entrada of CATALOGO_DE_MODULOS) {
       expect(
@@ -400,7 +540,7 @@ describe("el prompt del generador", () => {
   });
 
   it("nombra las dos clases de línea, y las saca del catálogo", () => {
-    const { instrucciones } = encargoAlModelo(tramites());
+    const { instrucciones } = encargoAlModelo(tramites(), servicios());
 
     for (const entrada of CATALOGO_DE_CLASES) {
       expect(instrucciones).toContain(entrada.clase);
@@ -408,7 +548,7 @@ describe("el prompt del generador", () => {
   });
 
   it("pide JSON pelado, sin cercas", () => {
-    const { instrucciones } = encargoAlModelo(tramites());
+    const { instrucciones } = encargoAlModelo(tramites(), servicios());
 
     // El esquema rechaza un bloque con cercas a propósito, y no lo
     // desenvuelve: esa tolerancia convertiría un defecto del prompt en una
@@ -417,7 +557,7 @@ describe("el prompt del generador", () => {
   });
 
   it("le prohíbe sumar, con todas las letras", () => {
-    const { instrucciones } = encargoAlModelo(tramites());
+    const { instrucciones } = encargoAlModelo(tramites(), servicios());
 
     expect(instrucciones.toLowerCase()).toContain("total");
   });
@@ -428,7 +568,7 @@ describe("el prompt del generador", () => {
    * hay forma de que uno diga una cosa y el otro otra.
    */
   it("declara como ofrecidos exactamente los trámites que puso en el texto", () => {
-    const encargo = encargoAlModelo(tramites());
+    const encargo = encargoAlModelo(tramites(), servicios());
 
     expect(encargo.tiposDeProcesoOfrecidos).toEqual([
       tramiteVisaId,
@@ -442,12 +582,130 @@ describe("el prompt del generador", () => {
   });
 
   it("sin trámites en el catálogo, no ofrece ninguno", () => {
-    const encargo = encargoAlModelo([]);
+    const encargo = encargoAlModelo([], servicios());
 
     expect(encargo.tiposDeProcesoOfrecidos).toEqual([]);
     // Falla cerrada: sin catálogo declarado, ninguna línea puede traer
     // trámite. Es la misma precedencia que `acceso_no_configurado`.
     expect(encargo.instrucciones).toContain("ningún trámite");
+  });
+});
+
+/* ==========================================================================
+   El catálogo tarifado del prompt (T-3)
+
+   Lo que este bloque protege es que **el modelo sepa cuánto cobra el bufete**.
+   Hasta T-3 el prompt nombraba trámites sin un solo precio y le pedía el
+   `monto` igual: le pedíamos una cifra de dinero a alguien al que no le
+   dijimos cuánto cobra el bufete, y lo que salía era un número inventado.
+   ========================================================================== */
+
+describe("el prompt lleva los servicios tarifados del bufete", () => {
+  it("nombra cada servicio con su identificador, su concepto y su cifra", () => {
+    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+
+    for (const servicio of servicios()) {
+      expect(
+        instrucciones,
+        `el prompt no nombra el servicio «${servicio.concepto}», así que el` +
+          " modelo no lo puede elegir y la línea saldría con un monto" +
+          " inventado",
+      ).toContain(servicio.id);
+      expect(instrucciones).toContain(servicio.concepto);
+      expect(
+        instrucciones,
+        `el prompt nombra «${servicio.concepto}» sin su precio: el modelo` +
+          " elige a ciegas y la prosa que escriba no va a corresponder con" +
+          " lo que el bufete cobra",
+      ).toContain(String(servicio.monto));
+    }
+  });
+
+  /**
+   * **El control de hostilidad de este bloque.** Una sección ausente pasaría
+   * cualquier prueba que sólo buscara «no aparece ningún precio»: por eso lo
+   * que se afirma es la frase que **sí** tiene que estar.
+   *
+   * Un prompt que simplemente no habla de precios deja al modelo libre de
+   * inventar uno, que es el defecto que esta tajada entera existe para
+   * cerrar. Es el mismo argumento con el que `catalogoDeTramites` falla
+   * cerrada desde T-9.
+   */
+  it("sin servicios tarifados lo dice, en vez de omitir la sección", () => {
+    const encargo = encargoAlModelo(tramites(), []);
+
+    expect(encargo.serviciosOfrecidos).toEqual([]);
+    expect(
+      encargo.instrucciones,
+      "el prompt se queda callado sobre los precios cuando el bufete no" +
+        " tarifó nada: el modelo va a inventar un monto y nadie se va a" +
+        " enterar",
+    ).toContain("ningún servicio");
+  });
+
+  /**
+   * La gemela de «declara como ofrecidos exactamente los trámites que puso en
+   * el texto», y por el mismo motivo: el esquema rechaza todo
+   * `arancelRenglonId` que quien llama no haya declarado, **y de esa misma
+   * lista sale el precio**. Dos valores que se tienen que corresponder y se
+   * piden por separado son dos valores que un día no se corresponden.
+   */
+  it("declara como ofrecidos exactamente los servicios que puso en el texto", () => {
+    const encargo = encargoAlModelo(tramites(), servicios());
+
+    expect(encargo.serviciosOfrecidos).toEqual([
+      { id: SERVICIO_EDITADO_ID, monto: PRECIO_DEL_BUFETE },
+      { id: SERVICIO_PREESTABLECIDO_ID, monto: PRECIO_PREESTABLECIDO },
+    ]);
+  });
+
+  it("le dice al modelo que el precio lo pone el sistema", () => {
+    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+
+    // El esquema rechaza la línea que trae las dos cosas, y el prompt tiene
+    // que decirlo: una barandilla que sólo vive en el validador se paga en
+    // corridas perdidas, no en seguridad.
+    expect(instrucciones).toContain("arancelRenglonId");
+    expect(instrucciones.toLowerCase()).toContain("no mandes `monto`");
+  });
+
+  /**
+   * **Nada distingue un editado de un preestablecido ante el modelo.**
+   *
+   * La marca es para una persona que quiere saber de dónde viene un número
+   * (T-2 ter); al modelo le llegan precios y nada más. Señalarle cuál es
+   * «sólo el del acuerdo» sería pedirle que juzgue, y juzgar es lo que este
+   * sistema no hace.
+   */
+  it("no le dice al modelo quién escribió cada precio", () => {
+    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+
+    // «acuerdo» no entra en la lista y no es un olvido: el trámite sembrado se
+    // llama «Divorcio de mutuo acuerdo», así que la palabra aparece por un
+    // motivo que no tiene nada que ver con el precio.
+    for (const palabra of ["preestablecido", "sugerido", "monto oficial"]) {
+      expect(
+        instrucciones.toLowerCase(),
+        `el prompt le dice al modelo «${palabra}»: le está pidiendo que` +
+          " juzgue de quién es el precio, que es lo que este sistema no hace",
+      ).not.toContain(palabra);
+    }
+  });
+
+  /**
+   * El monto del acuerdo **no** viaja al modelo, y esto lo mide donde se
+   * rompería: el renglón editado tiene las dos cifras, y la que tiene que
+   * llegar es la del bufete.
+   */
+  it("de un renglón editado viaja el precio del bufete y no la cita de 2001", () => {
+    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+
+    expect(instrucciones).toContain(String(PRECIO_DEL_BUFETE));
+    expect(
+      instrucciones,
+      "el prompt le pasó al modelo el monto del acuerdo: cotizaría contra una" +
+        " tarifa mínima de 2001 en vez de contra el precio del bufete",
+    ).not.toContain(String(MONTO_OFICIAL_DEL_EDITADO));
   });
 });
 
@@ -771,6 +1029,237 @@ describe("un trámite dado de baja no se ofrece", () => {
       "quedó una cotización con una línea que abriría un proceso de un tipo" +
         " dado de baja",
     ).toBe(0);
+  });
+});
+
+/* ==========================================================================
+   El sistema tarifa, y el modelo elige (T-3)
+
+   La frontera de §8 corrida un paso. Ya decía «la IA rellena campos tipados;
+   el sistema hace la aritmética»; ahora el precio de un servicio conocido deja
+   de ser un campo que la IA rellena y pasa a ser aritmética del sistema. Para
+   todo lo que está en el catálogo, **un monto alucinado deja de ser posible**
+   — no porque el modelo se porte bien, sino porque no hay dónde escribirlo.
+   ========================================================================== */
+
+/** El `monto` guardado de un renglón del arancel, leído por SQL. */
+async function montoDelRenglon(id: string): Promise<number | null> {
+  const fila = await env.DB.prepare(
+    "SELECT monto FROM arancel_renglon WHERE id = ?",
+  )
+    .bind(id)
+    .first<{ monto: number | null }>();
+
+  return fila?.monto ?? null;
+}
+
+/** Una propuesta de una sola línea que nombra un servicio y no lo tarifa. */
+function propuestaConServicio(arancelRenglonId: string): string {
+  return JSON.stringify({
+    modulos: [{ tipo: "alcance", contenido: "El trámite entero." }],
+    lineas: [
+      {
+        clase: "honorario",
+        concepto: "Visa de trabajo",
+        arancelRenglonId,
+        tipoProcesoId: null,
+      },
+    ],
+  });
+}
+
+describe("el monto de una línea tarifada lo pone el catálogo", () => {
+  it("el modelo nombra el servicio y el sistema le pone el precio", async () => {
+    const falso = modeloQueEscribe(
+      propuestaConServicio(SERVICIO_EDITADO_ID),
+    );
+
+    const respuesta = await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+
+    expect(respuesta.status, await respuesta.clone().text()).toBe(201);
+    const { lineas } = await lineasDe((await cotizacionDe(respuesta)).id);
+
+    expect(
+      lineas[0].monto,
+      "el monto de la línea no es el del catálogo: el precio del bufete dejó" +
+        " de ser el que manda y volvió a salir del modelo",
+    ).toBe(PRECIO_DEL_BUFETE);
+    expect(
+      lineas[0].arancelRenglonId,
+      "la línea no dice de dónde salió su precio: dentro de un año nadie va a" +
+        " poder contestar de dónde vino esa cifra",
+    ).toBe(SERVICIO_EDITADO_ID);
+  });
+
+  /**
+   * «Los preestablecidos son la norma hasta que se editen, no son una
+   * subcategoría» (T-2 bis), y eso vale también para el agente: la cifra del
+   * acuerdo de un renglón sin editar **es** el precio del bufete.
+   */
+  it("un servicio que el bufete no editó tarifa igual que uno editado", async () => {
+    const falso = modeloQueEscribe(
+      propuestaConServicio(SERVICIO_PREESTABLECIDO_ID),
+    );
+
+    const respuesta = await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+
+    expect(respuesta.status, await respuesta.clone().text()).toBe(201);
+    const { lineas } = await lineasDe((await cotizacionDe(respuesta)).id);
+
+    expect(lineas[0].monto).toBe(PRECIO_PREESTABLECIDO);
+    expect(lineas[0].arancelRenglonId).toBe(SERVICIO_PREESTABLECIDO_ID);
+  });
+
+  it("una línea sin servicio conserva el monto que el modelo escribió", async () => {
+    // El `xor` del otro lado: lo que no corresponde a ningún servicio
+    // tarifado —una consulta, una mensajería— lo sigue tarifando el modelo, y
+    // es el caso corriente.
+    const falso = modeloQueEscribe(PROPUESTA_COMPLETA);
+
+    const respuesta = await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+
+    const { lineas } = await lineasDe((await cotizacionDe(respuesta)).id);
+
+    expect(lineas.map((linea) => linea.monto)).toEqual([150_000, 2_550]);
+    expect(lineas.map((linea) => linea.arancelRenglonId)).toEqual([null, null]);
+  });
+
+  it("el prompt le ofrece los servicios con cifra de este bufete, y sólo ésos", async () => {
+    const falso = modeloQueEscribe(PROPUESTA_COMPLETA);
+
+    await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+
+    const ofrecidos = falso.peticiones[0].serviciosOfrecidos ?? [];
+
+    // **Exactamente** los dos con cifra, con su cifra. Una igualdad y no un
+    // «contiene»: el bufete tiene sembrados además un rubro y una regla por
+    // cuantía sin ningún número, así que esto también dice que no se colaron.
+    expect(ofrecidos).toEqual([
+      { id: SERVICIO_EDITADO_ID, monto: PRECIO_DEL_BUFETE },
+      { id: SERVICIO_PREESTABLECIDO_ID, monto: PRECIO_PREESTABLECIDO },
+    ]);
+
+    const { instrucciones } = falso.peticiones[0];
+    expect(
+      instrucciones,
+      "el prompt le ofrece al modelo un encabezado del acuerdo como si fuera" +
+        " un servicio: un título no tiene precio",
+    ).not.toContain(RUBRO_ID);
+    expect(
+      instrucciones,
+      "el prompt le ofrece una regla por cuantía sin ninguna cifra: el" +
+        " sistema no tendría de dónde sacar el precio de esa línea",
+    ).not.toContain(REGLA_SIN_CIFRA_ID);
+  });
+});
+
+/**
+ * **El criterio de aceptación de la tajada entera.**
+ *
+ * Las dos mitades son distintas y las dos hacen falta: el modelo no puede
+ * escribir el precio de un servicio del catálogo, y ninguna generación puede
+ * escribir el catálogo.
+ */
+describe("el modelo no puede cambiar un precio del catálogo", () => {
+  it("mandando el monto junto al servicio, la propuesta se descarta entera", async () => {
+    const falso = modeloQueEscribe(
+      JSON.stringify({
+        modulos: [{ tipo: "alcance", contenido: "El trámite entero." }],
+        lineas: [
+          {
+            clase: "honorario",
+            concepto: "Visa de trabajo",
+            arancelRenglonId: SERVICIO_EDITADO_ID,
+            // La mitad del precio del bufete. Un modelo que logre que esto
+            // entre está fijando el precio de un servicio tarifado.
+            monto: PRECIO_DEL_BUFETE / 2,
+            tipoProcesoId: null,
+          },
+        ],
+      }),
+    );
+
+    const respuesta = await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+
+    expect(
+      respuesta.status,
+      "el modelo tarifó un servicio del catálogo y la propuesta entró: el" +
+        " precio de la cotización lo está poniendo el modelo y no el bufete",
+    ).toBe(502);
+    const cuerpo = (await respuesta.json()) as { motivo?: string };
+    expect(cuerpo.motivo).toBe("salida_rechazada");
+
+    expect(
+      await cuantasCotizaciones(),
+      "quedó una cotización con una línea cuyo precio puso el modelo",
+    ).toBe(0);
+  });
+
+  it("y tampoco mandando un servicio que el prompt no ofreció", async () => {
+    const falso = modeloQueEscribe(propuestaConServicio(RUBRO_ID));
+
+    const respuesta = await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+
+    expect(respuesta.status).toBe(502);
+    expect(await cuantasCotizaciones()).toBe(0);
+  });
+
+  it("una regla por cuantía sin cifra tampoco entra, aunque exista", async () => {
+    // Existe en la tabla, así que pasa la llave foránea y el disparador de
+    // tenencia sin despeinarse. Lo único que la frena es que el prompt no la
+    // ofrezca, que es la misma forma del trámite dado de baja.
+    const falso = modeloQueEscribe(propuestaConServicio(REGLA_SIN_CIFRA_ID));
+
+    const respuesta = await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+
+    expect(respuesta.status).toBe(502);
+    expect(await cuantasCotizaciones()).toBe(0);
+  });
+
+  /**
+   * La otra mitad, y es la que una lectura distraída daría por obvia: el
+   * camino de la generación **no tiene por dónde escribir** el arancel. Si
+   * algún día lo tuviera, una cotización cambiaría el precio del bufete para
+   * todas las siguientes.
+   */
+  it("ninguna generación escribe el catálogo", async () => {
+    const falso = modeloQueEscribe(
+      propuestaConServicio(SERVICIO_PREESTABLECIDO_ID),
+    );
+
+    const respuesta = await generar(
+      { clienteId, descripcion: DESCRIPCION },
+      { modelo: falso.modelo },
+    );
+    expect(respuesta.status).toBe(201);
+
+    expect(await montoDelRenglon(SERVICIO_EDITADO_ID)).toBe(PRECIO_DEL_BUFETE);
+    expect(
+      await montoDelRenglon(SERVICIO_PREESTABLECIDO_ID),
+      "la generación le escribió un precio al renglón que el bufete no había" +
+        " editado: el catálogo dejó de ser del bufete",
+    ).toBeNull();
   });
 });
 

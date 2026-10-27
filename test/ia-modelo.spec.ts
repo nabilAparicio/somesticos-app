@@ -16,7 +16,12 @@ import {
   validarPropuesta,
   validarTextoDePropuesta,
 } from "../worker/ia/esquema";
-import type { MotivoDeRechazoDeSalida } from "../worker/ia/esquema";
+import type {
+  CatalogosOfrecidos,
+  MotivoDeRechazoDeSalida,
+  PropuestaDelModelo,
+  ServicioOfrecido,
+} from "../worker/ia/esquema";
 import { PROVEEDORES, modeloDesdeEntorno } from "../worker/ia/modelo";
 import type { Pedir, PeticionDeCompletado } from "../worker/ia/modelo";
 
@@ -161,12 +166,16 @@ function conLinea(ajustes: Record<string, unknown>): unknown {
   return propuesta({ lineas: [{ ...LINEA_VALIDA, ...ajustes }] });
 }
 
-/** Los motivos de un rechazo, sin su ruta. Para afirmar el conjunto. */
-function motivos(crudo: unknown, ofrecidos?: readonly string[]): string[] {
-  const validacion = validarPropuesta(
-    crudo,
-    ofrecidos === undefined ? {} : { tiposDeProceso: ofrecidos },
-  );
+/**
+ * Los motivos de un rechazo, sin su ruta. Para afirmar el conjunto.
+ *
+ * Recibe los catálogos declarados **enteros** y no sólo los trámites: desde
+ * T-3 hay dos —los trámites y los servicios tarifados— y una firma con un
+ * arreglo suelto por catálogo obligaría a pasar `undefined` en el medio para
+ * llegar al segundo.
+ */
+function motivos(crudo: unknown, catalogos: CatalogosOfrecidos = {}): string[] {
+  const validacion = validarPropuesta(crudo, catalogos);
   if (validacion.ok) return [];
   return validacion.rechazos.map((r) => r.motivo);
 }
@@ -395,13 +404,18 @@ describe("la costura rechaza un trámite que nadie le ofreció", () => {
 
   it("con catálogo declarado, uno que no está se rechaza", () => {
     expect(
-      motivos(conLinea({ tipoProcesoId: "tp-inventado" }), ["tp-divorcio"]),
+      motivos(conLinea({ tipoProcesoId: "tp-inventado" }), {
+        tiposDeProceso: ["tp-divorcio"],
+      }),
     ).toEqual(["tipo_de_proceso_no_ofrecido"]);
   });
 
   it("con catálogo declarado, el que está pasa", () => {
-    expect(motivos(conLinea({ tipoProcesoId: "tp-divorcio" }), ["tp-divorcio"]))
-      .toEqual([]);
+    expect(
+      motivos(conLinea({ tipoProcesoId: "tp-divorcio" }), {
+        tiposDeProceso: ["tp-divorcio"],
+      }),
+    ).toEqual([]);
   });
 
   it("una línea sin trámite es el caso corriente y no una falla", () => {
@@ -410,9 +424,188 @@ describe("la costura rechaza un trámite que nadie le ofreció", () => {
   });
 
   it("un trámite que no es cadena se rechaza aunque el catálogo esté puesto", () => {
-    expect(motivos(conLinea({ tipoProcesoId: 7 }), ["tp-divorcio"])).toEqual([
-      "tipo_de_proceso_no_ofrecido",
+    expect(
+      motivos(conLinea({ tipoProcesoId: 7 }), {
+        tiposDeProceso: ["tp-divorcio"],
+      }),
+    ).toEqual(["tipo_de_proceso_no_ofrecido"]);
+  });
+});
+
+/* ==========================================================================
+   El precio de una línea: o el catálogo, o el modelo. Nunca los dos.
+   ========================================================================== */
+
+/**
+ * Los servicios tarifados que quien llama declara haber ofrecido, con su
+ * cifra.
+ *
+ * **Los tres importes de esta suite son distintos entre sí** —180.000,
+ * 250.000 y el 150.000 de `LINEA_VALIDA`—, y es a propósito: con dos números
+ * iguales, una costura que dejara pasar el monto que el modelo escribió en
+ * lugar de leer el catálogo pasaría estas pruebas sin que nada se notara.
+ */
+const SERVICIO_VISA: ServicioOfrecido = { id: "ar-visa", monto: 180_000 };
+const SERVICIO_NATURALIZACION: ServicioOfrecido = {
+  id: "ar-naturalizacion",
+  monto: 250_000,
+};
+const SERVICIOS: readonly ServicioOfrecido[] = [
+  SERVICIO_VISA,
+  SERVICIO_NATURALIZACION,
+];
+
+const CON_SERVICIOS: CatalogosOfrecidos = { servicios: SERVICIOS };
+
+/**
+ * Una línea que **nombra un servicio tarifado y no escribe su precio**, que
+ * es la forma que T-3 le pide al modelo.
+ *
+ * No se arma con `conLinea`, que parte de `LINEA_VALIDA`: esa trae `monto`, y
+ * una línea con los dos campos es justamente el caso contrario.
+ */
+function conServicio(ajustes: Record<string, unknown> = {}): unknown {
+  return propuesta({
+    lineas: [
+      {
+        clase: "honorario",
+        concepto: "Visa de trabajo",
+        arancelRenglonId: SERVICIO_VISA.id,
+        ...ajustes,
+      },
+    ],
+  });
+}
+
+/** La primera línea de una propuesta que pasó, o `null` si no pasó. */
+function primeraLinea(
+  crudo: unknown,
+  catalogos: CatalogosOfrecidos = CON_SERVICIOS,
+): PropuestaDelModelo["lineas"][number] | null {
+  const validacion = validarPropuesta(crudo, catalogos);
+  if (!validacion.ok) return null;
+  return validacion.propuesta.lineas[0] ?? null;
+}
+
+describe("el precio de una línea sale de un solo lugar", () => {
+  /**
+   * **El criterio de aceptación de la tajada entera, medido en la puerta.**
+   *
+   * El modelo elige qué servicio aplica; el monto lo pone el sistema desde el
+   * catálogo. No es que el modelo se porte bien: es que no hay dónde escribir
+   * ese número.
+   */
+  it("un servicio tarifado sin monto pasa, y el monto lo pone el catálogo", () => {
+    const linea = primeraLinea(conServicio());
+
+    expect(linea, "una línea que nombra un servicio del catálogo se rechazó")
+      .not.toBeNull();
+    expect(
+      linea?.monto,
+      "el monto de una línea tarifada no salió del catálogo: el precio del" +
+        " bufete dejó de ser el que manda",
+    ).toBe(SERVICIO_VISA.monto);
+    expect(linea?.arancelRenglonId).toBe(SERVICIO_VISA.id);
+  });
+
+  it("cada servicio trae su propia cifra, y no la del primero de la lista", () => {
+    const linea = primeraLinea(
+      conServicio({ arancelRenglonId: SERVICIO_NATURALIZACION.id }),
+    );
+
+    expect(linea?.monto).toBe(SERVICIO_NATURALIZACION.monto);
+  });
+
+  it("un monto sin servicio tarifado pasa, y es el caso corriente", () => {
+    const linea = primeraLinea(propuesta());
+
+    expect(linea?.monto).toBe(150_000);
+    expect(linea?.arancelRenglonId).toBeNull();
+  });
+
+  it("un `arancelRenglonId` nulo es una línea sin servicio y no una falla", () => {
+    expect(motivos(conLinea({ arancelRenglonId: null }), CON_SERVICIOS)).toEqual(
+      [],
+    );
+  });
+
+  /**
+   * **La contradicción tiene motivo propio y no se resuelve eligiendo uno.**
+   *
+   * Un modelo que manda los dos campos está diciendo dos cosas distintas
+   * sobre quién pone el precio. Quedarse con el del catálogo en silencio
+   * dejaría al prompt pidiendo una cosa y al esquema aceptando otra, y nadie
+   * se enteraría hasta que el modelo empezara a mandar siempre los dos.
+   */
+  it("los dos campos a la vez se rechazan con su propio motivo", () => {
+    expect(motivos(conServicio({ monto: 999_999 }), CON_SERVICIOS)).toEqual([
+      "servicio_y_monto_a_la_vez",
     ]);
+  });
+
+  it("el motivo es la contradicción aunque el monto que mandó sea basura", () => {
+    // El defecto no es que tarifó mal: es que tarifó. Un `monto_invalido` acá
+    // mandaría a arreglar el número en vez de a sacar el campo.
+    expect(motivos(conServicio({ monto: "180000" }), CON_SERVICIOS)).toEqual([
+      "servicio_y_monto_a_la_vez",
+    ]);
+  });
+
+  it("un `monto` nulo junto a un servicio es ausencia, no contradicción", () => {
+    // Ausente y nulo son lo mismo, igual que para `tipoProcesoId`: un modelo
+    // que escribe el campo en nulo no está tarifando nada.
+    expect(primeraLinea(conServicio({ monto: null }))?.monto).toBe(
+      SERVICIO_VISA.monto,
+    );
+  });
+
+  it("ninguno de los dos campos deja la línea sin precio, y se dice así", () => {
+    // El motivo que ya existía: desde donde está quien tiene que arreglarlo
+    // —el prompt— «esta línea no trae precio» y «el precio no es un entero de
+    // centavos» son el mismo defecto y la corrección es la misma.
+    expect(
+      motivos(
+        propuesta({ lineas: [{ clase: "honorario", concepto: "Consulta" }] }),
+        CON_SERVICIOS,
+      ),
+    ).toEqual(["monto_invalido"]);
+  });
+});
+
+describe("la costura rechaza un servicio que nadie le ofreció", () => {
+  /**
+   * El gemelo exacto de `tipo_de_proceso_no_ofrecido`, y por el mismo motivo:
+   * `arancelRenglonId` es una llave foránea contra `arancel_renglon` **de este
+   * bufete**, así que no hay catálogo en código que la pueda cerrar. La cierra
+   * quien llama, declarando qué ids puso en el prompt — y con ellos la cifra,
+   * porque es la misma lista que el prompt nombró.
+   */
+  it("sin catálogo declarado, cualquier servicio se rechaza", () => {
+    expect(motivos(conServicio())).toEqual(["servicio_no_ofrecido"]);
+  });
+
+  it("con catálogo declarado, uno que no está se rechaza", () => {
+    expect(
+      motivos(conServicio({ arancelRenglonId: "ar-inventado" }), CON_SERVICIOS),
+    ).toEqual(["servicio_no_ofrecido"]);
+  });
+
+  it("un servicio que no es cadena se rechaza aunque el catálogo esté puesto", () => {
+    expect(
+      motivos(conServicio({ arancelRenglonId: 7 }), CON_SERVICIOS),
+    ).toEqual(["servicio_no_ofrecido"]);
+  });
+
+  it("un servicio inventado con monto acusa las dos cosas, no una", () => {
+    // Los dos defectos son ciertos y los dos hay que arreglarlos: el
+    // identificador no existe **y** el modelo tarifó. Devolver sólo el
+    // primero obligaría a dos corridas del prompt para corregir una salida.
+    expect(
+      motivos(
+        conServicio({ arancelRenglonId: "ar-inventado", monto: 1 }),
+        CON_SERVICIOS,
+      ),
+    ).toEqual(["servicio_no_ofrecido", "servicio_y_monto_a_la_vez"]);
   });
 });
 

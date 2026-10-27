@@ -6,10 +6,11 @@
  * `ModeloDeLenguaje` recibe `instrucciones` y `entrada` ya compuestas y que
  * **la costura no arma prompts**; esto es quien los arma.
  *
- * ## Las dos salidas son una sola, y eso es el archivo entero
+ * ## Las tres salidas son una sola, y eso es el archivo entero
  *
- * `encargoAlModelo` devuelve el texto **y** `tiposDeProcesoOfrecidos`, y no
- * hay forma de pedir uno sin el otro. La razón no es comodidad:
+ * `encargoAlModelo` devuelve el texto **y** `tiposDeProcesoOfrecidos` **y**
+ * `serviciosOfrecidos`, y no hay forma de pedir uno sin los otros. La razón no
+ * es comodidad:
  *
  *  - El esquema de T-8 rechaza todo `tipoProcesoId` que quien llama no haya
  *    declarado haber ofrecido. Falla cerrada, porque `tipo_proceso` es una
@@ -28,6 +29,13 @@
  * valores que un día no se corresponden. Acá se construyen del mismo arreglo,
  * en la misma pasada, y la correspondencia no se puede romper sin editar
  * estas veinte líneas.
+ *
+ * Con los servicios tarifados de T-3 el mismo argumento cuesta más, porque
+ * `serviciosOfrecidos` no lleva sólo identificadores: **lleva el precio**. Es
+ * la lista con la que el esquema valida y de la que el sistema saca el monto
+ * de cada línea tarifada, así que separarla del texto permitiría un borrador
+ * cuyos montos no son los que el modelo leyó para escribir la prosa — un
+ * documento que se contradice consigo mismo y que nada marca como roto.
  *
  * ## Los catálogos salen de donde viven, y nunca se copian
  *
@@ -61,6 +69,7 @@
 import { CATALOGO_DE_CLASES } from "../cotizaciones/lineas";
 import { CATALOGO_DE_MODULOS } from "../cotizaciones/modulos";
 import { CLAVES_DE_LINEA, CLAVES_DE_MODULO } from "./esquema";
+import type { ServicioOfrecido } from "./esquema";
 
 /**
  * Un trámite que el bufete ofrece, tal como el prompt lo va a nombrar.
@@ -78,14 +87,52 @@ export interface TramiteOfrecido {
 }
 
 /**
- * El encargo completo: el texto, y qué trámites declara haber ofrecido.
+ * Un servicio tarifado del bufete, tal como el prompt lo va a nombrar.
  *
- * Los dos campos viajan juntos a `PeticionDeCompletado` y no se separan en
+ * Es estructural y no `RenglonDelArancel` entero por lo mismo que
+ * `TramiteOfrecido` no es `TipoProceso`: lo que el prompt necesita son cuatro
+ * campos de los diez que tiene un renglón.
+ *
+ * `monto` es **la cifra del bufete ya resuelta** —`COALESCE(monto,
+ * monto_oficial)`, el criterio de `migrations/0015_un_precio_es_una_cifra.sql`—
+ * y no las dos columnas: resolverla acá sería un segundo lugar donde se decide
+ * cuál es el precio de un servicio, y el día que los dos no coincidan gana el
+ * que alguien mire primero.
+ *
+ * **No hay un campo que diga quién escribió ese número**, y la ausencia es la
+ * decisión de T-2 ter llevada al agente: la marca de «editado» es para una
+ * persona que quiere saber de dónde viene una cifra; al modelo le llegan
+ * precios y nada más. Señalarle cuál es «sólo el del acuerdo» sería pedirle que
+ * juzgue, y juzgar es lo que este sistema no hace.
+ */
+export interface ServicioTarifado {
+  readonly id: string;
+  readonly concepto: string;
+  readonly categoria: string;
+  /** Centavos enteros, cero o más. */
+  readonly monto: number;
+}
+
+/**
+ * El encargo completo: el texto, y qué catálogos declara haber ofrecido.
+ *
+ * Los tres campos viajan juntos a `PeticionDeCompletado` y no se separan en
  * el camino. Ver el encabezado del archivo.
  */
 export interface EncargoAlModelo {
   readonly instrucciones: string;
   readonly tiposDeProcesoOfrecidos: readonly string[];
+  /**
+   * Los servicios tarifados que el texto nombró, **con su precio**.
+   *
+   * Es el catálogo con el que el esquema valida y del que el sistema saca el
+   * monto de una línea tarifada, así que el mismo argumento de los trámites
+   * vale acá y cuesta más: un prompt que nombra un servicio que esta lista no
+   * trae produce una línea rechazada por `servicio_no_ofrecido`; y una lista
+   * que trae un precio distinto del que el texto imprimió sería un borrador
+   * cuyo monto no es el que el modelo leyó para escribir la prosa.
+   */
+  readonly serviciosOfrecidos: readonly ServicioOfrecido[];
 }
 
 /** Cómo se nombra un trámite dentro del prompt: con su área, si la tiene. */
@@ -121,6 +168,63 @@ function catalogoDeTramites(tramites: readonly TramiteOfrecido[]): string {
 }
 
 /**
+ * Cómo se nombra un servicio tarifado dentro del prompt.
+ *
+ * **El monto va en centavos enteros**, igual que el `monto` que el prompt le
+ * pide al modelo unas líneas más arriba, y no en balboas con dos decimales.
+ * Las dos razones son la misma: imprimir «B/.3,200.00» obliga a dividir por
+ * cien acá —aritmética en el prompt, que es exactamente lo que este sistema no
+ * hace— y además le enseñaría al modelo dos formatos de dinero a la vez, con
+ * lo que una línea sin servicio volvería alguna vez con el punto decimal que
+ * `esMontoEnCentavos` rechaza.
+ */
+function comoSeTarifa(servicio: ServicioTarifado): string {
+  return (
+    `- ${servicio.id} · ${servicio.concepto} (${servicio.categoria}) ·` +
+    ` ${String(servicio.monto)}`
+  );
+}
+
+/**
+ * Los precios del bufete, dichos para el modelo.
+ *
+ * **Falla cerrada cuando está vacío**, y lo dice en vez de omitir la sección,
+ * por una razón más fuerte que la de los trámites: un prompt que simplemente
+ * no habla de precios deja al modelo libre de inventar uno, que es el defecto
+ * que esta tajada entera existe para cerrar. Antes de T-3 le pedíamos una cifra
+ * de dinero a alguien al que no le dijimos cuánto cobra el bufete, y lo que
+ * salía era un número que no venía de ningún lado.
+ *
+ * **Viajan los renglones con cifra, los editados y los preestablecidos**, que
+ * es exactamente el catálogo que ofrece el editor de líneas. Es la corrección
+ * de T-2 bis aplicada acá: si un renglón sin editar es el precio del bufete
+ * para la pantalla de precios, para el editor y para la base, entonces también
+ * lo es para el agente. Retenerlo sería volver a poner dos criterios distintos
+ * para la misma pregunta en dos lugares del mismo sistema.
+ */
+function catalogoDeServicios(servicios: readonly ServicioTarifado[]): string {
+  if (servicios.length === 0) {
+    return (
+      "Este bufete no tiene tarifado ningún servicio todavía, así que" +
+      " **ningún servicio** se puede nombrar: `arancelRenglonId` va en `null`" +
+      " en todas las líneas, sin excepción, y el `monto` de cada una lo" +
+      " escribís vos."
+    );
+  }
+
+  return (
+    "Servicios que este bufete tarifa, con su precio en centavos enteros." +
+    " `arancelRenglonId` sólo puede ser uno de estos identificadores, copiado" +
+    " tal cual, o `null`. **El precio lo pone el sistema**: cuando pongas uno" +
+    " de estos identificadores, no mandes `monto` — el sistema lo lee de esta" +
+    " misma lista. Usalos siempre que la línea corresponda a uno de estos" +
+    " servicios, y leé el precio para que la prosa que escribas corresponda" +
+    " con lo que el bufete cobra:\n" +
+    servicios.map(comoSeTarifa).join("\n")
+  );
+}
+
+/**
  * El encargo, armado desde los catálogos reales del bufete.
  *
  * El texto está en segunda persona y en español neutro porque lo que produce
@@ -129,6 +233,7 @@ function catalogoDeTramites(tramites: readonly TramiteOfrecido[]): string {
  */
 export function encargoAlModelo(
   tramites: readonly TramiteOfrecido[],
+  servicios: readonly ServicioTarifado[],
 ): EncargoAlModelo {
   const tiposDeModulo = CATALOGO_DE_MODULOS.map(
     (entrada) => `- ${entrada.tipo} · ${entrada.rotulo}`,
@@ -168,11 +273,25 @@ export function encargoAlModelo(
     "## Clases de línea",
     "`clase` sólo puede ser una de estas dos, copiada tal cual:\n" +
       clasesDeLinea,
-    "`concepto` dice qué se cobra, en una línea. `monto` va en **centavos" +
+    "`concepto` dice qué se cobra, en una línea. Un honorario es lo que cobra" +
+      " el bufete; un gasto estimado es plata de terceros que el bufete" +
+      " adelanta, y el cliente lo lee como aproximado.",
+
+    "## De dónde sale el precio de cada línea",
+    "Cada línea trae **uno** de estos dos campos, nunca los dos y nunca" +
+      " ninguno:",
+    "- `arancelRenglonId`, cuando la línea corresponde a un servicio de la" +
+      " lista de abajo. Entonces **no mandes `monto`**: el precio lo pone el" +
+      " sistema desde el catálogo del bufete.\n" +
+      "- `monto`, cuando la línea no corresponde a ningún servicio de esa" +
+      " lista —una consulta, una mensajería, un gasto—. Va en **centavos" +
       " enteros**: mil quinientos dólares son 150000. Nunca con punto" +
-      " decimal, nunca como texto, nunca negativo. Un honorario es lo que" +
-      " cobra el bufete; un gasto estimado es plata de terceros que el" +
-      " bufete adelanta, y el cliente lo lee como aproximado.",
+      " decimal, nunca como texto, nunca negativo.",
+    "Una línea con los dos campos se descarta entera, y una sin ninguno" +
+      " también.",
+
+    `## ${servicios.length === 0 ? "Servicios tarifados" : "Los precios de este bufete"}`,
+    catalogoDeServicios(servicios),
 
     `## ${tramites.length === 0 ? "Trámites" : "Trámites del bufete"}`,
     catalogoDeTramites(tramites),
@@ -193,5 +312,13 @@ export function encargoAlModelo(
     // Del mismo arreglo que acaba de armar el texto, en la misma llamada.
     // Ver el encabezado: separarlos es abrir el círculo de T-7 en silencio.
     tiposDeProcesoOfrecidos: tramites.map((tramite) => tramite.id),
+    // Lo mismo, y acá además viaja el precio: es la cifra que el texto
+    // imprimió, no una segunda lectura del catálogo. Dos listas de precios
+    // armadas por caminos distintos son un borrador cuyo monto no es el que
+    // el modelo leyó para escribir la prosa.
+    serviciosOfrecidos: servicios.map((servicio) => ({
+      id: servicio.id,
+      monto: servicio.monto,
+    })),
   };
 }
