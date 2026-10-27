@@ -31,9 +31,14 @@
  * 2. **El juego de claves es cerrado**, y se comprueba. De las cuatro, es la
  *    que convierte un campo inventado en un rechazo: la 1 es una elección de
  *    tipos, la 3 una red de compilación y la 4 una lectura del catálogo.
- * 3. **Los catálogos son los que ya existen.** `esTipoDeModulo` y
- *    `esClaseDeLinea` se importan de donde viven; no hay una segunda lista
- *    acá, que es la que se desincroniza.
+ * 3. **Los catálogos son los que ya existen.** `esClaseDeLinea` se importa de
+ *    donde vive y `esTipoDeModulo` también; no hay una segunda lista acá, que
+ *    es la que se desincroniza. Desde T-4 de
+ *    `odd/tasks/plantillas-de-modulo.md` los tipos de módulo tienen **además**
+ *    su catálogo declarado, igual que los trámites y los servicios: el juego
+ *    de claves lo cierra el compilador —la unión sigue viva durante la tajada
+ *    1— pero **cuáles están vigentes lo dice la base**, así que quien llama
+ *    declara las que el prompt ofreció.
  * 4. **El precio de un servicio tarifado no es un campo que el modelo
  *    rellena** (T-3 de `odd/tasks/precios-en-la-cotizacion.md`). Una línea
  *    trae *o* el identificador de un servicio del catálogo *o* un monto,
@@ -104,7 +109,18 @@ export type MotivoDeRechazoDeSalida =
   | "linea_no_es_objeto"
   /** **El modelo agregó algo.** La guarda de la barandilla. */
   | "campo_desconocido"
-  /** El `tipo` no es ninguno de los seis de `CATALOGO_DE_MODULOS`. */
+  /**
+   * El `tipo` no es ninguna de las plantillas que el prompt ofreció.
+   *
+   * **La frase no cambió y el motivo tampoco; cambió de dónde sale la lista**
+   * (T-4). Hasta T-3 se comparaba contra los seis rótulos escritos en
+   * `CATALOGO_DE_MODULOS`; ahora contra las claves de las plantillas activas de
+   * `modulo_plantilla` que quien llama declara haber nombrado. Cubre tres
+   * situaciones que desde acá son una sola —la clave inventada, la que no es
+   * cadena y la de una plantilla **dada de baja**—: lo ofrecible son las
+   * plantillas activas, así que cualquiera de las tres es, desde este archivo,
+   * una clave que no está en la lista.
+   */
   | "tipo_de_modulo_desconocido"
   /** La `clase` no es ninguna de las dos de `CATALOGO_DE_CLASES`. */
   | "clase_de_linea_desconocida"
@@ -205,6 +221,23 @@ export interface ServicioOfrecido {
 }
 
 export interface CatalogosOfrecidos {
+  /**
+   * Las claves de módulo que el prompt nombró (T-4 de
+   * `odd/tasks/plantillas-de-modulo.md`).
+   *
+   * **Falla cerrada igual que los otros dos**: sin catálogo declarado ningún
+   * módulo pasa. El argumento es el mismo con un agravante propio — las claves
+   * de módulo **sí** tienen catálogo en código, el `CHECK` de `0004` y
+   * `TIPOS_DE_MODULO`, así que la tentación de cerrarlas sólo con eso existe y
+   * sería un error: ese catálogo dice qué claves son *válidas*, no cuáles el
+   * bufete tiene *activas*. La distinción entre válido y seleccionable la fijó
+   * T-5 y es la misma que separa `listar` de lo que el editor ofrece.
+   *
+   * Sin esta lista, una plantilla dada de baja sería un tipo que el modelo
+   * puede proponer, que el editor no puede volver a elegir y que la pantalla
+   * muestra marcada «(de baja)» — un módulo nacido retirado.
+   */
+  readonly modulos?: readonly string[];
   readonly tiposDeProceso?: readonly string[];
   /**
    * Los servicios tarifados que el prompt nombró, con su precio.
@@ -227,7 +260,7 @@ export interface CatalogosOfrecidos {
  * `as const satisfies readonly (keyof …)[]` cierra una dirección: no se puede
  * declarar acá una clave que el tipo no tiene. `Exclude<…>` de abajo cierra la
  * otra: si alguien agrega un campo a `DatosDeLinea` y no lo declara acá, el
- * `typecheck` rompe. Es el mismo mecanismo que `TiposSinRotulo` en
+ * `typecheck` rompe. Es el mismo mecanismo que `TiposFueraDeLaLista` en
  * `worker/cotizaciones/modulos.ts` y `ClasesSinRotulo` en `lineas.ts`.
  *
  * Sin la segunda red, un campo nuevo del contrato se volvería `campo_desconocido`
@@ -273,7 +306,9 @@ export const CLAVES_DE_LINEA = [
  * ejecución. Verificado quitando `"contenido"` de `CLAVES_DE_MODULO`.
  *
  * **No es la forma que el proyecto usaba**, y la diferencia costó medirla.
- * `TiposSinRotulo`, `ClasesSinRotulo` y `AccionesSinDuenio` se escribían como
+ * `TiposSinRotulo` —hoy `TiposFueraDeLaLista`, renombrada en T-3 cuando el
+ * rótulo pasó a ser una fila y la red dejó de poder hablar de rótulos—,
+ * `ClasesSinRotulo` y `AccionesSinDuenio` se escribían como
  * `export const X: Exclusion[] = []`, con el comentario de que esa asignación
  * no compila cuando la exclusión deja de ser `never`. Era falso: un arreglo
  * vacío es asignable a `T[]` para cualquier `T`. Las tres se corrigieron a
@@ -351,6 +386,8 @@ function esMontoEnCentavos(valor: unknown): valor is number {
 function validarModulo(
   crudo: unknown,
   ruta: string,
+  /** Las claves de plantilla **activas** que el prompt declaró haber ofrecido. */
+  clavesOfrecidas: readonly string[],
   rechazos: RechazoDeSalida[],
 ): DatosDeModulo | null {
   if (!esObjeto(crudo)) {
@@ -365,8 +402,23 @@ function validarModulo(
   // Ausente, en blanco e inventado caen en el mismo motivo, igual que en el
   // formulario: desde donde está quien tiene que arreglarlo son el mismo
   // defecto, y ese alguien acá es el prompt de T-9.
+  //
+  // **Dos comprobaciones y un solo motivo** (T-4), y ninguna sobra:
+  //
+  //  - `esTipoDeModulo` es la que **estrecha el tipo**. `DatosDeModulo.tipo`
+  //    es `TipoDeModulo`, una unión que sigue viva durante la tajada 1, así
+  //    que sin esta guarda el `return` de abajo necesitaría un `as` — y un
+  //    `as` acá sería afirmarle al compilador algo que viene del cable.
+  //  - `clavesOfrecidas.includes` es la que dice **qué está vigente**. La anterior no
+  //    puede: la unión y el `CHECK` de `0004` enumeran las claves *posibles*,
+  //    no las plantillas que el bufete tiene activas, así que una dada de baja
+  //    pasaría. Ésta es la que falla cerrada con el catálogo vacío.
+  //
+  // Cuando la tajada 2 convierta `cotizacion_modulo.tipo` en una referencia y
+  // `TipoDeModulo` desaparezca, la primera se va y queda sólo la segunda, que
+  // es la que lleva la regla.
   const tipo = crudo.tipo;
-  const tipoConocido = esTipoDeModulo(tipo);
+  const tipoConocido = esTipoDeModulo(tipo) && clavesOfrecidas.includes(tipo);
   if (!tipoConocido) {
     rechazos.push(rechazo(`${ruta}.tipo`, "tipo_de_modulo_desconocido"));
   }
@@ -540,6 +592,10 @@ export function validarPropuesta(
   }
 
   const rechazos: RechazoDeSalida[] = [];
+  // Los tres `?? []` son la falla cerrada, y el de módulos es de T-4: una
+  // llamada que no declara catálogo no es una llamada permisiva, es una
+  // llamada a la que no se le puede creer nada.
+  const clavesDeModulo = catalogos.modulos ?? [];
   const tiposDeProceso = catalogos.tiposDeProceso ?? [];
   const servicios = catalogos.servicios ?? [];
 
@@ -550,7 +606,7 @@ export function validarPropuesta(
   const modulos = validarColeccion(
     crudo.modulos,
     "modulos",
-    (elemento, ruta) => validarModulo(elemento, ruta, rechazos),
+    (elemento, ruta) => validarModulo(elemento, ruta, clavesDeModulo, rechazos),
     rechazos,
   );
 

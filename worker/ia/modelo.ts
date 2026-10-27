@@ -75,6 +75,20 @@ export interface PeticionDeCompletado {
   readonly antecedentes?: readonly string[];
 
   /**
+   * Las claves de `modulo_plantilla` que el prompt le ofreció al modelo (T-4
+   * de `odd/tasks/plantillas-de-modulo.md`).
+   *
+   * Sin esto, ningún módulo puede pasar. **Falla cerrada igual que los otros
+   * dos catálogos**, y la novedad frente a ellos es que acá sí hay un catálogo
+   * en código —el `CHECK` de `0004` y `TIPOS_DE_MODULO`— que dice qué claves
+   * son *válidas*: lo que no puede decir es cuáles el bufete tiene *activas*,
+   * porque eso es una columna de una fila que el abogado edita desde
+   * `/catalogos/modulos`. Una plantilla dada de baja es una clave válida que el
+   * prompt no ofreció.
+   */
+  readonly tiposDeModuloOfrecidos?: readonly string[];
+
+  /**
    * Los `tipo_proceso.id` que el prompt le ofreció al modelo.
    *
    * Sin esto, ninguna línea puede traer trámite: un identificador que el

@@ -138,9 +138,26 @@ function devolviendoTexto(
   };
 }
 
+/**
+ * Las claves de módulo que el prompt de estas pruebas declara haber ofrecido
+ * (T-4 de `odd/tasks/plantillas-de-modulo.md`).
+ *
+ * Desde T-4 el juego de tipos de módulo **no lo cierra ninguna constante del
+ * código**: lo cierra el catálogo de plantillas activas que quien llama
+ * declaró, igual que los trámites y los servicios. Así que una petición sin
+ * esta lista es una petición en la que ningún módulo pasa, y por eso viaja en
+ * `PETICION`: es lo que hace el generador de verdad en cada corrida.
+ *
+ * Son dos y no seis a propósito: con las seis, una suite que declarara el
+ * catálogo entero no podría distinguir «la clave no está ofrecida» de «la
+ * clave no existe».
+ */
+const MODULOS_OFRECIDOS: readonly string[] = ["alcance", "supuestos"];
+
 const PETICION: PeticionDeCompletado = {
   instrucciones: "Sos el generador de cotizaciones del bufete.",
   entrada: "Divorcio de mutuo acuerdo, hay bienes.",
+  tiposDeModuloOfrecidos: MODULOS_OFRECIDOS,
 };
 
 /* ==========================================================================
@@ -175,7 +192,16 @@ function conLinea(ajustes: Record<string, unknown>): unknown {
  * llegar al segundo.
  */
 function motivos(crudo: unknown, catalogos: CatalogosOfrecidos = {}): string[] {
-  const validacion = validarPropuesta(crudo, catalogos);
+  // El catálogo de módulos se pone **siempre salvo que la prueba lo nombre**,
+  // y no es comodidad: desde T-4 falla cerrada, así que sin él ningún módulo
+  // pasa y cada prueba sobre otra regla tendría que declararlo para que su
+  // propuesta llegara a la regla que mide. Las pruebas del catálogo vacío y de
+  // la clave no ofrecida lo nombran explícitamente, que es cómo se distinguen
+  // —y el `...catalogos` al final es lo que deja sobreescribirlo—.
+  const validacion = validarPropuesta(crudo, {
+    modulos: MODULOS_OFRECIDOS,
+    ...catalogos,
+  });
   if (validacion.ok) return [];
   return validacion.rechazos.map((r) => r.motivo);
 }
@@ -379,6 +405,7 @@ describe("la costura rechaza prosa que no dice nada", () => {
   it("recorta lo que deja pasar, igual que al guardar", () => {
     const validacion = validarPropuesta(
       conModulo({ contenido: "  Lo que se va a hacer.  " }),
+      { modulos: MODULOS_OFRECIDOS },
     );
 
     expect(validacion.ok).toBe(true);
@@ -386,6 +413,76 @@ describe("la costura rechaza prosa que no dice nada", () => {
     expect(validacion.propuesta.modulos[0]?.contenido).toBe(
       "Lo que se va a hacer.",
     );
+  });
+});
+
+describe("la costura rechaza un tipo de módulo que nadie le ofreció", () => {
+  /**
+   * **El motivo no cambió; cambió de dónde sale la lista** (T-4 de
+   * `odd/tasks/plantillas-de-modulo.md`).
+   *
+   * Hasta T-3 el juego de tipos de módulo lo cerraba `esTipoDeModulo` sobre
+   * una constante del código, y eso alcanzaba porque el rótulo también vivía
+   * ahí. Ya no: la clave sigue siendo de la unión, pero **qué plantillas están
+   * activas es una columna de una fila** que el abogado edita desde
+   * `/catalogos/modulos`. Así que el catálogo lo declara quien llama, igual
+   * que con los trámites y los servicios, y falla cerrado por el mismo
+   * argumento: un tipo que el modelo compuso solo es un dato inventado.
+   *
+   * La diferencia con los otros dos, que vale decirla: acá el vacío no deja un
+   * campo en `null`, deja la propuesta **sin módulos**. Es la respuesta
+   * correcta igual —un bufete sin plantillas activas no tiene módulos que
+   * ofrecer— y es lo que el prompt le dice al modelo con todas las letras.
+   */
+  it("sin catálogo declarado, cualquier tipo de módulo se rechaza", () => {
+    expect(motivos(propuesta(), { modulos: [] })).toEqual([
+      "tipo_de_modulo_desconocido",
+    ]);
+  });
+
+  it("con catálogo declarado, uno que no está se rechaza", () => {
+    // `exclusiones` **es** una clave válida: está en `TipoDeModulo`, en
+    // `TIPOS_DE_MODULO` y en el `CHECK` de `0004`. Lo que la rechaza es que
+    // esta corrida no la ofreció, que es exactamente lo que le pasa a una
+    // plantilla dada de baja. Hasta T-3 esta propuesta pasaba.
+    expect(
+      motivos(conModulo({ tipo: "exclusiones" }), {
+        modulos: MODULOS_OFRECIDOS,
+      }),
+    ).toEqual(["tipo_de_modulo_desconocido"]);
+  });
+
+  it("una clave que no existe en ningún lado cae en el mismo motivo", () => {
+    expect(
+      motivos(conModulo({ tipo: "resumen_ejecutivo" }), {
+        modulos: MODULOS_OFRECIDOS,
+      }),
+    ).toEqual(["tipo_de_modulo_desconocido"]);
+  });
+
+  it("con catálogo declarado, el que está pasa", () => {
+    expect(
+      motivos(conModulo({ tipo: "supuestos" }), {
+        modulos: MODULOS_OFRECIDOS,
+      }),
+    ).toEqual([]);
+  });
+
+  it("un tipo que no es cadena se rechaza aunque el catálogo esté puesto", () => {
+    expect(
+      motivos(conModulo({ tipo: 7 }), { modulos: MODULOS_OFRECIDOS }),
+    ).toEqual(["tipo_de_modulo_desconocido"]);
+  });
+
+  /**
+   * **La propuesta de puras líneas es válida con el catálogo vacío**, y ésa es
+   * la forma exacta de la falla cerrada: no es que la generación se caiga, es
+   * que no hay módulos que proponer. Sin esta prueba, «falla cerrada» podría
+   * estar implementada como «falla», que es otra cosa.
+   */
+  it("con el catálogo vacío, una propuesta de puras líneas pasa", () => {
+    expect(motivos({ modulos: [], lineas: [LINEA_VALIDA] }, { modulos: [] }))
+      .toEqual([]);
   });
 });
 
@@ -455,7 +552,17 @@ const SERVICIOS: readonly ServicioOfrecido[] = [
   SERVICIO_NATURALIZACION,
 ];
 
-const CON_SERVICIOS: CatalogosOfrecidos = { servicios: SERVICIOS };
+/**
+ * Los dos catálogos que estas pruebas declaran: los servicios tarifados y
+ * —desde T-4— las claves de módulo. El segundo no es decorativo: sin él todas
+ * las propuestas de abajo llegarían con su módulo rechazado y
+ * `primeraLinea` devolvería `null` por un motivo que no tiene nada que ver con
+ * el precio de una línea.
+ */
+const CON_SERVICIOS: CatalogosOfrecidos = {
+  modulos: MODULOS_OFRECIDOS,
+  servicios: SERVICIOS,
+};
 
 /**
  * Una línea que **nombra un servicio tarifado y no escribe su precio**, que
@@ -611,11 +718,14 @@ describe("la costura rechaza un servicio que nadie le ofreció", () => {
 
 describe("la costura junta todos los motivos y no sólo el primero", () => {
   it("una salida rota de varias maneras los nombra todos, con su ruta", () => {
-    const validacion = validarPropuesta({
-      modulos: [{ tipo: "inventado", contenido: "" }],
-      lineas: [{ clase: "honorario", concepto: "Honorarios", monto: "1500" }],
-      total: 1500,
-    });
+    const validacion = validarPropuesta(
+      {
+        modulos: [{ tipo: "inventado", contenido: "" }],
+        lineas: [{ clase: "honorario", concepto: "Honorarios", monto: "1500" }],
+        total: 1500,
+      },
+      { modulos: MODULOS_OFRECIDOS },
+    );
 
     expect(validacion.ok).toBe(false);
     if (validacion.ok) return;
@@ -631,10 +741,10 @@ describe("la costura junta todos los motivos y no sólo el primero", () => {
 
 describe("lo que sale de la costura no tiene nada que no sea del catálogo", () => {
   it("las claves de lo validado son exactamente las declaradas", () => {
-    const validacion = validarPropuesta({
-      modulos: [MODULO_VALIDO],
-      lineas: [LINEA_VALIDA],
-    });
+    const validacion = validarPropuesta(
+      { modulos: [MODULO_VALIDO], lineas: [LINEA_VALIDA] },
+      { modulos: MODULOS_OFRECIDOS },
+    );
 
     expect(validacion.ok).toBe(true);
     if (!validacion.ok) return;

@@ -274,11 +274,12 @@ export async function manejar(
   );
   if (clientes !== null) return clientes;
 
-  // Un solo servicio de plantillas de módulo para las **tres** rutas que lo
+  // Un solo servicio de plantillas de módulo para las **cuatro** rutas que lo
   // necesitan: la suya, la de su bitácora —que comprueba por el mismo puerto
   // que la plantilla existe en este bufete y no por una segunda copia de la
-  // consulta— y, desde T-3, el de cotizaciones, que le pide el rótulo vigente
-  // de cada clave de módulo.
+  // consulta—, desde T-3 el repositorio de cotizaciones, que le pide el rótulo
+  // vigente de cada clave de módulo, y desde T-4 la ruta de cotizaciones, que
+  // le pide el rótulo **y la descripción** para el prompt del generador.
   //
   // **Esta línea es la que cerró el 404 que T-1 dejó debiendo.** El `case` de
   // `modulo_plantilla` en `existeLaFila` devolvía `false` porque este puerto no
@@ -380,6 +381,11 @@ export async function manejar(
     // copia: el generador le ofrece al modelo los trámites que la pantalla
     // de catálogos administra, leídos por el mismo puerto.
     servicioDeCatalogos,
+    // Y el mismo servicio de plantillas que las otras tres rutas, por el
+    // mismo motivo (T-4): el generador le ofrece al modelo las plantillas que
+    // la pantalla de `/catalogos/modulos` administra, con el rótulo y la
+    // descripción resueltos una sola vez en `worker/plantillas/`.
+    servicioDePlantillas,
     // **Se construye siempre y no cuesta nada**: `modeloDesdeEntorno` no
     // toca la red ni lee la clave, sólo resuelve el proveedor. Un
     // proveedor mal configurado produce un modelo que falla con

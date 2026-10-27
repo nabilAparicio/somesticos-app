@@ -47,12 +47,12 @@ import {
   CATALOGO_DE_CLASES,
   totalesDe,
 } from "../worker/cotizaciones/lineas";
-import { CATALOGO_DE_MODULOS } from "../worker/cotizaciones/modulos";
 import { baseSobreD1 } from "../worker/db/base";
 import { TENANT_UNICO_ID, nuevoId } from "../worker/db/ids";
 import { normalizarDescripcion } from "../worker/ia/generador";
 import {
   encargoAlModelo,
+  type ModuloOfrecido,
   type ServicioTarifado,
   type TramiteOfrecido,
 } from "../worker/ia/prompt";
@@ -242,6 +242,13 @@ function modeloQueEscribe(
           "../worker/ia/esquema"
         );
         const validacion = validarTextoDePropuesta(texto, {
+          // Las claves de módulo viajan **tal como las declaró el
+          // generador**, sin que la prueba pueda sustituirlas (T-4): son las
+          // plantillas activas que leyó de la base, así que un doble que las
+          // reemplazara estaría probando su propio catálogo en vez del que el
+          // bufete tiene sembrado — y entonces «una plantilla de baja se
+          // rechaza» no probaría nada.
+          modulos: peticionAlModelo.tiposDeModuloOfrecidos,
           tiposDeProceso:
             tramitesOfrecidos ?? peticionAlModelo.tiposDeProcesoOfrecidos,
           // Los servicios tarifados viajan **tal como los declaró el
@@ -526,21 +533,75 @@ function servicios(): ServicioTarifado[] {
   ];
 }
 
-describe("el prompt del generador", () => {
-  it("nombra los seis tipos de módulo, y los saca del catálogo", () => {
-    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+/**
+ * Las plantillas de módulo del bufete, tal como el prompt las va a nombrar.
+ *
+ * Se arman a mano y no se leen de la base, por lo mismo que `tramites()` y
+ * `servicios()`: el prompt es puro y lo que se mide acá es el texto que
+ * produce. Que la lista salga de `modulo_plantilla` —con el rótulo y la
+ * descripción que el bufete editó, y sin las dadas de baja— lo miden las
+ * pruebas de la generación, contra la D1.
+ *
+ * **Son tres y no seis**, a propósito: una lista parcial es lo que deja
+ * afirmar que el prompt nombra lo que se le dio y **nada más**. Con las seis,
+ * un prompt que siguiera leyendo una constante del código pasaría igual.
+ *
+ * Las tres descripciones son distintas entre sí y ninguna es prefijo de otra,
+ * por el mismo motivo que los tres importes del arancel de arriba: con dos
+ * iguales, un prompt que imprimiera siempre la primera pasaría estas pruebas.
+ * Y el rótulo de `alcance` **no** es «Alcance», que es el preset: así se nota
+ * si el texto resolviera el rótulo por su cuenta en vez de imprimir el que le
+ * llegó.
+ */
+function modulos(): ModuloOfrecido[] {
+  return [
+    {
+      clave: "antecedentes",
+      rotulo: "Antecedentes",
+      descripcion:
+        "Qué pasó antes de la consulta, sin opinión jurídica y sin" +
+        " anticipar resultados.",
+    },
+    {
+      clave: "alcance",
+      rotulo: "Qué vamos a hacer",
+      descripcion:
+        "Qué trabajo asume el bufete: las gestiones concretas y ante qué" +
+        " entidades, con plazos cuando se puedan sostener.",
+    },
+    {
+      clave: "nota_cliente",
+      rotulo: "Nota al cliente",
+      descripcion: "Un mensaje breve y directo, sin jerga. No repite el alcance.",
+    },
+  ];
+}
 
-    for (const entrada of CATALOGO_DE_MODULOS) {
+describe("el prompt del generador", () => {
+  it("nombra cada tipo de módulo que se le dio, y ninguno más", () => {
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
+
+    for (const modulo of modulos()) {
       expect(
         instrucciones,
-        `el prompt no ofrece el tipo de módulo «${entrada.tipo}», así que el` +
+        `el prompt no ofrece el tipo de módulo «${modulo.clave}», así que el` +
           " modelo no lo puede proponer y la pantalla sí lo ofrece",
-      ).toContain(entrada.tipo);
+      ).toContain(modulo.clave);
     }
+
+    // El control de hostilidad: la lista es **exactamente** la que entró. Una
+    // clave de las seis sembradas que esta llamada no pasó no puede aparecer,
+    // porque desde T-4 no hay ninguna constante de la que el prompt la pudiera
+    // sacar — y si apareciera, sería que alguien volvió a escribirla acá.
+    expect(
+      instrucciones,
+      "el prompt nombra un tipo de módulo que nadie le ofreció: hay una" +
+        " segunda fuente de rótulos de vuelta en el código",
+    ).not.toContain("exclusiones");
   });
 
   it("nombra las dos clases de línea, y las saca del catálogo", () => {
-    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
 
     for (const entrada of CATALOGO_DE_CLASES) {
       expect(instrucciones).toContain(entrada.clase);
@@ -548,7 +609,7 @@ describe("el prompt del generador", () => {
   });
 
   it("pide JSON pelado, sin cercas", () => {
-    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
 
     // El esquema rechaza un bloque con cercas a propósito, y no lo
     // desenvuelve: esa tolerancia convertiría un defecto del prompt en una
@@ -557,7 +618,7 @@ describe("el prompt del generador", () => {
   });
 
   it("le prohíbe sumar, con todas las letras", () => {
-    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
 
     expect(instrucciones.toLowerCase()).toContain("total");
   });
@@ -568,7 +629,7 @@ describe("el prompt del generador", () => {
    * hay forma de que uno diga una cosa y el otro otra.
    */
   it("declara como ofrecidos exactamente los trámites que puso en el texto", () => {
-    const encargo = encargoAlModelo(tramites(), servicios());
+    const encargo = encargoAlModelo(modulos(), tramites(), servicios());
 
     expect(encargo.tiposDeProcesoOfrecidos).toEqual([
       tramiteVisaId,
@@ -582,12 +643,142 @@ describe("el prompt del generador", () => {
   });
 
   it("sin trámites en el catálogo, no ofrece ninguno", () => {
-    const encargo = encargoAlModelo([], servicios());
+    const encargo = encargoAlModelo(modulos(), [], servicios());
 
     expect(encargo.tiposDeProcesoOfrecidos).toEqual([]);
     // Falla cerrada: sin catálogo declarado, ninguna línea puede traer
     // trámite. Es la misma precedencia que `acceso_no_configurado`.
     expect(encargo.instrucciones).toContain("ningún trámite");
+  });
+});
+
+/* ==========================================================================
+   El propósito de cada módulo llega al prompt (T-4 de
+   `odd/tasks/plantillas-de-modulo.md`)
+
+   Lo que este bloque protege es que **el modelo sepa para qué sirve cada
+   módulo**. Hasta T-3 el prompt le pasaba `alcance · Alcance` y nada más, así
+   que el propósito lo deducía del nombre; y «Supuestos» no dice que un
+   supuesto incumplido cambia el precio, ni «Antecedentes» que ahí no va
+   opinión jurídica. Es el mismo defecto que T-3 de la tajada de precios cerró
+   con las cifras, aplicado a la prosa.
+   ========================================================================== */
+
+describe("el prompt lleva para qué sirve cada módulo", () => {
+  it("nombra cada módulo con su clave, su rótulo y su descripción", () => {
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
+
+    for (const modulo of modulos()) {
+      expect(instrucciones).toContain(modulo.clave);
+      expect(
+        instrucciones,
+        `el prompt no nombra el rótulo «${modulo.rotulo}»: al modelo le llega` +
+          " una clave sin el nombre que el cliente va a leer",
+      ).toContain(modulo.rotulo);
+      expect(
+        instrucciones,
+        `el prompt nombra «${modulo.clave}» sin su descripción: el modelo` +
+          " vuelve a deducir el propósito del nombre, que es el defecto que" +
+          " esta tajada existe para cerrar",
+      ).toContain(modulo.descripcion);
+    }
+  });
+
+  it("los tres van en una sola línea cada uno, clave · rótulo · descripción", () => {
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
+
+    // La forma exacta importa: es la que el documento de la tajada acordó, y
+    // es la que hace que la lista se lea como una lista y no como prosa. Un
+    // salto de línea en el medio partiría el módulo en dos renglones y el
+    // modelo leería la descripción como si fuera otro tipo.
+    for (const modulo of modulos()) {
+      expect(instrucciones).toContain(
+        `- ${modulo.clave} · ${modulo.rotulo} · ${modulo.descripcion}`,
+      );
+    }
+  });
+
+  it("la descripción viaja entera, no recortada", () => {
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
+
+    // El final de la descripción más larga, que es donde un recorte pegaría.
+    // Y es la mitad que más vale: «No repite el alcance», «sin anticipar
+    // resultados» — lo que un nombre no puede sugerir es qué **no** va
+    // adentro.
+    expect(
+      instrucciones,
+      "la descripción llegó recortada: lo que se perdió es justamente la" +
+        " mitad de la frase que dice qué no va en el módulo",
+    ).toContain("con plazos cuando se puedan sostener.");
+    expect(instrucciones).toContain("No repite el alcance.");
+  });
+
+  /**
+   * La gemela de «declara como ofrecidos exactamente los trámites que puso en
+   * el texto», y desde T-4 pesa lo mismo que ella: el esquema ya no tiene
+   * ninguna constante con la que cerrar los tipos de módulo, así que esta
+   * lista es **lo único** que distingue una clave ofrecida de una inventada.
+   */
+  it("declara como ofrecidas exactamente las claves que puso en el texto", () => {
+    const encargo = encargoAlModelo(modulos(), tramites(), servicios());
+
+    expect(encargo.tiposDeModuloOfrecidos).toEqual([
+      "antecedentes",
+      "alcance",
+      "nota_cliente",
+    ]);
+  });
+
+  /**
+   * **El control de hostilidad de este bloque.** Una sección ausente pasaría
+   * cualquier prueba que sólo buscara «no aparece ninguna clave»: por eso lo
+   * que se afirma es la frase que **sí** tiene que estar.
+   *
+   * Es el argumento de los precios y no el de los trámites, porque acá no hay
+   * un `null` que ofrecer: un prompt que simplemente no habla de tipos de
+   * módulo deja al modelo libre de inventar uno, y entonces la propuesta
+   * entera se rechaza módulo por módulo sin que nadie entienda por qué.
+   */
+  it("sin plantillas activas lo dice, en vez de omitir la sección", () => {
+    const encargo = encargoAlModelo([], tramites(), servicios());
+
+    expect(encargo.tiposDeModuloOfrecidos).toEqual([]);
+    expect(
+      encargo.instrucciones,
+      "el prompt se queda callado sobre los tipos de módulo cuando el bufete" +
+        " no tiene ninguna plantilla activa: el modelo va a inventar un tipo y" +
+        " la propuesta entera se va a caer",
+    ).toContain("ningún módulo");
+    // Y el encabezado sigue estando: lo que falla cerrado es el contenido de
+    // la sección, no la sección.
+    expect(encargo.instrucciones).toContain("## Tipos de módulo");
+  });
+
+  it("sin plantillas activas no quedan instrucciones sobre una lista que no hay", () => {
+    const { instrucciones } = encargoAlModelo([], tramites(), servicios());
+
+    // «Van en el orden en que se leen» y «no hace falta que estén todos» son
+    // instrucciones **sobre una lista**: con la lista vacía dirían lo
+    // contrario de la frase que acaba de prohibir nombrar cualquier módulo.
+    // Por eso viven dentro de `catalogoDeModulos` y no en el arreglo de
+    // instrucciones.
+    expect(instrucciones).not.toContain("No hace falta que estén todos");
+  });
+
+  it("no le dice al modelo quién escribió cada rótulo ni cada descripción", () => {
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
+
+    // La misma decisión que con los precios (T-2 ter): la marca de «editado»
+    // es para una persona que quiere saber de dónde viene un texto. Pedirle al
+    // modelo que distinga el preset de lo que el bufete escribió sería pedirle
+    // que juzgue.
+    for (const palabra of ["preset", "preestablecid", "lo editó el bufete"]) {
+      expect(
+        instrucciones.toLowerCase(),
+        `el prompt le dice al modelo «${palabra}»: le está pidiendo que` +
+          " juzgue de quién es el rótulo, que es lo que este sistema no hace",
+      ).not.toContain(palabra);
+    }
   });
 });
 
@@ -602,7 +793,7 @@ describe("el prompt del generador", () => {
 
 describe("el prompt lleva los servicios tarifados del bufete", () => {
   it("nombra cada servicio con su identificador, su concepto y su cifra", () => {
-    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
 
     for (const servicio of servicios()) {
       expect(
@@ -632,7 +823,7 @@ describe("el prompt lleva los servicios tarifados del bufete", () => {
    * cerrada desde T-9.
    */
   it("sin servicios tarifados lo dice, en vez de omitir la sección", () => {
-    const encargo = encargoAlModelo(tramites(), []);
+    const encargo = encargoAlModelo(modulos(), tramites(), []);
 
     expect(encargo.serviciosOfrecidos).toEqual([]);
     expect(
@@ -651,7 +842,7 @@ describe("el prompt lleva los servicios tarifados del bufete", () => {
    * piden por separado son dos valores que un día no se corresponden.
    */
   it("declara como ofrecidos exactamente los servicios que puso en el texto", () => {
-    const encargo = encargoAlModelo(tramites(), servicios());
+    const encargo = encargoAlModelo(modulos(), tramites(), servicios());
 
     expect(encargo.serviciosOfrecidos).toEqual([
       { id: SERVICIO_EDITADO_ID, monto: PRECIO_DEL_BUFETE },
@@ -660,7 +851,7 @@ describe("el prompt lleva los servicios tarifados del bufete", () => {
   });
 
   it("le dice al modelo que el precio lo pone el sistema", () => {
-    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
 
     // El esquema rechaza la línea que trae las dos cosas, y el prompt tiene
     // que decirlo: una barandilla que sólo vive en el validador se paga en
@@ -678,7 +869,7 @@ describe("el prompt lleva los servicios tarifados del bufete", () => {
    * sistema no hace.
    */
   it("no le dice al modelo quién escribió cada precio", () => {
-    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
 
     // «acuerdo» no entra en la lista y no es un olvido: el trámite sembrado se
     // llama «Divorcio de mutuo acuerdo», así que la palabra aparece por un
@@ -698,7 +889,7 @@ describe("el prompt lleva los servicios tarifados del bufete", () => {
    * llegar es la del bufete.
    */
   it("de un renglón editado viaja el precio del bufete y no la cita de 2001", () => {
-    const { instrucciones } = encargoAlModelo(tramites(), servicios());
+    const { instrucciones } = encargoAlModelo(modulos(), tramites(), servicios());
 
     expect(instrucciones).toContain(String(PRECIO_DEL_BUFETE));
     expect(
@@ -1029,6 +1220,283 @@ describe("un trámite dado de baja no se ofrece", () => {
       "quedó una cotización con una línea que abriría un proceso de un tipo" +
         " dado de baja",
     ).toBe(0);
+  });
+});
+
+/* ==========================================================================
+   Las plantillas del prompt salen de la base (T-4)
+
+   Lo de arriba mide el texto que `encargoAlModelo` produce con una lista en la
+   mano. Esto mide **de dónde sale esa lista**: `modulo_plantilla`, por el mismo
+   puerto que sirve `/api/plantillas-modulo`, con el rótulo y la descripción
+   vigentes y sin las dadas de baja. Sin este bloque, un generador que siguiera
+   leyendo una constante del código pasaría todo lo anterior.
+
+   Las escrituras van por SQL y **se deshacen en un `finally`**: esta tabla la
+   siembra la migración, el `beforeEach` no la toca —no podría:
+   `modulo_plantilla_no_se_borra` aborta todo `DELETE`— así que una prueba que
+   deje una plantilla editada se la deja editada a las demás.
+   ========================================================================== */
+
+/** El preset de una clave, leído de la fila. Es con lo que se compara. */
+async function presetDe(
+  clave: string,
+): Promise<{ rotulo: string; descripcion: string }> {
+  const fila = await env.DB.prepare(
+    "SELECT rotulo_oficial, descripcion_oficial FROM modulo_plantilla" +
+      " WHERE tenant_id = ? AND clave = ?",
+  )
+    .bind(TENANT_UNICO_ID, clave)
+    .first<{ rotulo_oficial: string; descripcion_oficial: string }>();
+
+  expect(fila, `la migración no sembró la plantilla «${clave}»`).not.toBeNull();
+  return {
+    rotulo: fila?.rotulo_oficial ?? "",
+    descripcion: fila?.descripcion_oficial ?? "",
+  };
+}
+
+/**
+ * Corre el cuerpo con la plantilla de `clave` cambiada, y la devuelve a su
+ * estado sembrado —`rotulo` y `descripcion` en NULL, `activo = 1`— pase lo que
+ * pase.
+ */
+async function conLaPlantilla(
+  clave: string,
+  cambio: { rotulo?: string; descripcion?: string; activo?: boolean },
+  cuerpo: () => Promise<void>,
+): Promise<void> {
+  await env.DB.prepare(
+    "UPDATE modulo_plantilla SET rotulo = ?, descripcion = ?, activo = ?" +
+      " WHERE tenant_id = ? AND clave = ?",
+  )
+    .bind(
+      cambio.rotulo ?? null,
+      cambio.descripcion ?? null,
+      cambio.activo === false ? 0 : 1,
+      TENANT_UNICO_ID,
+      clave,
+    )
+    .run();
+
+  try {
+    await cuerpo();
+  } finally {
+    await env.DB.prepare(
+      "UPDATE modulo_plantilla SET rotulo = NULL, descripcion = NULL," +
+        " activo = 1 WHERE tenant_id = ? AND clave = ?",
+    )
+      .bind(TENANT_UNICO_ID, clave)
+      .run();
+  }
+}
+
+/**
+ * El prompt que el generador le mandó al modelo en esta corrida.
+ *
+ * La propuesta que el doble devuelve usa **sólo `alcance`**, que ninguna de
+ * estas pruebas da de baja: con `PROPUESTA_COMPLETA` —que nombra
+ * `exclusiones`— una prueba que retira esa plantilla terminaría en 502 por el
+ * rechazo que está midiendo otra prueba, y el 201 dejaría de significar nada
+ * acá.
+ */
+async function promptDeUnaGeneracion(): Promise<PeticionDeCompletado> {
+  const falso = modeloQueEscribe(
+    JSON.stringify({
+      modulos: [{ tipo: "alcance", contenido: "Redacción del convenio." }],
+      lineas: [
+        { clase: "honorario", concepto: "Honorarios", monto: 150_000 },
+      ],
+    }),
+  );
+
+  await generar(
+    { clienteId, descripcion: DESCRIPCION },
+    { modelo: falso.modelo },
+  );
+
+  const enviada = falso.peticiones[0];
+  expect(enviada, "el generador no llamó al modelo").toBeDefined();
+  return enviada;
+}
+
+describe("la descripción de cada módulo llega al prompt desde la base", () => {
+  it("las seis plantillas sembradas viajan con su descripción", async () => {
+    const { instrucciones, tiposDeModuloOfrecidos } =
+      await promptDeUnaGeneracion();
+
+    for (const clave of [
+      "antecedentes",
+      "alcance",
+      "exclusiones",
+      "supuestos",
+      "clausulas",
+      "nota_cliente",
+    ]) {
+      const preset = await presetDe(clave);
+
+      expect(tiposDeModuloOfrecidos).toContain(clave);
+      expect(
+        instrucciones,
+        `el prompt no lleva la descripción de «${clave}»: el modelo vuelve a` +
+          " deducir el propósito del nombre",
+      ).toContain(preset.descripcion);
+      expect(instrucciones).toContain(
+        `- ${clave} · ${preset.rotulo} · ${preset.descripcion}`,
+      );
+    }
+  });
+
+  /**
+   * **La que separa «sale de la base» de «sale del código».** Con los presets
+   * puestos las dos fuentes dicen lo mismo letra por letra, así que lo único
+   * que las distingue es editar la fila y mirar qué llegó al modelo.
+   */
+  it("la descripción del bufete le gana al preset", async () => {
+    const PROPIA =
+      "Acá va el encargo tal como lo contó el cliente, en sus palabras.";
+    const preset = await presetDe("alcance");
+
+    await conLaPlantilla("alcance", { descripcion: PROPIA }, async () => {
+      const { instrucciones } = await promptDeUnaGeneracion();
+
+      expect(
+        instrucciones,
+        "el prompt le pasó al modelo el preset y no la descripción que el" +
+          " bufete escribió: editarla no sirve de nada",
+      ).toContain(PROPIA);
+      expect(
+        instrucciones,
+        "el preset viajó igual: hay dos descripciones de un mismo módulo en" +
+          " un solo prompt",
+      ).not.toContain(preset.descripcion);
+    });
+  });
+
+  it("el rótulo del bufete le gana al preset, en la misma línea", async () => {
+    const PROPIO = "Qué vamos a hacer";
+
+    await conLaPlantilla("alcance", { rotulo: PROPIO }, async () => {
+      const { instrucciones } = await promptDeUnaGeneracion();
+      const preset = await presetDe("alcance");
+
+      expect(instrucciones).toContain(
+        `- alcance · ${PROPIO} · ${preset.descripcion}`,
+      );
+      expect(instrucciones).not.toContain(`- alcance · ${preset.rotulo} ·`);
+    });
+  });
+});
+
+describe("una plantilla dada de baja no se le ofrece al modelo", () => {
+  it("no aparece en el texto del prompt, ni por clave ni por rótulo", async () => {
+    await conLaPlantilla("exclusiones", { activo: false }, async () => {
+      const { instrucciones } = await promptDeUnaGeneracion();
+      const preset = await presetDe("exclusiones");
+
+      expect(
+        instrucciones,
+        "el prompt ofrece una plantilla que el bufete retiró: el modelo va a" +
+          " escribir un módulo que el editor no puede volver a elegir",
+      ).not.toContain(`- exclusiones ·`);
+      expect(instrucciones).not.toContain(preset.descripcion);
+
+      // El control de hostilidad: un prompt sin **ninguna** plantilla pasaría
+      // las dos de arriba sin medir el filtro.
+      expect(
+        instrucciones,
+        "el prompt no ofrece ninguna plantilla: esto es la prueba rota, no el" +
+          " filtro funcionando",
+      ).toContain("- alcance ·");
+    });
+  });
+
+  it("no entra en `tiposDeModuloOfrecidos`", async () => {
+    await conLaPlantilla("exclusiones", { activo: false }, async () => {
+      const { tiposDeModuloOfrecidos } = await promptDeUnaGeneracion();
+      const ofrecidas = tiposDeModuloOfrecidos ?? [];
+
+      expect(ofrecidas).not.toContain("exclusiones");
+      // El mismo control: una lista vacía no prueba el filtro.
+      expect(ofrecidas).toContain("alcance");
+      expect(ofrecidas).toHaveLength(5);
+    });
+  });
+
+  /**
+   * El cierre del círculo, por rechazo, igual que con el trámite de baja.
+   *
+   * Las dos de arriba miden lo que sale hacia el modelo. Ésta mide lo que pasa
+   * cuando el modelo la nombra igual —porque la vio en una corrida anterior—:
+   * `tipo_de_modulo_desconocido`, y **no queda ninguna fila**. Es la mitad que
+   * hace que el filtro no dependa de que el modelo obedezca, y la que
+   * demuestra que el motivo ya no se decide con una constante del código: la
+   * clave `exclusiones` sigue estando en `TIPOS_DE_MODULO` y en el `CHECK` de
+   * `0004`, así que hasta T-3 esta propuesta pasaba.
+   */
+  it("y si el modelo la nombra igual, la propuesta se descarta entera", async () => {
+    await conLaPlantilla("exclusiones", { activo: false }, async () => {
+      const falso = modeloQueEscribe(
+        JSON.stringify({
+          modulos: [
+            { tipo: "exclusiones", contenido: "Lo que no está incluido." },
+          ],
+          lineas: [
+            { clase: "honorario", concepto: "Honorarios", monto: 150_000 },
+          ],
+        }),
+      );
+
+      const respuesta = await generar(
+        { clienteId, descripcion: DESCRIPCION },
+        { modelo: falso.modelo },
+      );
+
+      expect(respuesta.status).toBe(502);
+      const cuerpo = (await respuesta.json()) as { motivo?: string };
+      expect(cuerpo.motivo).toBe("salida_rechazada");
+
+      expect(
+        await cuantasCotizaciones(),
+        "quedó una cotización con un módulo de una plantilla retirada",
+      ).toBe(0);
+    });
+  });
+
+  /**
+   * **El motivo no cambió, y la frase tampoco.** Lo que cambió es de dónde
+   * sale la lista. Las dos situaciones —la clave inventada y la de la
+   * plantilla retirada— caen en el mismo motivo porque desde donde está quien
+   * tiene que arreglarlo, que es el prompt, son el mismo defecto.
+   */
+  it("el motivo es `tipo_de_modulo_desconocido`, igual que con una clave inventada", async () => {
+    const { validarPropuesta } = await import("../worker/ia/esquema");
+    const modulo = { contenido: "Algo." };
+
+    const retirada = validarPropuesta(
+      { modulos: [{ ...modulo, tipo: "exclusiones" }], lineas: [] },
+      { modulos: ["alcance"] },
+    );
+    const inventada = validarPropuesta(
+      { modulos: [{ ...modulo, tipo: "resumen_ejecutivo" }], lineas: [] },
+      { modulos: ["alcance"] },
+    );
+    const sinCatalogo = validarPropuesta(
+      { modulos: [{ ...modulo, tipo: "alcance" }], lineas: [] },
+      {},
+    );
+
+    for (const [nombre, validacion] of [
+      ["una plantilla retirada", retirada],
+      ["una clave inventada", inventada],
+      ["el catálogo vacío", sinCatalogo],
+    ] as const) {
+      expect(validacion.ok, nombre).toBe(false);
+      if (validacion.ok) continue;
+      expect(validacion.rechazos, nombre).toEqual([
+        { ruta: "modulos[0].tipo", motivo: "tipo_de_modulo_desconocido" },
+      ]);
+    }
   });
 });
 

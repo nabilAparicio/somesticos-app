@@ -147,6 +147,7 @@ import type {
   GeneracionFallida,
   LineaDeCotizacion,
   MotivoDeFallaDelModelo,
+  PlantillaDeModulo,
   RespuestaDeApertura,
   RespuestaDeCierre,
   RespuestaDeCotizacion,
@@ -162,7 +163,8 @@ import {
   normalizarDescripcion,
 } from "../ia/generador";
 import type { ModeloDeLenguaje } from "../ia/modelo";
-import type { TramiteOfrecido } from "../ia/prompt";
+import type { ModuloOfrecido, TramiteOfrecido } from "../ia/prompt";
+import type { ServicioDePlantillas } from "../plantillas/repositorio";
 import { ahoraIso, hoyEnPanama } from "../db/momentos";
 import { normalizarCotizacion } from "./dominio";
 /**
@@ -647,6 +649,37 @@ function tramitesOfrecidos(
 }
 
 /**
+ * Las plantillas de módulo que el prompt le va a ofrecer al modelo (T-4).
+ *
+ * **Sólo las activas**, y acá el filtro es el mismo criterio que en
+ * `tramitesOfrecidos` y el mismo que el editor de módulos aplica a su
+ * desplegable del alta: una plantilla dada de baja es una que el bufete dejó
+ * de usar, así que ofrecérsela al modelo es pedirle que escriba un módulo que
+ * nadie va a poder volver a elegir. Es la dirección contraria a
+ * `ServicioDePlantillas.listar`, que **sí** devuelve las de baja, y no se
+ * contradicen: allá la pregunta es «¿qué hay?» —hace falta para reactivar una—
+ * y acá es «¿qué se puede elegir desde cero?». La distinción entre válido y
+ * seleccionable la fijó T-5.
+ *
+ * Se mapea a `ModuloOfrecido` y no se pasa `PlantillaDeModulo` entera por lo
+ * mismo que con los trámites: el prompt necesita tres campos de los diez, y
+ * los dos que importan —`rotulo` y `descripcion`— son **los vigentes**, que
+ * `worker/plantillas/` ya resolvió con su `COALESCE`. Resolverlos acá sería el
+ * segundo lugar donde se decide cómo se llama un módulo.
+ */
+function modulosOfrecidos(
+  plantillas: readonly PlantillaDeModulo[],
+): ModuloOfrecido[] {
+  return plantillas
+    .filter((plantilla) => plantilla.activo)
+    .map((plantilla) => ({
+      clave: plantilla.clave,
+      rotulo: plantilla.rotuloVigente,
+      descripcion: plantilla.descripcionVigente,
+    }));
+}
+
+/**
  * `POST /api/cotizaciones/generar`: de una descripción en prosa a un
  * borrador.
  *
@@ -691,6 +724,7 @@ async function rutaDeGeneracion(
   tenantId: string,
   servicio: ServicioDeCotizaciones,
   catalogos: ServicioDeCatalogos,
+  plantillas: ServicioDePlantillas,
   modelo: ModeloDeLenguaje,
 ): Promise<Response> {
   if (request.method !== "POST") return metodoNoPermitido("POST");
@@ -716,16 +750,20 @@ async function rutaDeGeneracion(
     ]);
   }
 
-  // Las dos lecturas en paralelo: son dos tablas distintas y ninguna depende
-  // de la otra, así que encadenarlas sumaría una ida a la base al costo de una
-  // generación que ya va a esperar decenas de segundos al modelo.
-  const [tipos, servicios] = await Promise.all([
+  // Las **tres** lecturas en paralelo: son tres tablas distintas y ninguna
+  // depende de la otra, así que encadenarlas sumaría dos idas a la base al
+  // costo de una generación que ya va a esperar decenas de segundos al modelo.
+  // La tercera es de T-4, y es la que hace que el modelo sepa para qué sirve
+  // cada módulo.
+  const [tipos, servicios, plantillasDeModulo] = await Promise.all([
     catalogos.listarTiposProceso(tenantId),
     servicio.listarServiciosTarifados(tenantId),
+    plantillas.listar(tenantId),
   ]);
 
   const propuesta = await generarPropuesta(modelo, {
     descripcion: prosa.descripcion,
+    modulos: modulosOfrecidos(plantillasDeModulo),
     tramites: tramitesOfrecidos(tipos),
     // Sin mapear: `listarServiciosTarifados` ya devuelve la forma que el
     // prompt nombra, con la cifra resuelta en SQL. Un `map` acá que eligiera
@@ -1029,6 +1067,16 @@ export async function rutasDeCotizaciones(
    * de cotizaciones para servir a la que genera.
    */
   catalogos: ServicioDeCatalogos,
+  /**
+   * Las plantillas de módulo del bufete. Se usan para **una sola cosa**, igual
+   * que los catálogos: saber qué tipos de módulo ofrecerle al modelo, con su
+   * rótulo y su descripción vigentes (T-4). Llega el servicio y no la lista ya
+   * leída por el mismo motivo —la lectura hace falta en una sola de las
+   * diecinueve direcciones de este archivo—, y es **el mismo puerto** que
+   * sirve `/api/plantillas-modulo` y su bitácora, no una segunda copia de la
+   * consulta: el día que la resolución del rótulo cambie, cambia en un lugar.
+   */
+  plantillas: ServicioDePlantillas,
   modelo: ModeloDeLenguaje,
   /**
    * El régimen de ITBMS del bufete (T-12). Lo resuelve `worker/index.ts` una
@@ -1079,6 +1127,7 @@ export async function rutasDeCotizaciones(
       tenantId,
       servicio,
       catalogos,
+      plantillas,
       modelo,
     );
   }

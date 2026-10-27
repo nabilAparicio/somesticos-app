@@ -6,11 +6,11 @@
  * `ModeloDeLenguaje` recibe `instrucciones` y `entrada` ya compuestas y que
  * **la costura no arma prompts**; esto es quien los arma.
  *
- * ## Las tres salidas son una sola, y eso es el archivo entero
+ * ## Las cuatro salidas son una sola, y eso es el archivo entero
  *
- * `encargoAlModelo` devuelve el texto **y** `tiposDeProcesoOfrecidos` **y**
- * `serviciosOfrecidos`, y no hay forma de pedir uno sin los otros. La razón no
- * es comodidad:
+ * `encargoAlModelo` devuelve el texto **y** `tiposDeModuloOfrecidos` **y**
+ * `tiposDeProcesoOfrecidos` **y** `serviciosOfrecidos`, y no hay forma de
+ * pedir uno sin los otros. La razón no es comodidad:
  *
  *  - El esquema de T-8 rechaza todo `tipoProcesoId` que quien llama no haya
  *    declarado haber ofrecido. Falla cerrada, porque `tipo_proceso` es una
@@ -37,14 +37,33 @@
  * cuyos montos no son los que el modelo leyó para escribir la prosa — un
  * documento que se contradice consigo mismo y que nada marca como roto.
  *
+ * Y con los tipos de módulo de T-4 el argumento pasa a valer para **los
+ * tres** catálogos sin excepción: hasta T-3 los módulos eran el único juego
+ * cerrado por una constante que el esquema también importaba, así que el texto
+ * y la validación no podían discrepar aunque alguien quisiera. Ahora la lista
+ * la trae la base, el esquema no tiene con qué cerrarla sola, y lo único que
+ * impide que el prompt ofrezca seis plantillas y la validación acepte otras
+ * es que las dos salen de este mismo arreglo.
+ *
  * ## Los catálogos salen de donde viven, y nunca se copian
  *
- * Los tipos de módulo salen de `CATALOGO_DE_MODULOS` y las clases de línea de
- * `CATALOGO_DE_CLASES`. Las claves de cada forma salen de `CLAVES_DE_MODULO`
- * y `CLAVES_DE_LINEA`, que son las mismas que el esquema comprueba. Una
- * segunda lista escrita a mano acá sería la que se desincroniza: el día que
- * alguien agregue un tipo de módulo, el prompt lo ofrecería o no según se
- * acuerde, y lo que se vería es «el generador nunca usa el módulo nuevo».
+ * Las clases de línea salen de `CATALOGO_DE_CLASES`, y las claves de cada
+ * forma de `CLAVES_DE_MODULO` y `CLAVES_DE_LINEA`, que son las mismas que el
+ * esquema comprueba. Una segunda lista escrita a mano acá sería la que se
+ * desincroniza: el día que alguien agregue una clase de línea, el prompt la
+ * ofrecería o no según se acuerde, y lo que se vería es «el generador nunca
+ * usa la clase nueva».
+ *
+ * **Los tipos de módulo ya no salen de ninguna constante** (T-4 de
+ * `odd/tasks/plantillas-de-modulo.md`): llegan como argumento, leídos de
+ * `modulo_plantilla` por quien tiene la base en la mano, y traen **la
+ * descripción** del módulo además de su rótulo. Ése es el motivo de la tajada
+ * entera: hasta T-3 este archivo le pasaba al modelo `alcance · Alcance` y
+ * nada más, así que el propósito de cada módulo lo deducía del nombre. Y es
+ * además lo que borró `CATALOGO_DE_MODULOS`, que era la última copia en código
+ * de los seis rótulos: con el rótulo editable desde `/catalogos/modulos`, una
+ * lista escrita acá sería la que se queda vieja el día que el bufete renombre
+ * un módulo.
  *
  * ## Lo que este prompt NO intenta
  *
@@ -67,9 +86,36 @@
  */
 
 import { CATALOGO_DE_CLASES } from "../cotizaciones/lineas";
-import { CATALOGO_DE_MODULOS } from "../cotizaciones/modulos";
 import { CLAVES_DE_LINEA, CLAVES_DE_MODULO } from "./esquema";
 import type { ServicioOfrecido } from "./esquema";
+
+/**
+ * Un tipo de módulo de prosa que el bufete usa, tal como el prompt lo va a
+ * nombrar: su clave, su rótulo vigente y **para qué sirve**.
+ *
+ * Es estructural y no `PlantillaDeModulo` entera por lo mismo que
+ * `TramiteOfrecido` no es `TipoProceso`: de los diez campos de una plantilla
+ * el prompt necesita tres, y una prueba que arme el caso con tres en vez de
+ * con diez es una prueba que se lee.
+ *
+ * **`rotulo` y `descripcion` son los vigentes, ya resueltos** —`COALESCE(x,
+ * x_oficial)`, el criterio de `migrations/0016_…`, aplicado una sola vez en
+ * `worker/plantillas/`— y no las dos columnas de cada par. Resolverlos acá
+ * sería el segundo lugar donde se decide cómo se llama un módulo, y el día que
+ * los dos no coincidan gana el que alguien mire primero. Es exactamente el
+ * argumento con que `ServicioTarifado` lleva un `monto` y no dos.
+ *
+ * **No hay un campo que diga quién escribió el rótulo o la descripción**, y la
+ * ausencia es la misma decisión que en `ServicioTarifado`: la marca de
+ * «editado» es para una persona que quiere saber de dónde viene un texto; al
+ * modelo le llega el texto y nada más. Señalarle cuál es «sólo el preset»
+ * sería pedirle que juzgue, y juzgar es lo que este sistema no hace.
+ */
+export interface ModuloOfrecido {
+  readonly clave: string;
+  readonly rotulo: string;
+  readonly descripcion: string;
+}
 
 /**
  * Un trámite que el bufete ofrece, tal como el prompt lo va a nombrar.
@@ -121,6 +167,22 @@ export interface ServicioTarifado {
  */
 export interface EncargoAlModelo {
   readonly instrucciones: string;
+  /**
+   * Las claves de módulo que el texto nombró (T-4).
+   *
+   * Es el tercer catálogo que viaja junto con el texto, y por el mismo motivo
+   * que los otros dos: desde T-4 la lista de tipos de módulo sale de
+   * `modulo_plantilla` y no de una constante, así que **el esquema no tiene
+   * forma de cerrarla sola**. La cierra esta lista, que es la que el prompt
+   * imprimió.
+   *
+   * Lo que agrega sobre lo que había es que una plantilla **dada de baja** se
+   * rechaza: su clave sigue estando en el `CHECK` de `0004` y en
+   * `TIPOS_DE_MODULO`, así que hasta T-3 el esquema la aceptaba. Un módulo con
+   * una plantilla retirada es un módulo que el editor no puede volver a
+   * ofrecer, y el modelo no tiene por qué proponerlo.
+   */
+  readonly tiposDeModuloOfrecidos: readonly string[];
   readonly tiposDeProcesoOfrecidos: readonly string[];
   /**
    * Los servicios tarifados que el texto nombró, **con su precio**.
@@ -133,6 +195,61 @@ export interface EncargoAlModelo {
    * cuyo monto no es el que el modelo leyó para escribir la prosa.
    */
   readonly serviciosOfrecidos: readonly ServicioOfrecido[];
+}
+
+/**
+ * Cómo se nombra un tipo de módulo dentro del prompt: clave, rótulo y
+ * descripción, separados igual que las otras dos listas de este archivo.
+ *
+ * **La descripción va entera y no recortada.** Las seis suman 974 caracteres
+ * medidos (T-1) contra los 30.304 que pesa la sección del arancel, así que
+ * recortarla ahorraría nada y le quitaría al modelo justamente la mitad de la
+ * frase que dice qué *no* va en el módulo —«Sin opinión jurídica», «No repite
+ * el alcance»—, que es la parte que un nombre no puede sugerir.
+ */
+function comoSeCompone(modulo: ModuloOfrecido): string {
+  return `- ${modulo.clave} · ${modulo.rotulo} · ${modulo.descripcion}`;
+}
+
+/**
+ * Los tipos de módulo del bufete, dichos para el modelo.
+ *
+ * **Falla cerrada cuando está vacío**, con la misma forma exacta que
+ * `catalogoDeServicios`: lo dice en vez de omitir la sección. El argumento es
+ * el de los precios y no el de los trámites, porque acá no hay un `null` que
+ * ofrecer como salida — una propuesta generada contra un catálogo vacío es una
+ * propuesta cuyos tipos de módulo el modelo inventó, y el esquema los va a
+ * rechazar uno por uno con `tipo_de_modulo_desconocido` sin que nadie entienda
+ * por qué. Decirle que no hay ninguno es lo que hace que devuelva `modulos`
+ * vacío, que es la respuesta correcta para un bufete que dio de baja sus seis
+ * plantillas.
+ *
+ * **Las tres frases de cómo se usan viven acá dentro y no en el arreglo de
+ * instrucciones**, y ésa es la única diferencia de forma con las otras dos
+ * secciones. No es prolijidad: «van en el orden en que se leen» y «no hace
+ * falta que estén todos» son instrucciones sobre una lista, y con la lista
+ * vacía dirían lo contrario de la frase que acaba de prohibir nombrar
+ * cualquiera. La sección es una cosa o la otra, nunca las dos mitades.
+ */
+function catalogoDeModulos(modulos: readonly ModuloOfrecido[]): string {
+  if (modulos.length === 0) {
+    return (
+      "Este bufete no tiene ninguna plantilla de módulo activa, así que" +
+      " **ningún módulo** se puede nombrar: `modulos` va vacío, sin" +
+      " excepción, y la propuesta la componen sólo las líneas de dinero."
+    );
+  }
+
+  return (
+    "Tipos de módulo que este bufete usa, con para qué sirve cada uno." +
+    " `tipo` sólo puede ser uno de estos identificadores, copiado tal cual," +
+    " y la descripción dice qué va adentro y qué no:\n" +
+    modulos.map(comoSeCompone).join("\n") +
+    "\n\nVan en el orden en que se leen en la propuesta. No hace falta que" +
+    " estén todos: una consulta simple no lleva antecedentes, y eso no es un" +
+    " error. `contenido` es la prosa, escrita para el cliente, sin títulos" +
+    " adentro: el rótulo lo pone el sistema."
+  );
 }
 
 /** Cómo se nombra un trámite dentro del prompt: con su área, si la tiene. */
@@ -232,13 +349,15 @@ function catalogoDeServicios(servicios: readonly ServicioTarifado[]): string {
  * salida en español es un prompt que de vez en cuando contesta en inglés.
  */
 export function encargoAlModelo(
+  /**
+   * Las plantillas de módulo **activas** de este bufete, con su rótulo y su
+   * descripción vigentes. Va primero porque es la primera sección del texto, y
+   * **vacío es válido y falla cerrado**: ver `catalogoDeModulos`.
+   */
+  modulos: readonly ModuloOfrecido[],
   tramites: readonly TramiteOfrecido[],
   servicios: readonly ServicioTarifado[],
 ): EncargoAlModelo {
-  const tiposDeModulo = CATALOGO_DE_MODULOS.map(
-    (entrada) => `- ${entrada.tipo} · ${entrada.rotulo}`,
-  ).join("\n");
-
   const clasesDeLinea = CATALOGO_DE_CLASES.map(
     (entrada) => `- ${entrada.clase} · ${entrada.rotulo}`,
   ).join("\n");
@@ -262,13 +381,12 @@ export function encargoAlModelo(
     `Cada módulo lleva exactamente: ${CLAVES_DE_MODULO.join(", ")}.`,
     `Cada línea lleva exactamente: ${CLAVES_DE_LINEA.join(", ")}.`,
 
+    // El encabezado **no** cambia con el catálogo vacío, a diferencia de los
+    // de servicios y trámites: «Tipos de módulo» ya es cierto con cero
+    // plantillas, y los otros dos cambian porque «Los precios de este bufete»
+    // sobre una lista vacía sería un título que miente.
     "## Tipos de módulo",
-    "`tipo` sólo puede ser uno de estos identificadores, copiado tal cual:\n" +
-      tiposDeModulo,
-    "Van en el orden en que se leen en la propuesta. No hace falta que estén" +
-      " todos: una consulta simple no lleva antecedentes, y eso no es un" +
-      " error. `contenido` es la prosa, escrita para el cliente, sin títulos" +
-      " adentro: el rótulo lo pone el sistema.",
+    catalogoDeModulos(modulos),
 
     "## Clases de línea",
     "`clase` sólo puede ser una de estas dos, copiada tal cual:\n" +
@@ -309,6 +427,12 @@ export function encargoAlModelo(
 
   return {
     instrucciones,
+    // Las claves que el texto acaba de imprimir, del mismo arreglo y en la
+    // misma llamada. Desde T-4 esta lista es **lo único** que cierra el juego
+    // de tipos de módulo: el esquema ya no tiene una constante con la que
+    // compararlo, así que un camino que la recompusiera aparte aceptaría una
+    // plantilla dada de baja que el prompt nunca ofreció.
+    tiposDeModuloOfrecidos: modulos.map((modulo) => modulo.clave),
     // Del mismo arreglo que acaba de armar el texto, en la misma llamada.
     // Ver el encabezado: separarlos es abrir el círculo de T-7 en silencio.
     tiposDeProcesoOfrecidos: tramites.map((tramite) => tramite.id),

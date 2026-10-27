@@ -213,11 +213,16 @@ export function proveedorAnthropic(
 
       // Fuera del `try`, a propósito: ver el bloque de arriba.
       const validacion = validarTextoDePropuesta(texto, {
+        // **Los tres catálogos que el prompt declaró, no dos.** Desde T-4 los
+        // tipos de módulo también llegan declarados, y omitirlo acá dejaría
+        // **todos** los módulos rechazados por `tipo_de_modulo_desconocido`:
+        // la propuesta entera se caería y el abogado se quedaría sin borrador
+        // por un catálogo que el prompt sí había ofrecido.
+        modulos: peticion.tiposDeModuloOfrecidos,
         tiposDeProceso: peticion.tiposDeProcesoOfrecidos,
-        // Los dos catálogos que el prompt declaró, no uno: desde T-3 el monto
-        // de una línea tarifada sale de `servicios`, así que omitirlo acá
-        // dejaría toda línea con servicio rechazada por `servicio_no_ofrecido`
-        // aunque el prompt la hubiera ofrecido.
+        // Y desde T-3 el monto de una línea tarifada sale de `servicios`, así
+        // que omitirlo dejaría toda línea con servicio rechazada por
+        // `servicio_no_ofrecido` aunque el prompt la hubiera ofrecido.
         servicios: peticion.serviciosOfrecidos,
       });
 

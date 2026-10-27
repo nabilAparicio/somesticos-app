@@ -2,7 +2,7 @@
  * Las **claves** de los tipos de módulo de prosa, y las reglas de qué es un
  * módulo aceptable. Puras: ni D1 ni HTTP.
  *
- * ## El rótulo ya no vive acá (T-3 de `odd/tasks/plantillas-de-modulo.md`)
+ * ## El rótulo ya no vive acá (T-3 y T-4 de `odd/tasks/plantillas-de-modulo.md`)
  *
  * Hasta T-2 este archivo era el catálogo entero: la clave **y** el rótulo que
  * la persona lee. Ya no. El rótulo vigente de cada módulo vive en
@@ -10,6 +10,15 @@
  * vez en `worker/plantillas/`— porque el abogado puede renombrarlo desde
  * `/catalogos/modulos`, y un rótulo escrito en código es un rótulo que ese
  * cambio no alcanza.
+ *
+ * T-3 apagó cinco de los seis consumidores y dejó `CATALOGO_DE_MODULOS` vivo
+ * con uno —el prompt del generador— y su fecha de muerte escrita. **T-4 la
+ * borró**: `worker/ia/prompt.ts` lee las plantillas de la base y les pasa al
+ * modelo `clave · rótulo · descripción`, así que los seis rótulos escritos a
+ * mano tienen hoy un único lugar en todo el repositorio, que es la siembra de
+ * `migrations/0016_una_plantilla_de_modulo_dice_para_que_sirve.sql`: un hecho
+ * histórico escrito una vez y que nadie vuelve a leer. Renombrar un preset es
+ * editar un lugar.
  *
  * El argumento con que §8 mandó este catálogo al código —«hay código detrás de
  * cada tipo: un renderizador y un esquema»— se midió y no se cumplía: los seis
@@ -27,8 +36,14 @@
  *  - El **`CHECK`** es el que sobrevive al primer script de importación
  *    (§5). Sin él, en dos años conviven `clausulas`, `cláusulas` y `clauses`
  *    y la pregunta «¿qué solemos excluir?» no se contesta más.
- *  - La **lista** es la que valida lo que entra por el cable y la que impide
- *    que el generador invente una clave que no existe.
+ *  - La **lista** es la que valida lo que entra por el cable y la que estrecha
+ *    el tipo de lo que sale de la validación del generador.
+ *
+ * Lo que la lista **no** contesta, y hace falta decirlo desde T-4: *cuáles
+ * están vigentes*. Eso es una columna `activo` de una fila, no una unión, así
+ * que al modelo lo que le cierra el juego es el catálogo de plantillas activas
+ * que el prompt le declaró — ver `CatalogosOfrecidos.modulos`. Una plantilla
+ * dada de baja es una clave de esta lista que ya no se ofrece.
  *
  * Si se separan, la pantalla ofrece una clave que la base rechaza con un 500
  * que nadie puede leer. `test/modulos-api.spec.ts` las compara y falla.
@@ -121,42 +136,6 @@ type DebeSerVacio<T extends never> = T;
 export type TiposFueraDeLaLista = DebeSerVacio<
   Exclude<TipoDeModulo, (typeof TIPOS_DE_MODULO)[number]>
 >;
-
-/**
- * Los rótulos escritos a mano, con **un solo consumidor** y fecha de muerte.
- *
- * Estos seis rótulos son hoy la segunda copia de lo que `0016` sembró en
- * `rotulo_oficial`, y una segunda copia es una copia que se queda vieja. T-3
- * apagó a los cinco consumidores que importaban —el editor, la hoja, el
- * detalle y el `detalle` de la bitácora leen `modulo_plantilla`, y el snapshot
- * congela lo que leyó—, y **queda uno**:
- *
- *  > `worker/ia/prompt.ts:238`, que arma la lista `clave · rótulo` que el
- *  > modelo recibe.
- *
- * Se queda porque esa línea es de **T-4**, que le inyecta al prompt
- * `clave · rótulo · descripción` leído de la base: ponerla a leer la base es
- * exactamente esa tarea, y cambiar el prompt desde acá dejaría la mitad del
- * trabajo hecho sin la prueba que lo mide —T-4 mide el tamaño del prompt antes
- * y después—. Mientras siga viva, lo que sostiene que no se desincronice no es
- * la buena intención: `test/modulos-api.spec.ts` compara estos rótulos contra
- * los `rotulo_oficial` de `modulo_plantilla` **en los dos sentidos**, así que
- * renombrar un preset en una migración y olvidarse de acá pone la suite en
- * rojo.
- *
- * **El día que T-4 entre, esta constante se borra.** No queda nada que la use,
- * y entonces los rótulos escritos a mano tienen un único lugar en todo el
- * repositorio: la siembra de `0016`, que es un hecho histórico escrito una vez
- * y que nadie vuelve a leer.
- */
-export const CATALOGO_DE_MODULOS = [
-  { tipo: "antecedentes", rotulo: "Antecedentes" },
-  { tipo: "alcance", rotulo: "Alcance" },
-  { tipo: "exclusiones", rotulo: "Exclusiones" },
-  { tipo: "supuestos", rotulo: "Supuestos" },
-  { tipo: "clausulas", rotulo: "Cláusulas" },
-  { tipo: "nota_cliente", rotulo: "Nota al cliente" },
-] as const satisfies readonly { tipo: TipoDeModulo; rotulo: string }[];
 
 const CLAVES = new Set<string>(TIPOS_DE_MODULO);
 

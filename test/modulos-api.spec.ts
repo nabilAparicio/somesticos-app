@@ -30,7 +30,6 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ACCIONES_POR_ENTIDAD } from "../worker/bitacora/vocabulario";
 import {
-  CATALOGO_DE_MODULOS,
   TIPOS_DE_MODULO,
   normalizarModulo,
   normalizarOrdenDeModulos,
@@ -164,49 +163,6 @@ describe("las claves de la lista y las de modulo_plantilla dicen lo mismo", () =
     const enLaBase = (await plantillasSembradas()).map((una) => una.clave);
 
     expect(enLaBase).toEqual([...TIPOS_DE_MODULO]);
-  });
-});
-
-describe("los rótulos que quedan en código son los de la siembra", () => {
-  /*
-   * `CATALOGO_DE_MODULOS` es la **última copia en código** de los seis
-   * rótulos, y le queda un solo consumidor: `worker/ia/prompt.ts`, que es de
-   * T-4. Mientras viva, esta prueba es lo que impide que las dos fuentes se
-   * separen; el día que T-4 la deje sin consumidores, la constante y estas dos
-   * pruebas se borran juntas.
-   *
-   * En los dos sentidos por lo mismo que arriba: un rótulo en código que la
-   * siembra no tiene es un rótulo inventado, y un `rotulo_oficial` que el
-   * código no tiene es un preset que el prompt no nombra.
-   */
-
-  it("cada rótulo del código es el preset de su plantilla", async () => {
-    const porClave = new Map(
-      (await plantillasSembradas()).map((una) => [una.clave, una.rotulo_oficial]),
-    );
-
-    for (const entrada of CATALOGO_DE_MODULOS) {
-      expect(
-        porClave.get(entrada.tipo),
-        `el rótulo de «${entrada.tipo}» no es el que sembró 0016`,
-      ).toBe(entrada.rotulo);
-    }
-  });
-
-  it("cada preset de la siembra está escrito en el código", async () => {
-    const enElCodigo = new Map(
-      CATALOGO_DE_MODULOS.map((entrada) => [
-        entrada.tipo as string,
-        entrada.rotulo as string,
-      ]),
-    );
-
-    for (const fila of await plantillasSembradas()) {
-      expect(
-        enElCodigo.get(fila.clave),
-        `el preset de «${fila.clave}» no tiene copia en el código`,
-      ).toBe(fila.rotulo_oficial);
-    }
   });
 });
 
@@ -1317,10 +1273,13 @@ describe("cada operación deja su hecho contra la cotización", () => {
     /*
      * **La prueba de T-3 sobre la bitácora.** Lo que distingue «el rótulo sale
      * de la base» de «el rótulo sale del código» no se puede ver con los
-     * presets puestos: los seis `rotulo_oficial` son letra por letra los
-     * mismos que `CATALOGO_DE_MODULOS`, así que las tres escrituras de módulo
-     * contestan igual por los dos caminos. Lo único que los separa es
-     * renombrar una plantilla y mirar qué quedó escrito.
+     * presets puestos: hasta T-4 el código tenía una copia letra por letra de
+     * los seis `rotulo_oficial`, así que las tres escrituras de módulo
+     * contestaban igual por los dos caminos. Lo único que los separa es
+     * renombrar una plantilla y mirar qué quedó escrito — y sigue siendo lo
+     * único, ahora que la copia en código no existe: un `detalle` que
+     * resolviera el rótulo por su cuenta pasaría cualquier prueba hecha sobre
+     * los presets.
      *
      * El `finally` devuelve la fila a NULL, que es «uso el preset»: esta tabla
      * la siembra la migración y el `beforeEach` no la toca, así que una
@@ -1350,9 +1309,9 @@ describe("cada operación deja su hecho contra la cotización", () => {
       ]);
 
       // Y la aserción que de verdad clava la tajada: lo escrito **no** es el
-      // rótulo que el código conoce. Sin ella, un `detalle` que siguiera
-      // saliendo de `CATALOGO_DE_MODULOS` pasaría la de arriba el día que
-      // alguien escribiera «Qué vamos a hacer» también en el código.
+      // preset. Sin ella, un `detalle` que siguiera saliendo de una copia en
+      // código pasaría la de arriba el día que alguien escribiera «Qué vamos a
+      // hacer» también ahí.
       expect(
         (await bitacoraDe()).map((hecho) => hecho.detalle),
       ).not.toContain("Alcance");

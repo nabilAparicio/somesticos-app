@@ -3,10 +3,10 @@
  * `docs/diseno.md` §8 «La entrada»).
  *
  * No toca D1 y no sabe que existe HTTP. Lo que hace es juntar las piezas que
- * ya existían y que nadie había juntado: los dos catálogos del bufete —sus
- * trámites y sus servicios tarifados—, el prompt que los nombra, y la costura
- * de T-8 que valida lo que vuelve. Guardar el borrador es de
- * `worker/cotizaciones/repositorio.ts`.
+ * ya existían y que nadie había juntado: los **tres** catálogos del bufete
+ * —sus plantillas de módulo, sus trámites y sus servicios tarifados—, el
+ * prompt que los nombra, y la costura de T-8 que valida lo que vuelve. Guardar
+ * el borrador es de `worker/cotizaciones/repositorio.ts`.
  *
  * **Quién pone el precio de una línea tarifada se decide una sola vez y no
  * acá** (T-3): el catálogo con su cifra viaja hasta `validarPropuesta`, que es
@@ -50,6 +50,7 @@ import type { PropuestaDelModelo } from "./esquema";
 import type { ModeloDeLenguaje, ResultadoDelModelo } from "./modelo";
 import {
   encargoAlModelo,
+  type ModuloOfrecido,
   type ServicioTarifado,
   type TramiteOfrecido,
 } from "./prompt";
@@ -130,6 +131,18 @@ export function normalizarDescripcion(
 export interface PedidoDeGeneracion {
   /** Lo que el abogado escribió, ya recortado y no vacío. */
   readonly descripcion: string;
+  /**
+   * Las plantillas de módulo **activas** de este bufete, con su rótulo y su
+   * descripción vigentes (T-4 de `odd/tasks/plantillas-de-modulo.md`).
+   *
+   * Vacío es válido y falla cerrada: el prompt lo dice y ningún módulo puede
+   * pasar la validación, con lo que el modelo devuelve una propuesta de puras
+   * líneas. Es el único de los tres catálogos cuyo vacío cambia la **forma**
+   * de la propuesta y no sólo un campo de ella, y aun así es la respuesta
+   * correcta — un bufete que dio de baja sus seis plantillas no tiene módulos
+   * que ofrecer, y un módulo de un tipo inventado sería peor que ninguno.
+   */
+  readonly modulos: readonly ModuloOfrecido[];
   /** Los trámites de **este** bufete. Vacío es válido y falla cerrada. */
   readonly tramites: readonly TramiteOfrecido[];
   /**
@@ -154,11 +167,20 @@ export function generarPropuesta(
   modelo: ModeloDeLenguaje,
   pedido: PedidoDeGeneracion,
 ): Promise<ResultadoDelModelo<PropuestaDelModelo>> {
-  const encargo = encargoAlModelo(pedido.tramites, pedido.servicios);
+  const encargo = encargoAlModelo(
+    pedido.modulos,
+    pedido.tramites,
+    pedido.servicios,
+  );
 
   return modelo.proponer({
     instrucciones: encargo.instrucciones,
     entrada: pedido.descripcion,
+    // Las claves de módulo que el texto nombró, del mismo objeto (T-4).
+    // Omitir esta línea no dejaría «la validación un poco más laxa»: dejaría
+    // **toda** propuesta con módulos rechazada, porque desde T-4 ésta es la
+    // única lista contra la que el esquema puede cerrar los tipos de módulo.
+    tiposDeModuloOfrecidos: encargo.tiposDeModuloOfrecidos,
     // Lo ofrecido en el texto y lo declarado como ofrecido, del mismo
     // objeto. Separar estas dos líneas es abrir el círculo de T-7 en
     // silencio: ver el encabezado de `worker/ia/prompt.ts`.

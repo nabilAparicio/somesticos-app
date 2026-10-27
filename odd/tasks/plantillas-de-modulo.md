@@ -239,7 +239,7 @@ acotado; el disparador es la regla de escritura y la de preparación.
 - [x] El rótulo vigente sale de la base en toda la aplicación: el editor de
       módulos, la hoja, el detalle, y el `detalle` de la bitácora que
       `repositorio.ts:1747` arma con `rotuloDeTipo`.
-- [ ] Los rótulos escritos a mano en `worker/cotizaciones/modulos.ts:80`
+- [x] Los rótulos escritos a mano en `worker/cotizaciones/modulos.ts:80`
       quedan con **exactamente un uso**: la semilla de la migración. Si queda
       un segundo, son dos fuentes y una se va a quedar vieja.
       **Queda un segundo, y es `worker/ia/prompt.ts:238`**, que está fuera de
@@ -259,11 +259,11 @@ acotado; el disparador es la regla de escritura y la de preparación.
 
 ### T-4 · La IA recibe el propósito de cada módulo
 
-- [ ] `worker/ia/prompt.ts` inyecta `clave · rótulo · descripción` leyendo la
+- [x] `worker/ia/prompt.ts` inyecta `clave · rótulo · descripción` leyendo la
       base, y **falla cerrado** si no hay ninguna plantilla activa, con la
       misma regla que el catálogo de servicios ya aplica.
-- [ ] El tamaño del prompt medido antes y después, en caracteres, anotado acá.
-- [ ] `tipo_de_modulo_desconocido` sigue siendo el motivo cuando el modelo
+- [x] El tamaño del prompt medido antes y después, en caracteres, anotado acá.
+- [x] `tipo_de_modulo_desconocido` sigue siendo el motivo cuando el modelo
       nombra una clave que no está en la lista inyectada, y la frase no cambia:
       lo que cambió es de dónde sale la lista.
 
@@ -655,3 +655,220 @@ sin archivos nuevos). `pnpm test:e2e`: **535 pasando** en 1,1 min (desde 532:
 
 **Siguiente paso**: T-4, que le inyecta al prompt la descripción de cada
 módulo y, con eso, borra `CATALOGO_DE_MODULOS`.
+
+### T-4 cerrada, y con ella la tajada 1
+
+**Archivos.** Ninguno nuevo. Modificados, 11: `worker/ia/prompt.ts`
+(+145/−21), `worker/ia/esquema.ts` (+64/−8), `worker/cotizaciones/rutas.ts`
+(+54/−5), `worker/ia/generador.ts` (+27/−5), `worker/cotizaciones/modulos.ts`
+(+18/−39, que es el único que pierde líneas netas y es por la constante
+borrada), `worker/ia/modelo.ts` (+14), `worker/ia/anthropic.ts` (+9/−4),
+`worker/index.ts` (+9/−3), `test/generador-api.spec.ts` (+486/−18),
+`test/ia-modelo.spec.ts` (+121/−11) y `test/modulos-api.spec.ts` (+10/−51).
+**957 insertadas, 165 quitadas** sin contar este documento. Ninguno de punta a
+punta: el cambio es del servidor y los bancos no lo ven.
+
+**El prompt, medido antes y después contra la base local.** No estimado: se
+leyeron `modulo_plantilla`, `tipo_proceso` y `arancel_renglon` de la base local
+—6 plantillas activas, 4 trámites vigentes, 282 renglones con cifra— y se armó
+el prompt con las dos versiones del código en la misma corrida, extrayendo la
+sección de módulos por su encabezado con el mismo código en las dos pasadas:
+
+| Qué | Antes | Después | Diferencia |
+|---|---|---|---|
+| Sección «Tipos de módulo» | **494** | **1.599** | **+1.105** |
+| Prompt completo | **33.747** | **34.852** | **+1.105** |
+| Prompt sin la sección del arancel | 3.443 | 4.548 | +1.105 |
+| Sección del arancel sola | 30.304 | 30.304 | 0 |
+
+Y el +1.105 descompuesto, que es lo que hace que el número se pueda auditar:
+**974** de las seis descripciones —exactamente lo que T-1 midió como
+almacenado, así que ninguna se recortó ni se reescribió en el camino—, **18**
+de los seis separadores ` · ` nuevos, y **113** del encabezado de la sección,
+que pasó de 69 a 182 caracteres porque ahora dice que la descripción está ahí y
+para qué sirve. 974 + 18 + 113 = 1.105.
+
+El documento había estimado «unos 800» para las descripciones; lo medido como
+almacenado fue 974 (T-1) y lo que la sección crece de verdad es 1.105. **El
+costo frente a los 30.304 del arancel es 3,6 %**, y el orden de magnitud que la
+decisión asumía no cambia.
+
+Una nota sobre los números de referencia: este documento citaba 33.499 y 3.195,
+medidos en la tajada de precios. El «antes» de hoy es 33.747 y 3.443, +248. Esos
+248 **no están en lo que T-4 toca**: la sección de módulos medía 494 en las dos
+mediciones y la del arancel 30.304 en las dos, y todo el resto del prompt es
+texto fijo, así que la diferencia vive en la sección de trámites —la base local
+tiene hoy 4 trámites vigentes, 284 caracteres de líneas—. El antes y el después
+de arriba se tomaron en la misma corrida contra la misma base, así que el
++1.105 no depende de eso.
+
+**`CATALOGO_DE_MODULOS` borrado, y la segunda fuente cerrada.** La constante no
+existe más, y con ella se fueron las dos pruebas de `test/modulos-api.spec.ts`
+que ataban las dos fuentes —escritas en T-3 con su fecha de muerte puesta: «el
+día que T-4 la deje sin consumidores, la constante y estas dos pruebas se
+borran juntas»—. Lo que **no** se tocó es la red de claves: las tres pruebas que
+enfrentan `TIPOS_DE_MODULO` a `modulo_plantilla` en los dos sentidos siguen
+ahí, porque la pertenencia a la unión nunca tuvo que ver con el rótulo.
+
+Medido: de los seis rótulos escritos a mano no queda **ningún** consumidor en
+código. Quedan tres apariciones de los literales en el repositorio y las tres
+son datos, no fuentes: la siembra de `0016`, los bancos de prueba, y
+`scripts/semilla-demo.sql` —que ver abajo—.
+
+**La decisión que el enunciado no pedía decidir y había que decidir: el esquema
+también cambia de fuente.** El enunciado pedía inyectarle la descripción al
+prompt. Pero `validarModulo` cerraba el juego de tipos con `esTipoDeModulo`
+sobre la constante del código, y eso dejaba un hueco concreto: **una plantilla
+dada de baja seguía siendo un tipo que el modelo podía proponer**, porque su
+clave sigue en `TipoDeModulo`, en `TIPOS_DE_MODULO` y en el `CHECK` de `0004`.
+El editor no la ofrece (T-3) y la pantalla la marca «(de baja)», así que el
+generador habría escrito módulos nacidos retirados.
+
+Así que `CatalogosOfrecidos` recibe un tercer catálogo —`modulos`— con la misma
+forma y la misma falla cerrada que `tiposDeProceso` y `servicios`, y
+`validarModulo` tiene **dos comprobaciones y un solo motivo**: `esTipoDeModulo`
+es la que estrecha el tipo —sin ella el `return` necesitaría un `as` sobre un
+valor que viene del cable— y `clavesOfrecidas.includes` es la que dice qué está
+vigente. La primera muere con `TipoDeModulo` en la tajada 2; la segunda es la
+que lleva la regla. El motivo y su frase no cambiaron: lo que cambió es de
+dónde sale la lista, que es exactamente lo que el enunciado pedía.
+
+**La falla cerrada tiene la forma del catálogo de servicios, no la de los
+trámites**, y la diferencia importa: un catálogo de trámites vacío deja
+`tipoProcesoId` en `null`; uno de módulos vacío deja la propuesta **sin
+módulos**. Es la respuesta correcta igual —un bufete que retiró sus seis
+plantillas no tiene módulos que ofrecer— y hay una prueba que lo afirma por el
+lado que importa: con el catálogo vacío, una propuesta de puras líneas pasa. Sin
+ella, «falla cerrada» podría estar implementada como «falla», que es otra cosa.
+
+**Los tres comentarios desactualizados, corregidos.** `esquema.ts:107` decía
+«ninguno de los seis de `CATALOGO_DE_MODULOS`» y ahora describe la lista
+inyectada, con las tres situaciones que el motivo cubre. `esquema.ts:230` y
+`:276` nombraban `TiposSinRotulo`, que T-3 borró: la primera cita ahora
+`TiposFueraDeLaLista`, que es la red viva, y la segunda —que cuenta la forma
+equivocada que el proyecto usaba— conserva el nombre histórico **diciendo que
+es el histórico y cuándo se renombró**, porque el párrafo habla de lo que esas
+tres redes decían antes de T-8 y reescribirle el nombre volvería la anécdota
+incomprensible.
+
+**Las tres frases de cómo se usan los módulos se mudaron adentro de la
+sección.** «Van en el orden en que se leen» y «no hace falta que estén todos»
+son instrucciones sobre una lista: con la lista vacía dirían lo contrario de la
+frase que acaba de prohibir nombrar cualquier módulo. Es la única diferencia de
+forma con las otras dos secciones del prompt, y tiene su prueba.
+
+**Las mutaciones, que es la evidencia de que las reglas están protegidas.** Cada
+una es una regla distinta de esta tarea:
+
+| Mutación | Resultado |
+|---|---|
+| `validarModulo` ignora la lista inyectada (sólo `esTipoDeModulo`) | **4 fallando de 181** en `ia-modelo` + `generador-api`: el catálogo vacío, la clave no ofrecida, la propuesta descartada y el motivo |
+| `comoSeCompone` deja de imprimir la descripción | **6 fallando de 181**: las tres del texto puro y las tres de la base |
+| `modulosOfrecidos` no filtra por `activo` | **3 fallando de 63** en `generador-api`: el texto, `tiposDeModuloOfrecidos` y el rechazo |
+| `modulosOfrecidos` usa el preset en vez del vigente | **2 fallando de 63**: la descripción y el rótulo del bufete |
+| `catalogoDeModulos` devuelve `""` con la lista vacía | **1 fallando de 63**: la que exige la frase, no la ausencia de claves |
+
+Las cinco restauradas: 181, 181, 63, 63 y 63 pasando.
+
+**Lo que se probó contra la base local de la suite, y no sobre una lista
+armada a mano.** Las pruebas del prompt son puras y le pasan tres plantillas
+—tres y no seis a propósito: una lista parcial es lo que deja afirmar que el
+prompt nombra lo que se le dio **y nada más**, y con las seis un generador que
+siguiera leyendo una constante pasaría igual—. Lo que sale de `modulo_plantilla`
+lo miden cuatro pruebas más, por la ruta, con el rótulo y la descripción
+editados por SQL y devueltos a NULL en un `finally`: las seis descripciones
+sembradas llegan, la del bufete le gana al preset, el rótulo del bufete le gana
+al preset en la misma línea, y una plantilla dada de baja no está en el texto ni
+en `tiposDeModuloOfrecidos` —5 claves, no 6— ni pasa si el modelo la nombra
+igual.
+
+**Un archivo fuera de la superficie autorizada que no se tocó, y se dice.**
+`worker/cotizaciones/lineas.ts:78` cita `CATALOGO_DE_MODULOS` en un comentario
+—«`as const satisfies` y no una anotación, por lo mismo que
+`CATALOGO_DE_MODULOS`»— y esa constante ya no existe. Es una referencia colgada
+de una palabra, está fuera de la superficie de esta tarea, y la referencia
+vigente equivalente es `TIPOS_DE_MODULO`, en el mismo archivo. Queda anotada
+como lo quedó la de `esquema.ts:230` en T-3.
+
+Y `scripts/semilla-demo.sql` tiene tres `CASE` que mapean clave a rótulo para
+armar los snapshots y la bitácora de la demo. **No es una segunda fuente del
+rótulo vigente**: es un guion que fabrica datos congelados, que por definición
+son copias del rótulo del día en que se emitió, igual que las 33 entradas de
+las 6 cotizaciones emitidas. Está fuera de la superficie y no se tocó.
+
+**La base local quedó intacta.** Esta tarea no escribió una sola fila: la
+medición del prompt es de lectura, y las escrituras de las pruebas van contra la
+base de la suite, no contra la local. Las seis plantillas siguen con `rotulo` y
+`descripcion` en NULL y `activo = 1`, y no hay entradas de bitácora nuevas que
+no se pudieran deshacer.
+
+**Verificación.** `pnpm lint`: sin hallazgos. `pnpm typecheck`: 0 errores.
+`pnpm test`: **54 archivos, 2.724 pruebas, todas pasando** (desde 2.706: +20
+nuevas y −2 borradas, sin archivos nuevos). `pnpm test:e2e`: **535 pasando** en
+1,1 min —el mismo número que T-3: ningún banco necesitó tocarse, porque el
+cambio no cruza el cable—. `e2e/sin-scroll-horizontal.spec.ts` pasó sin
+necesidad de repetirlo.
+
+### La tajada 1, cerrada
+
+**Lo que entrega de punta a punta.** El abogado entra a `/catalogos/modulos`,
+le cambia el rótulo y la descripción a un módulo, vacía el campo para volver al
+preestablecido, o retira una plantilla que no usa. El editor de una cotización
+nueva ofrece lo que quedó activo y muestra el rótulo de hoy; la hoja de una
+cotización emitida muestra el que se congeló entonces; y **el modelo recibe
+para qué sirve cada módulo**, que era la razón de ser de la tajada. Ningún
+camino de la aplicación ni de SQL puede borrar una plantilla, editar su preset
+ni cambiar su clave, y una plantilla sin descripción vigente no existe: lo
+sostienen cuatro disparadores y dos `CHECK`, cada uno con su sonda hostil
+medida.
+
+**Los siete criterios de aceptación, todos con su medición.** 1 y 2 en T-2 (la
+pantalla manejada a mano, 6 bloques, 1 marca tras editar, 0 tras vaciar); 3 y 4
+en T-1 (nueve sondas hostiles con su mensaje exacto, más cuatro contrapesos); 5
+en T-4 (494 → 1.599 caracteres de sección, +1.105); 6 en T-3 (las 33 entradas
+congeladas y los seis `length(snapshot)` idénticos al byte); 7 en las cuatro.
+
+**Lo medido contra lo pronosticado.** El forecast era ~1.000 líneas propias. Lo
+entregado, contado con `git show --numstat` sobre los cuatro commits y este
+documento incluido: **9.532 insertadas y 487 quitadas** —`7c340aa` +1.399/−15,
+`41cfffb` +5.475/−56, `fb3024b` +1.494/−247, éste +1.164/−169—. El factor de
+error es nueve y medio, y el motivo quedó identificado en T-2: se estimaron
+líneas de código, y este repositorio escribe alrededor de tres de comentario y
+de prueba por cada una de código. El forecast de la tajada 2 se hace sobre esta
+medición y no sobre la intuición.
+
+**Lo que la tajada 2 hereda, y en qué orden.**
+
+1. **`cotizacion_modulo.tipo` pasa a `plantilla_id`.** Reconstrucción de la
+   tabla con backfill por `JOIN` —posible porque `0016` sembró los seis presets
+   en la migración y no en un script—, su índice único y sus seis disparadores
+   re-creados letra por letra. El verbo `creado` ya está en el `CHECK` de
+   `accion`, así que **no hace falta migración de bitácora**: la séptima
+   reconstrucción fue la última de esta familia.
+2. **`TipoDeModulo` muere.** Con la referencia puesta, la unión de
+   `worker/contract.ts` y `TIPOS_DE_MODULO` dejan de tener trabajo, y con ellas
+   `esTipoDeModulo`, `TiposFueraDeLaLista` y las tres pruebas que enfrentan la
+   lista a las claves sembradas. En `worker/ia/esquema.ts` eso es concreto y ya
+   está anotado al lado del código: de las dos comprobaciones de
+   `validarModulo` se cae la primera —la que sólo existe para estrechar el
+   tipo— y queda la segunda, que es la que lleva la regla. **Conviene que ése
+   sea el único cambio del día**, porque es el día que se pierde la red del
+   compilador.
+3. **Crear plantillas nuevas**, con clave derivada del rótulo, que es lo que el
+   `CHECK` de `0004` hace imposible hoy. Recién ahí `creado` entra al
+   vocabulario de bitácora de la entidad, y recién ahí `ServicioDePlantillas`
+   estrena un `crear` — el argumento de por qué no lo tiene está escrito en el
+   encabezado de `worker/plantillas/repositorio.ts`.
+
+Lo que **no** hereda, porque ya está hecho: la tabla con sus guardas, las rutas,
+la pantalla, la baja y la reactivación, el rótulo vigente saliendo de la base en
+toda la aplicación, y la descripción llegando al prompt.
+
+Lo que queda anotado como pendiente menor, sin agendar: la pantalla de
+`/catalogos/modulos` **no dibuja la bitácora** de una plantilla aunque la
+dirección ya conteste y tenga prueba (T-2), y hay dos referencias colgadas en
+comentarios fuera de superficie —`worker/cotizaciones/lineas.ts:78` y los `CASE`
+de `scripts/semilla-demo.sql`—.
+
+**Empujar la rama, abrir el pull request y mezclar siguen siendo decisión del
+usuario.**
