@@ -9,6 +9,11 @@
  * puerta, cualquiera podría enumerar la API sin entrar.
  */
 import { autenticar, type DependenciasDeAcceso } from "./acceso/puerta";
+import {
+  arancelSobreD1,
+  type ServicioDeArancel,
+} from "./arancel/repositorio";
+import { rutasDeArancel } from "./arancel/rutas";
 import type { Rechazo } from "./acceso/rechazo";
 import {
   bitacoraSobreD1,
@@ -137,6 +142,9 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
 
   /** El plan de pagos de una cotización o de un proceso (tajada 2, T-11). Idem. */
   cuotas?: ServicioDeCuotas;
+
+  /** El arancel de honorarios y el precio del bufete (T-2). Idem. */
+  arancel?: ServicioDeArancel;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -286,6 +294,11 @@ export async function manejar(
   // Por eso el orden no cambia qué contesta cada una — pero deja el reparto
   // escrito, y el día que un catálogo estrene otra subruta esto es lo
   // primero que hay que releer.
+  // Un solo servicio de arancel para las dos rutas que lo necesitan: la suya
+  // y la de su bitácora, que comprueba por el mismo puerto que el renglón
+  // existe en este bufete y no por una segunda copia de la consulta.
+  const servicioDeArancel = dependencias.arancel ?? arancelSobreD1(base);
+
   const bitacora = await rutasDeBitacora(
     request,
     url,
@@ -294,9 +307,22 @@ export async function manejar(
     servicioDeClientes,
     servicioDeCatalogos,
     servicioDeCotizaciones,
+    servicioDeArancel,
     dependencias.bitacora ?? bitacoraSobreD1(base),
   );
   if (bitacora !== null) return bitacora;
+
+  // El arancel va **después** de la bitácora porque ésta es una subruta suya:
+  // `rutasDeArancel` corta en `segmentos.length !== 3` y devuelve `null` para
+  // `/bitacora`, así que el orden no cambia qué contesta cada una, pero deja
+  // el reparto escrito.
+  const arancel = await rutasDeArancel(
+    request,
+    url,
+    TENANT_UNICO_ID,
+    servicioDeArancel,
+  );
+  if (arancel !== null) return arancel;
 
   // Las cotizaciones van **después** de la bitácora porque ésta es una
   // subruta suya: `rutasDeCotizaciones` corta en `segmentos.length !== 3` y

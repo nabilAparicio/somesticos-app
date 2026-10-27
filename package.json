@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "wrangler types --strict-vars=false ./worker/worker-configuration.d.ts && tsc -b --noEmit",
     "arancel:extraer": "node scripts/arancel/extraer.mjs",
+    "arancel:sembrar": "node scripts/arancel/sembrar.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

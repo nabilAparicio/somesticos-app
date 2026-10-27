@@ -254,6 +254,28 @@ export const ACCIONES_POR_ENTIDAD = {
     "cuota_agregada",
     "cuota_quitada",
   ],
+
+  /* Un renglón del arancel de honorarios (T-2 de
+     `odd/tasks/arancel-de-honorarios.md`). **Un solo verbo**, y la lista
+     corta es la decisión:
+
+     Lo editable de un renglón es el monto del bufete. Los siete campos que el
+     Acuerdo No 49 de 2001 imprime —categoría, numeral, concepto, orden,
+     clase, monto oficial y regla oficial— los congela un disparador de
+     `migrations/0012_arancel_de_honorarios.sql`, así que no hay hecho que
+     registrar sobre ellos: no pueden cambiar.
+
+     `dado_de_baja` y `reactivado` **no entran**, aunque la tabla tenga
+     `activo`, porque T-2 no abre ninguna ruta que escriba esa columna. Es la
+     misma regla que `0010` aplicó al no darle verbo a la edición de una
+     cuota: la ausencia del verbo es cómo se dice que la operación no es de
+     esta unidad. El día que exista la ruta, el verbo entra con ella —y ya
+     tiene su frase en `src/bitacora.ts`, así que cuesta una línea—.
+
+     Va **pelado** y no `precio_editado` por la regla de siempre: son verbos y
+     no pares entidad+verbo, porque la entidad ya viaja en su columna. «Itzel
+     editó «Visitantes Temporales (por persona)»» ya está bien dicho. */
+  arancel_renglon: ["editado"],
 } as const satisfies Record<EntidadRegistrada, readonly AccionDeBitacora[]>;
 
 /**

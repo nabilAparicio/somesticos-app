@@ -169,28 +169,28 @@ moneda (`cotizacion.moneda` es un `CHECK` cerrado en `'USD'`).
 
 ### T-2 · La tabla
 
-- [ ] Migración con `monto_oficial` inmutable y `monto` del bufete,
+- [x] Migración con `monto_oficial` inmutable y `monto` del bufete,
       centavos enteros con el `CHECK (typeof(...) = 'integer')` que usa todo
       el esquema, `tenant_id`, `activo`, y el orden del documento.
-- [ ] Un disparador que impida modificar `monto_oficial` después de la
+- [x] Un disparador que impida modificar `monto_oficial` después de la
       siembra, igual que los de `0006_emitir_y_congelar.sql`: si es una cita,
       la base lo sostiene y no la buena intención.
-- [ ] **La clave es `(tenant_id, orden)`, nunca el numeral.** T-1 lo midió:
+- [x] **La clave es `(tenant_id, orden)`, nunca el numeral.** T-1 lo midió:
       31 renglones comparten numeral con otro de su misma categoría, por tres
       razones del documento —las letras reinician bajo cada padre,
       «ACTUACIONES EN NEGOCIOS CRIMINALES» tiene dos secciones numeradas `5.`,
       y los renglones sin numerar heredan el del padre—. Un `UNIQUE` sobre el
       numeral hace fallar la siembra, y peor: hace *parecer* que el acuerdo
       está mal numerado cuando el que está mal es nuestro supuesto.
-- [ ] **Los tres `clase` del dato se respetan**: `monto` lleva precio
+- [x] **Los tres `clase` del dato se respetan**: `monto` lleva precio
       editable, `regla` lleva texto y precio editable opcional, y **`rubro` no
       lleva precio** —son los 74 encabezados que el acuerdo imprime sin valor.
-- [ ] Las dos secciones que son **solo una frase en prosa** y ningún renglón
+- [x] Las dos secciones que son **solo una frase en prosa** y ningún renglón
       —«OTROS ASUNTOS» (todo lo no listado a B/.150 la hora) y «PROCESO DE
       SEPARACIONES DE BIENES…» («la misma tarifa de la sección 2»)— tienen
       que sobrevivir a la siembra, o desaparecen del arancel sin que nadie
       lo note.
-- [ ] La siembra, idempotente, desde `scripts/arancel/arancel.json`.
+- [x] La siembra, idempotente, desde `scripts/arancel/arancel.json`.
 
 ### T-3 · La pantalla
 
@@ -258,6 +258,91 @@ merge siguen siendo decisión del usuario.
   reescriba: los renglones son 453, no 358, y la clave de un renglón es
   `orden`, no `numeral` —el acuerdo repite numerales en 31 renglones, ver la
   lectura 13—.
-- Próximo paso: T-2, la tabla. Con `clase` en la mano, la siembra puede
-  distinguir el rubro del renglón cotizado y no darle a un encabezado una
-  columna de precio editable.
+- **T-2 cerrada.** `migrations/0012_arancel_de_honorarios.sql` trae
+  `arancel_renglon` y `arancel_nota`, la API vive en `worker/arancel/`
+  (`dominio.ts` puro, `repositorio.ts` sobre D1, `rutas.ts` HTTP), el cliente
+  del navegador en `src/api/arancel.ts`, y la siembra en
+  `scripts/arancel/sembrar.mjs` (`pnpm arancel:sembrar`). Corrida contra una
+  D1 local: **453 renglones y 57 notas**, 282 con monto, 97 con regla, 74
+  rubros, 0 montos no enteros. La segunda corrida deja la base idéntica y un
+  `monto` puesto a mano sobrevive. 72 pruebas nuevas en
+  `test/arancel-dominio.spec.ts` (27) y `test/arancel-rutas.spec.ts` (45).
+- **Las tres trampas que T-1 midió, y qué se hizo con cada una.**
+  - *El numeral no es clave.* El `UNIQUE` va sobre `(tenant_id, orden)` y hay
+    una prueba que inserta **dos renglones con el numeral `5`** en
+    `ACTUACIONES EN NEGOCIOS CRIMINALES`: si alguien agrega un índice único
+    sobre el numeral, se pone roja.
+  - *El rubro no lleva precio.* `CHECK un_rubro_no_lleva_precio` en la base,
+    `puedeLlevarPrecio` en el dominio, y un **409 `rubro_sin_precio`** en la
+    API. El nulo sí se acepta sobre un rubro: borrar lo que no hay es un
+    no-op, no un conflicto.
+  - *Las dos secciones de pura prosa sobreviven.* Van a `arancel_nota`, y
+    `GET /api/arancel` las devuelve como categorías con `renglones: []`. Son
+    **29 categorías** en la respuesta: 27 con renglones y 2 de prosa.
+- **El número de numerales repetidos de este documento estaba mal.** Dice «31
+  renglones comparten su numeral con otro de la misma categoría», y ninguna
+  lectura de `arancel.json` da 31. Lo medido: **44 renglones en 15 grupos**, o
+  **29** si se cuentan solo las repeticiones por encima de la primera de cada
+  grupo. La conclusión no cambia y se refuerza; el número sí, y el medido
+  queda escrito en el encabezado de la migración y en la prueba.
+- **La inmutabilidad de la cita tiene dos mitades, y las dos están probadas.**
+  El disparador `arancel_renglon_citado_no_se_edita` aborta el `UPDATE` de los
+  siete campos citados —`categoria`, `numeral`, `concepto`, `orden`, `clase`,
+  `monto_oficial`, `regla_oficial`—, y la API se niega antes con un **409
+  `renglon_citado`** que nombra los campos. Las dos hacen falta: sin la de la
+  API, un cuerpo con `montoOficial` saldría como un 500 de SQLite crudo, que
+  no es una negativa sino una caída; sin la de la base, la cita quedaría
+  sostenida por un `if`. El criterio de aceptación 2 queda cumplido con ambas.
+- **La bitácora se reconstruyó por sexta vez, y no era evitable.**
+  `worker/db/base.ts` es el único camino de escritura y su `mutar` exige el
+  hecho como primer parámetro, así que el precio del bufete necesitaba una
+  entidad del vocabulario. No había ninguna a la que atribuirlo sin mentir, de
+  modo que entró `arancel_renglon` con un solo verbo, `editado`, que ya tenía
+  frase. Costo: el `CHECK` de `entidad` obliga a copiar la tabla, y la entidad
+  nueva obligó a tocar **dos archivos fuera de la superficie autorizada de
+  T-2** —`worker/bitacora/vocabulario.ts` y `worker/bitacora/rutas.ts`—, los
+  dos forzados por el compilador desde el cambio en `worker/contract.ts`:
+  `ACCIONES_POR_ENTIDAD` es un `satisfies Record<EntidadRegistrada, …>` y
+  `COLECCION_POR_ENTIDAD` y `existeLaFila` son exhaustivos a propósito. De
+  yapa queda `GET /api/arancel/{id}/bitacora`.
+- **La nota de procedencia no viaja por la API, y es decisión de T-2.** De qué
+  acuerdo salen los valores, de qué fecha y que son mínimos de 2001 es
+  **texto de cara al usuario**, y en esta aplicación eso vive en `src/`
+  —`src/mensajes.ts`, `src/bitacora.ts`— y no en la base. Meterlo como fila
+  obligaría a protegerlo con su propio disparador y a sembrarlo; meterlo como
+  constante del contrato sería una tercera copia del mismo literal que ya está
+  en `arancel.json` y en el encabezado de la migración. T-3 escribe la frase
+  donde la frase se lee: arriba de la tabla del arancel.
+- **Deuda que T-2 deja escrita, fuera de su alcance.**
+  - *La posición exacta de una nota en el documento no está en los datos.*
+    `arancel.json` guarda el orden de las notas entre sí, pero no dónde cae
+    cada una respecto de los renglones. `agruparPorCategoria` ubica las dos
+    categorías de prosa con una regla —van inmediatamente antes de la
+    siguiente categoría que las notas nombren y que sí tenga renglones— que se
+    **verificó contra el volcado del PDF** para las dos reales: «OTROS
+    ASUNTOS» cae entre `ASUNTOS ANTE EL MINISTERIO DE VIVIENDA` y `ASUNTOS DE
+    DERECHO PROCESAL (CIVIL-COMERCIAL)` (líneas 992, 1031 y 1035 del volcado),
+    y «PROCESO DE SEPARACIONES…» entre `MENORES` y `PROCESOS ESPECIALES SOBRE`
+    (1168, 1181 y 1184). La salida definitiva es que la extracción registre la
+    posición de cada nota, y es tarea de T-1 si alguien vuelve a correrla.
+  - *`activo` no tiene ruta que lo escriba.* La columna existe y el disparador
+    `arancel_renglon_no_se_borra` hace de `activo = 0` la única salida, pero
+    T-2 abre lectura y la edición del `monto`, nada más. Hoy la escribe la
+    siembra al insertar; el día que un acuerdo nuevo derogue un renglón, la
+    ruta entra con los verbos `dado_de_baja` y `reactivado`, que ya tienen
+    frase en `src/bitacora.ts`.
+  - *Los dos 409 nuevos no están en `CONFLICTOS` de `src/api/peticiones.ts`.*
+    Sus frases viven en `textoDeProblemaDelArancel`, dentro de
+    `src/api/arancel.ts`, para que no cayeran en el texto de reserva que habla
+    de un borrado que nadie pidió —la sin razón que esta tajada ya pagó tres
+    veces—. Mudarlas al mapa compartido es parte del `MotivoDeConflicto` que
+    ese archivo ya tiene anotado como pendiente.
+- **La base local de desarrollo quedó con el arancel puesto.** Su
+  `d1_migrations` estaba vacío —viene de antes del seguimiento de
+  migraciones—, así que `migrations apply` no corre sobre ella; se le aplicó
+  `0012` sola y se la sembró. Los 154 asientos de bitácora y los datos de
+  prueba (8 clientes, 9 procesos, 10 cotizaciones) sobrevivieron intactos a la
+  reconstrucción de la tabla.
+- Próximo paso: T-3, las dos pantallas. `GET /api/arancel` ya entrega la tabla
+  agrupada como el documento, y `src/api/arancel.ts` ya tiene las dos
+  funciones que esas pantallas necesitan.

@@ -1,5 +1,5 @@
 /**
- * Las rutas HTTP de la bitácora. Seis, y las seis de lectura:
+ * Las rutas HTTP de la bitácora. Siete, y las siete de lectura:
  *
  *   GET /api/procesos/{id}/bitacora       qué pasó con este proceso
  *   GET /api/clientes/{id}/bitacora       quién tocó esta ficha
@@ -7,6 +7,7 @@
  *   GET /api/tipos-cliente/{id}/bitacora  …y a este tipo de cliente
  *   GET /api/tipos-proceso/{id}/bitacora  …y a este tipo de proceso
  *   GET /api/cotizaciones/{id}/bitacora   qué le pasó a esta cotización
+ *   GET /api/arancel/{id}/bitacora        quién le puso este precio
  *
  * **Y nada más.** No hay `POST`, ni `PUT`, ni `PATCH`, ni `DELETE`, ni
  * `/api/bitacora`, ni dirección propia de una entrada. Es la misma forma que
@@ -52,6 +53,7 @@ import {
   type EntidadRegistrada,
   type RespuestaDeBitacora,
 } from "../contract";
+import type { ServicioDeArancel } from "../arancel/repositorio";
 import type { ServicioDeCatalogos } from "../catalogos/repositorio";
 import type { ServicioDeClientes } from "../clientes/repositorio";
 import type { ServicioDeCotizaciones } from "../cotizaciones/repositorio";
@@ -75,6 +77,11 @@ const COLECCION_POR_ENTIDAD = {
   tipo_cliente: "tipos-cliente",
   tipo_proceso: "tipos-proceso",
   cotizacion: "cotizaciones",
+  // El arancel de honorarios (T-2 de `odd/tasks/arancel-de-honorarios.md`).
+  // La colección es `arancel` en singular porque la dirección de la tabla
+  // entera es `/api/arancel`: es **un** documento con renglones, no una
+  // colección de aranceles.
+  arancel_renglon: "arancel",
 } as const satisfies Record<EntidadRegistrada, string>;
 
 /**
@@ -158,6 +165,7 @@ interface Puertos {
   readonly clientes: ServicioDeClientes;
   readonly catalogos: ServicioDeCatalogos;
   readonly cotizaciones: ServicioDeCotizaciones;
+  readonly arancel: ServicioDeArancel;
 }
 
 /**
@@ -186,6 +194,8 @@ async function existeLaFila(
       return (await puertos.catalogos.obtenerTipoProceso(tenantId, id)) !== null;
     case "cotizacion":
       return (await puertos.cotizaciones.obtener(tenantId, id)) !== null;
+    case "arancel_renglon":
+      return (await puertos.arancel.obtener(tenantId, id)) !== null;
   }
 }
 
@@ -205,6 +215,7 @@ export async function rutasDeBitacora(
   clientes: ServicioDeClientes,
   catalogos: ServicioDeCatalogos,
   cotizaciones: ServicioDeCotizaciones,
+  arancel: ServicioDeArancel,
   bitacora: ServicioDeBitacora,
 ): Promise<Response | null> {
   const segmentos = segmentosDe(url.pathname);
@@ -253,6 +264,7 @@ export async function rutasDeBitacora(
     clientes,
     catalogos,
     cotizaciones,
+    arancel,
   });
 
   if (!existe) return noEncontrado();

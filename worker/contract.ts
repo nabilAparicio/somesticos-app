@@ -2381,7 +2381,29 @@ export type EntidadRegistrada =
    * Sus módulos y sus líneas no tienen entidad propia, por lo mismo que las
    * notas respecto del proceso: se leen dentro de ella.
    */
-  | "cotizacion";
+  | "cotizacion"
+  /**
+   * Un renglón del arancel de honorarios (T-2 de
+   * `odd/tasks/arancel-de-honorarios.md`).
+   *
+   * Entidad propia, y la regla que lo decide es la de siempre —«un hecho, una
+   * entidad», resuelta por si la cosa **se lee sola**—. Un renglón del
+   * arancel se lee solo: tiene su fila en la tabla que es la pantalla entera
+   * del arancel, y la pregunta «¿quién le puso este precio a esto, y cuándo?»
+   * es exactamente la que el bufete va a hacer el día que un precio no cuadre
+   * con lo que recuerda. Colgarla de `tipo_proceso` sería mentir —el precio
+   * no está en esa tabla— y de `cotizacion` también: el arancel es anterior a
+   * cualquier cotización y no cuelga de ninguna.
+   *
+   * El único verbo que admite es `editado`, y es a propósito: lo editable de
+   * un renglón es **el monto del bufete**. Los siete campos citados del
+   * Acuerdo los congela un disparador
+   * (`migrations/0012_arancel_de_honorarios.sql`), y `activo` no tiene hoy
+   * ninguna ruta que lo escriba, así que `dado_de_baja` y `reactivado` no
+   * entran: un verbo sin sitio que lo emita es una entrada del vocabulario
+   * que no significa nada.
+   */
+  | "arancel_renglon";
 
 /**
  * Qué pasó. El vocabulario cerrado de `accion`.
@@ -2710,4 +2732,139 @@ export interface RespuestaDeBitacora {
   entradas: EntradaDeBitacora[];
   /** Cuántos hechos hay en total, no cuántos trae esta página. */
   total: number;
+}
+
+/* ===========================================================================
+   El arancel de honorarios (T-2 de `odd/tasks/arancel-de-honorarios.md`)
+   ===========================================================================
+
+   La tabla del **Acuerdo No 49 de 24 de abril de 2001** —Tarifa de Honorarios
+   Profesionales Mínimos de los Abogados en la República de Panamá, aprobada
+   por la Sala Cuarta de Negocios Generales de la Corte Suprema— sembrada
+   entera y con una sola columna editable: la del bufete.
+
+   Las dos cosas que el nombre de cada campo tiene que dejar claras, porque de
+   eso depende que una pantalla no las confunda:
+
+    - `montoOficial` y `reglaOficial` son **una cita**. Se leen, no se
+      escriben. Lo sostiene un disparador en la base y una negativa explícita
+      en la API, y las dos tienen prueba.
+    - `monto` es **lo que el bufete cobra**, y es el único que la pantalla de
+      precios muestra. Nulo significa «todavía no decidieron», que no es lo
+      mismo que cero —«esto no lo cobramos»—: con nulo, T-3 muestra la
+      sugerencia del acuerdo como valor de arranque.
+   ========================================================================== */
+
+/**
+ * Qué clase de renglón imprimió el acuerdo. Son tres y están medidas:
+ * **282** con monto fijo, **97** con regla en texto y **74** rubros.
+ *
+ * El `rubro` es el que sorprende y el que T-2 tiene que conocer: un numeral
+ * que el documento imprime **sin ningún valor** porque es el encabezado de
+ * sus hijos —«3. Inmigrantes», «12. Recursos Administrativos»—. No lleva
+ * precio editable, ni oficial ni del bufete, y ofrecerle un campo de monto a
+ * un título es ofrecerle escribir un dato que no significa nada.
+ */
+export type ClaseDeRenglonDelArancel = "monto" | "regla" | "rubro";
+
+/**
+ * Un renglón del arancel tal como lo ve el navegador.
+ *
+ * `orden` es **la posición en el documento**, y es la clave real de un
+ * renglón: el acuerdo repite numerales —44 renglones en 15 grupos comparten
+ * numeral con otro de su misma categoría, ver la lectura 13 de
+ * `scripts/arancel/lecturas.md`— así que `numeral` identifica tan poco como
+ * un título de capítulo.
+ *
+ * Los dos montos van en **centavos enteros**, jamás coma flotante.
+ */
+export interface RenglonDelArancel {
+  id: string;
+  orden: number;
+  categoria: string;
+  /** Tal como está impreso. Se repite, y por eso no es clave de nada. */
+  numeral: string;
+  concepto: string;
+  clase: ClaseDeRenglonDelArancel;
+  /** La cita: centavos enteros, o nulo donde el acuerdo no imprimió precio. */
+  montoOficial: number | null;
+  /** La cita, cuando la tarifa es un porcentaje por tramos y no un número. */
+  reglaOficial: string | null;
+  /** Lo que el bufete cobra. Nulo es «todavía no decidieron», no cero. */
+  monto: number | null;
+  activo: boolean;
+}
+
+/**
+ * Una nota del acuerdo: un parágrafo, una nota al pie, una aclaración.
+ *
+ * Pertenece a la **categoría** y no a un renglón, y eso es lo que la hace una
+ * fila aparte: «PARÁGRAFO: En todo trámite se cargarán B/.200.00 por cada
+ * dependiente» cambia el precio de las 24 filas de migración, no de una.
+ *
+ * Son también lo único que queda de las **dos secciones que el acuerdo
+ * imprime solo como prosa** —«OTROS ASUNTOS» y «PROCESO DE SEPARACIONES DE
+ * BIENES…»—, que no tienen ni un renglón tarifado.
+ */
+export interface NotaDelArancel {
+  id: string;
+  /** Su posición entre las notas del documento. */
+  orden: number;
+  categoria: string;
+  texto: string;
+}
+
+/**
+ * Una categoría del acuerdo con lo que lleva adentro.
+ *
+ * Se agrupa **en el servidor** y no en la pantalla por una razón concreta: el
+ * orden de las categorías sale del orden del documento, y dos pantallas que
+ * lo reconstruyan por su cuenta son dos pantallas que algún día lo
+ * reconstruyen distinto. `renglones` puede venir **vacío**, y no es un error:
+ * así se ven las dos secciones de pura prosa.
+ */
+export interface CategoriaDelArancel {
+  nombre: string;
+  renglones: RenglonDelArancel[];
+  notas: NotaDelArancel[];
+}
+
+/** `GET /api/arancel`: la tabla entera, en el orden del documento. */
+export interface RespuestaDelArancel {
+  categorias: CategoriaDelArancel[];
+}
+
+/** `PUT /api/arancel/{id}`: el renglón releído después de guardar. */
+export interface RespuestaDeRenglonDelArancel {
+  renglon: RenglonDelArancel;
+}
+
+/**
+ * El 409 de intentar escribir una cita.
+ *
+ * Es un **409 y no un 422** por la distinción que esta API ya usa: 422 dice
+ * «entendí el cuerpo y los datos no me sirven»; esto es «el cuerpo está
+ * perfecto y lo que no admite la escritura es el estado de la fila» — y el
+ * estado, acá, es que esos campos son la transcripción de un documento
+ * publicado. Es la misma familia que `cotizacion_no_es_borrador`: lo que
+ * salió del borrador no se edita porque es el registro de lo que se mandó.
+ *
+ * `campos` viaja para que la pantalla pueda nombrar cuál fue. Son los nombres
+ * del **cable**, no los de las columnas: quien lee este error está mirando el
+ * cuerpo que mandó.
+ */
+export interface RenglonCitado {
+  error: "renglon_citado";
+  campos: string[];
+}
+
+/**
+ * El 409 de ponerle precio a un encabezado.
+ *
+ * También 409 y no 422 por lo mismo: el monto puede ser un importe
+ * impecable; lo que no admite precio es **la fila**, porque es uno de los 74
+ * rubros que el acuerdo imprime sin valor.
+ */
+export interface RubroSinPrecio {
+  error: "rubro_sin_precio";
 }
