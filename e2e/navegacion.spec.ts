@@ -71,6 +71,23 @@ const PANTALLAS: Record<Ruta["nombre"], Destino> = {
   },
 
   catalogos: { ruta: { nombre: "catalogos" }, bajo: "/catalogos" },
+  /*
+   * Las dos pantallas del arancel (T-3 de
+   * `odd/tasks/arancel-de-honorarios.md`). **No están exentas**: viven bajo
+   * `/catalogos`, que el menú ya ofrece, y se llega a las dos desde la
+   * pantalla de catálogos con un enlace propio cada una. La de precios se
+   * alcanza además desde cualquier fila de la otra, y la del arancel desde
+   * cualquier fila de la de precios con el enlace «de dónde sale este
+   * precio».
+   *
+   * Vale decir por qué la del arancel no lleva el renglón en la ruta, que
+   * es lo que la haría parecer candidata a una tercera entrada: el renglón
+   * viaja como fragmento (`#renglon-{id}`) justamente para que la tabla
+   * tenga **una** dirección. Dos direcciones para el mismo documento es la
+   * que alguien copia y la que después nadie mantiene.
+   */
+  precios: { ruta: { nombre: "precios" }, bajo: "/catalogos" },
+  arancel: { ruta: { nombre: "arancel" }, bajo: "/catalogos" },
   "tipos-proceso": { ruta: { nombre: "tipos-proceso" }, bajo: "/catalogos" },
   "tipo-proceso-nuevo": {
     ruta: { nombre: "tipo-proceso-nuevo" },

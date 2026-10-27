@@ -44,6 +44,15 @@
     "../src/pantallas/catalogos/formulario.ts",
     "../src/pantallas/catalogos/plantilla.ts",
     "../src/pantallas/catalogos/presentacion.ts",
+    // La lógica de las dos pantallas del arancel (T-3 de
+    // `odd/tasks/arancel-de-honorarios.md`). Entra en esta lista por lo
+    // mismo que las de arriba —es lógica pura, sin React ni DOM— y la
+    // barrera de este proyecto le sirve de guardia: importa la conversión de
+    // dinero de `cotizaciones/lineas.ts` y `puedeLlevarPrecio` de
+    // `worker/arancel/dominio.ts`, y el día que alguien le meta un `window`
+    // para leer el fragmento de la URL deja de compilar acá, que es
+    // exactamente lo que tiene que pasar: el fragmento lo lee `Arancel.tsx`.
+    "../src/pantallas/catalogos/precios.ts",
     "../src/formatos.ts",
     "../src/pantallas/procesos/formulario.ts",
     "../src/pantallas/procesos/plan.ts",

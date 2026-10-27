@@ -15,7 +15,9 @@ import { useEffect, useState } from "react";
 import { Esqueleto } from "./layout/Esqueleto";
 import { BancoDePruebas } from "./pantallas/BancoDePruebas";
 import { Inicio } from "./pantallas/Inicio";
+import { Arancel } from "./pantallas/catalogos/Arancel";
 import { Catalogos } from "./pantallas/catalogos/Catalogos";
+import { Precios } from "./pantallas/catalogos/Precios";
 import { FormularioDeTipoDeProceso } from "./pantallas/catalogos/FormularioDeTipoDeProceso";
 import { TiposDeProceso } from "./pantallas/catalogos/TiposDeProceso";
 import { DetalleDeCliente } from "./pantallas/clientes/DetalleDeCliente";
@@ -56,6 +58,13 @@ function pantallaDe(ruta: Ruta) {
       return <FormularioDeCliente key={ruta.id} clienteId={ruta.id} />;
     case "catalogos":
       return <Catalogos />;
+    // Las dos del arancel (T-3). Ninguna lleva `key`: no tienen parámetro
+    // que las distinga, así que no hay dos instancias entre las que React
+    // pudiera conservar estado de la equivocada.
+    case "precios":
+      return <Precios />;
+    case "arancel":
+      return <Arancel />;
     case "tipos-proceso":
       return <TiposDeProceso />;
     case "tipo-proceso-nuevo":

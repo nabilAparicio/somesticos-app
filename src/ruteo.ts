@@ -36,6 +36,32 @@ export type Ruta =
   | { nombre: "cliente"; id: string }
   | { nombre: "cliente-edicion"; id: string }
   | { nombre: "catalogos" }
+  /**
+   * Las dos pantallas del arancel de honorarios (T-3 de
+   * `odd/tasks/arancel-de-honorarios.md`), y **son dos a propósito**.
+   *
+   * `precios` es donde el abogado trabaja: un precio por servicio, el del
+   * bufete, editable. `arancel` es la cita —el Acuerdo No 49 de 2001
+   * completo, de solo lectura— y es a donde lleva el enlace «de dónde sale
+   * este precio».
+   *
+   * La separación es una corrección del usuario convertida en estructura.
+   * La primera versión del diseño ponía las dos cifras lado a lado en una
+   * sola pantalla: «así no se siente que el sistema juzga tus precios, sino
+   * que el sistema sabe cuánto cuesta y te lo sugiere». Dos direcciones es
+   * lo que hace imposible que el monto del acuerdo se cuele al lado del
+   * precio propio, porque ya no están en la misma pantalla.
+   *
+   * Ninguna de las dos lleva parámetro. El renglón **no** es un segmento de
+   * la ruta sino un fragmento (`#renglon-{id}`), y la diferencia es
+   * deliberada: la tabla del arancel se muestra entera siempre —es un
+   * documento, no una ficha— y el fragmento es lo que deja aterrizar en un
+   * renglón sin inventar una segunda dirección para la misma pantalla. El
+   * fragmento lo deletrea `anclaDelRenglon`, en
+   * `src/pantallas/catalogos/precios.ts`, y el ruteo no lo conoce.
+   */
+  | { nombre: "precios" }
+  | { nombre: "arancel" }
   | { nombre: "tipos-proceso" }
   | { nombre: "tipo-proceso-nuevo" }
   | { nombre: "tipo-proceso"; id: string }
@@ -128,9 +154,22 @@ const EDITAR = "editar";
  */
 const HOJA = "hoja";
 
-/** La raíz de las pantallas de catálogo (T-6) y su única subsección. */
+/** La raíz de las pantallas de catálogo (T-6) y sus subsecciones. */
 const CATALOGOS = "catalogos";
 const TIPOS_PROCESO = "tipos-proceso";
+
+/**
+ * Las dos subsecciones del arancel (T-3 de
+ * `odd/tasks/arancel-de-honorarios.md`).
+ *
+ * Van bajo `/catalogos` y no en una raíz propia porque un precio de servicio
+ * es un dato del bufete como un área o un tipo de proceso, y porque el menú
+ * ya ofrece `/catalogos`: el invariante de `e2e/navegacion.spec.ts` compara
+ * la **raíz de sección**, así que las dos quedan alcanzables desde el menú
+ * sin agregarle un sexto ítem a una navegación de siete.
+ */
+const PRECIOS = "precios";
+const ARANCEL = "arancel";
 
 /** La raíz de las pantallas de proceso (T-7). */
 const PROCESOS = "procesos";
@@ -209,6 +248,20 @@ function resolverCatalogos(segmentos: string[], pathname: string): Ruta {
   const desconocida: Ruta = { nombre: "desconocida", ruta: pathname };
 
   if (segmentos.length === 1) return { nombre: "catalogos" };
+
+  /*
+   * Las dos del arancel se resuelven antes y solo con dos segmentos. Un
+   * tercero tiene que caer en «desconocida»: el renglón viaja como
+   * fragmento y no como segmento, así que `/catalogos/arancel/{id}` no es
+   * una dirección de nada.
+   */
+  if (segmentos[1] === PRECIOS) {
+    return segmentos.length === 2 ? { nombre: "precios" } : desconocida;
+  }
+  if (segmentos[1] === ARANCEL) {
+    return segmentos.length === 2 ? { nombre: "arancel" } : desconocida;
+  }
+
   if (segmentos[1] !== TIPOS_PROCESO) return desconocida;
   if (segmentos.length === 2) return { nombre: "tipos-proceso" };
   if (segmentos.length !== 3) return desconocida;
@@ -357,6 +410,10 @@ export function enlaceDe(ruta: Ruta): string {
       return `/clientes/${encodeURIComponent(ruta.id)}/${EDITAR}`;
     case "catalogos":
       return `/${CATALOGOS}`;
+    case "precios":
+      return `/${CATALOGOS}/${PRECIOS}`;
+    case "arancel":
+      return `/${CATALOGOS}/${ARANCEL}`;
     case "tipos-proceso":
       return `/${CATALOGOS}/${TIPOS_PROCESO}`;
     case "tipo-proceso-nuevo":

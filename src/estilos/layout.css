@@ -962,3 +962,226 @@
   color: var(--color-acento);
   font-weight: var(--peso-fuerte);
 }
+
+/* ======================================================================
+   Las dos pantallas del arancel de honorarios (T-3 de
+   `odd/tasks/arancel-de-honorarios.md`)
+
+   Lo que estas reglas sostienen no es decoración: es la jerarquía que hace
+   que una tabla de 453 renglones se lea. El acuerdo imprime tres clases de
+   renglón —un monto, una regla por tramos y un **rubro** que solo encabeza
+   a sus hijos— y si las tres se dibujan igual, lo que queda es una lista
+   plana de cuatrocientas cincuenta y tres líneas donde no se distingue un
+   servicio de un título.
+
+   Ni una sola medida fija y ni una `@media`: lo único que se adapta se
+   adapta sobre el hueco real de la tabla, con la misma `@container tabla`
+   que ya usa el resto del sistema (§9).
+   ====================================================================== */
+
+/* --- El rubro: un encabezado dentro de la tabla, no una fila más --- */
+
+/*
+ * Se distingue por **tres cosas a la vez** —fondo, peso y versalitas— y no
+ * solo por el fondo, por lo mismo que la pestaña activa: un encabezado que
+ * solo se diferencia en el tono no existe para quien no distingue ese tono.
+ * Y no lleva celda de precio: ocupa la fila entera, porque una celda vacía
+ * en la columna del monto parecería un precio que falta.
+ */
+.precios__rubro > th,
+.arancel__renglon--rubro > th,
+.arancel__renglon--rubro > td {
+  background: var(--color-superficie-tenue);
+  font-weight: var(--peso-fuerte);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.02em;
+}
+
+/* El numeral tal como lo imprime el acuerdo. Tabular para que la columna de
+   letras y números se lea como una columna y no como un borde dentado. */
+.precios__numeral,
+.arancel__numeral {
+  color: var(--color-tinta-apagada);
+  font-variant-numeric: tabular-nums;
+}
+
+.arancel__numeral {
+  white-space: nowrap;
+}
+
+/* --- El texto de la regla, debajo del concepto --- */
+
+/*
+ * Son las 97 tarifas que el acuerdo expresa como un porcentaje por tramos
+ * sobre la cuantía. Van apagadas y más chicas porque no son el servicio: son
+ * la letra con la que el acuerdo lo tarifa, y el que manda en la fila sigue
+ * siendo el concepto.
+ *
+ * `max-inline-size` en `ch` y no en píxeles (§9): el tope es de legibilidad,
+ * así que sigue a la tipografía. Y es un tope, nunca un ancho: en un hueco
+ * angosto la regla mide lo que haya.
+ */
+.precios__regla {
+  display: block;
+  max-inline-size: 52ch;
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+  font-weight: var(--peso-normal);
+  line-height: var(--linea-normal);
+}
+
+/* --- La celda del precio del bufete --- */
+
+/*
+ * **Acá hay un solo importe, y es el del bufete.** No hay regla de columna
+ * oficial porque no hay columna oficial: la cita se consulta en la otra
+ * pantalla, a un clic desde esta misma celda. `e2e/precios.spec.ts` cuenta
+ * las cifras de dinero de cada fila para que agregar la segunda —con
+ * cualquier rótulo y cualquier clase— se ponga rojo.
+ */
+.precio {
+  /*
+   * Que la columna no se estire con el concepto: el campo y lo que lo
+   * acompaña mandan su ancho. El tope mínimo en `ch` es lo que hace que el
+   * rótulo del enlace entre en un renglón: medido a 1440px sobre los 453
+   * renglones de verdad, sin él la celda se encogía al ancho del campo y
+   * «de dónde sale este precio» se partía en dos.
+   */
+  inline-size: 1%;
+  min-inline-size: 34ch;
+  white-space: nowrap;
+}
+
+/* La franja de la celda alinea el campo, la marca y el enlace por su línea
+   de base y los baja de a uno cuando no entran. Sin esto el enlace quedaría
+   pegado al techo del campo. */
+.precio .fila {
+  align-items: baseline;
+}
+
+/*
+ * El campo mide lo que mide un precio, y no lo que mide la celda.
+ *
+ * `.campo__control` hereda `inline-size: 100%`, y eso acá dibujaba un campo
+ * de treinta y cuatro caracteres para escribir «500.00»: un rectángulo que
+ * promete un párrafo. El tope está en `ch` —no en píxeles— así que sigue a
+ * la tipografía, y da para el importe más largo que la tabla puede tener sin
+ * agrupar miles.
+ */
+.precio .campo__control--importe {
+  inline-size: 12ch;
+}
+
+/*
+ * La marca de que el número todavía es una sugerencia.
+ *
+ * Apagada, chica y en minúscula: es lo más callado que puede ser sin dejar
+ * de ser honesto. No es una `.etiqueta` —que es la forma de un distintivo de
+ * estado— porque esto no es un estado del servicio: es una aclaración sobre
+ * quién puso ese número. Y **no lleva color de alarma de ninguna clase**: lo
+ * que esta pantalla no hace es juzgar el precio del bufete.
+ */
+.precio__marca {
+  align-self: center;
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+  font-style: italic;
+}
+
+/*
+ * El enlace «de dónde sale este precio».
+ *
+ * Discreto a propósito: tamaño chico y tinta apagada, debajo del campo y no
+ * al lado, para que no compita con el número. Es un enlace de texto y no un
+ * botón ni un icono porque un icono al lado de un precio se lee como una
+ * marca de que algo anda mal, que es exactamente lo que esta pantalla no
+ * tiene que decir.
+ */
+.precio__procedencia {
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+  font-weight: var(--peso-normal);
+  white-space: normal;
+}
+
+/* --- La nota de procedencia, arriba de la tabla del arancel --- */
+
+/*
+ * Está acá y no encima del precio del bufete, y ésa es la decisión entera:
+ * éste es el lugar al que alguien llegó a preguntar de dónde sale un número.
+ * Se dibuja como una superficie con borde —no como un `.aviso`— porque no
+ * está avisando nada: es la ficha bibliográfica del documento.
+ */
+.procedencia {
+  max-inline-size: 100%;
+  padding: var(--espacio-m);
+  border: var(--borde-fino);
+  border-inline-start: 3px solid var(--color-acento);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+}
+
+.procedencia h2 {
+  font-size: var(--texto-l);
+}
+
+.procedencia p {
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-s);
+}
+
+/* --- La tabla del arancel, de solo lectura --- */
+
+/*
+ * El renglón al que aterriza el enlace, señalado.
+ *
+ * Hace falta señalarlo: en una tabla de 453 filas, llegar a la fila correcta
+ * y no saber cuál es llegar a ninguna. `scroll-margin-block` deja aire
+ * alrededor para que el renglón no quede pegado al borde de la región que
+ * scrollea, que es lo que lo haría parecer cortado.
+ */
+.arancel__renglon {
+  scroll-margin-block: var(--espacio-xl);
+}
+
+.arancel__renglon--señalado > th,
+.arancel__renglon--señalado > td {
+  background: var(--color-acento-tenue);
+}
+
+/* El monto citado, o el texto de la regla cuando el acuerdo no dio número. */
+.arancel__valor {
+  min-inline-size: 12ch;
+  max-inline-size: 48ch;
+}
+
+/*
+ * Un parágrafo del acuerdo: pertenece a la categoría y no a una fila. Va
+ * apagado y sangrado para que se lea como lo que es —una aclaración al pie
+ * de la sección— y no como un renglón más que se escapó de la tabla.
+ */
+.arancel__nota {
+  border-inline-start: var(--borde-fino);
+  padding-inline-start: var(--espacio-s);
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-s);
+}
+
+/*
+ * En un hueco angosto la celda del precio deja de imponer su renglón: el
+ * campo se encoge y el enlace envuelve. Sin esto, una tabla de dos columnas
+ * con un campo de ancho propio es la que empuja la página a 320px, que es el
+ * criterio de §9 que `e2e/precios.spec.ts` mide en los nueve anchos.
+ */
+@container tabla (max-width: 30rem) {
+  .precio {
+    inline-size: auto;
+    min-inline-size: 0;
+    white-space: normal;
+  }
+
+  .precios__regla,
+  .arancel__valor {
+    max-inline-size: none;
+  }
+}

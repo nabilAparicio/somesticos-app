@@ -64,6 +64,50 @@ export function Catalogos() {
         cargarBitacora={cargarBitacoraDeTipoCliente}
       />
 
+      {/*
+        Las dos pantallas del arancel (T-3 de
+        `odd/tasks/arancel-de-honorarios.md`). Entran acá con enlace propio y
+        no solo con ruta, porque la historia de este archivo es la lección:
+        las cuatro pantallas de cotización se escribieron, se probaron y
+        pasaron el punta a punta **sin que nadie pudiera llegar a ellas
+        haciendo clic**. Una pantalla a la que solo se llega escribiendo la
+        URL no está entregada.
+
+        Van en dos secciones y no en una, porque son dos cosas distintas y
+        confundirlas es el defecto que esta tajada existe para evitar: una es
+        lo que el bufete cobra y se edita; la otra es la cita de un documento
+        publicado y se lee.
+      */}
+      <section aria-labelledby="catalogo-precios">
+        <Pila espacio="ceñido">
+          <h2 id="catalogo-precios">Precios de los servicios</h2>
+          <p className="texto-apagado">
+            Lo que el bufete cobra por cada servicio. Donde todavía no hay un
+            precio decidido, el sistema sugiere uno.
+          </p>
+          <p>
+            <Enlace href={enlaceDe({ nombre: "precios" })} className="boton">
+              Ver los precios del bufete
+            </Enlace>
+          </p>
+        </Pila>
+      </section>
+
+      <section aria-labelledby="catalogo-arancel">
+        <Pila espacio="ceñido">
+          <h2 id="catalogo-arancel">Arancel de honorarios</h2>
+          <p className="texto-apagado">
+            La tarifa del Acuerdo No 49 de 2001, completa y de solo lectura.
+            Es de donde sale cada valor sugerido.
+          </p>
+          <p>
+            <Enlace href={enlaceDe({ nombre: "arancel" })} className="boton">
+              Ver la tabla del arancel
+            </Enlace>
+          </p>
+        </Pila>
+      </section>
+
       <section aria-labelledby="catalogo-tipos-proceso">
         <Pila espacio="ceñido">
           <h2 id="catalogo-tipos-proceso">Tipos de proceso</h2>

@@ -198,16 +198,16 @@ moneda (`cotizacion.moneda` es un `CHECK` cerrado en `'USD'`).
 
 Son **dos**, y la separación es la corrección del usuario hecha estructura.
 
-- [ ] **Los precios del bufete.** Un precio por servicio, el del bufete,
+- [x] **Los precios del bufete.** Un precio por servicio, el del bufete,
       editable. Nada de la columna oficial acá: ni al lado, ni abajo, ni en
       un color.
-- [ ] **El enlace.** Discreto, junto al precio, con un rótulo que ofrezca en
+- [x] **El enlace.** Discreto, junto al precio, con un rótulo que ofrezca en
       vez de advertir —«de dónde sale este precio»— y que lleve a la tabla
       del arancel, al renglón que corresponde.
-- [ ] **La tabla del arancel**, de solo lectura, agrupada por categoría como
+- [x] **La tabla del arancel**, de solo lectura, agrupada por categoría como
       el documento, con la nota de procedencia arriba.
-- [ ] Buscar por concepto: 453 renglones sin buscador no se usan.
-- [ ] Un servicio sin precio propio **muestra la sugerencia del arancel como
+- [x] Buscar por concepto: 453 renglones sin buscador no se usan.
+- [x] Un servicio sin precio propio **muestra la sugerencia del arancel como
       valor de arranque**, no un campo vacío ni un cero. El sistema sabe
       cuánto cuesta; que lo diga.
 
@@ -348,3 +348,76 @@ merge siguen siendo decisión del usuario.
 - Próximo paso: T-3, las dos pantallas. `GET /api/arancel` ya entrega la tabla
   agrupada como el documento, y `src/api/arancel.ts` ya tiene las dos
   funciones que esas pantallas necesitan.
+
+- **T-3 cerrada.** Dos pantallas —`/catalogos/precios` y
+  `/catalogos/arancel`— con un solo módulo de lógica pura detrás,
+  `src/pantallas/catalogos/precios.ts`, ejercido por 39 pruebas en
+  `test/precios-ui.spec.ts`. El dibujo lo miden 14 pruebas nuevas en
+  `e2e/precios.spec.ts`. Las dos entran a `Catalogos.tsx` con enlace propio y
+  a `PANTALLAS` de `e2e/navegacion.spec.ts` como `bajo: "/catalogos"`.
+- **El criterio de aceptación 4 se prueba estructuralmente, no por texto.**
+  `e2e/precios.spec.ts` cuenta las cifras de dinero que cada fila renderiza
+  **en sus `<td>`** y exige que no pase de una. El concepto y el texto de la
+  regla van en `<th scope="row">`, y eso no es semántica de tabla sino lo que
+  hace posible la cuenta: la cita trae importes adentro —«De B/.0.01 hasta
+  B/.3,000.00», «B/.2,000.00 más el 35%»— que tienen que verse y no son el
+  precio de la fila. Medido a mano contra los **453 renglones de verdad** de
+  la D1 local: **máximo una cifra por fila**, 379 filas con campo de precio y
+  **74 sin ninguno** —exactamente los 74 rubros que midió T-1—. Dos pruebas
+  más lo atacan por otros dos flancos: que el monto del acuerdo de un
+  servicio que ya tiene precio propio no aparezca en **ningún** lugar de la
+  pantalla, y que no aparezca ninguna de las palabras con las que un precio
+  se mide contra otro —«mínimo», «oficial», «debajo», «acuerdo», «arancel»—.
+- **Lo que no se hizo, y es la corrección del usuario sostenida.** Ni columna
+  oficial, ni «mínimo: X», ni aviso de estar por debajo, ni color sobre el
+  precio propio. La única marca es la palabra «sugerido», apagada y en
+  minúscula, que se cae en cuanto el bufete decide. El lugar de la nota de
+  procedencia es la tabla del arancel, arriba, y `e2e/precios.spec.ts` afirma
+  esa posición como **orden en el documento** (`compareDocumentPosition`) y
+  no como coordenada, porque la coordenada cambia con el ancho y el orden no.
+- **El renglón viaja como fragmento, no como segmento.** `/catalogos/arancel`
+  no lleva parámetro: la tabla se muestra entera siempre —es un documento, no
+  una ficha— y el aterrizaje es `#renglon-{id}`, deletreado una sola vez por
+  `anclaDelRenglon` para que el `href` de una pantalla y el `id` del `<tr>` de
+  la otra no puedan discrepar. El salto lo hace `Arancel.tsx`, porque
+  `navegarA` empuja con `pushState` y `pushState` no salta a un fragmento.
+  Medido a mano: desde el renglón 300 de 453, el clic deja la fila en el
+  centro de la ventana y marcada.
+- **Tres cosas que se midieron en el navegador y cambiaron el dibujo.**
+  - *El enlace apilado hacía la tabla el doble de alta.* Con el rótulo debajo
+    del campo, cada fila medía unos 140px a 1440px y «de dónde sale este
+    precio» se partía en dos renglones: más de sesenta mil píxeles de alto
+    para una tabla que se recorre buscando una fila. En la misma franja que
+    el campo, la fila típica bajó a **95px**.
+  - *El campo prometía un párrafo.* `.campo__control` hereda
+    `inline-size: 100%`, así que el campo de «500.00» medía la celda entera.
+    Tope de `12ch` dentro de `.precio`.
+  - *La ayuda del buscador no tenía tope.* Se envolvió en `Prosa` (§9).
+- **El `rubro` no lleva campo y la `regla` sí.** Es la misma regla que el
+  `CHECK un_rubro_no_lleva_precio` de la migración y `puedeLlevarPrecio` de
+  `worker/arancel/dominio.ts`, y ahora tiene una **tercera mitad** en `src/`.
+  La importación del Worker habría sido mejor —hay precedente:
+  `cotizaciones/lineas.ts` importa de `worker/cotizaciones/lineas.ts`— pero
+  cuesta listar `worker/arancel/dominio.ts` en el `include` de
+  `tsconfig.app.json`, que está fuera de la superficie autorizada de T-3. El
+  módulo califica para esa lista: lo único que importa son tipos de
+  `worker/contract.ts`, que se borran al compilar. Queda anotado en el
+  encabezado de `src/pantallas/catalogos/precios.ts`.
+- **Deuda que T-3 deja escrita, fuera de su alcance.**
+  - *El campo vacío borra el precio propio, y eso se explica con un párrafo.*
+    No hay un botón «volver a la sugerencia» por fila: serían 453 botones más
+    para una operación que casi nadie va a hacer. La ayuda arriba de la tabla
+    lo dice, y `montoParaGuardar("")` lo convierte en el nulo que
+    `fijarMontoDelArancel` manda.
+  - *La búsqueda de la pantalla de precios y la del arancel comparten regla y
+    no caja.* Son dos `<input type="search">` con su propio estado. Juntarlas
+    en un componente es una refactorización, no un defecto.
+  - *El criterio de aceptación 1 sigue diciendo 358 renglones.* T-1 ya dejó
+    anotado que son 453 y que la clave es `orden` y no `numeral`. T-3 no
+    reescribe los criterios: los cumple sobre los 453 que hay.
+- **Verificación de T-3, corrida en primer plano.** `pnpm lint`: limpio.
+  `pnpm typecheck`: limpio. `pnpm test`: **2344 pruebas en 46 archivos**
+  (2305 en 45 antes; +39 de `precios-ui`). `pnpm test:e2e`: **452** (438
+  antes; +14 de `precios`). Ninguna prueba previa se tocó salvo `PANTALLAS`
+  de `e2e/navegacion.spec.ts`, que **no compila** hasta que una variante
+  nueva de `Ruta` declara bajo qué sección vive.
