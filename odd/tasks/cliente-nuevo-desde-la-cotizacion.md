@@ -71,16 +71,16 @@ resolverlo a medias acá sería peor que no resolverlo.
 
 ### T-1 · Un cliente nace desde el alta de cotización
 
-- [ ] Botón junto al selector de cliente, con nombre accesible propio.
-- [ ] Modal con `<dialog>` nativo, como `ListaDeServicios.tsx`: velo,
+- [x] Botón junto al selector de cliente, con nombre accesible propio.
+- [x] Modal con `<dialog>` nativo, como `ListaDeServicios.tsx`: velo,
       `Escape`, foco que entra y vuelve al botón que lo abrió.
-- [ ] Nombre, teléfono, correo y tipo. La regla de «uno de los dos
+- [x] Nombre, teléfono, correo y tipo. La regla de «uno de los dos
       contactos» dicha **antes** de fallar, no como error.
-- [ ] `validarBorrador` y `aPeticion` reusados tal cual. Ninguna validación
+- [x] `validarBorrador` y `aPeticion` reusados tal cual. Ninguna validación
       nueva.
-- [ ] Al guardar: el cliente nace, el modal se cierra, **y queda elegido**.
-- [ ] Lo ya escrito en el alta de cotización sobrevive. Se prueba.
-- [ ] El error del servidor se ve **dentro del modal**, no detrás de él.
+- [x] Al guardar: el cliente nace, el modal se cierra, **y queda elegido**.
+- [x] Lo ya escrito en el alta de cotización sobrevive. Se prueba.
+- [x] El error del servidor se ve **dentro del modal**, no detrás de él.
 
 ## Criterios de aceptación
 
@@ -100,3 +100,38 @@ extienden; el modal y la selección automática se miden de punta a punta.
 ## Progreso
 
 - Documento creado. Ninguna tarea cerrada.
+- **T-1 cerrada.** Prueba primero: las dos suites se escribieron antes del
+  código y fallaron como tenían que fallar —la unitaria por módulo
+  inexistente, las diez de punta a punta esperando el botón «Crear un cliente
+  nuevo» que todavía no estaba—.
+
+  Lo que se agregó:
+
+  - `src/pantallas/cotizaciones/cliente-nuevo.ts` — la costura pura: los
+    cuatro campos del modal, los textos, y `borradorDelClienteNuevo`, que
+    completa los cinco campos que el modal no pregunta para que `aPeticion`
+    los mande en `null` y no en `""`. **Ninguna validación propia.**
+  - `src/pantallas/cotizaciones/ClienteNuevo.tsx` — el `<dialog>`, con la
+    misma disciplina ya medida en `ListaDeServicios.tsx`: `onCancel` en vez
+    de `onClose` y `useLayoutEffect` en vez de `useEffect`. Lee el catálogo
+    de tipos al abrirse, no antes, y sigue sirviendo si esa lectura falla.
+  - `FormularioDeCotizacion.tsx` — el botón al lado del selector y el modal
+    montado como **hermano** del `<form>`, no como hijo: un formulario
+    anidado no es HTML válido. El borrador no se toca al abrir ni al cerrar,
+    que es lo que hace que lo tecleado sobreviva.
+  - `src/estilos/layout.css` — `.campo__con-accion` (flex que envuelve, sin
+    umbral de pantalla) y `.cliente-nuevo`, con las medidas de
+    `.lista-de-servicios` y un tope más angosto porque son campos y no tabla.
+
+  Verificación observada: `pnpm lint` limpio · `pnpm typecheck` limpio ·
+  `pnpm test` 2491 pruebas en 48 archivos, todas en verde (13 nuevas) ·
+  `pnpm test:e2e` 497 en verde (10 nuevas). La inestabilidad conocida de
+  `e2e/sin-scroll-horizontal.spec.ts` no apareció en esta corrida.
+
+  Dos cosas del documento que la implementación corrigió:
+
+  1. La ruta del alta es `/cotizaciones/nuevo`, no «nueva».
+  2. El desplegable de tipos de cliente obligó a una lectura que el alta de
+     cotización no hacía (`GET /api/tipos-cliente`). Vive en el modal y no en
+     la pantalla, así que la pantalla de siempre no paga por una puerta que
+     la mayoría de las veces no se abre.

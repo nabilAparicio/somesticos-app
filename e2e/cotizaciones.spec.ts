@@ -122,6 +122,60 @@ const CLIENTES = [
   },
 ];
 
+/* --- El cliente que nace desde el alta (tajada «cliente nuevo») --------- */
+
+/**
+ * El cliente que el modal del alta crea, tal como lo devuelve
+ * `POST /api/clientes`.
+ *
+ * Su nombre **no empieza con el de ninguno de los otros dos** y ninguno de
+ * los otros dos empieza con el suyo: el desplegable se lee por el texto de la
+ * opción elegida, y con nombres que son prefijo uno del otro una aserción de
+ * selección pasaría apuntando al cliente equivocado.
+ */
+const CLIENTE_NUEVO_ID = "4a3f1d0e-0e2c-4c1f-9a6b-2d8a1c5e7b92";
+const NOMBRE_DEL_LEAD = "Marcela Quintero Ríos";
+const TELEFONO_DEL_LEAD = "+507 6111-2222";
+
+const CLIENTE_NUEVO = {
+  id: CLIENTE_NUEVO_ID,
+  tipoClienteId: null,
+  tipoClienteNombre: null,
+  nombre: NOMBRE_DEL_LEAD,
+  documentoTipo: null,
+  documentoNumero: null,
+  representanteLegal: null,
+  email: null,
+  telefono: TELEFONO_DEL_LEAD,
+  notas: null,
+  creadoPor: "u1",
+  creadoPorNombre: "Itzel",
+  creadoEn: "2026-10-27T14:03:00.000Z",
+};
+
+/**
+ * El catálogo de tipos de cliente, que el modal pide para su desplegable.
+ *
+ * Lleva **uno dado de baja**, que es la medición: `tiposSeleccionables` no lo
+ * ofrece, y con los dos activos un modal que dibujara la lista cruda pasaría
+ * igual que uno que filtra.
+ */
+const TIPO_DE_CLIENTE_ACTIVO = "Persona natural";
+const TIPO_DE_CLIENTE_DE_BAJA = "Categoría que el bufete ya no usa";
+
+const TIPOS_DE_CLIENTE = [
+  {
+    id: "6d1f0b11-1111-4111-8111-000000000001",
+    nombre: TIPO_DE_CLIENTE_ACTIVO,
+    activo: true,
+  },
+  {
+    id: "6d1f0b11-2222-4222-8222-000000000002",
+    nombre: TIPO_DE_CLIENTE_DE_BAJA,
+    activo: false,
+  },
+];
+
 function cotizacion(ajustes: Record<string, unknown>): Record<string, unknown> {
   return {
     id: BORRADOR_ID,
@@ -721,6 +775,13 @@ function cuerpoDe(pathname: string): Record<string, unknown> | null {
 
   if (pathname === "/api/cotizaciones") return { cotizaciones: COTIZACIONES };
   if (pathname === "/api/clientes") return { clientes: CLIENTES };
+
+  // El catálogo de tipos de cliente, que el modal del alta pide para su
+  // desplegable. Es una lectura aparte y opcional —el tipo es opcional, así
+  // que un fallo no puede impedir dar de alta—, pero sin esta rama el banco
+  // contestaría 404 y el modal se dibujaría con un desplegable de una sola
+  // opción sin que eso lo decida nadie.
+  if (pathname === "/api/tipos-cliente") return { tipos: TIPOS_DE_CLIENTE };
 
   // T-13: el panel de apertura pide el equipo del bufete para el
   // desplegable de responsable. No bloquea nada —un proceso se abre sin
@@ -3217,5 +3278,375 @@ test.describe("abrir los procesos de una cotización recién ganada", () => {
       page.getByText("El título es obligatorio", { exact: false }),
     ).toBeVisible();
     expect(llamadas).toBe(0);
+  });
+});
+
+/* ==========================================================================
+   Un cliente nace desde el alta de cotización
+   ========================================================================== */
+
+/**
+ * El camino más frecuente del negocio: entra un interesado nuevo y se le
+ * cotiza sin salir de la pantalla.
+ *
+ * Lo que este bloque protege son cuatro cosas, y ninguna se puede ver sin un
+ * navegador:
+ *
+ *  1. **Que el cliente quede elegido.** Ése es el punto entero de la tajada:
+ *     si al volver hay que buscarlo en el desplegable, no se ahorró nada. La
+ *     creación en sí ya está probada en `test/clientes-api.spec.ts`, y lo que
+ *     se manda, en `test/cliente-nuevo-ui.spec.ts`.
+ *  2. **Que lo ya escrito en el alta sobreviva.** Es la razón de ser del
+ *     modal: el viaje a `/clientes/nuevo` desmontaba la pantalla y se perdía
+ *     lo tecleado. Un modal que reinicie el formulario que lo abrió cambió un
+ *     viaje de ida y vuelta por una pérdida silenciosa, que es peor.
+ *  3. **Que la falla se vea adentro.** Un aviso detrás del velo es un aviso
+ *     que nadie puede leer mientras el modal está abierto.
+ *  4. **Que el modal sea modal**: `Escape`, foco que vuelve, y lo de atrás
+ *     inerte. Es lo que se pierde si alguien cambia `showModal()` por el
+ *     atributo `open`, que se parece tanto a lo correcto.
+ */
+test.describe("un cliente nace desde el alta de cotización", () => {
+  /** El modal, buscado por su elemento y no por un rol: es un `<dialog>`. */
+  function modal(page: Page) {
+    return page.locator("dialog.cliente-nuevo");
+  }
+
+  function abrirElModal(page: Page) {
+    return page.getByRole("button", { name: "Crear un cliente nuevo" });
+  }
+
+  /**
+   * Intercepta el alta de cliente y anota el cuerpo que viajó.
+   *
+   * Se registra **después** de `conCotizacionesCargadas` y por eso gana:
+   * Playwright atiende las rutas en orden inverso al de registro. Y hace
+   * falta interceptar: el banco de lectura contesta la colección de clientes
+   * con `{ clientes: [...] }` para cualquier método, así que un `POST` sin
+   * esta ruta recibiría un 200 sin cliente adentro.
+   */
+  async function conElAltaDeClienteAtendida(
+    page: Page,
+    enviados: string[],
+  ): Promise<void> {
+    await page.route(
+      (url) => url.pathname === "/api/clientes",
+      async (ruta) => {
+        if (ruta.request().method() !== "POST") {
+          await ruta.fallback();
+          return;
+        }
+        enviados.push(ruta.request().postData() ?? "");
+        await ruta.fulfill({ status: 201, json: { cliente: CLIENTE_NUEVO } });
+      },
+    );
+  }
+
+  /** El texto de la opción elegida, que es lo que la persona lee. */
+  function clienteElegido(page: Page): Promise<string> {
+    return page.locator("#campo-clienteId").evaluate((nodo) => {
+      const control = nodo as HTMLSelectElement;
+      return control.selectedIndex < 0
+        ? "(ninguna)"
+        : control.options[control.selectedIndex].text;
+    });
+  }
+
+  test("el botón junto al selector abre un modal que dice la regla antes de fallar", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto("/cotizaciones/nuevo");
+
+    await expect(abrirElModal(page)).toBeVisible();
+    await expect(modal(page)).toHaveCount(0);
+
+    await abrirElModal(page).click();
+
+    const caja = modal(page);
+    await expect(caja).toBeVisible();
+
+    // La regla del contacto, dicha **antes** de que alguien la descubra
+    // fallando. Es ayuda y no error: un formulario que enseña su regla
+    // reprobando a quien la ignoraba enseña tarde.
+    await expect(
+      caja.getByText("un teléfono o un correo", { exact: false }),
+      "el modal no dice que alcanza con uno de los dos contactos, así que la" +
+        " única forma de enterarse es que el guardado falle",
+    ).toBeVisible();
+
+    // Y que lo que nace acá no es un cliente de segunda: el resto de la
+    // ficha se completa después, desde la pantalla del cliente.
+    await expect(
+      caja.getByText("pantalla del cliente", { exact: false }),
+      "el modal no dice dónde se completa el resto de la ficha: quien lo usa" +
+        " puede creer que creó un cliente incompleto a propósito",
+    ).toBeVisible();
+
+    // Los cuatro campos, cada uno con rótulo visible. Ni el documento ni las
+    // notas: ésos son de la pantalla completa.
+    await expect(caja.getByLabel("Nombre")).toBeVisible();
+    await expect(caja.getByLabel("Teléfono")).toBeVisible();
+    await expect(caja.getByLabel("Correo")).toBeVisible();
+    await expect(caja.getByLabel("Tipo de cliente")).toBeVisible();
+    await expect(caja.getByLabel("Número de documento")).toHaveCount(0);
+  });
+
+  test("el desplegable de tipos no ofrece los dados de baja", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto("/cotizaciones/nuevo");
+    await abrirElModal(page).click();
+
+    const tipos = modal(page).getByLabel("Tipo de cliente");
+    await expect(tipos).toBeVisible();
+
+    const opciones = await tipos.locator("option").allInnerTexts();
+    expect(opciones).toContain(TIPO_DE_CLIENTE_ACTIVO);
+    expect(
+      opciones,
+      "el modal ofrece una categoría que el bufete dio de baja: la lista que" +
+        " llegó se dibujó cruda, sin pasar por `tiposSeleccionables`",
+    ).not.toContain(TIPO_DE_CLIENTE_DE_BAJA);
+  });
+
+  test("un nombre sin ningún contacto no pasa, y lo dice dentro del modal", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    const enviados: string[] = [];
+    await conElAltaDeClienteAtendida(page, enviados);
+
+    await page.goto("/cotizaciones/nuevo");
+    await abrirElModal(page).click();
+
+    const caja = modal(page);
+    await caja.getByLabel("Nombre").fill("Marcela");
+    await caja.getByRole("button", { name: "Crear cliente" }).click();
+
+    // El aviso va **adentro** del modal. Detrás del velo no se puede leer, y
+    // el velo es justamente lo que el `<dialog>` modal pone encima.
+    await expect(
+      caja.getByRole("alert"),
+      "la falla no se dibuja dentro del modal: queda detrás del velo, donde" +
+        " nadie la puede leer",
+    ).toContainText("al menos un medio de contacto");
+
+    // Y el motivo es el de `validarBorrador`, el mismo que la pantalla
+    // completa: una segunda validación escrita acá sería la que acepta un
+    // cliente que `/clientes/nuevo` rechaza.
+    expect(
+      enviados,
+      "se mandó una petición que ya se sabía inválida",
+    ).toEqual([]);
+
+    // El modal sigue abierto: una falla no es una salida.
+    await expect(caja).toBeVisible();
+  });
+
+  test("al guardar, el cliente nace, el modal se cierra y queda elegido", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    const enviados: string[] = [];
+    await conElAltaDeClienteAtendida(page, enviados);
+
+    await page.goto("/cotizaciones/nuevo");
+    await abrirElModal(page).click();
+
+    const caja = modal(page);
+    await caja.getByLabel("Nombre").fill(`  ${NOMBRE_DEL_LEAD}  `);
+    await caja.getByLabel("Teléfono").fill(TELEFONO_DEL_LEAD);
+    await caja.getByRole("button", { name: "Crear cliente" }).click();
+
+    await expect(modal(page)).toHaveCount(0);
+
+    // Lo que viajó: el nombre recortado y los cinco campos que el modal no
+    // pregunta en `null`, que es «todavía nadie lo sabe» y no «está vacío».
+    await expect.poll(() => enviados.length).toBe(1);
+    expect(JSON.parse(enviados[0])).toEqual({
+      nombre: NOMBRE_DEL_LEAD,
+      tipoClienteId: null,
+      documentoTipo: null,
+      documentoNumero: null,
+      representanteLegal: null,
+      email: null,
+      telefono: TELEFONO_DEL_LEAD,
+      notas: null,
+    });
+
+    // Y el punto entero de la tajada: **queda elegido**, sin ir a buscarlo.
+    await expect(page.locator("#campo-clienteId")).toHaveValue(
+      CLIENTE_NUEVO_ID,
+    );
+    expect(
+      await clienteElegido(page),
+      "el cliente recién creado no quedó elegido en el desplegable: hay que" +
+        " ir a buscarlo, que es justo el viaje que el modal venía a ahorrar",
+    ).toBe(NOMBRE_DEL_LEAD);
+  });
+
+  test("lo que ya estaba escrito en el alta sigue ahí después del modal", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    const enviados: string[] = [];
+    await conElAltaDeClienteAtendida(page, enviados);
+
+    await page.goto("/cotizaciones/nuevo");
+
+    const vencimiento = page.getByLabel("Vence el");
+    await expect(vencimiento).toBeVisible();
+    await vencimiento.fill(hoyDeLaPrueba());
+
+    await abrirElModal(page).click();
+
+    const caja = modal(page);
+    await caja.getByLabel("Nombre").fill(NOMBRE_DEL_LEAD);
+    await caja.getByLabel("Teléfono").fill(TELEFONO_DEL_LEAD);
+    await caja.getByRole("button", { name: "Crear cliente" }).click();
+
+    await expect(modal(page)).toHaveCount(0);
+
+    /*
+     * La razón de ser del modal, medida: el viaje a `/clientes/nuevo`
+     * desmontaba esta pantalla y el vencimiento se perdía. Si el modal
+     * reinicia o remonta el formulario que lo abrió, cambió un viaje de ida
+     * y vuelta por una pérdida silenciosa — y silenciosa es peor, porque
+     * nadie se entera hasta que la cotización sale sin vencimiento.
+     */
+    await expect(
+      vencimiento,
+      "el vencimiento escrito antes de abrir el modal se perdió: el modal" +
+        " remontó o reinició el formulario del alta",
+    ).toHaveValue(hoyDeLaPrueba());
+  });
+
+  test("y sigue ahí también si el modal se cierra sin crear nada", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto("/cotizaciones/nuevo");
+
+    const vencimiento = page.getByLabel("Vence el");
+    await expect(vencimiento).toBeVisible();
+    await vencimiento.fill(hoyDeLaPrueba());
+
+    await abrirElModal(page).click();
+    await modal(page).getByRole("button", { name: "Cancelar" }).click();
+
+    await expect(modal(page)).toHaveCount(0);
+    await expect(vencimiento).toHaveValue(hoyDeLaPrueba());
+
+    // Y nada quedó elegido: cancelar no crea.
+    await expect(page.locator("#campo-clienteId")).toHaveValue("");
+  });
+
+  test("un error del servidor se ve dentro del modal, que sigue abierto", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    await page.route(
+      (url) => url.pathname === "/api/clientes",
+      async (ruta) => {
+        if (ruta.request().method() !== "POST") {
+          await ruta.fallback();
+          return;
+        }
+        await ruta.fulfill({ status: 500, json: { error: "error_interno" } });
+      },
+    );
+
+    await page.goto("/cotizaciones/nuevo");
+    await abrirElModal(page).click();
+
+    const caja = modal(page);
+    await caja.getByLabel("Nombre").fill(NOMBRE_DEL_LEAD);
+    await caja.getByLabel("Teléfono").fill(TELEFONO_DEL_LEAD);
+    await caja.getByRole("button", { name: "Crear cliente" }).click();
+
+    await expect(
+      caja.getByRole("alert"),
+      "el problema del servidor no se dibuja dentro del modal: queda detrás" +
+        " del velo y lo único visible es un modal que no hizo nada",
+    ).toBeVisible();
+    await expect(caja).toBeVisible();
+
+    // Y lo tecleado no se borra: volver a escribirlo es el castigo por un
+    // fallo que no fue de nadie.
+    await expect(caja.getByLabel("Nombre")).toHaveValue(NOMBRE_DEL_LEAD);
+  });
+
+  test("Escape cierra el modal y el foco vuelve al botón que lo abrió", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto("/cotizaciones/nuevo");
+
+    await abrirElModal(page).click();
+    await expect(modal(page)).toBeVisible();
+
+    await page.keyboard.press("Escape");
+
+    await expect(modal(page)).toHaveCount(0);
+    await expect(
+      abrirElModal(page),
+      "el foco no volvió al botón que abrió el modal: quien navega con" +
+        " teclado queda al principio de la página y tiene que recorrerla" +
+        " entera para volver",
+    ).toBeFocused();
+  });
+
+  test("con el modal abierto, el alta de atrás no se puede tocar", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto("/cotizaciones/nuevo");
+
+    await abrirElModal(page).click();
+    await expect(modal(page)).toBeVisible();
+
+    const alcanzable = await page.evaluate(() => {
+      const vence = document.getElementById("campo-venceEn");
+      if (vence === null) return null;
+      vence.focus();
+      return document.activeElement === vence;
+    });
+
+    expect(
+      alcanzable,
+      "no se encontró el campo de vencimiento del alta: la prueba está rota",
+    ).not.toBeNull();
+    expect(
+      alcanzable,
+      "un campo de atrás recibió el foco con el modal abierto. El diálogo" +
+        " dejó de ser modal: `showModal()` se cambió por el atributo `open`," +
+        " que no trae velo, ni inercia, ni `Escape`, ni foco",
+    ).toBe(false);
+  });
+
+  test("a 320px de ancho, con el modal abierto, nada se sale", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.goto("/cotizaciones/nuevo");
+
+    await abrirElModal(page).click();
+    await expect(modal(page)).toBeVisible();
+
+    // El ancho más angosto de §9, que es donde un `<dialog>` con el dibujo
+    // por defecto del navegador empuja la página: trae `max-width` propio y
+    // márgenes que no son los del sistema.
+    const desborde = await medirDesborde(page);
+    expect(
+      desborde.scrollWidth,
+      porQueSeSale(320, desborde),
+    ).toBeLessThanOrEqual(desborde.clientWidth);
   });
 });

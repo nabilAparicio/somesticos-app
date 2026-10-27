@@ -1491,3 +1491,108 @@
  * misma marca y tiene que leerse igual en las dos, así que es una sola
  * declaración y no dos que haya que mantener iguales.
  */
+
+/* ----------------------------------------------------------------------
+   El cliente que nace desde el alta de cotización
+   ---------------------------------------------------------------------- */
+
+/*
+ * El control y el botón que lo acompaña, en una franja que envuelve.
+ *
+ * Es flexbox y no grid, que es el reparto de §9 entre los dos: una franja es
+ * unidimensional. Y es `flex-wrap` y no una `@container` con un umbral: el
+ * botón baja debajo del control cuando no entra, y cuándo no entra depende del
+ * largo del rótulo del botón, no de un ancho de pantalla que alguien elija.
+ *
+ * El `min-inline-size: 0` sobre el control es la línea que desarma su ancho
+ * intrínseco. Sin ella un `<select>` en una franja flex se niega a encogerse
+ * por debajo de su contenido —y el contenido de este desplegable es el nombre
+ * más largo del catálogo de clientes—, así que a 320px empujaría la página.
+ */
+.campo__con-accion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--espacio-xs);
+  min-width: 0;
+}
+
+.campo__con-accion > .campo__control {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+
+/*
+ * El botón no se estira ni se encoge por debajo de su texto: es el único
+ * elemento de la franja cuyo ancho **es** su contenido. `white-space: nowrap`
+ * lo mantiene en un renglón, y cuando ese renglón no cabe al lado del control
+ * el `flex-wrap` de arriba lo baja entero.
+ */
+.campo__accion {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/*
+ * El modal del alta rápida de cliente.
+ *
+ * Las medidas son las de `.lista-de-servicios` y por el mismo motivo: un
+ * `<dialog>` nativo trae su propio dibujo del navegador —borde, relleno,
+ * `max-width`, `margin: auto`— y lo que sigue es reemplazarlo por el del
+ * sistema. **No declara `z-index`**: un diálogo modal vive en la capa superior
+ * del navegador, así que no compite con `--z-velo` ni con `--z-cajon`.
+ *
+ * El tope es más angosto que el de la lista expandida —`38rem` contra `64rem`—
+ * y eso es contenido, no gusto: acá hay cuatro campos de formulario, y un
+ * campo de texto de sesenta caracteres de ancho se lee peor que uno de treinta.
+ * Sigue siendo un tope y no un ancho: el `min()` contra el ancho disponible es
+ * lo que hace que a 320px el diálogo mida 320px menos su aire.
+ */
+.cliente-nuevo {
+  inline-size: min(38rem, 100% - var(--espacio-l) * 2);
+  max-inline-size: none;
+  max-block-size: calc(100dvh - var(--espacio-l) * 2);
+  margin: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--espacio-l);
+  border: none;
+  border-radius: var(--radio-l);
+  background: var(--color-superficie);
+  color: var(--color-tinta);
+  box-shadow: var(--sombra-flotante);
+}
+
+/*
+ * El velo, que es **el mismo del cajón de navegación y de la lista
+ * expandida**: sale de `--color-velo`, declarado en `:root`. Que esté en la
+ * raíz es lo que lo hace seguro acá: un `::backdrop` no hereda del documento
+ * en todos los motores, y la variable se resuelve igual porque está declarada
+ * en el elemento raíz.
+ */
+.cliente-nuevo::backdrop {
+  background: var(--color-velo);
+}
+
+.cliente-nuevo__encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--espacio-s);
+  min-width: 0;
+}
+
+/*
+ * Las dos ayudas, arriba y antes de los campos. Se separan del resto con un
+ * borde lateral y no con un fondo de aviso: no es una alerta, es la regla del
+ * formulario dicha a tiempo.
+ */
+.cliente-nuevo__ayuda {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-3xs);
+  padding-inline-start: var(--espacio-s);
+  border-inline-start: 2px solid var(--color-acento);
+  font-size: var(--texto-s);
+}

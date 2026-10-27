@@ -31,6 +31,8 @@ import { navegarA } from "../../navegacion";
 import { enlaceDe } from "../../ruteo";
 import { hoyEnPanama } from "../../../worker/db/momentos";
 import { cargarClientes } from "../clientes/api";
+import { ClienteNuevo } from "./ClienteNuevo";
+import { ROTULO_DE_ABRIR_CLIENTE_NUEVO } from "./cliente-nuevo";
 import {
   actualizarCotizacion,
   cargarCotizacion,
@@ -94,6 +96,20 @@ export function FormularioDeCotizacion({ cotizacionId }: Props) {
    */
   const [clienteActual, setClienteActual] =
     useState<ClienteDeLaCotizacion | null>(null);
+  /**
+   * Si el modal de cliente nuevo está montado.
+   *
+   * Es un `boolean` acá y **no** un estado dentro del modal: el `<dialog>` se
+   * abre al montarse y existe sólo mientras está abierto, así que no hay un
+   * segundo «abierto» que pueda discrepar de éste. El porqué largo está en
+   * `ClienteNuevo.tsx`.
+   *
+   * Y vive en este componente, que es el que tiene el borrador: montar y
+   * desmontar el modal no toca nada del formulario, y eso es exactamente lo
+   * que la tajada vino a arreglar. El viaje a `/clientes/nuevo` desmontaba la
+   * pantalla entera y se perdía lo tecleado.
+   */
+  const [clienteNuevoAbierto, setClienteNuevoAbierto] = useState(false);
 
   useEffect(() => {
     const control = new AbortController();
@@ -150,6 +166,38 @@ export function FormularioDeCotizacion({ cotizacionId }: Props) {
       control.abort();
     };
   }, [cotizacionId]);
+
+  /**
+   * El cliente que acaba de nacer en el modal: entra a la lista **y queda
+   * elegido**.
+   *
+   * Lo segundo es el punto entero de la tajada. Si hubiera que ir a buscarlo
+   * al desplegable no se ahorró nada: el viaje a otra pantalla se cambió por
+   * un viaje al mismo control, y encima con la lista recién crecida.
+   *
+   * La lista se agranda en lugar de volver a leerse de la API. Releer sería
+   * una ida y vuelta para traer una fila que ya está en la mano, y en el
+   * instante entre las dos la pantalla quedaría sin el cliente que acaba de
+   * crear. El guardia contra el duplicado es por si el servidor lo devuelve
+   * en una relectura posterior, no por si el modal se usa dos veces.
+   *
+   * Y se descarta la falla de «hay que elegir el cliente», si estaba: la
+   * acción que el aviso pedía es exactamente la que acaba de ocurrir, y un
+   * aviso que sobrevive a su propia corrección manda a arreglar lo que ya
+   * está arreglado.
+   */
+  function clienteCreado(cliente: Cliente) {
+    setClientes((anteriores) =>
+      anteriores.some((otro) => otro.id === cliente.id)
+        ? anteriores
+        : [...anteriores, cliente],
+    );
+    setBorrador((anterior) => ({ ...anterior, clienteId: cliente.id }));
+    setFallas((anteriores) =>
+      anteriores.filter((falla) => falla.motivo !== "cliente_requerido"),
+    );
+    setClienteNuevoAbierto(false);
+  }
 
   async function enviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -252,30 +300,62 @@ export function FormularioDeCotizacion({ cotizacionId }: Props) {
                 Cliente
                 <span className="campo__marca"> · obligatorio</span>
               </label>
-              <select
-                id="campo-clienteId"
-                className="campo__control"
-                value={borrador.clienteId}
-                onChange={(evento) => {
-                  setBorrador((anterior) => ({
-                    ...anterior,
-                    clienteId: evento.target.value,
-                  }));
-                }}
-              >
-                <option value="">Elegir cliente…</option>
-                {seleccionables.map((opcion) => (
-                  <option key={opcion.id} value={opcion.id}>
-                    {opcion.nombre}
-                  </option>
-                ))}
-              </select>
+              {/*
+                El desplegable y el botón en la misma franja, que es el caso
+                unidimensional de §9: envuelve cuando no entra, y a 320px el
+                botón baja debajo del control en vez de empujar la página.
+
+                El botón va **al lado del selector y no en el encabezado**
+                porque es lo que le falta al selector: la pregunta «¿y si el
+                que llamó no está en la lista?» se hace mirando la lista.
+              */}
+              <div className="campo__con-accion">
+                <select
+                  id="campo-clienteId"
+                  className="campo__control"
+                  value={borrador.clienteId}
+                  onChange={(evento) => {
+                    setBorrador((anterior) => ({
+                      ...anterior,
+                      clienteId: evento.target.value,
+                    }));
+                  }}
+                >
+                  <option value="">Elegir cliente…</option>
+                  {seleccionables.map((opcion) => (
+                    <option key={opcion.id} value={opcion.id}>
+                      {opcion.nombre}
+                    </option>
+                  ))}
+                </select>
+                {/*
+                  El nombre accesible es el texto visible y dice el verbo
+                  entero. Un «+» o un «Nuevo» al lado de un control rotulado
+                  «Cliente» se lee, fuera de contexto, como «nuevo» a secas: el
+                  rótulo del campo no viaja con el botón.
+                */}
+                <button
+                  type="button"
+                  className="boton boton--tenue campo__accion"
+                  onClick={() => {
+                    setClienteNuevoAbierto(true);
+                  }}
+                >
+                  {ROTULO_DE_ABRIR_CLIENTE_NUEVO}
+                </button>
+              </div>
               {avisoDeLaLista !== null && (
                 <p className="campo__ayuda">{avisoDeLaLista}</p>
               )}
               {avisoDeLaLista === null && seleccionables.length === 0 && (
+                /*
+                  La frase cambió con el botón de al lado: antes decía que
+                  hacía falta un cliente y dejaba a quien leía buscando dónde
+                  crearlo. Nombrar el botón es la mitad del aviso que faltaba.
+                */
                 <p className="campo__ayuda">
-                  Todavía no hay ningún cliente. Para cotizar hace falta uno.
+                  Todavía no hay ningún cliente. Para cotizar hace falta uno, y
+                  el botón de al lado lo crea sin salir de esta pantalla.
                 </p>
               )}
             </div>
@@ -327,6 +407,26 @@ export function FormularioDeCotizacion({ cotizacionId }: Props) {
           </Fila>
         </Pila>
       </form>
+
+      {/*
+        El modal, **hermano del formulario y no hijo**. Un `<form>` dentro de
+        otro no es HTML válido, y el modal tiene su propio formulario de verdad
+        —con `onSubmit`, para que la tecla Enter funcione—.
+
+        Que no desmonte nada de acá es lo que hace que lo tecleado sobreviva:
+        el borrador, el vencimiento y el cliente viven en este componente, que
+        no se vuelve a montar cuando el modal aparece y desaparece. Es la
+        diferencia con el viaje a `/clientes/nuevo`, que desmontaba la pantalla
+        entera, y `e2e/cotizaciones.spec.ts` la mide.
+      */}
+      {clienteNuevoAbierto && (
+        <ClienteNuevo
+          alCrear={clienteCreado}
+          alCerrar={() => {
+            setClienteNuevoAbierto(false);
+          }}
+        />
+      )}
     </Pila>
   );
 }

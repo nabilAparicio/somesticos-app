@@ -63,6 +63,12 @@
     "../src/pantallas/procesos/pestanas.ts",
     "../src/pantallas/procesos/gastos.ts",
     "../src/pantallas/cotizaciones/formulario.ts",
+    // La costura del modal de cliente nuevo. Entra acá por lo mismo que las
+    // demás —lógica pura, sin React ni DOM— y la barrera de este proyecto le
+    // sirve de guardia doble: importa el borrador de `clientes/formulario.ts`
+    // y **no** importa ninguna validación propia, que es el invariante
+    // entero de ese módulo.
+    "../src/pantallas/cotizaciones/cliente-nuevo.ts",
     "../src/pantallas/cotizaciones/generar.ts",
     "../src/pantallas/cotizaciones/presentacion.ts",
     "../src/pantallas/cotizaciones/ciclo.ts",
