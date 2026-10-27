@@ -118,11 +118,19 @@
   /* ---------- Sombras ---------- */
   /*
    * La única sombra del sistema, y no es decoración: existe por una razón de
-   * layout. El cajón de navegación se dibuja encima del contenido y las dos
-   * superficies son del mismo papel, así que sin un canto que las separe se
-   * leen como una sola hoja con el texto cortado.
+   * layout. Lo que flota se dibuja encima del contenido y las dos superficies
+   * son del mismo papel, así que sin un canto que las separe se leen como una
+   * sola hoja con el texto cortado.
+   *
+   * Se llamaba `--sombra-cajon` cuando lo único que flotaba era el cajón de
+   * navegación de T-2. T-2 bis de `odd/tasks/precios-en-la-cotizacion.md`
+   * agregó dos superficies más —la lista de opciones del selector de servicio y
+   * el diálogo de la vista expandida— y las tres flotan por el mismo motivo,
+   * así que el nombre pasó a decir la razón y no el elemento. **Un segundo
+   * token con el mismo valor habría sido peor**: dos sombras idénticas con dos
+   * nombres son dos sombras que mañana no van a ser idénticas.
    */
-  --sombra-cajon: 0 0 2rem rgb(29 27 23 / 18%);
+  --sombra-flotante: 0 0 2rem rgb(29 27 23 / 18%);
 
   /* La excepción declarada de §9: un ícono tiene tamaño propio. */
   --tamano-icono: 1.5rem;

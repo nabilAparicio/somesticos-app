@@ -325,14 +325,39 @@ let tipoProcesoAjenoId: string;
    El cuarto es del bufete vecino, y es la única forma de expresar la fuga: un
    identificador ajeno es, desde acá, un identificador que no existe. */
 
-/** Un renglón con precio del bufete: el único origen que la base acepta. */
+/** Un renglón con precio del bufete: el origen más corriente. */
 const RENGLON_TARIFADO_ID = "b1000000-0000-4000-8000-000000000001";
-/** Un renglón del acuerdo que el bufete **todavía no tarifó**. */
-const RENGLON_SIN_PRECIO_ID = "b1000000-0000-4000-8000-000000000002";
+/**
+ * Un renglón del acuerdo que el bufete **todavía no editó**.
+ *
+ * Desde `migrations/0015_un_precio_es_una_cifra.sql` es un origen legítimo, y es
+ * la corrección de T-2 bis: un preestablecido es la norma hasta que se edite.
+ */
+const RENGLON_SOLO_OFICIAL_ID = "b1000000-0000-4000-8000-000000000002";
 /** Uno de los 74 encabezados: por su `CHECK`, nunca puede llevar precio. */
 const RUBRO_ID = "b1000000-0000-4000-8000-000000000003";
 /** Un renglón tarifado **del bufete vecino**. */
 const RENGLON_AJENO_ID = "b1000000-0000-4000-8000-000000000004";
+/**
+ * Una de las 97 reglas por cuantía **sin ninguna cifra**: el acuerdo la imprimió
+ * como un porcentaje por tramos y el bufete no le escribió un monto.
+ *
+ * Es el rechazo que queda después de `0015`, y por eso hace falta una fila
+ * propia: `RENGLON_SOLO_OFICIAL_ID` dejó de servir para medirlo.
+ */
+const REGLA_SIN_CIFRA_ID = "b1000000-0000-4000-8000-000000000005";
+/**
+ * Una regla por cuantía **con precio propio y sin cita**, para la regresión de
+ * `0014`.
+ *
+ * Su única cifra es la que el bufete escribió, así que vaciársela la deja sin
+ * ninguna. Con un renglón que conserva `monto_oficial` esa prueba no mediría
+ * nada: la guarda no llegaría a dispararse.
+ */
+const REGLA_SOLO_PROPIA_ID = "b1000000-0000-4000-8000-000000000006";
+
+/** Lo que el bufete le escribió a la regla por cuantía de la muestra. */
+const PRECIO_DE_LA_REGLA = 55_000;
 
 /** Lo que el bufete cobra por el servicio tarifado de la muestra. */
 const PRECIO_DEL_BUFETE = 40_000;
@@ -352,11 +377,14 @@ function sembrarRenglon(fila: {
   clase: "monto" | "regla" | "rubro";
   montoOficial: number | null;
   monto: number | null;
+  /* El texto de la regla oficial, para las dos filas de clase `regla`: el
+     `CHECK` de `0012` exige que una regla lo traiga. */
+  reglaOficial?: string;
 }): D1PreparedStatement {
   return env.DB.prepare(
     "INSERT INTO arancel_renglon (id, tenant_id, orden, categoria, numeral," +
       " concepto, clase, monto_oficial, regla_oficial, monto, activo)" +
-      " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1)",
+      " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
   ).bind(
     fila.id,
     fila.tenantId,
@@ -366,6 +394,7 @@ function sembrarRenglon(fila: {
     fila.concepto,
     fila.clase,
     fila.montoOficial,
+    fila.reglaOficial ?? null,
     fila.monto,
   );
 }
@@ -548,13 +577,33 @@ beforeAll(async () => {
       monto: PRECIO_DEL_BUFETE,
     }),
     sembrarRenglon({
-      id: RENGLON_SIN_PRECIO_ID,
+      id: RENGLON_SOLO_OFICIAL_ID,
       tenantId: TENANT_UNICO_ID,
       orden: 2,
       concepto: "Permiso de trabajo por contrato",
       clase: "monto",
       montoOficial: 30_000,
       monto: null,
+    }),
+    sembrarRenglon({
+      id: REGLA_SIN_CIFRA_ID,
+      tenantId: TENANT_UNICO_ID,
+      orden: 5,
+      concepto: "Procesos de mayor cuantía",
+      clase: "regla",
+      montoOficial: null,
+      monto: null,
+      reglaOficial: "25% de lo que se obtenga, sobre la menor cuantía",
+    }),
+    sembrarRenglon({
+      id: REGLA_SOLO_PROPIA_ID,
+      tenantId: TENANT_UNICO_ID,
+      orden: 6,
+      concepto: "Procesos de menor cuantía",
+      clase: "regla",
+      montoOficial: null,
+      monto: PRECIO_DE_LA_REGLA,
+      reglaOficial: "15% de lo que se obtenga, sobre la menor cuantía",
     }),
     sembrarRenglon({
       id: RUBRO_ID,
@@ -1267,14 +1316,14 @@ describe("el origen del precio de una línea", () => {
     expect(await listar()).toHaveLength(0);
   });
 
-  it("un renglón que el bufete todavía no tarifó tampoco", async () => {
-    // Hoy son los 453: el catálogo nació con `monto` en nulo. El origen de un
-    // precio tiene que tener precio, y lo sostiene el disparador
-    // `cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar`.
+  it("una regla por cuantía sin ninguna cifra tampoco", async () => {
+    // Las 97 reglas que el acuerdo imprimió como un porcentaje por tramos y a
+    // las que el bufete no les escribió un monto. **Es el rechazo que queda
+    // después de `0015`**: no hay número que proponer, ni propio ni citado.
     const respuesta = await comoAutor(
       conCuerpo(rutaDeLineas(), "POST", {
         ...LINEA_TARIFADA,
-        arancelRenglonId: RENGLON_SIN_PRECIO_ID,
+        arancelRenglonId: REGLA_SIN_CIFRA_ID,
       }),
     );
 
@@ -1283,6 +1332,40 @@ describe("el origen del precio de una línea", () => {
       "arancel_renglon_sin_precio",
     ]);
     expect(await listar()).toHaveLength(0);
+  });
+
+  /**
+   * **La relajación de `0015`, del lado de la ruta, y es la corrección de T-2
+   * bis.**
+   *
+   * T-2 ofreció en la cotización sólo los renglones con precio propio —7 de 453
+   * en la base de desarrollo— y la validación de la ruta hacía valer eso mismo.
+   * Las palabras del usuario: «los preestablecidos son eso, preestablecidos:
+   * siempre pueden ser editables, pero son la norma hasta que se editen, no son
+   * una subcategoría».
+   *
+   * Así que un renglón que todavía dice lo que dice el acuerdo es un origen, y
+   * esta prueba se pone roja si la validación vuelve a pedir `monto`. El 422 de
+   * antes era además **peor que un rechazo**: la pantalla ya ofrecía la opción.
+   */
+  it("un renglón que todavía dice lo que dice el acuerdo sí se acepta", async () => {
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeLineas(), "POST", {
+        ...LINEA_TARIFADA,
+        concepto: "Permiso de trabajo por contrato",
+        arancelRenglonId: RENGLON_SOLO_OFICIAL_ID,
+      }),
+    );
+
+    expect(
+      respuesta.status,
+      "la ruta rechazó un renglón con la cifra del acuerdo. Un preestablecido" +
+        " es la norma hasta que se edite, y el catálogo de la cotización son" +
+        " los 282 renglones con cifra y no los que el bufete editó",
+    ).toBe(201);
+
+    const [releida] = await listar();
+    expect(releida.arancelRenglonId).toBe(RENGLON_SOLO_OFICIAL_ID);
   });
 
   it("editar pone el origen donde no había, y lo quita", async () => {
@@ -1334,20 +1417,35 @@ describe("el origen del precio de una línea", () => {
    * encima desde la pantalla que no causó el problema. Así que la pregunta es
    * la misma que hace la base: **¿está cambiando la referencia?**
    */
-  it("una línea cuyo renglón se quedó sin precio se sigue pudiendo editar", async () => {
-    const [linea] = await agregar(LINEA_TARIFADA);
+  it("una línea cuyo renglón se quedó sin cifra se sigue pudiendo editar", async () => {
+    /*
+     * La fila es la **regla con precio propio y sin cita**, y no el renglón
+     * tarifado. Desde `0015` la pregunta es por `COALESCE(monto,
+     * monto_oficial)`, así que vaciarle el `monto` a un renglón que conserva su
+     * cita de 2001 ya no lo deja sin cifra y esta prueba quedaría verde sin
+     * medir nada. Una regla por cuantía no tiene `monto_oficial`: su única cifra
+     * es la que el bufete escribió.
+     */
+    const LINEA_DE_LA_REGLA = {
+      clase: "honorario",
+      concepto: "Procesos de menor cuantía",
+      monto: PRECIO_DE_LA_REGLA,
+      arancelRenglonId: REGLA_SOLO_PROPIA_ID,
+    };
 
-    // Lo que haría la pantalla de precios: el bufete deja de tarifar ese
-    // servicio. Va por SQL porque la ruta que lo hace es la del arancel.
+    const [linea] = await agregar(LINEA_DE_LA_REGLA);
+
+    // Lo que haría la pantalla de precios: el bufete borra el precio que le
+    // había escrito. Va por SQL porque la ruta que lo hace es la del arancel.
     await env.DB.prepare("UPDATE arancel_renglon SET monto = NULL WHERE id = ?")
-      .bind(RENGLON_TARIFADO_ID)
+      .bind(REGLA_SOLO_PROPIA_ID)
       .run();
 
     try {
       const respuesta = await comoAutor(
         conCuerpo(`${rutaDeLineas()}/${linea.id}`, "PUT", {
-          ...LINEA_TARIFADA,
-          concepto: "Visa de pensionado o jubilado, con la falta corregida",
+          ...LINEA_DE_LA_REGLA,
+          concepto: "Procesos de menor cuantía, con la falta corregida",
         }),
       );
 
@@ -1358,7 +1456,7 @@ describe("el origen del precio de una línea", () => {
           " acá: lo que el invariante vigila es **tomar** el precio de un" +
           " renglón, no la fila para siempre",
       ).toBe(200);
-      expect(await origenGuardadoDe(linea.id)).toBe(RENGLON_TARIFADO_ID);
+      expect(await origenGuardadoDe(linea.id)).toBe(REGLA_SOLO_PROPIA_ID);
     } finally {
       // La muestra se repone: los renglones viven toda la corrida porque la
       // base no los deja borrar, así que dejarla sin precio contaminaría las
@@ -1366,20 +1464,21 @@ describe("el origen del precio de una línea", () => {
       await env.DB.prepare(
         "UPDATE arancel_renglon SET monto = ? WHERE id = ?",
       )
-        .bind(PRECIO_DEL_BUFETE, RENGLON_TARIFADO_ID)
+        .bind(PRECIO_DE_LA_REGLA, REGLA_SOLO_PROPIA_ID)
         .run();
     }
   });
 
-  it("y aun así no se puede mudar a otro renglón sin precio", async () => {
+  it("y aun así no se puede mudar a otro renglón sin cifra", async () => {
     // La otra mitad de la misma regla: lo que la guarda vigila es el cambio, y
-    // un cambio hacia un renglón sin tarifar sigue siendo el invariante entero.
+    // un cambio hacia un renglón sin ninguna cifra sigue siendo el invariante
+    // entero.
     const [linea] = await agregar(LINEA_TARIFADA);
 
     const respuesta = await comoAutor(
       conCuerpo(`${rutaDeLineas()}/${linea.id}`, "PUT", {
         ...LINEA_TARIFADA,
-        arancelRenglonId: RENGLON_SIN_PRECIO_ID,
+        arancelRenglonId: REGLA_SIN_CIFRA_ID,
       }),
     );
 

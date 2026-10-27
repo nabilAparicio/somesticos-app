@@ -76,7 +76,6 @@ import { Aviso } from "../../layout/Aviso";
 import { Enlace } from "../../layout/Enlace";
 import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
-import { Prosa } from "../../layout/Prosa";
 import { Rejilla } from "../../layout/Rejilla";
 import type { Resultado } from "../../api/peticiones";
 import {
@@ -87,12 +86,7 @@ import {
   textoDeProblema as textoDeProblemaDeCatalogo,
   cargarTiposProceso,
 } from "../catalogos/api";
-import {
-  serviciosQueCoinciden,
-  serviciosSeleccionables,
-  serviciosTarifados,
-  type ServicioTarifado,
-} from "../catalogos/precios";
+import { serviciosOfrecibles, type ServicioOfrecible } from "../catalogos/precios";
 import {
   agregarLinea,
   cargarLineas,
@@ -105,13 +99,11 @@ import {
   AVISO_DEL_TOTAL,
   AVISO_LINEAS_CONGELADAS,
   AVISO_SIN_RELECTURA_DE_LINEAS,
-  AYUDA_DEL_SERVICIO_TARIFADO,
   AYUDA_DE_LINEAS,
-  AYUDA_DE_TUS_PRECIOS,
   BORRADOR_DE_LINEA_VACIO,
   CATALOGO_DE_CLASES,
-  SIN_PRECIOS_TARIFADOS,
-  TITULO_DE_TUS_PRECIOS,
+  ROTULOS_DE_LA_LINEA,
+  SIN_SERVICIOS_OFRECIBLES,
   TOTALES_EN_CERO,
   avisoDePrecios,
   avisoDeTramites,
@@ -138,9 +130,9 @@ import {
   tramitesSeleccionables,
   type BorradorDeLinea,
   type BorradoresDeLinea,
-  type ServicioDeLaLinea,
   type TramiteDeLaLinea,
 } from "./lineas";
+import { SelectorDeServicio } from "./SelectorDeServicio";
 import { VACIO } from "./presentacion";
 
 type Props = {
@@ -193,181 +185,6 @@ function Tramites({
   );
 }
 
-/**
- * El desplegable de servicios tarifados del bufete, con el que la línea ya
- * tiene siempre ofrecido aunque el catálogo no lo traiga (T-2 de
- * `odd/tasks/precios-en-la-cotizacion.md`).
- *
- * El porqué de esa inyección está en `serviciosSeleccionables`, y acá importa
- * más que en el de trámites: el bufete puede dejar de tarifar un servicio que
- * una línea ya nombra, así que el caso es alcanzable sin que nadie se
- * equivoque.
- */
-function Servicios({
-  servicios,
-  actual,
-}: {
-  readonly servicios: readonly ServicioTarifado[];
-  readonly actual: ServicioDeLaLinea | null;
-}) {
-  return (
-    <>
-      <option value="">Ninguno</option>
-      {serviciosSeleccionables(servicios, actual).map((opcion) => (
-        <option key={opcion.id} value={opcion.id}>
-          {opcion.rotulo}
-        </option>
-      ))}
-    </>
-  );
-}
-
-/**
- * **Tus precios, a la vista mientras se arma la cotización.**
- *
- * Es lo que el usuario pidió explícitamente, y es más que el prellenado: «para
- * que el usuario sepa sus propios precios en todo momento». Sin esto habría que
- * acordarse de un número o irse a otra pantalla a mirarlo, y volver.
- *
- * ## Una sola cifra por servicio, y la regla no se renegocia
- *
- * El precio del bufete y nada más. Ningún monto del Acuerdo No 49 de 2001, ni
- * al lado, ni abajo, ni en un color, ni como un «mínimo: X». Acá eso es
- * estructura: `ServicioTarifado` no tiene dónde ponerlo, así que no hay un
- * segundo número que se pueda dibujar por descuido.
- * `e2e/precios-en-cotizacion.spec.ts` cuenta las cifras que cada fila de este
- * panel renderiza para que agregar la segunda —con cualquier rótulo— se ponga
- * rojo.
- *
- * ## El vacío es el caso de hoy, y por eso tiene su propio párrafo
- *
- * Los 453 renglones del acuerdo nacen con `monto` en nulo, así que en una
- * instalación recién sembrada este panel no tiene una sola fila. Decir «no hay
- * resultados» sería mentir por omisión: lo que pasa es que nadie puso precios
- * todavía, y lo útil es decirlo y llevar a donde se ponen.
- *
- * El buscador sólo aparece cuando hay algo que buscar: un campo de búsqueda
- * sobre una lista vacía es un control que no puede hacer nada.
- */
-function TusPrecios({
-  servicios,
-  problema,
-  consulta,
-  alBuscar,
-  moneda,
-}: {
-  readonly servicios: readonly ServicioTarifado[];
-  readonly problema: string | null;
-  readonly consulta: string;
-  readonly alBuscar: (texto: string) => void;
-  readonly moneda: string;
-}) {
-  const aviso = avisoDePrecios(problema);
-  const visibles = serviciosQueCoinciden(servicios, consulta);
-
-  return (
-    <aside
-      className="tus-precios"
-      aria-labelledby="tus-precios"
-    >
-      <Pila espacio="ceñido">
-        <h3 id="tus-precios" className="tus-precios__rotulo">
-          {TITULO_DE_TUS_PRECIOS}
-        </h3>
-
-        {/*
-          `Prosa` y no un `<p>` pelado (§9): a ancho completo, un párrafo sin
-          tope ocupa la columna entera y obliga al ojo a buscar dónde sigue.
-        */}
-        <Prosa como="p" className="texto-apagado">
-          {AYUDA_DE_TUS_PRECIOS}
-        </Prosa>
-
-        {/*
-          Neutro y no de error, a propósito: un `role="alert"` por un panel de
-          consulta que no cargó interrumpiría la lectura de la pantalla entera
-          para avisar de algo que no impide cotizar. El argumento está en
-          `avisoDePrecios`.
-        */}
-        {aviso !== null && <Aviso>{aviso}</Aviso>}
-
-        {aviso === null && servicios.length === 0 && (
-          <Prosa como="p" className="texto-apagado">
-            {SIN_PRECIOS_TARIFADOS}{" "}
-            <Enlace href={enlaceALosPrecios()}>Ir a tus precios</Enlace>
-          </Prosa>
-        )}
-
-        {servicios.length > 0 && (
-          <>
-            <div className="campo campo--busqueda">
-              <label
-                className="campo__rotulo"
-                htmlFor="busqueda-de-tus-precios"
-              >
-                Buscar en tus precios
-              </label>
-              <input
-                id="busqueda-de-tus-precios"
-                className="campo__control"
-                type="search"
-                value={consulta}
-                placeholder="Nombre del servicio"
-                onChange={(evento) => {
-                  alBuscar(evento.target.value);
-                }}
-              />
-            </div>
-
-            {visibles.length === 0 ? (
-              <p className="texto-apagado">
-                Ningún servicio tuyo coincide con «{consulta}».
-              </p>
-            ) : (
-              <ul className="tus-precios__lista">
-                {visibles.map((servicio) => (
-                  <li key={servicio.id} className="tus-precios__item">
-                    <span className="tus-precios__servicio">
-                      {servicio.rubro !== null && (
-                        <span className="tus-precios__rubro">
-                          {servicio.rubro}
-                        </span>
-                      )}
-                      {servicio.concepto}
-                    </span>
-                    {/*
-                      La única cifra de dinero de la fila, y es la del bufete.
-                      Con la moneda delante, por lo mismo que los subtotales:
-                      ningún importe de esta pantalla queda sin unidad.
-                    */}
-                    <span className="tus-precios__importe">
-                      {importeLegible(servicio.monto, moneda)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <p className="texto-apagado" aria-live="polite">
-              {visibles.length === servicios.length
-                ? `${String(servicios.length)} servicio(s) tarifado(s).`
-                : `${String(visibles.length)} de ${String(
-                    servicios.length,
-                  )} servicio(s) tarifado(s).`}
-            </p>
-
-            <p className="campo__ayuda">
-              <Enlace href={enlaceALosPrecios()}>
-                Editar tus precios
-              </Enlace>
-            </p>
-          </>
-        )}
-      </Pila>
-    </aside>
-  );
-}
-
 /** Una línea en modo lectura: concepto, trámite si lleva, e importe. */
 function Leida({ linea }: { readonly linea: LineaDeCotizacion }) {
   return (
@@ -397,12 +214,19 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
   const [totales, setTotales] = useState<TotalesDeCotizacion>(TOTALES_EN_CERO);
   const [tipos, setTipos] = useState<TipoProceso[]>([]);
   const [problemaDeTipos, setProblemaDeTipos] = useState<string | null>(null);
-  /** Lo que el bufete tarifó, para prellenar y para tener a la vista (T-2). */
-  const [servicios, setServicios] = useState<ServicioTarifado[]>([]);
+  /**
+   * El catálogo ofrecible del bufete, para buscar y para prellenar (T-2 bis).
+   *
+   * **Vive acá y no dentro de cada selector**, aunque cada línea tenga el suyo:
+   * es una lectura del bufete y no de la línea, así que un estado por selector
+   * serían tantas peticiones de 282 renglones como líneas tenga la cotización.
+   * Lo que cada selector guarda por su cuenta es lo efímero —si su lista está
+   * abierta y qué opción está activa—, que es suyo y de nadie más.
+   */
+  const [servicios, setServicios] = useState<ServicioOfrecible[]>([]);
   const [problemaDePrecios, setProblemaDePrecios] = useState<string | null>(
     null,
   );
-  const [consultaDePrecios, setConsultaDePrecios] = useState("");
   const [abiertos, setAbiertos] = useState<BorradoresDeLinea>({});
   const [nueva, setNueva] = useState<BorradorDeLinea>(BORRADOR_DE_LINEA_VACIO);
   const [fallas, setFallas] = useState<FallaDeValidacion[]>([]);
@@ -476,7 +300,7 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
       if (control.signal.aborted) return;
 
       if (resultado.estado === "ok") {
-        setServicios(serviciosTarifados(resultado.valor));
+        setServicios(serviciosOfrecibles(resultado.valor));
         setProblemaDePrecios(null);
         return;
       }
@@ -709,6 +533,7 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
   }
 
   const avisoDelCatalogo = avisoDeTramites(problemaDeTipos);
+  const avisoDeLosPrecios = avisoDePrecios(problemaDePrecios);
 
   // El impuesto, o `null` si el bufete no lo factura (T-12). Se resuelve acá
   // y no en el JSX por lo mismo que todo lo demás de este archivo: el `.tsx`
@@ -717,11 +542,19 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
 
   return (
     /*
-      La clase existe para **declarar el contenedor de consulta**, y nada más:
-      lo que decide si tus precios caben al lado de las líneas es el hueco real
-      de esta sección y no el ancho de la ventana (§9). El contenedor se declara
-      acá y no sobre la rejilla de abajo porque una `@container` no puede mirar
-      al elemento que la establece: sólo a sus descendientes.
+      La clase existe para **declarar el contenedor de consulta**, y nada más
+      (§9). Lo que decide cómo se acomodan los cinco controles de una línea es
+      el hueco real de esta sección y no el ancho de la ventana: el detalle vive
+      dentro del armazón, con su propia columna y su propio relleno, así que una
+      `@media` mediría otra cosa. El contenedor se declara acá y no sobre la
+      pila de abajo porque una `@container` no puede mirar al elemento que la
+      establece: sólo a sus descendientes.
+
+      **Acá vivía la rejilla de dos pistas de T-2**, con las líneas a la
+      izquierda y el panel «Tus precios» al lado. El usuario sacó el panel —lo
+      reemplaza el propio selector— así que no queda una segunda pista que
+      acomodar y la rejilla se fue con él. El contenedor se queda, porque lo que
+      sigue necesitando medirse es la fila.
     */
     <section
       className="seccion-de-lineas"
@@ -733,22 +566,7 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
         {carga.fase === "problema" ? (
           <Aviso tono="error">{carga.mensaje}</Aviso>
         ) : (
-          /*
-            El trabajo a la izquierda y tus precios al lado (T-2).
-
-            Es una rejilla de dos pistas **con consulta de contenedor y no de
-            ventana** (§9): lo que decide si el panel cabe al lado es el hueco
-            real que la sección tiene, que en esta pantalla no es el ancho del
-            navegador —el detalle vive dentro del armazón, con su propia
-            columna—. Con una `@media` el panel se pondría al lado a 1024px
-            aunque la columna midiera cuatrocientos píxeles.
-
-            Y el orden del documento es **las líneas primero**: en un hueco
-            angosto las dos pistas se vuelven una, y lo que queda arriba es la
-            cotización. El panel es una consulta, no el trabajo.
-          */
-          <div className="lineas-con-precios">
-            <Pila className="lineas-con-precios__lineas">
+          <Pila>
             {editable ? (
               <p className="texto-apagado">{AYUDA_DE_LINEAS}</p>
             ) : (
@@ -757,6 +575,35 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
 
             {editable && avisoDelCatalogo !== null && (
               <Aviso>{avisoDelCatalogo}</Aviso>
+            )}
+
+            {/*
+              Lo que falló al traer los precios del bufete, **una sola vez**
+              (T-2 bis). Va acá y no dentro de cada selector por dos razones
+              medidas: una cotización con seis líneas dibujaba el mismo aviso
+              seis veces, y la prueba «el gasto estimado dice que es
+              aproximado» de `e2e/cotizaciones.spec.ts` —cuya suite contesta
+              404 a `GET /api/arancel`— busca **el** aviso de una familia de
+              líneas y encontraba cuatro.
+
+              Neutro y no de error, igual que el de los trámites: el selector
+              es una ayuda y no un requisito, y un `role="alert"` por algo que
+              no impide cotizar interrumpe la lectura de la pantalla entera.
+            */}
+            {editable && avisoDeLosPrecios !== null && (
+              <Aviso>{avisoDeLosPrecios}</Aviso>
+            )}
+
+            {/*
+              Y el catálogo que llegó vacío, también una sola vez. No es un
+              fallo: es que nadie sembró el arancel, y lo útil es decir adónde
+              ir en vez de dejar un campo apagado sin explicación.
+            */}
+            {editable && avisoDeLosPrecios === null && servicios.length === 0 && (
+              <p className="campo__ayuda">
+                {SIN_SERVICIOS_OFRECIBLES}{" "}
+                <Enlace href={enlaceALosPrecios()}>Ir a los precios</Enlace>
+              </p>
             )}
 
             {problema !== null && <Aviso tono="error">{problema}</Aviso>}
@@ -843,6 +690,16 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                           }`;
                           const borrador = borradorDe(linea);
                           const cambiado = hayCambioEnLinea(linea, borrador);
+                          /*
+                           * Los identificadores de los rótulos salen del
+                           * identificador de la línea y no de un `useId`: esto
+                           * no es un componente, es un `map` dentro de uno, así
+                           * que no hay dónde colgar un hook. El `uuid` de la
+                           * fila ya es único en la página y además estable entre
+                           * redibujados, que es lo que un `htmlFor` necesita.
+                           */
+                          const campoDe = (cual: string) =>
+                            `linea-${linea.id}-${cual}`;
 
                           return (
                             <li className="renglon" key={linea.id}>
@@ -855,8 +712,25 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                               >
                                 <Pila espacio="ceñido">
                                   <Fila alinear="entre">
+                                    {/*
+                                      Cada control lleva **un rótulo a la
+                                      vista** (T-2 bis). El `aria-label` se
+                                      queda al lado y no es una duplicación: el
+                                      nombre accesible tiene que distinguir esta
+                                      línea de las otras cinco de la página, y
+                                      el rótulo visible no —la fila se ve—. El
+                                      rótulo es prefijo del nombre, que es lo
+                                      que pide WCAG 2.5.3.
+                                    */}
                                     <div className="campo campo--crecer">
+                                      <label
+                                        className="campo__rotulo"
+                                        htmlFor={campoDe("concepto")}
+                                      >
+                                        {ROTULOS_DE_LA_LINEA.concepto}
+                                      </label>
                                       <input
+                                        id={campoDe("concepto")}
                                         className="campo__control"
                                         type="text"
                                         aria-label={`Concepto de la ${puesto}`}
@@ -905,9 +779,27 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                                     </Fila>
                                   </Fila>
 
-                                  <Rejilla minimo="10rem">
+                                  {/*
+                                    Los cuatro controles de abajo en una
+                                    rejilla que reflúye sola (§9). El mínimo
+                                    sube de 10rem a 13rem porque cada campo
+                                    ahora lleva su rótulo encima y el del
+                                    servicio lleva además su botón al lado: con
+                                    10rem, «Listar todos» se partía en dos
+                                    renglones. Sigue siendo un mínimo que cede
+                                    —`Rejilla` lo envuelve en `min(…, 100%)`—,
+                                    no un ancho.
+                                  */}
+                                  <Rejilla minimo="13rem">
                                     <div className="campo">
+                                      <label
+                                        className="campo__rotulo"
+                                        htmlFor={campoDe("clase")}
+                                      >
+                                        {ROTULOS_DE_LA_LINEA.clase}
+                                      </label>
                                       <select
+                                        id={campoDe("clase")}
                                         className="campo__control"
                                         aria-label={`Clase de la ${puesto}`}
                                         value={borrador.clase}
@@ -922,7 +814,17 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                                     </div>
 
                                     <div className="campo">
+                                      <label
+                                        className="campo__rotulo"
+                                        htmlFor={campoDe("monto")}
+                                      >
+                                        {ROTULOS_DE_LA_LINEA.monto}{" "}
+                                        <span className="campo__marca">
+                                          {moneda}
+                                        </span>
+                                      </label>
                                       <input
+                                        id={campoDe("monto")}
                                         className="campo__control campo__control--importe"
                                         type="text"
                                         inputMode="decimal"
@@ -937,7 +839,17 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                                     </div>
 
                                     <div className="campo">
+                                      <label
+                                        className="campo__rotulo"
+                                        htmlFor={campoDe("tramite")}
+                                      >
+                                        {ROTULOS_DE_LA_LINEA.tramite}{" "}
+                                        <span className="campo__marca campo__marca--tenue">
+                                          opcional
+                                        </span>
+                                      </label>
                                       <select
+                                        id={campoDe("tramite")}
                                         className="campo__control"
                                         aria-label={`Trámite de la ${puesto}`}
                                         value={borrador.tipoProcesoId}
@@ -955,30 +867,28 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                                     </div>
 
                                     {/*
-                                      De dónde salió el precio (T-2). Elegir
-                                      uno prellena concepto y monto encima de
-                                      lo que haya; el hueco desvincula y deja
-                                      el monto libre. Las tres ramas las decide
-                                      `conServicioElegido`.
+                                      De dónde salió el precio (T-2, rehecho
+                                      por T-2 bis). Elegir uno prellena
+                                      concepto y monto encima de lo que haya;
+                                      vaciar el campo desvincula y deja el monto
+                                      libre. Las tres ramas las decide
+                                      `conServicioElegido` y el control es
+                                      `SelectorDeServicio`.
                                     */}
-                                    <div className="campo">
-                                      <select
-                                        className="campo__control"
-                                        aria-label={`Servicio tarifado de la ${puesto}`}
-                                        value={borrador.arancelRenglonId}
-                                        onChange={(evento) => {
-                                          elegirServicio(
-                                            linea,
-                                            evento.target.value,
-                                          );
-                                        }}
-                                      >
-                                        <Servicios
-                                          servicios={servicios}
-                                          actual={servicioDeLaLinea(linea)}
-                                        />
-                                      </select>
-                                    </div>
+                                    <SelectorDeServicio
+                                      servicios={servicios}
+                                      elegido={borrador.arancelRenglonId}
+                                      conceptoDeLaLinea={
+                                        servicioDeLaLinea(linea)?.concepto ??
+                                        null
+                                      }
+                                      moneda={moneda}
+                                      rotulo={ROTULOS_DE_LA_LINEA.servicio}
+                                      nombreAccesible={`Servicio de la ${puesto}`}
+                                      alElegir={(id) => {
+                                        elegirServicio(linea, id);
+                                      }}
+                                    />
                                   </Rejilla>
 
                                   {/*
@@ -1082,7 +992,7 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
 
                   <div className="campo">
                     <label className="campo__rotulo" htmlFor="linea-nueva-concepto">
-                      Concepto
+                      {ROTULOS_DE_LA_LINEA.concepto}
                     </label>
                     <input
                       id="linea-nueva-concepto"
@@ -1098,10 +1008,12 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                     />
                   </div>
 
-                  <Rejilla minimo="10rem">
+                  {/* 13rem y no 10rem, por lo mismo que en la fila guardada:
+                      el campo del servicio lleva su botón al lado. */}
+                  <Rejilla minimo="13rem">
                     <div className="campo">
                       <label className="campo__rotulo" htmlFor="linea-nueva-clase">
-                        Clase
+                        {ROTULOS_DE_LA_LINEA.clase}
                       </label>
                       <select
                         id="linea-nueva-clase"
@@ -1120,7 +1032,8 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
 
                     <div className="campo">
                       <label className="campo__rotulo" htmlFor="linea-nueva-monto">
-                        Importe <span className="campo__marca">{moneda}</span>
+                        {ROTULOS_DE_LA_LINEA.monto}{" "}
+                        <span className="campo__marca">{moneda}</span>
                       </label>
                       <input
                         id="linea-nueva-monto"
@@ -1143,7 +1056,7 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
 
                     <div className="campo">
                       <label className="campo__rotulo" htmlFor="linea-nueva-tramite">
-                        Trámite{" "}
+                        {ROTULOS_DE_LA_LINEA.tramite}{" "}
                         <span className="campo__marca campo__marca--tenue">
                           opcional
                         </span>
@@ -1168,43 +1081,30 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                     </div>
 
                     {/*
-                      El servicio tarifado del bufete (T-2). Va **después** del
-                      trámite y no antes, aunque prellene: el orden de los
-                      controles es el orden en que se piensa la línea —qué se
-                      cobra, de qué clase es, cuánto, qué trámite abre— y este
-                      es un atajo sobre dos de ellos, no el punto de partida.
-                      Quien ya sabe el número no tiene por qué pasar por acá.
+                      El servicio del bufete (T-2, rehecho por T-2 bis). Va
+                      **después** del trámite y no antes, aunque prellene: el
+                      orden de los controles es el orden en que se piensa la
+                      línea —qué se cobra, de qué clase es, cuánto, qué trámite
+                      abre— y este es un atajo sobre dos de ellos, no el punto
+                      de partida. Quien ya sabe el número no tiene por qué pasar
+                      por acá.
+
+                      En el alta no hay línea guardada, así que no hay concepto
+                      resuelto que mostrar: lo elegido siempre está en el
+                      catálogo, porque se acaba de elegir de él.
                     */}
-                    <div className="campo">
-                      <label
-                        className="campo__rotulo"
-                        htmlFor="linea-nueva-servicio"
-                      >
-                        Servicio tarifado{" "}
-                        <span className="campo__marca campo__marca--tenue">
-                          opcional
-                        </span>
-                      </label>
-                      <select
-                        id="linea-nueva-servicio"
-                        className="campo__control"
-                        value={nueva.arancelRenglonId}
-                        onChange={(evento) => {
-                          setNueva((anterior) =>
-                            conServicioElegido(
-                              anterior,
-                              evento.target.value,
-                              servicios,
-                            ),
-                          );
-                        }}
-                      >
-                        <Servicios servicios={servicios} actual={null} />
-                      </select>
-                      <p className="campo__ayuda">
-                        {AYUDA_DEL_SERVICIO_TARIFADO}
-                      </p>
-                    </div>
+                    <SelectorDeServicio
+                      servicios={servicios}
+                      elegido={nueva.arancelRenglonId}
+                      conceptoDeLaLinea={null}
+                      moneda={moneda}
+                      rotulo={ROTULOS_DE_LA_LINEA.servicio}
+                      alElegir={(id) => {
+                        setNueva((anterior) =>
+                          conServicioElegido(anterior, id, servicios),
+                        );
+                      }}
+                    />
                   </Rejilla>
 
                   <Fila>
@@ -1227,24 +1127,7 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                 </Pila>
               </form>
             )}
-            </Pila>
-
-            {/*
-              Tus precios, al lado. **Sólo sobre un borrador**: en lo que ya
-              salió no hay nada que prellenar ni nada que elegir, y un panel de
-              consulta al lado de un documento congelado es ruido sobre algo que
-              el cliente ya tiene.
-            */}
-            {editable && (
-              <TusPrecios
-                servicios={servicios}
-                problema={problemaDePrecios}
-                consulta={consultaDePrecios}
-                alBuscar={setConsultaDePrecios}
-                moneda={moneda}
-              />
-            )}
-          </div>
+          </Pila>
         )}
       </Pila>
     </section>

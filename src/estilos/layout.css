@@ -417,7 +417,7 @@
   padding: var(--espacio-m);
   border-inline-end: var(--borde-fino);
   background: var(--color-superficie);
-  box-shadow: var(--sombra-cajon);
+  box-shadow: var(--sombra-flotante);
   transition:
     transform 180ms ease,
     visibility 180ms ease;
@@ -1187,156 +1187,299 @@
 }
 
 /* ======================================================================
-   Tus precios al lado de las líneas (T-2 de
-   `odd/tasks/precios-en-la-cotizacion.md`)
+   Los precios del bufete dentro de la cotización (T-2 de
+   `odd/tasks/precios-en-la-cotizacion.md`, rehecho por T-2 bis)
 
-   El usuario lo pidió así: «también en la vista de cotización debe poder
-   verse, para que el usuario sepa sus propios precios en todo momento». Lo
-   que estas reglas sostienen es el «al lado» —y, cuando no hay lado, lo que
-   el al lado se vuelve—.
+   **Acá vivía el panel «Tus precios»**, con su rejilla de dos pistas y su
+   `position: sticky`. El usuario lo sacó al verlo —«el panel "Tus precios"
+   desaparece y el dropdown que los lista pasa a tener una barra de búsqueda»—
+   así que no queda una segunda pista que acomodar y la rejilla de dos columnas
+   se fue con el panel. Lo que queda es un control, y lo que estas reglas
+   sostienen es que ese control se pueda usar en el hueco que tenga.
 
-   **Consulta de contenedor y no de ventana**, y acá eso no es una preferencia
-   de estilo: lo que decide si el panel cabe al costado es el hueco real que
-   la sección tiene, que en esta pantalla no es el ancho del navegador — el
-   detalle de la cotización vive dentro del armazón, con su propia columna y
-   su propio relleno. Con una `@media (min-width: 64rem)` el panel se pondría
-   al lado a 1024px de ventana aunque la columna midiera cuatrocientos
-   píxeles, y lo que se vería es un panel de veinte caracteres de ancho al
-   lado de un formulario que no entra. Ni una medida fija y ni una `@media`
-   (§9).
+   **Consulta de contenedor y no de ventana** (§9), por el mismo argumento que
+   ya estaba escrito acá: el detalle de la cotización vive dentro del armazón,
+   con su propia columna y su propio relleno, así que el ancho de la ventana no
+   es el hueco que hay. Ni una medida fija y ni una `@media`.
    ====================================================================== */
 
 /*
- * El contenedor se declara en la **sección** y no en la rejilla, y no es una
- * preferencia: una `@container` no puede mirar al elemento que la establece,
- * sólo a sus descendientes. Con `container` puesto en `.lineas-con-precios`, la
- * regla de dos pistas de más abajo nunca se aplicaría — medido en el navegador,
- * con el panel quedándose debajo a 1920px.
+ * El contenedor se declara en la **sección** y no en la pila de dentro, y no es
+ * una preferencia: una `@container` no puede mirar al elemento que la
+ * establece, sólo a sus descendientes.
  */
 .seccion-de-lineas {
   container: lineas / inline-size;
 }
 
-.lineas-con-precios {
-  display: grid;
-  gap: var(--espacio-l);
+/*
+ * En un hueco angosto, los controles de una línea van **en una sola columna**.
+ *
+ * `Rejilla` reflúye sola con `auto-fit` y `minmax(min(13rem, 100%), 1fr)`, y
+ * eso alcanza para casi todo el sistema. Acá no, y es por los rótulos que T-2
+ * bis agregó: en un hueco de unos 420px entran dos pistas de poco más de
+ * doscientos píxeles, y en doscientos píxeles un `<select>` con su rótulo
+ * encima y el campo del servicio con su botón al lado quedan en cuatro
+ * renglones cada uno. Dos columnas de cuatro renglones se leen peor que una
+ * columna de dos.
+ *
+ * Es el mismo recurso y el mismo umbral que `@container tabla (max-width:
+ * 30rem)` usa una tabla más arriba, y se consulta sobre **la sección** y no
+ * sobre la ventana (§9): el detalle de la cotización vive dentro del armazón,
+ * con su propia columna.
+ */
+@container lineas (max-width: 30rem) {
+  .seccion-de-lineas .rejilla {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ----------------------------------------------------------------------
+   El selector de servicio: un combobox, con su lista y su botón
+   ---------------------------------------------------------------------- */
+
+/*
+ * El campo y su botón en una franja que **envuelve**. Flexbox y no grid: es
+ * una dimensión (§9).
+ *
+ * El campo pide su espacio con `flex` y `min-inline-size: 0`, que es lo que lo
+ * deja encogerse por debajo del ancho intrínseco del `<input>` —el ancho fijo
+ * encubierto que §9 prohíbe— en vez de empujar la fila.
+ *
+ * **La base de 12rem se midió en el navegador.** Con 8rem, en una pista de la
+ * rejilla de líneas a 1440px —237px— el campo quedaba en **129px** y el botón
+ * al lado: ciento veintinueve píxeles para un nombre de servicio del acuerdo
+ * que tiene sesenta caracteres, con el marcador de posición cortado en «Buscar
+ * un ser». Con 12rem el campo ya no entra al lado del botón en esa pista, el
+ * `flex-wrap` baja el botón a su propio renglón y el campo se queda con los
+ * 237px enteros. En un hueco ancho los dos siguen cabiendo juntos, que es lo
+ * que `wrap` resuelve sin un solo punto de quiebre escrito a mano.
+ */
+.selector-de-servicio__caja {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espacio-2xs);
+  min-width: 0;
 }
 
 /*
- * El punto en el que el panel deja de robarle ancho al trabajo.
+ * El ancla de la lista de opciones, que envuelve **al campo y nada más**.
  *
- * Las dos pistas son `minmax(0, …)`: la primera para que el contenido que no
- * envuelve —un concepto largo, una fila de botones— no empuje la rejilla más
- * allá del hueco, y la segunda como **tope** y no como ancho, así que en un
- * hueco justo el panel mide lo que sobra y no 24rem a la fuerza.
+ * Las dos vueltas que costó llegar acá están medidas, y conviene dejarlas
+ * escritas porque las dos formas equivocadas parecen razonables:
+ *
+ *   1. con `position: relative` en `.selector-de-servicio`, el `100%` de la
+ *      lista era el del bloque entero —rótulo, campo, botón y párrafo de
+ *      ayuda— y las opciones caían media pantalla más abajo, flotando debajo
+ *      de la ayuda;
+ *   2. con el ancla en `.selector-de-servicio__caja`, que lleva también el
+ *      botón y que en un hueco angosto lo baja a su propio renglón, quedaban
+ *      **165px** de aire entre el campo y su lista.
+ *
+ * El `flex` vive acá y no sobre el `.campo__control` por lo mismo: el hijo
+ * directo de la caja es este envoltorio, y el campo de adentro ya mide el cien
+ * por ciento por la regla de `formulario.css`.
  */
-@container lineas (min-width: 52rem) {
-  .lineas-con-precios {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
-    align-items: start;
-  }
-
-  /*
-   * El panel acompaña el recorrido de la lista. Una cotización larga hace
-   * scrollear la página entera, y un panel de consulta que se va hacia arriba
-   * obliga a volver justo cuando hace falta.
-   *
-   * `inset-block-start` y no `top`, como el resto del sistema. El tope de alto
-   * es `100dvh` menos el aire de arriba y abajo, para que el panel scrollee
-   * por dentro en vez de desbordar la ventana en una pantalla baja.
-   */
-  .tus-precios {
-    position: sticky;
-    inset-block-start: var(--espacio-m);
-    max-block-size: calc(100dvh - var(--espacio-xl) * 2);
-    overflow-y: auto;
-  }
+.selector-de-servicio__ancla {
+  position: relative;
+  flex: 1 1 12rem;
+  min-inline-size: 0;
 }
 
-.tus-precios {
-  padding: var(--espacio-m);
-  border: var(--borde-fino);
+/*
+ * La lista de opciones, flotando sobre lo que venga abajo.
+ *
+ * `absolute` y no un bloque en el flujo: una lista en el flujo empuja el resto
+ * del formulario cada vez que se abre y cierra, y con un campo por línea eso es
+ * la cotización entera saltando mientras alguien busca un precio.
+ *
+ * **No declara `z-index`**, y es a propósito: `tokens.css` enumera las dos
+ * capas del sistema —el velo y el cajón— y esta lista no compite con ninguna de
+ * las dos. Lo que necesita es ganarle a sus hermanos del mismo contexto de
+ * apilamiento, y para eso alcanza `position: absolute`, que ya la pone por
+ * encima del contenido estático que sigue. Un número suelto acá sería el
+ * tercero que `tokens.css` prohíbe escribir dentro de un selector.
+ *
+ * El tope de alto es en `lh` —líneas de texto— y no en píxeles: así muestra
+ * siempre la misma cantidad de opciones cualquiera sea el cuerpo de la
+ * tipografía, y de ahí para abajo scrollea por dentro.
+ */
+.selector-de-servicio__opciones {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 100%;
+  margin: var(--espacio-3xs) 0 0;
+  padding: var(--espacio-3xs);
+  list-style: none;
+  max-block-size: 18lh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-borde-fuerte);
   border-radius: var(--radio-m);
   background: var(--color-superficie);
+  box-shadow: var(--sombra-flotante);
 }
 
 /*
- * El rótulo del panel, a la altura de un encabezado de sección y no de una
- * familia de líneas: lo que hay debajo es una consulta, no una parte del
- * documento que el cliente va a leer.
- */
-.tus-precios__rotulo {
-  font-size: var(--texto-l);
-}
-
-.tus-precios__lista {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--espacio-xs);
-}
-
-/*
- * Una fila del panel: el servicio a la izquierda y **una sola** cifra de
- * dinero a la derecha, la del bufete.
+ * Una opción: el nombre a la izquierda y **una sola** cifra a la derecha.
  *
- * No hay regla para una segunda cifra porque no hay segunda cifra: el monto
- * del Acuerdo No 49 de 2001 no viaja hasta acá —`ServicioTarifado` no tiene
- * dónde ponerlo— y `e2e/precios-en-cotizacion.spec.ts` cuenta las cifras de
- * cada fila para que agregarla, con cualquier rótulo y cualquier clase, se
- * ponga rojo.
+ * `baseline` y no `center`: el rótulo de un servicio del acuerdo puede ocupar
+ * dos renglones y el importe tiene que alinearse con el primero, que es donde
+ * el ojo lo busca.
  *
- * `baseline` y no `center`: el concepto puede ocupar dos renglones y el
- * importe tiene que alinearse con el primero, que es donde el ojo lo busca.
+ * `cursor: pointer` porque es un control, aunque no sea un `<button>`: el rol
+ * lo dice el `role="option"` y la forma del cursor lo dice acá.
  */
-.tus-precios__item {
+.selector-de-servicio__opcion {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--espacio-xs);
-  padding-block: var(--espacio-xs);
-  border-block-end: var(--borde-fino);
+  gap: var(--espacio-2xs);
+  padding: var(--espacio-2xs) var(--espacio-xs);
+  border-radius: var(--radio-s);
   font-size: var(--texto-s);
-}
-
-.tus-precios__item:last-child {
-  border-block-end: none;
+  cursor: pointer;
 }
 
 /*
- * El nombre del servicio. `min-inline-size: 0` es lo que lo deja envolver
- * dentro del flex en vez de imponer su renglón: sin eso, un concepto del
- * acuerdo de setenta caracteres empuja la fila y con ella la rejilla.
+ * La opción activa. **Es un fondo y no un color de texto**: lo que esto dice es
+ * «acá estás», y pintar el texto de otro color sobre un precio se leería como
+ * que ese precio tiene algo distinto. Con `--color-acento-tenue` el contraste
+ * del texto no cambia.
  */
-.tus-precios__servicio {
+.selector-de-servicio__opcion--activa {
+  background: var(--color-acento-tenue);
+}
+
+.selector-de-servicio__opcion[aria-selected="true"] {
+  font-weight: var(--peso-medio);
+}
+
+.selector-de-servicio__nombre {
   flex: 1 1 auto;
   min-inline-size: 0;
   overflow-wrap: break-word;
 }
 
 /*
- * El rubro que encabeza al servicio, arriba y apagado. Hace falta porque el
- * acuerdo imprime «3. Inmigrantes» una vez y cuelga de ahí sus letras sin
- * repetir la palabra: sin el rubro, dos filas del panel dirían «a)» sin decir
- * de qué.
- */
-.tus-precios__rubro {
-  display: block;
-  color: var(--color-tinta-apagada);
-  font-size: var(--texto-xs);
-}
-
-/*
  * La cifra. Tabular para que la columna de importes se lea como una columna, y
- * **sin color de alarma de ninguna clase**: lo que este panel no hace es
+ * **sin color de alarma de ninguna clase**: lo que este control no hace es
  * juzgar el precio del bufete.
  */
-.tus-precios__importe {
+.selector-de-servicio__importe {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
   font-weight: var(--peso-fuerte);
   white-space: nowrap;
+}
+
+.selector-de-servicio__vacio {
+  padding: var(--espacio-2xs) var(--espacio-xs);
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-s);
+}
+
+/* ----------------------------------------------------------------------
+   La vista expandida: el `<dialog>` de «Listar todos»
+   ---------------------------------------------------------------------- */
+
+/*
+ * Un `<dialog>` nativo trae su propio dibujo del navegador —borde, relleno,
+ * `max-width`, `margin: auto`— y lo que sigue es reemplazarlo por el del
+ * sistema. El porqué de haber elegido el elemento nativo está en
+ * `ListaDeServicios.tsx`; lo que importa acá es que **no declara `z-index`**:
+ * un diálogo modal vive en la capa superior del navegador, por encima de
+ * cualquier contexto de apilamiento, así que no compite con `--z-velo` ni con
+ * `--z-cajon` y no hay un tercer número que inventar.
+ *
+ * Las medidas son topes y no anchos (§9): `min()` contra el ancho de la ventana
+ * para que a 320px el diálogo mida 320px menos su aire, y `max-block-size` en
+ * `dvh` para que en una pantalla baja scrollee por dentro en vez de desbordar.
+ */
+.lista-de-servicios {
+  inline-size: min(64rem, 100% - var(--espacio-l) * 2);
+  max-inline-size: none;
+  max-block-size: calc(100dvh - var(--espacio-l) * 2);
+  margin: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--espacio-l);
+  border: none;
+  border-radius: var(--radio-l);
+  background: var(--color-superficie);
+  color: var(--color-tinta);
+  box-shadow: var(--sombra-flotante);
+}
+
+/*
+ * El velo, que acá es `::backdrop` y no un elemento nuestro.
+ *
+ * Es **el mismo velo del cajón de navegación**: sale de `--color-velo`, que
+ * `tokens.css` define en `:root`. Que esté en `:root` es lo que lo hace seguro
+ * acá: un `::backdrop` no hereda del documento en todos los motores, y la
+ * variable se resuelve igual porque está declarada en el elemento raíz.
+ */
+.lista-de-servicios::backdrop {
+  background: var(--color-velo);
+}
+
+/*
+ * El encabezado: el título a la izquierda y «Cerrar» a la derecha, en una
+ * franja que envuelve. El botón va **arriba y no al pie**: con 282 servicios, el
+ * pie está a varias pantallas de scroll de donde está el ojo.
+ */
+.lista-de-servicios__encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--espacio-s);
+  min-width: 0;
+}
+
+/*
+ * La fila de encabezado de categoría, dentro de la misma tabla. Es un `<th
+ * scope="colgroup">` y no una tabla aparte: el porqué —veintinueve paradas de
+ * tabulación— está en `ListaDeServicios.tsx`.
+ */
+.lista-de-servicios__categoria th {
+  padding-block-start: var(--espacio-m);
+  background: var(--color-superficie-tenue);
+  font-size: var(--texto-xs);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.lista-de-servicios__servicio {
+  font-weight: var(--peso-normal);
+  overflow-wrap: break-word;
+}
+
+/* La fila del servicio que la línea ya tiene elegido. Un fondo apagado y nada
+   más: no es un estado de error ni de éxito, es «éste es el que está puesto». */
+.lista-de-servicios__fila--elegida {
+  background: var(--color-acento-tenue);
+}
+
+.lista-de-servicios__importe {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--peso-fuerte);
+  white-space: nowrap;
+}
+
+/*
+ * La marca sutil, y «sutil» acá es una medida: el asterisco va en el color
+ * apagado del sistema y en el cuerpo chico, pegado al nombre con un espacio
+ * fino.
+ *
+ * **Lo que no es** está en la ausencia de declaraciones: no hay `color` de
+ * alarma, no hay `background`, no hay `border` y no hay ningún ícono. Dice de
+ * cuál de dos orígenes salió la cifra, no si está bien.
+ */
+.lista-de-servicios__marca {
+  margin-inline-start: var(--espacio-3xs);
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
 }

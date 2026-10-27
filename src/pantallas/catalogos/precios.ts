@@ -70,7 +70,13 @@ import type {
   CategoriaDelArancel,
   RenglonDelArancel,
 } from "../../../worker/contract";
-import { ORDEN_ES, plano } from "../../formatos";
+/*
+ * `plano` y nada más. El orden alfabético de `ORDEN_ES` se fue con
+ * `serviciosSeleccionables`: lo que el selector y la vista expandida muestran es
+ * **el orden del acuerdo**, que es el orden en que alguien que conoce el
+ * documento busca un servicio. Reordenarlo por rótulo mezclaría categorías.
+ */
+import { plano } from "../../formatos";
 import { centavosDesdeTexto, montoEditable } from "../cotizaciones/lineas";
 import { enlaceDe } from "../../ruteo";
 
@@ -345,8 +351,8 @@ function filtrarRenglones(
 }
 
 /* ==========================================================================
-   Los servicios que el bufete tarifó, para la cotización (T-2 de
-   `odd/tasks/precios-en-la-cotizacion.md`)
+   Los servicios que la cotización puede ofrecer (T-2 de
+   `odd/tasks/precios-en-la-cotizacion.md`, corregido por T-2 bis)
 
    Esta sección no es de las dos pantallas del arancel: es lo que el editor de
    líneas de una cotización necesita saber del catálogo. Vive acá y no en
@@ -355,47 +361,78 @@ function filtrarRenglones(
    ya tenía escrito y probado— y porque la flecha de importación no se puede
    invertir: este archivo ya importa la conversión de dinero de allá.
 
-   **Acá no entra el monto oficial, y es estructura y no disciplina.**
-   `ServicioTarifado` no tiene dónde ponerlo. Es la misma decisión que
-   `PrecioALaVista` tomó para la pantalla de precios, trasladada a la
-   cotización: un segundo número de dinero al lado del propio sólo se puede
-   leer como la comparación que `odd/tasks/arancel-de-honorarios.md` prohibió,
-   y en una cotización sería peor, porque el número de al lado es un mínimo de
-   2001 debajo del precio que el cliente va a leer.
+   ## La corrección de T-2 bis, que cambia de qué se trata esta sección
+
+   T-2 ofreció **los renglones con precio propio**: 7 de 453 en la base de
+   desarrollo, y los 275 que todavía dicen lo que dice el acuerdo quedaron
+   afuera. El usuario lo corrigió al verlo:
+
+     > «Siempre debemos mostrar todos los precios, hayan sido modificados por mí
+     > o sean los preestablecidos. Los preestablecidos son eso, preestablecidos:
+     > siempre pueden ser editables, pero **son la norma hasta que se editen, no
+     > son una subcategoría**.»
+
+   Y tenía razón contra el propio sistema: `precioALaVista`, treinta líneas más
+   arriba, **ya** muestra el preestablecido como el valor del campo en la
+   pantalla de precios. Eran dos criterios distintos para la misma pregunta en
+   dos pantallas del mismo sistema.
+
+   Así que lo ofrecible son los renglones **con una cifra**, de donde sea que
+   venga. Medido sobre la base local: **282 de 453**. Quedan afuera las 97
+   reglas por cuantía sin ningún número y los 74 rubros, que son encabezados.
+
+   ## Sigue habiendo una sola cifra por servicio, y eso no se renegocia
+
+   `ServicioOfrecible` tiene **un** `monto`, y no tiene dónde poner un segundo
+   número. Es la misma decisión que `PrecioALaVista` tomó para la pantalla de
+   precios: dos cifras de dinero al lado sólo se pueden leer como la comparación
+   que `odd/tasks/arancel-de-honorarios.md` prohibió. Lo que T-2 bis agrega es
+   `editado`, que **no es un número**: dice de cuál de los dos orígenes salió la
+   única cifra, nunca cómo se mide contra el otro.
    ========================================================================== */
 
 /**
- * Un servicio que el bufete **ya tarifó**, listo para ofrecerle a una línea.
+ * Un servicio que la cotización puede ofrecer: **uno que tiene una cifra**.
  *
  * `monto` es `number` y no `number | null`, y ésa es la definición entera de
- * esta lista: lo que el bufete no tarifó no es un servicio ofrecible, porque no
- * hay precio que proponer y porque la base rechaza la línea que lo nombrara
- * —`cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar`—. Los 74
- * rubros se caen por el mismo filtro y sin nombrarlos: el `CHECK`
- * `un_rubro_no_lleva_precio` hace imposible que un encabezado tenga `monto`.
+ * esta lista: un renglón sin ninguna cifra no es ofrecible, porque no hay
+ * número que proponer y porque la base rechaza la línea que lo nombrara
+ * —`cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar`, relajado
+ * en `migrations/0015_un_precio_es_una_cifra.sql`—. Los 74 rubros se caen por
+ * el mismo filtro y sin nombrarlos: el acuerdo los imprime sin valor y el
+ * `CHECK un_rubro_no_lleva_precio` les prohíbe el propio.
+ *
+ * `editado` dice si la cifra la escribió el bufete. **No es una categoría del
+ * servicio y no cambia lo que se puede hacer con él**: los dos se ofrecen
+ * igual, los dos prellenan igual y los dos son editables encima. Existe para
+ * una marca sutil —un asterisco— que sólo se dibuja en la vista expandida, con
+ * su leyenda. Es la palabra del usuario: «un indicativo visual si es
+ * preestablecido o editado, algo sutil».
  *
  * `rubro` es el concepto del encabezado que agrupa al servicio, cuando el
  * numeral demuestra que cuelga de él. Hace falta porque el acuerdo imprime «3.
  * Inmigrantes» una vez y cuelga de ahí sus letras sin repetir la palabra, y
- * porque **147 renglones del acuerdo tienen un concepto que es un fragmento**
+ * porque **muchos renglones del acuerdo tienen un concepto que es un fragmento**
  * —«primer año», «Reconsideración», «Persona Natural»— que solo significa algo
  * debajo de su encabezado.
  *
  * `rotulo` es el nombre completo, y es un campo y no una función suelta porque
- * lo usan tres cosas que no pueden decidir distinto: el desplegable del editor
- * de líneas, el buscador del panel y el concepto que el prellenado propone.
- * Lo escribe `serviciosTarifados`, que es el único constructor, con
- * `rotuloDeServicio`, que sigue siendo la única definición de cómo se arma.
+ * lo usan tres cosas que no pueden decidir distinto: el buscador del selector,
+ * la vista expandida y el concepto que el prellenado propone. Lo escribe
+ * `serviciosOfrecibles`, que es el único constructor, con `rotuloDeServicio`,
+ * que sigue siendo la única definición de cómo se arma.
  */
-export interface ServicioTarifado {
+export interface ServicioOfrecible {
   readonly id: string;
   readonly concepto: string;
   readonly rubro: string | null;
   /** El nombre completo: el rubro delante del concepto, cuando hay rubro. */
   readonly rotulo: string;
   readonly categoria: string;
-  /** Lo que el bufete cobra, en centavos enteros. */
+  /** La única cifra del servicio, en centavos enteros. */
   readonly monto: number;
+  /** Si esa cifra la escribió el bufete. `false` es un preestablecido. */
+  readonly editado: boolean;
 }
 
 /**
@@ -446,20 +483,25 @@ function cuelgaDelRubro(
 }
 
 /**
- * Los servicios tarifados del bufete, **en el orden del documento**.
+ * Los servicios que la cotización puede ofrecer, **en el orden del documento**.
  *
  * No se reordenan ni se reagrupan: vienen del servidor en el orden del acuerdo,
- * y el que los ordena para un desplegable es `serviciosSeleccionables`, que es
- * el que sabe para qué los quiere. Acá sólo se filtra y se resuelve el rubro.
+ * que es el orden en que alguien que conoce el documento los busca. Quien los
+ * agrupa para la vista expandida es `serviciosPorCategoria`; acá sólo se filtra
+ * y se resuelve el rubro.
+ *
+ * El filtro es **`monto ?? montoOficial`**, que es la corrección de T-2 bis. El
+ * `??` elige cuál de los dos existe y jamás cuál es mayor: no hay un operador de
+ * orden en esta función, y no puede haberlo —el sistema sugiere, no juzga—.
  *
  * El rubro candidato es el **inmediatamente anterior dentro de la categoría**
  * —el acuerdo no anida rubros dentro de rubros, y T-1 lo midió renglón por
  * renglón— y se le atribuye el servicio sólo si `cuelgaDelRubro` lo demuestra.
  */
-export function serviciosTarifados(
+export function serviciosOfrecibles(
   categorias: readonly CategoriaDelArancel[],
-): ServicioTarifado[] {
-  const servicios: ServicioTarifado[] = [];
+): ServicioOfrecible[] {
+  const servicios: ServicioOfrecible[] = [];
 
   for (const categoria of categorias) {
     let rubro: RenglonDelArancel | null = null;
@@ -470,7 +512,8 @@ export function serviciosTarifados(
         continue;
       }
 
-      if (renglon.monto === null) continue;
+      const cifra = renglon.monto ?? renglon.montoOficial;
+      if (cifra === null) continue;
 
       const suyo = rubro !== null && cuelgaDelRubro(renglon, rubro);
       const encabezado = suyo && rubro !== null ? rubro.concepto : null;
@@ -484,7 +527,8 @@ export function serviciosTarifados(
           rubro: encabezado,
         }),
         categoria: categoria.nombre,
-        monto: renglon.monto,
+        monto: cifra,
+        editado: renglon.monto !== null,
       });
     }
   }
@@ -519,9 +563,9 @@ export function rotuloDeServicio(partes: {
  * vacía devuelve todo, en el orden en que llegó.
  */
 export function serviciosQueCoinciden(
-  servicios: readonly ServicioTarifado[],
+  servicios: readonly ServicioOfrecible[],
   consulta: string,
-): ServicioTarifado[] {
+): ServicioOfrecible[] {
   const buscado = plano(consulta.trim());
   if (buscado === "") return [...servicios];
 
@@ -530,73 +574,131 @@ export function serviciosQueCoinciden(
   );
 }
 
-/** Una opción del desplegable de servicios: lo único que el control necesita. */
-export interface OpcionDeServicio {
-  readonly id: string;
-  readonly rotulo: string;
-}
-
 /**
  * Cómo se nombra al servicio que la línea tiene y no se pudo nombrar.
  *
  * `arancelConcepto` llega nulo si la fila apuntada cruzara la frontera del
- * tenant. Aun así la opción necesita un texto: poner el identificador crudo
- * sería una fila de UUID en un desplegable, y dejarlo vacío sería la misma
- * mentira que esta función arregla. Es el mismo recurso que
- * `TRAMITE_SIN_NOMBRE`.
+ * tenant. Aun así el control necesita un texto: poner el identificador crudo
+ * sería un UUID dentro de un campo, y dejarlo vacío diría que la línea no tiene
+ * procedencia cuando sí la tiene. Es el mismo recurso que `TRAMITE_SIN_NOMBRE`.
  */
-const SERVICIO_SIN_NOMBRE = "El servicio que la línea ya tenía";
+export const SERVICIO_SIN_NOMBRE = "El servicio que la línea ya tenía";
 
 /**
- * Las opciones del desplegable de servicios de una línea, ordenadas por su
- * rótulo.
+ * Qué texto muestra el selector cuando la línea ya tiene un servicio elegido.
  *
- * ## Por qué esta función vive acá y no en el editor de líneas
+ * ## Lo que esta función reemplaza, y por qué es menos código y no más
  *
- * Es la única de este archivo que contesta una pregunta de la pantalla de
- * cotizaciones, y está acá porque necesita `rotuloDeServicio`, que es de acá.
- * La alternativa era tenerla del otro lado e importar el rótulo, y eso cierra
- * un ciclo en tiempo de ejecución: este archivo ya importa de
- * `../cotizaciones/lineas` la conversión de dinero, que no se va a duplicar.
- * El parámetro `actual` es **estructural** por lo mismo, para no tener que
- * importar `ServicioDeLaLinea` de allá.
+ * T-2 tenía acá `serviciosSeleccionables`, que **inyectaba** en el desplegable
+ * el servicio que la línea ya tenía aunque el catálogo no lo trajera. Esa
+ * inyección existía por un defecto que es exclusivo del `<select>`: un
+ * `<select>` controlado cuyo valor no corresponde a ninguna opción cae en la
+ * primera, así que quien mira lee «Ninguno» sobre una línea que sí tiene
+ * procedencia y, si toca el control creyendo que confirma, la borra.
  *
- * ## Las dos reglas, y la segunda es la que importa
+ * **Un combobox no tiene ese defecto**: lo que se ve es el texto del campo, y
+ * ese texto lo escribe esta función. Así que la opción fantasma desaparece de la
+ * lista —donde no podía elegirse para nada útil, porque de un servicio sin cifra
+ * no hay número que proponer— y lo que queda es un nombre a la vista.
  *
- *  - se ofrecen los **tarifados**, porque un servicio sin precio del bufete no
- *    tiene nada que prellenar y la base rechaza la línea que lo nombrara;
- *  - **el servicio que la línea ya tiene va siempre**, esté o no en la lista.
+ * Las tres ramas:
  *
- * La segunda no es defensiva y el caso es alcanzable sin que nadie se
- * equivoque: el bufete puede dejar de tarifar un servicio —`fijarMonto(…,
- * null)` es legítimo— y la línea que ya lo nombraba sigue nombrándolo. Sin la
- * opción inyectada, el `<select>` controlado cae en la primera —«Ninguno»—
- * mientras el estado conserva el identificador: quien mira lee que la línea no
- * tiene procedencia y, si toca el control creyendo que confirma, la borra. Es
- * el mismo defecto que `tramitesSeleccionables` documenta medido.
+ *  1. nada elegido → el campo está vacío y es un buscador;
+ *  2. elegido y en el catálogo → su rótulo completo, que es lo que se eligió;
+ *  3. elegido y **fuera** del catálogo → lo que la lectura resolvió del renglón,
+ *     o la frase de reserva. Es alcanzable sin que nadie se equivoque: el bufete
+ *     puede borrarle el precio a una regla por cuantía que una línea ya nombra.
  *
- * El rótulo del inyectado es su concepto **sin rubro**, porque lo único que se
- * sabe de él es lo que la lectura resolvió: el renglón pudo dejar de estar en
- * la lista, así que no hay de dónde sacar el encabezado que lo agrupaba.
+ * El nombre de la tercera rama es el concepto **sin rubro**, porque lo único que
+ * se sabe de él es lo que la lectura trajo: el renglón pudo dejar de estar en la
+ * lista, así que no hay de dónde sacar el encabezado que lo agrupaba.
  */
-export function serviciosSeleccionables(
-  servicios: readonly ServicioTarifado[],
-  actual: { readonly id: string; readonly concepto: string | null } | null,
-): OpcionDeServicio[] {
-  const opciones: OpcionDeServicio[] = servicios.map((servicio) => ({
-    id: servicio.id,
-    rotulo: servicio.rotulo,
-  }));
+export function textoDelServicioElegido(
+  servicios: readonly ServicioOfrecible[],
+  elegido: string,
+  conceptoDeLaLinea: string | null,
+): string {
+  if (elegido === "") return "";
 
-  if (actual !== null && !opciones.some((opcion) => opcion.id === actual.id)) {
-    opciones.push({
-      id: actual.id,
-      rotulo: actual.concepto ?? SERVICIO_SIN_NOMBRE,
-    });
+  const servicio = servicios.find((uno) => uno.id === elegido);
+  if (servicio !== undefined) return servicio.rotulo;
+
+  return conceptoDeLaLinea ?? SERVICIO_SIN_NOMBRE;
+}
+
+/* --------------------------------------------------------------------------
+   La vista expandida: «listar todos»
+   -------------------------------------------------------------------------- */
+
+/** Una categoría del acuerdo con los servicios ofrecibles que tiene. */
+export interface GrupoDeServicios {
+  readonly categoria: string;
+  readonly servicios: readonly ServicioOfrecible[];
+}
+
+/**
+ * Los servicios agrupados por categoría, **en el orden en que llegaron**.
+ *
+ * Es lo que la vista expandida necesita y el selector no: en una lista de
+ * doscientos ochenta y dos renglones, la categoría del acuerdo es lo que deja
+ * recorrerla con el ojo. En el selector no va, porque ahí lo que hay es una
+ * lista corta de resultados de una búsqueda.
+ *
+ * No se reordena nada: `serviciosOfrecibles` ya los devuelve en el orden del
+ * documento, y una pantalla que recompusiera ese orden sería una segunda versión
+ * del acuerdo. Las categorías salen en el orden de su primera aparición, que es
+ * el mismo, y una categoría sin ningún servicio ofrecible no sale.
+ */
+export function serviciosPorCategoria(
+  servicios: readonly ServicioOfrecible[],
+): GrupoDeServicios[] {
+  /* El acumulador es mutable y el tipo que sale es de sólo lectura: así se
+     arma de una pasada sin un `as` que le quite el `readonly` a nadie. */
+  const grupos: { categoria: string; servicios: ServicioOfrecible[] }[] = [];
+
+  for (const servicio of servicios) {
+    const ultimo = grupos[grupos.length - 1];
+
+    if (ultimo !== undefined && ultimo.categoria === servicio.categoria) {
+      ultimo.servicios.push(servicio);
+      continue;
+    }
+
+    grupos.push({ categoria: servicio.categoria, servicios: [servicio] });
   }
 
-  return opciones.sort((a, b) => ORDEN_ES.compare(a.rotulo, b.rotulo));
+  return grupos;
 }
+
+/**
+ * La marca sutil de que la cifra la escribió el bufete.
+ *
+ * **Un asterisco, y eso es todo lo que puede ser.** Es la palabra del usuario
+ * —«algo sutil, una marca, un asterisco»— y es deliberadamente lo contrario de
+ * un aviso: no es un color, no es un ícono de alerta y no dice nada de si el
+ * número está bien. Dice **de cuál de dos orígenes salió**, que es un hecho, no
+ * un juicio.
+ *
+ * Y va **sólo en la vista expandida**. En el selector no: ahí son todos precios
+ * y nada más, que es lo que el usuario pidió con todas las letras.
+ */
+export const MARCA_DE_EDITADO = "*";
+
+/**
+ * Qué significa el asterisco, dicho una vez debajo de la lista.
+ *
+ * Tiene que estar porque una marca sin leyenda es un signo que obliga a
+ * adivinar. Y tiene que decir **sólo** eso: no nombra el acuerdo, no nombra
+ * ningún mínimo y no sugiere que haya algo que revisar. Las dos palabras son las
+ * del usuario: editado y preestablecido.
+ */
+export const LEYENDA_DE_LA_MARCA =
+  "El asterisco marca los precios que el bufete editó. Los demás son los" +
+  " preestablecidos, y se usan igual: elegirlos escribe su monto en la línea y" +
+  " el monto se edita encima.";
+
+/** El nombre accesible de la marca, para quien no ve el asterisco. */
+export const MARCA_DE_EDITADO_LEIDA = "precio editado por el bufete";
 
 /* ==========================================================================
    Los grupos de la pantalla de precios

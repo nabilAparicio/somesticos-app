@@ -199,30 +199,30 @@ valor del campo, y la cotización la trataba como si no existiera. Y la
 palabra «sugerido» hacía exactamente lo que el usuario nombra: convertir en
 subcategoría algo que es el valor por defecto.
 
-- [ ] **El catálogo ofrecido son los 282 renglones con cifra**: los que el
+- [x] **El catálogo ofrecido son los 282 renglones con cifra**: los que el
       bufete editó y los que todavía dicen lo que dice el acuerdo. Los 97 de
       regla por cuantía no entran porque no tienen cifra, y los 74 rubros
       tampoco porque son títulos.
-- [ ] **Aflojar la guarda de `0013`/`0014`**, que hoy exige `monto` propio.
+- [x] **Aflojar la guarda de `0013`/`0014`**, que hoy exige `monto` propio.
       Pasa a exigir **una cifra**: `monto` o, en su defecto, `monto_oficial`.
       Es un invariante que se relaja a propósito y con el motivo escrito; la
       validación de la ruta se mueve igual, y sigue rechazando rubros y
       renglones de sólo regla.
-- [ ] **Se va el panel «Tus precios».** Lo reemplaza el propio selector.
-- [ ] **El selector pasa a ser buscable**, con el monto al lado de cada
+- [x] **Se va el panel «Tus precios».** Lo reemplaza el propio selector.
+- [x] **El selector pasa a ser buscable**, con el monto al lado de cada
       opción. Un `<select>` nativo no puede: hace falta un combobox de
       verdad, con su rol, su teclado y su `aria-activedescendant`. No se
       compra una librería por esto.
-- [ ] **Botón «listar todos»** que abre un modal con la vista expandida:
+- [x] **Botón «listar todos»** que abre un modal con la vista expandida:
       categoría, concepto y monto, con búsqueda.
-- [ ] **La marca sutil, y sólo en el modal**: un asterisco —o equivalente—
+- [x] **La marca sutil, y sólo en el modal**: un asterisco —o equivalente—
       que distinga editado de preestablecido, con su leyenda. En el selector
       no va: ahí son todos precios y nada más.
-- [ ] **Labels visibles en los cuatro controles de una línea.** Hoy son
+- [x] **Labels visibles en los cinco controles de una línea.** Hoy son
       concepto, clase, monto, trámite y servicio sin un solo rótulo a la
       vista, y no se entiende qué hace cada uno. Es deuda anterior a esta
       tajada y se paga acá porque es donde se vio.
-- [ ] La palabra «sugerido» sale del vocabulario de la cotización. En la
+- [x] La palabra «sugerido» sale del vocabulario de la cotización. En la
       pantalla de precios se decide aparte (ver abajo).
 
 **Lo que queda inconsistente y no entra sin que el usuario lo pida.** La
@@ -466,3 +466,161 @@ T-1 con cuatro:
 - Próximo paso: T-3, el agente elige y el sistema tarifa. El prompt, el esquema
   de salida con su `xor` y el generador. `DatosDeLineaConOrigen` y
   `CLAVES_DE_LINEA` son las dos puntas que esa tarea tiene que unir.
+
+### T-2 bis cerrada · todos los precios son precios
+
+**Qué entró.** `migrations/0015_un_precio_es_una_cifra.sql` afloja la guarda del
+origen del precio de «tiene el monto del bufete» a **tiene una cifra**
+—`COALESCE(monto, monto_oficial)`—, y `validarOrigenDelPrecio` se mueve igual.
+En la pantalla desaparece el panel «Tus precios» y el desplegable de servicios
+se convierte en un **combobox buscable** (`SelectorDeServicio.tsx`) con el monto
+al lado de cada opción y un botón «Listar todos» que abre una **vista
+expandida** (`ListaDeServicios.tsx`, un `<dialog>` nativo) con búsqueda, las
+categorías del acuerdo y la marca sutil. Y los cinco controles de una línea
+tienen por fin un rótulo a la vista.
+
+**Checks observados, en primer plano:** `lint` limpio, `typecheck` limpio,
+`test` **2445 en 47 archivos** (eran 2421 en 47), `test:e2e` **484** (eran 467;
+la suite de esta tajada pasó de 15 a 32 pruebas).
+
+#### El error conceptual que esto deshace, dicho de una vez
+
+T-2 ofreció en la cotización **los renglones con precio propio** —7 de 453 en la
+base de desarrollo— y dejó afuera los 275 que todavía dicen lo que dice el
+acuerdo. Eso era **dos criterios distintos para la misma pregunta en dos
+pantallas del mismo sistema**: `precioALaVista` ya mostraba la cifra
+preestablecida como el valor del campo en `/catalogos/precios`, y la cotización
+la trataba como si no existiera. Las palabras del usuario —«son la norma hasta
+que se editen, no son una subcategoría»— no son una preferencia de dibujo: son
+la corrección de un supuesto que el propio sistema ya contradecía.
+
+Medido contra la D1 local, con los 453 renglones sembrados: **282 ofrecibles**
+(282 con `monto_oficial`, 7 de ellos editados por el bufete), **97 reglas por
+cuantía sin ninguna cifra** y **74 rubros**. Los dos últimos grupos siguen
+rechazados, y el rechazo se midió contra la base de verdad por `fetch`: el rubro
+y la regla sin cifra vuelven **422 `arancel_renglon_sin_precio`**, el
+identificador inventado **422 `arancel_renglon_desconocido`**, y el renglón con
+sólo la cifra del acuerdo **201**, con el importe que se mandó —123.456
+centavos— y no el del catálogo —50.000—. Ninguno es un 500.
+
+#### El motivo conserva su nombre, y eso es deuda anotada
+
+`arancel_renglon_sin_precio` ahora significa «sin **ninguna** cifra». Renombrarlo
+obligaría a tocar `src/mensajes.ts`, cuyo `Record<MotivoDeFalla, string>` es
+exhaustivo a propósito, y ese archivo está fuera de la superficie autorizada de
+esta corrección. La frase que la persona lee sigue sirviendo —«ese servicio no
+tiene precio, ponele uno»—, y el desajuste queda escrito en `worker/contract.ts`.
+
+#### Por qué un `<dialog>` nativo y no el velo a mano de `Esqueleto.tsx`
+
+El precedente de la casa escribe su overlay a mano por una razón que acá **no se
+cumple**: el cajón de navegación tiene que ser **no modal** por encima de las
+48rem y dejar vivo el encabezado, porque ahí está el botón que lo cierra. Esta
+vista es modal siempre, y el elemento nativo da las cuatro cosas como conducta
+del navegador: el velo (`::backdrop`, con el mismo `--color-velo` del cajón —
+medido: `rgba(29, 27, 23, 0.45)`), la inercia de todo lo de atrás —más fuerte
+que `inert` sobre `<main>`, porque incluye el encabezado—, `Escape` sin escucha
+global, y el foco movido adentro y devuelto al abridor. Y una quinta de layout:
+vive en la capa superior, así que **no necesita un `z-index`** y no hubo que
+inventar un tercer número en `tokens.css`.
+
+#### Tres defectos que sólo aparecieron con el navegador enfrente
+
+1. **El `<dialog>` se cerraba solo en el mismo cuadro en que se abría.** Con
+   `<StrictMode>`, React corre el efecto, su limpieza y el efecto otra vez; la
+   limpieza llamaba `close()`, `close()` dispara el evento `close`, y el
+   `onClose` que avisaba arriba desmontaba el modal. En pantalla se veía como
+   que «Listar todos» no hacía nada. El arreglo es `onCancel` —que sólo lo
+   dispara un gesto de cierre— más `showModal()` sólo sobre un diálogo cerrado.
+2. **Con `useEffect`, el foco no volvía: quedaba en el `<body>`.** React corre la
+   limpieza de un efecto **pasivo** después de sacar el nodo del documento, y un
+   `close()` sobre un `<dialog>` ya desprendido no devuelve el foco a nadie. Con
+   `useLayoutEffect` la limpieza corre dentro de la fase de mutación, con el nodo
+   en su lugar. Medido leyendo el elemento activo: `BODY` → `BUTTON "Listar
+   todos"`.
+3. **La lista de opciones caía media pantalla más abajo del campo.** Dos veces,
+   y las dos formas equivocadas parecen razonables: anclada a
+   `.selector-de-servicio` el `100%` era el del bloque entero —rótulo, campo,
+   botón y ayuda— y las opciones salían debajo del párrafo de ayuda; anclada a
+   `.selector-de-servicio__caja`, que en un hueco angosto baja el botón a su
+   propio renglón, quedaban **165px** de aire. El ancla tiene que envolver **al
+   campo y nada más**, y por eso existe `.selector-de-servicio__ancla`. Medido
+   después: 4px.
+
+#### Lo demás que se midió a mano, contra los 282 servicios de verdad
+
+- **A 1440px**: sección de 1040px, rejilla de cuatro pistas de 237px, cero
+  desborde horizontal, cero `role="alert"`, los cinco rótulos a la vista. El
+  campo del selector medía **129px** con una base de 8rem —el marcador de
+  posición cortado en «Buscar un ser»— así que la base subió a 12rem y el
+  `flex-wrap` baja el botón a su renglón: **248px**.
+- **A 390px**: una sola pista —la `@container lineas (max-width: 30rem)`—, campo
+  de 224px, lista pegada al campo, cero desborde.
+- **La vista expandida**: a 1440px mide 1024×848 centrada y la tabla no
+  scrollea; a 390px mide 350×804 y la tabla scrollea dentro de su contenedor,
+  que es lo que §9 pide. **282 filas, 7 marcas** —exactamente los 7 precios que
+  el bufete editó— y **24 categorías** con algún servicio ofrecible.
+- **La regla de una sola cifra, contada sobre las 282 filas de verdad**: máximo
+  **una** cifra de dinero por fila en sus `<td>`, cero filas con dos. Es lo que
+  el concepto en `<th scope="row">` hace posible: el acuerdo imprime importes
+  **dentro** de un concepto —«De B/.0.01 hasta B/.3,000.00»— que tienen que
+  verse y no son el precio de la fila.
+- **El teclado, de punta a punta y sin mouse**: tabular al campo, escribir
+  «pensionado», `ArrowDown` —`aria-activedescendant` apunta a la opción sin
+  mover el foco— y `Enter` prellena concepto y monto.
+
+#### Los rótulos a la vista conviven con los `aria-label`, y no es duplicación
+
+El nombre accesible de un control de línea guardada lleva el puesto de la línea
+dentro de su familia —«Concepto de la línea 2 de Honorarios»— porque en una
+página con seis líneas hay seis controles de concepto y un lector de pantalla los
+anuncia uno detrás del otro. El rótulo a la vista no lo necesita: la fila se ve.
+Cada rótulo es **prefijo** de su nombre accesible, que es lo que pide el criterio
+«rótulo en el nombre» de WCAG 2.5.3, y además es lo que mantiene en verde los
+`getByLabel` de `e2e/cotizaciones.spec.ts`, que está fuera de esta superficie.
+
+#### Lo que el combobox hizo desaparecer
+
+`serviciosSeleccionables` **se fue**, y con ella la opción fantasma que inyectaba
+el servicio que la línea ya tenía aunque el catálogo no lo trajera. Esa inyección
+existía por un defecto exclusivo del `<select>`: con un valor que no corresponde
+a ninguna opción, el navegador cae en la primera. Un combobox muestra el texto
+que le den, así que la reemplaza `textoDelServicioElegido`, que es menos código y
+dice la verdad en los tres casos.
+
+#### Deuda que T-2 bis deja a la vista
+
+- **El aviso del catálogo se dibujaba una vez por línea.** Estaba dentro del
+  selector, y una cotización con seis líneas lo repetía seis veces; peor, rompía
+  la prueba «el gasto estimado dice que es aproximado» de
+  `e2e/cotizaciones.spec.ts` —cuya suite contesta 404 a `GET /api/arancel`—, que
+  busca **el** aviso de una familia y encontraba cuatro. Ahora se dice una sola
+  vez arriba, al lado del de trámites.
+- **A 390px, el botón «Elegir» de la vista expandida queda fuera del hueco** y
+  hay que scrollear la tabla 41px para alcanzarlo. Es la respuesta de §9 para una
+  tabla angosta y el `.tabla-contenedor` de la casa ya la implementa, pero es la
+  acción principal de esa fila: si molesta, la salida es apilar las celdas bajo
+  `@container tabla`, que es una decisión de dibujo sobre una pantalla entregada.
+- **`/catalogos/precios` sigue diciendo «sugerido»**, y sigue siendo la pregunta
+  abierta de más arriba. Lo que esta tarea garantiza es que la palabra no está en
+  el vocabulario de la cotización, y hay una prueba que recorre los textos
+  buscándola.
+- **La base local quedó exactamente como se encontró**, y está medido: 453
+  renglones con **7 precios del bufete** —282 con cifra—, 49 líneas con **1
+  origen**, 10 cotizaciones, 8 clientes, 9 procesos, 57 notas del arancel y 157
+  asientos de bitácora. Se tomó el respaldo `…sqlite.antes-de-0015` antes de
+  tocarla, las cuatro líneas que escribieron las pruebas contra la D1 de verdad
+  se deshicieron restaurándolo, y después se le aplicó `0015` sola —su
+  `d1_migrations` sigue vacío, igual que en las tres tajadas anteriores—.
+  **El documento decía «0 orígenes» y son 1**: la línea «Visa de Turista
+  Pensionado» de un borrador quedó de la prueba a mano de T-2.
+- **El `GET /api/tipos-proceso` de la D1 local contesta 500 en el servidor de
+  desarrollo**, con un «fetch failed» de `undici` por debajo. Es anterior a esta
+  tarea y no la toca —la suite de punta a punta intercepta la API—, pero conviene
+  anotarlo porque ensucia cualquier prueba a mano sobre esa pantalla.
+
+- Próximo paso: T-3, el agente elige y el sistema tarifa. El prompt, el esquema
+  de salida con su `xor` y el generador. `DatosDeLineaConOrigen` y
+  `CLAVES_DE_LINEA` siguen siendo las dos puntas que esa tarea tiene que unir, y
+  ahora el catálogo que viaje al modelo son **282 servicios y no 7**, que es un
+  tamaño distinto para la decisión de `modelo.ts:71` sobre la recuperación.

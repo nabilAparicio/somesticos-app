@@ -951,8 +951,29 @@ export function cotizacionesSobreD1(
 
   /**
    * De dónde salió el precio, si viene, tiene que ser un renglón del arancel
-   * **de este tenant y con precio del bufete** (T-2 de
-   * `odd/tasks/precios-en-la-cotizacion.md`).
+   * **de este tenant y con una cifra** (T-2 de
+   * `odd/tasks/precios-en-la-cotizacion.md`, corregido por T-2 bis).
+   *
+   * ## «Una cifra» y no «el precio del bufete», y es la corrección de T-2 bis
+   *
+   * La primera versión exigía `monto`: el precio que el bufete editó. Al ver la
+   * pantalla, el usuario corrigió el supuesto: «los preestablecidos son eso,
+   * preestablecidos: siempre pueden ser editables, pero **son la norma hasta que
+   * se editen, no son una subcategoría**». Así que la pregunta es si el renglón
+   * **tiene un número** —el propio o el que todavía dice el acuerdo— y no de
+   * quién es ese número.
+   *
+   * Lo que sigue rechazado son los 74 rubros y las reglas por cuantía sin
+   * ningún número. La guarda de la base se movió igual, en
+   * `migrations/0015_un_precio_es_una_cifra.sql`, y la relación entre las dos no
+   * cambió: la de abajo es la que sobrevive al primer script de importación y
+   * ésta es la que convierte su `RAISE(ABORT)` en una negativa legible.
+   *
+   * **Y esto no es una comparación.** El `??` elige cuál de los dos números
+   * existe, nunca cuál es mayor: la regla de
+   * `odd/tasks/arancel-de-honorarios.md` —el sistema sugiere, no juzga— se
+   * sostiene acá por omisión, porque no hay un solo operador de orden entre las
+   * dos columnas.
    *
    * ## Por qué se cuenta acá y no se deja saltar a la base
    *
@@ -1000,10 +1021,11 @@ export function cotizacionesSobreD1(
 
     const fila = await db
       .prepare(
-        "SELECT monto FROM arancel_renglon WHERE tenant_id = ? AND id = ?",
+        "SELECT monto, monto_oficial FROM arancel_renglon" +
+          " WHERE tenant_id = ? AND id = ?",
       )
       .bind(tenantId, elegido)
-      .first<{ monto: number | null }>();
+      .first<{ monto: number | null; monto_oficial: number | null }>();
 
     if (fila === null) {
       return [
@@ -1011,10 +1033,12 @@ export function cotizacionesSobreD1(
       ];
     }
 
-    // `monto` y no `clase`: preguntar por el precio ya excluye a los 74
-    // rubros, siempre, sin nombrarlos. Preguntar además por la clase sería la
-    // segunda guarda para el mismo hecho.
-    if (fila.monto === null) {
+    // La cifra y no `clase`: preguntar si hay número ya excluye a los 74
+    // rubros, siempre, sin nombrarlos —el acuerdo los imprime sin ningún valor
+    // y el `CHECK un_rubro_no_lleva_precio` de `0012` les prohíbe el propio—.
+    // Preguntar además por la clase sería la segunda guarda para el mismo
+    // hecho.
+    if ((fila.monto ?? fila.monto_oficial) === null) {
       return [
         { campo: "arancelRenglonId", motivo: "arancel_renglon_sin_precio" },
       ];

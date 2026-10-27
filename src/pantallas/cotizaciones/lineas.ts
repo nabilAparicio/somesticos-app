@@ -742,7 +742,7 @@ export function ordenDeLineas(
  *    vale un `<option value="">`. La traducción a `null` la hace
  *    `normalizarBorradorDeLinea`, que es la frontera.
  *  - `arancelRenglonId` es lo mismo un control más abajo: de qué servicio
- *    tarifado del bufete salió el precio de esta línea (T-2 de
+ *    del bufete salió el precio de esta línea (T-2 de
  *    `odd/tasks/precios-en-la-cotizacion.md`). Cadena vacía es «ninguno», y
  *    entonces el monto es libre.
  */
@@ -764,7 +764,7 @@ export interface BorradorDeLinea {
  * tampoco viene preelegido.
  *
  * Y tampoco viene preelegido un servicio del arancel, aunque el bufete tenga
- * uno solo tarifado: eso prellenaría concepto y monto sin que nadie lo pidiera,
+ * uno solo con cifra: eso prellenaría concepto y monto sin que nadie lo pidiera,
  * y dejaría una línea diciendo que su precio salió de un servicio que quien la
  * escribió nunca eligió.
  */
@@ -821,7 +821,7 @@ function falla(campo: string, motivo: MotivoDeFalla): FallaDeValidacion {
  * `null` del contrato — mandarlo como cadena vacía sería un `tipo_invalido`
  * del Worker por un campo que la persona dejó deliberadamente en blanco.
  *
- * **El servicio tarifado tampoco**, y por lo mismo elevado un escalón: que el
+ * **El servicio del catálogo tampoco**, y por lo mismo elevado un escalón: que el
  * renglón exista, sea de este bufete y **tenga precio del bufete** son tres
  * cosas que sólo el repositorio puede contestar, y las contesta con dos motivos
  * propios. Y hay algo más que esta función no hace y conviene que esté
@@ -943,30 +943,30 @@ export function exigeRecarga(fallas: readonly FallaDeValidacion[]): boolean {
 }
 
 /* ==========================================================================
-   Tus precios, dentro de la cotización (T-2 de
-   `odd/tasks/precios-en-la-cotizacion.md`)
+   Los precios del bufete, dentro de la cotización (T-2 de
+   `odd/tasks/precios-en-la-cotizacion.md`, rehecho por T-2 bis)
 
-   Son dos cosas y la segunda es la que el usuario pidió con todas las letras:
+   Lo que el usuario pidió, visto en la pantalla y corregido:
 
-     1. elegir un servicio tarifado **prellena concepto y monto**, editable
-        encima;
-     2. «también en la vista de cotización debe poder verse, para que el
-        usuario sepa sus propios precios en todo momento».
+     > «Siempre debemos mostrar todos los precios, hayan sido modificados por mí
+     > o sean los preestablecidos. … El panel "Tus precios" desaparece y el
+     > dropdown que los lista pasa a tener una barra de búsqueda, y las opciones
+     > el monto al lado, y un botón que diga "listar todos".»
 
-   Lo primero es un desplegable más al lado del de trámites; lo segundo es un
-   panel con lo que el bufete tarifó y su precio, al lado de las líneas, para
-   no tener que acordarse de un número ni irse a otra pantalla a mirarlo.
+   Así que acá ya no hay un panel. Hay **un control**, y es el mismo control el
+   que hace las dos cosas que antes hacían dos: buscar un precio para mirarlo y
+   elegirlo para que prellene. Un panel al lado era una segunda lista de lo
+   mismo, y el usuario la sacó.
 
-   **Y rige la regla de la tajada anterior, que no se renegocia: una sola cifra
-   de dinero por servicio, la del bufete.** Ninguna comparación con el monto
-   oficial, ningún aviso de estar por debajo, ningún color. Acá eso es
-   estructura y no disciplina: `ServicioTarifado`, en
-   `src/pantallas/catalogos/precios.ts`, no tiene dónde poner un segundo
-   número.
+   **La regla de la tajada anterior sigue sin renegociarse: una sola cifra de
+   dinero por servicio.** Lo que cambió es cuál: la del bufete si la editó, y la
+   preestablecida si no. Ninguna comparación entre las dos, ningún aviso, ningún
+   color. Es estructura y no disciplina: `ServicioOfrecible`, en
+   `src/pantallas/catalogos/precios.ts`, no tiene dónde poner un segundo número.
    ========================================================================== */
 
 /**
- * El servicio tarifado del que salió el precio de una línea guardada.
+ * El servicio del catálogo del que salió el precio de una línea guardada.
  *
  * `concepto` es `arancelConcepto`, resuelto en lectura por el Worker, y viene
  * nulo si la fila apuntada cruzara la frontera del tenant — igual que
@@ -987,7 +987,7 @@ export function servicioDeLaLinea(
 }
 
 /**
- * Elegir un servicio tarifado: **concepto, monto y de dónde salió**.
+ * Elegir un servicio del catálogo: **concepto, monto y de dónde salió**.
  *
  * El parámetro es estructural y no `ServicioTarifado` a propósito: ese tipo
  * vive en `src/pantallas/catalogos/precios.ts`, que **importa de este archivo**
@@ -1013,7 +1013,7 @@ export function servicioDeLaLinea(
  * La primera versión proponía el concepto del renglón a secas, con el argumento
  * de que el rubro es un recurso del desplegable y no prosa del documento.
  * **Estaba mal, y el navegador lo mostró en la primera prueba a mano**: el
- * servicio tarifado «primer año» prellenó una línea de cotización que decía
+ * servicio «primer año» prellenó una línea de cotización que decía
  * «primer año», que es exactamente la definición de `concepto_requerido` —un
  * monto que el cliente no sabe por qué está pagando—.
  *
@@ -1065,18 +1065,22 @@ export function sinServicioTarifado(borrador: BorradorDeLinea): BorradorDeLinea 
  *
  * Son **tres** ramas y no dos, y la tercera es la que no se ve venir:
  *
- *  1. el hueco —`""`, que es lo que vale `<option value="">`— desvincula y
- *     deja el monto libre;
+ *  1. el hueco —`""`, que es lo que deja el campo del selector vaciado—
+ *     desvincula y deja el monto libre;
  *  2. un servicio del catálogo prellena concepto y monto;
- *  3. un servicio que el desplegable ofreció y **el catálogo no trae** se
- *     vincula sin prellenar nada.
+ *  3. un identificador que **el catálogo no trae** se vincula sin prellenar
+ *     nada.
  *
- * La tercera existe porque `serviciosSeleccionables` inyecta el servicio que la
- * línea ya tenía aunque el bufete haya dejado de tarifarlo. Sin esta rama,
- * volver a elegir esa misma opción —o elegirla después de haber mirado otra—
- * caería en «no lo encontré» y borraría la procedencia que la línea sí tiene.
- * Y no se puede prellenar: de un servicio sin precio del bufete no hay número
- * que proponer, que es exactamente por lo que dejó de estar en la lista.
+ * La tercera ya **no es alcanzable desde la pantalla**, y queda igual con el
+ * motivo escrito. Lo era en T-2, porque el desplegable inyectaba el servicio que
+ * la línea ya tenía aunque hubiera dejado de estar tarifado; el selector de T-2
+ * bis no inyecta nada —muestra el nombre en el campo, que es
+ * `textoDelServicioElegido`— así que lo único que esta función recibe es `""` o
+ * un identificador de la lista. Se conserva porque es **la dirección segura**
+ * para un llamador que pase un identificador que la lista no tiene: conservar la
+ * procedencia y no prellenar. Desvincular en silencio borraría un dato que la
+ * línea sí tiene, y prellenar es imposible —de un servicio sin cifra no hay
+ * número que proponer—. La prueba afirma la dirección, no el camino.
  *
  * Que esta decisión viva acá y no en el `.tsx` es la regla del archivo: elegir
  * cuál de las tres ramas aplica es decidir, y el `.tsx` no decide.
@@ -1101,42 +1105,94 @@ export function conServicioElegido(
 }
 
 /* --------------------------------------------------------------------------
-   Los textos del panel
+   Los rótulos de los cinco controles de una línea (T-2 bis)
+
+   «Y aquí los distintos inputs deben tener un label: no me queda claro qué hace
+   cada uno.» Es deuda anterior a esta tajada —los cinco controles de una línea
+   guardada nunca tuvieron un rótulo a la vista— y se paga acá porque es donde se
+   vio.
+
+   Los rótulos viven en este archivo y no dentro del `.tsx` por lo mismo que
+   todos los textos de la pantalla: así se pueden afirmar en una prueba en vez de
+   quedar enterrados en un componente. Y son **un solo registro** y no cinco
+   constantes sueltas, para que el alta y la fila guardada no puedan rotular
+   distinto el mismo campo, que es exactamente lo que vuelve ilegible una
+   pantalla con dos formularios del mismo dato.
    -------------------------------------------------------------------------- */
 
-/** El encabezado del panel. Dice de quién son los precios: del bufete. */
-export const TITULO_DE_TUS_PRECIOS = "Tus precios";
+/**
+ * Cómo se llama cada control de una línea, a la vista.
+ *
+ * Palabras cortas: en una fila angosta, los cinco rótulos se apilan con sus
+ * controles, y un rótulo de cuatro palabras ocupa dos renglones por campo. Lo
+ * que tiene que decir cada uno es **qué dato va ahí**, y para eso alcanza una
+ * palabra. El detalle va en la ayuda de abajo, que es donde hay lugar.
+ *
+ * **No reemplazan al `aria-label` de una fila guardada**, y conviene dejarlo
+ * escrito porque parece una duplicación: el nombre accesible de esos controles
+ * lleva además el puesto de la línea dentro de su familia —«Concepto de la línea
+ * 2 de Honorarios»— porque en una página con seis líneas hay seis controles de
+ * concepto y un lector de pantalla los anuncia uno detrás del otro. El rótulo a
+ * la vista no lo necesita: la fila se ve. Cada rótulo es **prefijo** de su
+ * nombre accesible, que es lo que pide el criterio «rótulo en el nombre» de
+ * WCAG 2.5.3, así que las dos cosas no se contradicen.
+ */
+export const ROTULOS_DE_LA_LINEA = {
+  concepto: "Concepto",
+  clase: "Clase",
+  monto: "Importe",
+  tramite: "Trámite",
+  servicio: "Servicio",
+} as const;
+
+/* --------------------------------------------------------------------------
+   Los textos del selector de servicio
+   -------------------------------------------------------------------------- */
+
+/** Lo que se dice debajo del selector de servicio. */
+export const AYUDA_DEL_SERVICIO =
+  "Escribí para buscar entre los precios del bufete. Elegir uno escribe el" +
+  " concepto y el monto en la línea, y el monto se edita encima sin que eso" +
+  " cambie nada en el catálogo. Para desvincularlo, vaciá el campo.";
+
+/** El botón que abre la vista expandida. Las palabras son las del usuario. */
+export const ROTULO_DE_LISTAR_TODOS = "Listar todos";
+
+/** El encabezado de la vista expandida. */
+export const TITULO_DE_LA_LISTA = "Los precios del bufete";
 
 /**
- * Qué es el panel y qué se puede hacer con él.
+ * Qué es la vista expandida y qué se hace con ella.
  *
- * Dice que el precio se puede **editar** encima, porque es lo que separa esta
- * pantalla de una lista de tarifas: el prellenado es una propuesta. Y no nombra
- * el acuerdo ni la palabra «mínimo»: acá no hay nada que comparar.
+ * No nombra el acuerdo, ni ningún mínimo, ni dice que haya nada que revisar: lo
+ * único que separa una fila de otra ahí es quién escribió la cifra, y eso lo
+ * cuenta `LEYENDA_DE_LA_MARCA`.
  */
-export const AYUDA_DE_TUS_PRECIOS =
-  "Los servicios que el bufete ya tarifó, con su precio. Elegir uno en una" +
-  " línea escribe su concepto y su monto, y el monto se puede editar encima" +
-  " sin que eso cambie nada en el catálogo.";
+export const AYUDA_DE_LA_LISTA =
+  "Todos los servicios con precio, por categoría. Elegir uno lo escribe en la" +
+  " línea y cierra esta vista.";
+
+/** El buscador de la vista expandida. */
+export const ROTULO_DE_LA_BUSQUEDA = "Buscar un servicio";
 
 /**
- * El panel cuando el bufete todavía no tarifó nada.
+ * El selector cuando el catálogo no trae un solo servicio con cifra.
  *
- * **Hoy es el caso de todo el mundo, y está medido**: los 453 renglones del
- * acuerdo nacen con `monto` en nulo, así que en una instalación recién sembrada
- * este panel está vacío. Una caja en blanco al lado de la cotización no dice
- * nada; lo que hace falta es decir que la lista está vacía porque nadie puso
- * precios todavía —y no porque algo se haya roto— y adónde ir a ponerlos.
+ * Ya no es el caso de todo el mundo —desde T-2 bis lo ofrecible son los 282
+ * renglones con cifra, y una instalación sembrada los tiene todos—, así que lo
+ * que esto dice ahora es que el catálogo está **vacío**: nadie corrió la
+ * siembra, o la lectura trajo cero categorías. Una caja en blanco no dice nada;
+ * esto dice qué pasó y adónde ir.
  */
-export const SIN_PRECIOS_TARIFADOS =
-  "El bufete todavía no le puso precio a ningún servicio, así que no hay nada" +
-  " que proponer acá. Los precios se escriben en la pantalla de precios del" +
-  " bufete, y desde entonces aparecen en esta lista y prellenan las líneas.";
+export const SIN_SERVICIOS_OFRECIBLES =
+  "El catálogo de precios está vacío: no hay ningún servicio con monto para" +
+  " ofrecer acá. Los precios se ven y se editan en la pantalla de precios del" +
+  " bufete.";
 
-/** Lo que se dice debajo del desplegable de servicio, en el alta. */
-export const AYUDA_DEL_SERVICIO_TARIFADO =
-  "Elegir uno escribe el concepto y el monto de tu precio. El monto se edita" +
-  " encima y lo que se guarda es lo que quede en el campo.";
+/** Lo que se dice cuando la búsqueda del selector no encuentra nada. */
+export function sinCoincidencias(consulta: string): string {
+  return `Ningún servicio coincide con «${consulta}».`;
+}
 
 /**
  * La dirección de la pantalla de precios del bufete.
@@ -1150,22 +1206,57 @@ export function enlaceALosPrecios(): string {
 }
 
 /**
- * El pie del panel cuando el catálogo del bufete no se pudo traer.
+ * El pie del selector cuando el catálogo del bufete no se pudo traer.
  *
  * Es el gemelo de `avisoDeTramites` y tiene su misma forma por su mismo
- * argumento: el panel es una ayuda para no tener que acordarse de un número, no
- * un requisito para cotizar, así que lo que se pierde es el prellenado y no la
- * cotización. La frase lo dice con todas las letras.
+ * argumento: el selector es una ayuda para no tener que acordarse de un número,
+ * no un requisito para cotizar, así que lo que se pierde es el prellenado y no
+ * la cotización. La frase lo dice con todas las letras.
  *
  * **Y el aviso no es de error**, que es una decisión del dibujo y no de este
- * texto: un `role="alert"` por un panel de consulta que no cargó interrumpiría
- * la lectura de la pantalla entera para avisar de algo que no bloquea nada.
+ * texto: un `role="alert"` por un control de consulta que no cargó interrumpiría
+ * la lectura de la pantalla entera para avisar de algo que no bloquea nada, y
+ * además rompería los seis `getByRole("alert")` sin acotar de
+ * `e2e/cotizaciones.spec.ts`, cuya suite contesta 404 a `GET /api/arancel`.
  */
 export function avisoDePrecios(problema: string | null): string | null {
   if (problema === null) return null;
 
   return (
-    `${problema} Tus precios son una ayuda y no un requisito: las líneas se` +
+    `${problema} Los precios son una ayuda y no un requisito: las líneas se` +
     " pueden escribir igual, con el concepto y el monto a mano."
   );
+}
+
+/* --------------------------------------------------------------------------
+   El teclado del selector
+   -------------------------------------------------------------------------- */
+
+/**
+ * Qué opción queda activa al mover las flechas, **sin tocar el DOM**.
+ *
+ * Vive acá y no dentro del componente por la regla del archivo: elegir cuál es
+ * la siguiente es una decisión, y una decisión que se puede equivocar en los dos
+ * bordes es justamente la que conviene tener probada sin navegador.
+ *
+ * Tres reglas, y las tres salen del patrón de combobox que el navegador no
+ * regala:
+ *
+ *  - **sin opciones no hay activa**, y el resultado es `-1`. Es el caso de una
+ *    búsqueda sin resultados, y sin esto `Enter` elegiría la opción número cero
+ *    de una lista vacía;
+ *  - **desde ninguna activa**, bajar lleva a la primera y subir a la última. Es
+ *    lo que hace que abrir la lista y apretar ↑ sirva para algo;
+ *  - **da la vuelta en los dos extremos**. Una lista que se queda trabada en la
+ *    última opción obliga a contar cuántas veces hay que subir.
+ */
+export function moverOpcionActiva(
+  activa: number,
+  cuantas: number,
+  direccion: -1 | 1,
+): number {
+  if (cuantas === 0) return -1;
+  if (activa < 0 || activa >= cuantas) return direccion === 1 ? 0 : cuantas - 1;
+
+  return (activa + direccion + cuantas) % cuantas;
 }

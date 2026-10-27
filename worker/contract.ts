@@ -353,19 +353,32 @@ export type MotivoDeFalla =
    */
   | "arancel_renglon_desconocido"
   /**
-   * El renglón existe en este bufete y **no tiene precio del bufete**.
+   * El renglón existe en este bufete y **no tiene ninguna cifra**: ni la que el
+   * bufete editó ni la que el acuerdo imprimió.
    *
    * Es la mitad amable de
    * `cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar`
-   * (`migrations/0013_el_precio_sabe_de_donde_salio.sql`), y las dos hacen
-   * falta: sin esto, nombrar un renglón sin tarifar sale como un `RAISE(ABORT)`
-   * de SQLite envuelto en un 500, que no es una negativa sino una caída.
+   * (`migrations/0013_el_precio_sabe_de_donde_salio.sql`, relajado en
+   * `migrations/0015_un_precio_es_una_cifra.sql`), y las dos hacen falta: sin
+   * esto, nombrar un renglón sin cifra sale como un `RAISE(ABORT)` de SQLite
+   * envuelto en un 500, que no es una negativa sino una caída.
    *
-   * **Es un solo motivo para dos situaciones** —un renglón que el bufete
-   * todavía no tarifó y uno de los 74 `rubro` del acuerdo— por el mismo
-   * argumento con el que `0013` escribió **un** disparador y no dos: el
-   * `CHECK un_rubro_no_lleva_precio` de `0012` hace imposible que un rubro
-   * tenga `monto`, así que «el renglón tiene precio» ya excluye a los
+   * ## El nombre dice «sin precio» y la regla dice «sin cifra», y queda escrito
+   *
+   * T-2 bis relajó el invariante: el catálogo que la cotización ofrece son los
+   * **282 renglones con cifra** y no los que el bufete editó, porque «los
+   * preestablecidos son la norma hasta que se editen, no son una subcategoría».
+   * El motivo **conserva su nombre** a propósito: renombrarlo obligaría a tocar
+   * `src/mensajes.ts`, cuyo `Record<MotivoDeFalla, string>` es exhaustivo, y
+   * eso está fuera de la superficie autorizada de esa tarea. Desde donde está
+   * la persona la frase sigue sirviendo —«ese servicio no tiene precio, ponele
+   * uno»—, que es lo que un motivo tiene que lograr.
+   *
+   * **Es un solo motivo para dos situaciones** —una regla por cuantía sin
+   * ningún número y uno de los 74 `rubro` del acuerdo— por el mismo argumento
+   * con el que `0013` escribió **un** disparador y no dos: el acuerdo imprime
+   * los rubros sin valor y el `CHECK un_rubro_no_lleva_precio` de `0012` les
+   * prohíbe el propio, así que «el renglón tiene una cifra» ya excluye a los
    * encabezados, siempre, sin nombrarlos. Dos motivos serían dos guardas para
    * el mismo hecho, y neutralizar cualquiera de las dos dejaría a la otra
    * atrapando el caso sin que ninguna prueba se pusiera roja.
