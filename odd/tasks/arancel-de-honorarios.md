@@ -54,8 +54,31 @@ Tres hechos de la fuente que el diseño tiene que respetar:
 ### Una tabla con la estructura del documento
 
 Categoría → numeral → concepto → monto, igual que el papel. Se siembra entera
-—son 358 renglones con monto fijo repartidos en 22 categorías— y **los
-renglones no se borran**: se desactivan. El preset siempre está.
+y **los renglones no se borran**: se desactivan. El preset siempre está.
+
+**Los números reales, medidos por T-1 y no estimados.** Esta sección decía
+antes «358 renglones con monto fijo en 22 categorías». Era un `rg` mío sobre
+el volcado de texto, y estaba mal en las tres cifras:
+
+| | Lo que decía yo | Lo que hay |
+|---|---|---|
+| Renglones | 358 | **453** |
+| Con monto | 358 | **282** |
+| Con regla | 54 | **97** |
+| Rubros sin valor | — | **74** |
+| Categorías | 22 | **29** (27 con renglones) |
+
+De las 399 apariciones de `B/` dentro del Artículo 4, solo 282 son el precio
+de un renglón: 68 son **umbrales de cuantía dentro del concepto** («De
+B/.0.01 hasta B/.3,000.00»), 41 están dentro del texto de una regla y 8 en
+parágrafos. Contar sigilos de moneda y creer que son precios es exactamente
+el error que la extracción automática evita.
+
+Y hay una tercera clase que yo no había previsto: el **rubro**, un numeral
+que el documento imprime sin ningún valor porque es el encabezado de sus
+hijos («3. Inmigrantes», «12. Recursos Administrativos»). Son 74. No llevan
+precio editable, y T-2 tiene que saberlo o le va a ofrecer al abogado un
+campo de monto sobre un título.
 
 ### Dos montos guardados, uno solo a la vista
 
@@ -96,7 +119,7 @@ hace que el enlace tenga qué mostrar y que dentro de dos años se pueda saber
 de dónde salió cada sugerencia. Pero se guarda para consultarlo, no para
 confrontarlo.
 
-### Las 54 reglas que no son un monto
+### Las 97 reglas que no son un monto
 
 Los procesos civiles y comerciales no tarifan un monto sino un **porcentaje
 por tramos sobre la cuantía** («25% de menor cuantía», «B/.2,000.00 más el
@@ -133,7 +156,7 @@ moneda (`cotizacion.moneda` es un `CHECK` cerrado en `'USD'`).
 ### T-1 · Sacar el arancel del PDF sin inventar nada
 
 - [x] Script de extracción reproducible, con el PDF como entrada y datos
-      estructurados como salida. No se transcribe a mano: 358 montos
+      estructurados como salida. No se transcribe a mano: 453 montos
       copiados a ojo es una errata nuestra encima de las del documento.
 - [x] Cada renglón lleva categoría, numeral tal como aparece, concepto,
       monto en centavos enteros, y —cuando no hay monto— el texto de la
@@ -152,7 +175,22 @@ moneda (`cotizacion.moneda` es un `CHECK` cerrado en `'USD'`).
 - [ ] Un disparador que impida modificar `monto_oficial` después de la
       siembra, igual que los de `0006_emitir_y_congelar.sql`: si es una cita,
       la base lo sostiene y no la buena intención.
-- [ ] La siembra, idempotente.
+- [ ] **La clave es `(tenant_id, orden)`, nunca el numeral.** T-1 lo midió:
+      31 renglones comparten numeral con otro de su misma categoría, por tres
+      razones del documento —las letras reinician bajo cada padre,
+      «ACTUACIONES EN NEGOCIOS CRIMINALES» tiene dos secciones numeradas `5.`,
+      y los renglones sin numerar heredan el del padre—. Un `UNIQUE` sobre el
+      numeral hace fallar la siembra, y peor: hace *parecer* que el acuerdo
+      está mal numerado cuando el que está mal es nuestro supuesto.
+- [ ] **Los tres `clase` del dato se respetan**: `monto` lleva precio
+      editable, `regla` lleva texto y precio editable opcional, y **`rubro` no
+      lleva precio** —son los 74 encabezados que el acuerdo imprime sin valor.
+- [ ] Las dos secciones que son **solo una frase en prosa** y ningún renglón
+      —«OTROS ASUNTOS» (todo lo no listado a B/.150 la hora) y «PROCESO DE
+      SEPARACIONES DE BIENES…» («la misma tarifa de la sección 2»)— tienen
+      que sobrevivir a la siembra, o desaparecen del arancel sin que nadie
+      lo note.
+- [ ] La siembra, idempotente, desde `scripts/arancel/arancel.json`.
 
 ### T-3 · La pantalla
 
@@ -166,14 +204,14 @@ Son **dos**, y la separación es la corrección del usuario hecha estructura.
       del arancel, al renglón que corresponde.
 - [ ] **La tabla del arancel**, de solo lectura, agrupada por categoría como
       el documento, con la nota de procedencia arriba.
-- [ ] Buscar por concepto: 358 renglones sin buscador no se usan.
+- [ ] Buscar por concepto: 453 renglones sin buscador no se usan.
 - [ ] Un servicio sin precio propio **muestra la sugerencia del arancel como
       valor de arranque**, no un campo vacío ni un cero. El sistema sabe
       cuánto cuesta; que lo diga.
 
 ## Criterios de aceptación
 
-1. La tabla del arancel trae los 358 renglones del Acuerdo, agrupados como
+1. La tabla del arancel trae los 453 renglones del Acuerdo, agrupados como
    el documento, y dice de dónde salen.
 2. El monto oficial no se puede editar, ni por la API.
 3. El monto del bufete se edita y es **el único que se ve** en la pantalla de
