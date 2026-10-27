@@ -71,6 +71,20 @@ let tipoProcesoId: string;
 let areaId: string;
 let cotizacionAjenaId: string;
 
+/**
+ * El renglón del arancel que el bufete ya tarifó (T-1 de
+ * `odd/tasks/precios-en-la-cotizacion.md`).
+ *
+ * Se siembra con SQL porque ninguna migración trae filas del acuerdo —la
+ * siembra es `scripts/arancel/sembrar.mjs`— y porque acá hace falta uno **con
+ * `monto` del bufete puesto**: un renglón sin precio no puede ser el origen de
+ * una línea, y el disparador de `0013` lo aborta.
+ */
+let renglonTarifadoId: string;
+
+/** El concepto de ese renglón, que es lo que el snapshot tiene que congelar. */
+const CONCEPTO_TARIFADO = "Visitantes Temporales (por persona)";
+
 function entorno(): Env {
   // Hermético, por la misma razón que en `test/acceso.spec.ts`: un
   // `.dev.vars` local no puede decidir qué identidad observa la suite.
@@ -146,6 +160,36 @@ function emitir(id: string): Promise<Response> {
 }
 
 /**
+ * Le pone a una línea el renglón del que salió su precio, **con SQL**.
+ *
+ * Y es la única forma que hay hoy, no un atajo: T-1 agrega la columna, la
+ * congela y le pone sus guardas, pero **no abre ninguna ruta que la escriba**
+ * —el prellenado del editor es T-2 y la propuesta de la IA es T-3—. El día que
+ * alguna de las dos exista, esta función se cambia por la ruta y la
+ * expectativa de abajo no se mueve, que es justo lo que se quiere de ella.
+ *
+ * La escritura es legítima en la base: la cotización sigue siendo borrador, y
+ * por eso `cotizacion_linea_no_cambia_en_una_congelada` la deja pasar. Que
+ * sobre una emitida no pase lo prueba `test/arancel-linea.spec.ts`.
+ */
+async function marcarOrigenDelPrecio(
+  cotizacionId: string,
+  concepto: string,
+  renglonId: string,
+): Promise<void> {
+  const efecto = await env.DB.prepare(
+    "UPDATE cotizacion_linea SET arancel_renglon_id = ?" +
+      " WHERE cotizacion_id = ? AND concepto = ?",
+  )
+    .bind(renglonId, cotizacionId, concepto)
+    .run();
+
+  // Sin esto, un concepto mal escrito dejaría la columna en nulo y las pruebas
+  // de procedencia pasarían afirmando el caso vacío.
+  expect(efecto.meta.changes, `no se marcó la línea «${concepto}»`).toBe(1);
+}
+
+/**
  * El snapshot guardado, **leído de la base y no del eco de la respuesta**.
  *
  * La ruta de emisión no devuelve el snapshot a propósito —es el documento
@@ -208,6 +252,16 @@ async function emitirUnaCompleta(): Promise<CotizacionEnElCable> {
     monto: 12_345,
   });
 
+  // La primera línea sale del catálogo de precios del bufete y las otras dos
+  // no, que es el reparto corriente de una cotización. Su `concepto` **no** es
+  // el del renglón a propósito: así la prueba de abajo puede distinguir el
+  // texto que el snapshot copió del catálogo del que ya tenía la línea.
+  await marcarOrigenDelPrecio(
+    borrador.id,
+    "Honorario profesional",
+    renglonTarifadoId,
+  );
+
   const respuesta = await emitir(borrador.id);
   expect(respuesta.status, await respuesta.clone().text()).toBe(200);
 
@@ -221,6 +275,7 @@ beforeAll(async () => {
   areaId = nuevoId();
   tipoProcesoId = nuevoId();
   cotizacionAjenaId = nuevoId();
+  renglonTarifadoId = nuevoId();
 
   const clienteAjenoId = nuevoId();
   const autorAjenoId = nuevoId();
@@ -264,6 +319,27 @@ beforeAll(async () => {
       "INSERT INTO tipo_proceso (id, tenant_id, area_id, nombre)" +
         " VALUES (?, ?, ?, ?)",
     ).bind(tipoProcesoId, TENANT_UNICO_ID, areaId, "Visa de trabajo"),
+
+    /* El renglón del arancel con el precio del bufete puesto. `monto_oficial`
+       va también porque su `clase` es `monto` y el `CHECK`
+       `el_renglon_trae_lo_que_su_clase_promete` lo exige; lo que esta suite
+       vigila es que ese número **no** aparezca en el snapshot. */
+    env.DB.prepare(
+      "INSERT INTO arancel_renglon (id, tenant_id, orden, categoria, numeral," +
+        " concepto, clase, monto_oficial, monto, activo)" +
+        " VALUES (?, ?, 1, ?, '1', ?, 'monto', ?, ?, 1)",
+    ).bind(
+      renglonTarifadoId,
+      TENANT_UNICO_ID,
+      "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      CONCEPTO_TARIFADO,
+      // Los dos montos son **cifras que no aparecen en ninguna otra parte del
+      // documento ni como subcadena de otra**: una de las pruebas de abajo
+      // busca que no estén en el JSON entero, y con 50 000 habría pasado por
+      // casualidad —«150000» contiene «50000»—.
+      44_321,
+      187_654,
+    ),
 
     /* El bufete vecino, con una cotización suya en borrador. */
     env.DB.prepare("INSERT INTO tenant (id, nombre) VALUES (?, ?)").bind(
@@ -509,6 +585,11 @@ describe("qué guarda el snapshot", () => {
         // El nombre al lado de la llave, que es lo que hace que la línea se
         // entienda sin unir contra `tipo_proceso`.
         tipoProceso: "Visa de trabajo",
+        // Y el renglón del arancel al lado del suyo, por la misma razón y en
+        // la misma forma. Las dos llaves conviven: una dice qué proceso se
+        // abre al ganar, la otra de dónde salió el precio.
+        arancelRenglonId: renglonTarifadoId,
+        arancelConcepto: CONCEPTO_TARIFADO,
       },
       {
         clase: "gasto_estimado",
@@ -517,6 +598,8 @@ describe("qué guarda el snapshot", () => {
         monto: 7_550,
         tipoProcesoId: null,
         tipoProceso: null,
+        arancelRenglonId: null,
+        arancelConcepto: null,
       },
       {
         clase: "honorario",
@@ -525,6 +608,83 @@ describe("qué guarda el snapshot", () => {
         monto: 12_345,
         tipoProcesoId: null,
         tipoProceso: null,
+        arancelRenglonId: null,
+        arancelConcepto: null,
+      },
+    ]);
+  });
+
+  it("dice de dónde salió cada precio, y el texto sale del catálogo", async () => {
+    // Criterio de aceptación 5 de la tajada: «el snapshot de una cotización
+    // emitida dice de dónde salió cada precio».
+    //
+    // Las dos afirmaciones de esta prueba son distintas y las dos hacen falta:
+    //
+    //  - **La llave queda**, que es el rastro para el sistema.
+    //  - **El concepto del renglón queda al lado**, y es el del catálogo y no
+    //    el de la línea —«Honorario profesional»—. Es lo que hace que el
+    //    documento se baste solo: dentro de seis años, con el renglón
+    //    renombrado o desactivado, la línea sigue diciendo de qué servicio
+    //    tarifado salió su precio.
+    const borrador = await emitirUnaCompleta();
+    const snapshot = await snapshotDe(borrador.id);
+    const lineas = snapshot.lineas as Record<string, unknown>[];
+
+    expect(lineas[0].arancelRenglonId).toBe(renglonTarifadoId);
+    expect(lineas[0].arancelConcepto).toBe(CONCEPTO_TARIFADO);
+    expect(lineas[0].concepto).toBe("Honorario profesional");
+  });
+
+  it("y no se lleva el monto oficial del acuerdo, ni ninguna comparación", async () => {
+    // La regla de `odd/tasks/arancel-de-honorarios.md` no se renegocia en esta
+    // tajada: el monto oficial es una cita de 2001 y lo que el cliente leyó es
+    // el precio del bufete. El renglón sembrado tiene `monto_oficial` en
+    // 44 321 y `monto` en 187 654, y la línea cobró 150 000 — tres números
+    // distintos a propósito, y ninguno subcadena de otro, para que el
+    // documento no pueda pasar esta prueba por casualidad.
+    const borrador = await emitirUnaCompleta();
+    const snapshot = await snapshotDe(borrador.id);
+    const lineas = snapshot.lineas as Record<string, unknown>[];
+
+    expect(Object.keys(lineas[0])).not.toContain("arancelMontoOficial");
+    expect(Object.keys(lineas[0])).not.toContain("montoOficial");
+    // Ni el monto del catálogo: el que vale es el que la línea cobró, y un
+    // segundo número de dinero adentro del documento congelado sería la
+    // comparación que la tajada anterior prohibió, escrita como dato.
+    expect(Object.keys(lineas[0])).not.toContain("arancelMonto");
+    expect(JSON.stringify(snapshot)).not.toContain("44321");
+    expect(JSON.stringify(snapshot)).not.toContain("187654");
+  });
+
+  it("una cotización sin un solo renglón del arancel congela lo mismo que antes", async () => {
+    // **El guardián de la regresión.** Hoy ninguna cotización tiene
+    // procedencia —la columna nace vacía y ninguna ruta la escribe— así que
+    // esto es lo que pasa con todas las que ya existen y con todas las que se
+    // armen a mano hasta que T-2 llegue: las dos claves están y valen nulo.
+    //
+    // Que estén y no falten es la mitad que importa: una clave ausente en un
+    // snapshot nuevo querría decir «congelado antes de que la columna
+    // existiera», que es otra cosa.
+    const borrador = await crearBorrador();
+    await agregarLinea(borrador.id, {
+      clase: "honorario",
+      concepto: "Consulta",
+      monto: 9_900,
+    });
+
+    expect((await emitir(borrador.id)).status).toBe(200);
+
+    const snapshot = await snapshotDe(borrador.id);
+    expect(snapshot.lineas).toEqual([
+      {
+        clase: "honorario",
+        rotulo: "Honorarios",
+        concepto: "Consulta",
+        monto: 9_900,
+        tipoProcesoId: null,
+        tipoProceso: null,
+        arancelRenglonId: null,
+        arancelConcepto: null,
       },
     ]);
   });

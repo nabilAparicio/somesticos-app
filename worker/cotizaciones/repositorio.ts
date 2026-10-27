@@ -625,27 +625,41 @@ interface FilaDeLinea {
   monto: number;
   tipo_proceso_id: string | null;
   tipo_proceso_nombre: string | null;
+  arancel_renglon_id: string | null;
+  arancel_concepto: string | null;
   orden: number;
 }
 
 /**
- * Las líneas con el nombre del trámite resuelto en lectura.
+ * Las líneas con el nombre del trámite y el concepto del renglón resueltos en
+ * lectura.
  *
- * El `LEFT JOIN` lleva **su propio `tenant_id`**, igual que los de
- * `SELECCION`: con el filtro repetido en la unión, un `tipo_proceso_id` que
- * cruzara la frontera devuelve `NULL` en vez del nombre ajeno. Y `LEFT` y no
- * `INNER` porque la columna es nullable a propósito —una línea sin trámite es
- * el caso corriente— y porque, si la fila apuntada no se pudiera leer desde
- * este tenant, lo correcto es devolver la línea con el nombre en nulo y no
- * hacerla desaparecer de la cotización. Un `INNER JOIN` escondería la fila, y
- * una línea que desaparece es un monto que desaparece del total.
+ * Los dos `LEFT JOIN` llevan **su propio `tenant_id`**, igual que los de
+ * `SELECCION`: con el filtro repetido en la unión, un `tipo_proceso_id` o un
+ * `arancel_renglon_id` que cruzara la frontera devuelve `NULL` en vez del
+ * texto ajeno. Y `LEFT` y no `INNER` porque las dos columnas son nullable a
+ * propósito —una línea sin trámite y con monto libre es el caso corriente— y
+ * porque, si la fila apuntada no se pudiera leer desde este tenant, lo
+ * correcto es devolver la línea con el texto en nulo y no hacerla desaparecer
+ * de la cotización. Un `INNER JOIN` escondería la fila, y una línea que
+ * desaparece es un monto que desaparece del total.
+ *
+ * **Del renglón se lee el `concepto` y nada más**, aunque la fila tenga tres
+ * columnas de dinero al lado. El monto que vale es el de la línea; traer el
+ * del catálogo sería un segundo número que mañana dice otra cosa, y traer
+ * `monto_oficial` sería meter la cita de 2001 en la pantalla de una
+ * cotización, que es exactamente lo que `odd/tasks/arancel-de-honorarios.md`
+ * dejó prohibido.
  */
 const SELECCION_DE_LINEAS =
   "SELECT l.id, l.clase, l.concepto, l.monto, l.tipo_proceso_id," +
-  " t.nombre AS tipo_proceso_nombre, l.orden" +
+  " t.nombre AS tipo_proceso_nombre, l.arancel_renglon_id," +
+  " a.concepto AS arancel_concepto, l.orden" +
   " FROM cotizacion_linea l" +
   " LEFT JOIN tipo_proceso t ON t.id = l.tipo_proceso_id" +
   " AND t.tenant_id = l.tenant_id" +
+  " LEFT JOIN arancel_renglon a ON a.id = l.arancel_renglon_id" +
+  " AND a.tenant_id = l.tenant_id" +
   " WHERE l.tenant_id = ? AND l.cotizacion_id = ? ORDER BY l.orden";
 
 function aLinea(fila: FilaDeLinea): LineaDeCotizacion {
@@ -656,6 +670,8 @@ function aLinea(fila: FilaDeLinea): LineaDeCotizacion {
     monto: fila.monto,
     tipoProcesoId: fila.tipo_proceso_id,
     tipoProcesoNombre: fila.tipo_proceso_nombre,
+    arancelRenglonId: fila.arancel_renglon_id,
+    arancelConcepto: fila.arancel_concepto,
     orden: fila.orden,
   };
 }
@@ -2523,20 +2539,36 @@ export function cotizacionesSobreD1(
         ),
       );
 
-      // `tipoProcesoId` se copia y el **nombre** no: el nombre se resuelve
-      // en lectura y guardarlo sería una segunda copia que mañana dice otra
-      // cosa. Eso es al revés de lo que hace el snapshot, y la diferencia es
-      // la que justifica a los dos: el snapshot congela lo que el cliente
-      // leyó, y esto es una cotización viva.
+      // `tipoProcesoId` y `arancelRenglonId` se copian; los **textos
+      // resueltos** no —el nombre del trámite y el concepto del renglón se
+      // resuelven en lectura, y guardarlos sería una segunda copia que mañana
+      // dice otra cosa—. Eso es al revés de lo que hace el snapshot, y la
+      // diferencia es la que justifica a los dos: el snapshot congela lo que
+      // el cliente leyó, y esto es una cotización viva.
+      //
+      // La procedencia del precio **se copia y no se pierde**, y es la
+      // decisión que importa acá: duplicar es la forma en que el bufete vuelve
+      // a cotizar lo mismo (`docs/diseno.md` §5, «una emitida no se edita:
+      // después se duplica»), así que una copia que olvidara de dónde salió
+      // cada precio convertiría cada duplicación en un monto sin origen.
+      //
+      // Lo que esa decisión cuesta, dicho en vez de descubierto: si el bufete
+      // le borró el precio al renglón entre el original y la copia, el
+      // `INSERT` muere en
+      // `cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar`. Es
+      // la dirección correcta —la alternativa sería copiar en silencio una
+      // procedencia que el catálogo ya no sostiene— y hoy es inalcanzable,
+      // porque ninguna ruta escribe la columna todavía.
       const copiaDeLineas = lineas.map((linea) =>
         sentencia(
           "INSERT INTO cotizacion_linea (id, tenant_id, cotizacion_id," +
-            " tipo_proceso_id, clase, concepto, monto, orden)" +
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " tipo_proceso_id, arancel_renglon_id, clase, concepto, monto," +
+            " orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
           nuevoId(),
           tenantId,
           copiaId,
           linea.tipoProcesoId,
+          linea.arancelRenglonId,
           linea.clase,
           linea.concepto,
           linea.monto,

@@ -133,12 +133,12 @@ mover acá.
 
 ### T-1 · La línea sabe de dónde salió su precio
 
-- [ ] Migración: `cotizacion_linea.arancel_renglon_id`, nulo, con su clave
+- [x] Migración: `cotizacion_linea.arancel_renglon_id`, nulo, con su clave
       foránea y el filtro por `tenant_id` que usa todo el esquema.
-- [ ] El snapshot lo congela, por la misma razón que congela el monto.
-- [ ] Una línea que nombra un renglón **sin precio del bufete** es un error
+- [x] El snapshot lo congela, por la misma razón que congela el monto.
+- [x] Una línea que nombra un renglón **sin precio del bufete** es un error
       de programa, no un caso: el catálogo ofrece lo tarifado.
-- [ ] Un `rubro` nunca puede ser el origen de un precio: la base ya lo
+- [x] Un `rubro` nunca puede ser el origen de un precio: la base ya lo
       prohíbe en su tabla y acá tampoco se acepta.
 
 ### T-2 · El editor muestra tus precios
@@ -184,3 +184,77 @@ merge siguen siendo decisión del usuario.
 
 - Documento creado. Ninguna tarea cerrada.
 - Próximo paso: T-1, la columna y su congelado.
+
+### T-1 cerrada · la línea sabe de dónde salió su precio
+
+**Qué entró:** `migrations/0013_el_precio_sabe_de_donde_salio.sql`
+—`cotizacion_linea.arancel_renglon_id`, la arista nueva en los dos
+disparadores de tenencia y la guarda del origen del precio—, la resolución del
+concepto del renglón en lectura (`SELECCION_DE_LINEAS`), el congelado en
+`congelar` y la copia de la procedencia al duplicar. **Ninguna ruta escribe la
+columna todavía**, y es a propósito: el prellenado es T-2 y la propuesta de la
+IA es T-3, y la guarda llega antes que su primer escritor.
+
+**Checks observados:** `lint` 0, `typecheck` 0, `test` 0 (2362 en 47 archivos,
+eran 2344 en 46), `test:e2e` 0 (452, los mismos). La base local recibió `0013`
+sola —su `d1_migrations` sigue vacío, igual que en las dos tajadas
+anteriores— y sobrevivió entera: 453 renglones, 57 notas, 8 clientes, 9
+procesos, 10 cotizaciones, 49 líneas y 156 asientos de bitácora, con respaldo
+`…sqlite.antes-de-0013` al lado.
+
+#### Las dos reglas de la tarea resultaron ser una, y eso cambió la forma
+
+El documento pide dos cosas —«un renglón sin precio del bufete es un error de
+programa» y «un `rubro` nunca es el origen de un precio»— y la segunda está
+**contenida** en la primera por construcción: `un_rubro_no_lleva_precio`, de
+`0012`, hace imposible que un rubro tenga `monto`. Así que hay **un** par de
+disparadores y no dos: un segundo que dijera lo del rubro sería la segunda
+guarda para el mismo hecho, y neutralizar cualquiera de las dos dejaría a la
+otra atrapando el caso sin que ninguna prueba se pusiera roja. Las dos mitades
+tienen prueba propia igual, en `test/arancel-linea.spec.ts`.
+
+#### Lo que se descubrió al recorrer el esquema, y que el documento no sabía
+
+1. **Recrear un disparador lo manda a la cabeza del orden de disparo**, y eso
+   cambia qué mensaje recibe una escritura que viola dos reglas a la vez.
+   Agregarle la arista nueva a los dos disparadores de tenencia —SQLite no
+   tiene `ALTER TRIGGER`— hizo que `UPDATE cotizacion_linea SET tenant_id = …,
+   cotizacion_id = …` pasara de morir con «columna inmutable» a morir con
+   «tenencia cruzada», que es justo el mensaje que `0004` había elegido
+   **contra** el otro y con el argumento escrito. Se arregló recreando también
+   los dos disparadores de inmutabilidad, letra por letra, para devolverles la
+   precedencia. Queda anotado en la migración que el orden es oficialmente
+   indefinido en SQLite y que lo que hay acá es la conservación de una conducta
+   observada, con su prueba nombrada.
+2. **El snapshot no sube de versión, y el motivo es mejor que un número.**
+   `VERSION_DEL_SNAPSHOT` sigue en 1: las dos claves nuevas se escriben
+   **siempre**, con `null` cuando no hay procedencia, así que su *ausencia*
+   identifica a los documentos congelados antes de esta tajada con más
+   precisión —por línea— que un número para el documento entero. Es la misma
+   disciplina de `TotalesDeCotizacion.itbms`: ausencia y nulo no son lo mismo.
+3. **Del renglón se congela el concepto y nada más.** Ni `monto_oficial` —es la
+   cita de 2001 y no entra en lo que el cliente leyó— ni el `monto` del
+   catálogo: el prellenado es editable, así que guardar los dos pondría dentro
+   del documento un segundo número de dinero cuya única lectura posible es la
+   comparación que la tajada anterior prohibió. Hay una prueba que lo exige.
+4. **No hubo nada que rellenar, y está medido.** El catálogo nació en `0012`,
+   posterior a las 49 líneas que existen, y los 453 renglones tienen `monto` en
+   nulo. Adivinar la procedencia por el texto del concepto habría sido fabricar
+   el dato que la columna existe para guardar.
+
+#### Deuda que esta tarea deja a la vista
+
+- **Borrarle el precio a un renglón que una línea ya nombra** sigue siendo
+  legítimo (`fijarMonto(…, null)`), y deja una línea viva apuntando a un
+  renglón sin precio. El documento emitido no se mueve —el snapshot congeló
+  concepto y monto— y la línea conserva su `monto`; lo único observable es que
+  una escritura posterior sobre esa línea, o duplicar la cotización, se niega
+  en la guarda. Hoy es inalcanzable porque nada escribe la columna; la decisión
+  de qué contestarle a una persona es de T-2.
+- **Cuatro archivos de prueba fuera de la superficie de la tarea** cambiaron
+  por obligación mecánica, no por alcance nuevo: la lista exacta de
+  disparadores en `test/esquema-cotizaciones.spec.ts` y los tres dobles de
+  `LineaDeCotizacion` en `test/lineas-ui.spec.ts`, `test/ciclo-ui.spec.ts` y
+  `test/impresion-ui.spec.ts`.
+
+- Próximo paso: T-2, el editor con los precios del bufete a la vista.

@@ -139,6 +139,48 @@ export interface ModuloCongelado {
  * `tipoProceso` es el nombre del trámite y `tipoProcesoId` su llave. Los dos,
  * y no uno: el nombre para quien lee, la llave para T-7, que abre un proceso
  * por cada línea que la lleve.
+ *
+ * ## `arancelRenglonId` y `arancelConcepto`: de dónde salió el precio
+ *
+ * Entran por la misma puerta que el monto y el nombre del trámite, y por la
+ * misma razón (T-1 de `odd/tasks/precios-en-la-cotizacion.md`): dentro de un
+ * año el bufete tiene que poder saber que esos B/.1,800 salieron del precio
+ * que él mismo fijó para tal servicio y no del dedo de alguien. El par es el
+ * mismo de siempre —la llave para el sistema, el texto para quien lee— y el
+ * texto es el **concepto del renglón**, que es lo que hace que la línea se
+ * entienda sin volver al catálogo: el renglón pudo renombrarse, desactivarse o
+ * cambiar de precio, y el documento no se mueve.
+ *
+ * **Qué más se copió, y qué no.** Del renglón entra el concepto y nada más.
+ * `categoria` y `numeral` son las coordenadas de la cita en el Acuerdo, no la
+ * procedencia del precio del bufete, y el concepto ya identifica el servicio
+ * para quien lee. `monto_oficial` **nunca**: es la cita de 2001, y meterla en
+ * el documento que el cliente leyó es exactamente la comparación que
+ * `odd/tasks/arancel-de-honorarios.md` dejó prohibida. Y el `monto` del
+ * renglón tampoco, que es la decisión menos obvia de las tres: el prellenado
+ * es editable, así que el precio del catálogo y el que la línea cobró pueden
+ * diferir, y guardar los dos pondría dentro del documento congelado un
+ * segundo número de dinero cuya única lectura posible es la comparación. **El
+ * monto que vale es `monto`, el que se prometió.**
+ *
+ * ## Las dos claves son opcionales, y su ausencia significa algo
+ *
+ * Son `?` y no `string | null` porque este tipo describe también los snapshots
+ * que ya están guardados, escritos antes de que la columna existiera. De ahí
+ * la lectura, que es la misma disciplina de `TotalesDeCotizacion.itbms`:
+ *
+ *  - **La clave está y vale `null`**: la línea no salió de ningún renglón
+ *    tarifado. Es el caso corriente.
+ *  - **La clave no está**: el documento se congeló antes de que el sistema
+ *    supiera de dónde salían los precios.
+ *
+ * Y eso es lo que hace que `VERSION_DEL_SNAPSHOT` **no** suba: la regla de
+ * este archivo es que la versión se mueve cuando cambia lo que el objeto
+ * significa, y lo que un lector de 2032 necesita para no confundir «sin
+ * procedencia» con «de antes de la procedencia» ya está dicho, por línea y con
+ * más precisión que un número para el documento entero. `congelar` escribe las
+ * dos claves **siempre**, con `null` cuando no hay nada, que es lo que
+ * sostiene esa distinción.
  */
 export interface LineaCongelada {
   clase: ClaseDeLinea;
@@ -147,6 +189,8 @@ export interface LineaCongelada {
   monto: number;
   tipoProcesoId: string | null;
   tipoProceso: string | null;
+  arancelRenglonId?: string | null;
+  arancelConcepto?: string | null;
 }
 
 /** Quién la emitió. El nombre puede faltar; el identificador no. */
@@ -268,6 +312,11 @@ export function congelar(datos: DatosParaCongelar): SnapshotDeCotizacion {
       monto: linea.monto,
       tipoProcesoId: linea.tipoProcesoId,
       tipoProceso: linea.tipoProcesoNombre,
+      // Siempre, también en nulo: es lo que distingue «esta línea no salió de
+      // ningún renglón» de «este documento se congeló antes de que la
+      // procedencia existiera». Ver `LineaCongelada`.
+      arancelRenglonId: linea.arancelRenglonId,
+      arancelConcepto: linea.arancelConcepto,
     })),
     totales: totalesDe(datos.lineas, datos.impuesto ?? SIN_ITBMS),
   };

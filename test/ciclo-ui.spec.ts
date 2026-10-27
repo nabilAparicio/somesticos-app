@@ -467,6 +467,11 @@ function linea(ajustes: Partial<LineaDeCotizacion> = {}): LineaDeCotizacion {
     monto: 150_000,
     tipoProcesoId: TRAMITE_VISA,
     tipoProcesoNombre: "Visa de trabajo",
+    // De dónde salió el precio no cambia qué procesos propone una cotización
+    // ganada, que es lo que este archivo mide: el doble lo lleva en nulo
+    // porque el contrato lo exige, y ninguna prueba de acá lo mira.
+    arancelRenglonId: null,
+    arancelConcepto: null,
     orden: 0,
     ...ajustes,
   };

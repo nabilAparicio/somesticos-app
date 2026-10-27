@@ -1574,6 +1574,28 @@ export type ClaseDeLinea = "honorario" | "gasto_estimado";
  * `tipoProcesoNombre` se resuelve **en lectura**, igual que `clienteNombre`:
  * lo que se guarda es la llave. Viene nulo cuando no hay trámite, y también
  * si la fila apuntada cruzara la frontera del tenant.
+ *
+ * ## `arancelRenglonId` dice de dónde salió el precio, y no es lo mismo
+ *
+ * Las dos llaves conviven y hacen trabajos distintos (T-1 de
+ * `odd/tasks/precios-en-la-cotizacion.md`): `tipoProcesoId` dice **qué proceso
+ * se abre** si la cotización se gana, y `arancelRenglonId` dice **de dónde
+ * salió el monto** —de qué renglón tarifado del bufete—. Una línea puede
+ * llevar las dos, una sola o ninguna: el bufete tarifa servicios que no abren
+ * trámite y abre trámites que el arancel no lista.
+ *
+ * Nula es el caso corriente y no una falla: una línea con monto libre —una
+ * consulta, una mensajería— no sale de ningún renglón. Y el renglón apuntado
+ * **tiene precio del bufete, siempre**: la base lo aborta si no
+ * (`cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar`, en
+ * `migrations/0013_el_precio_sabe_de_donde_salio.sql`).
+ *
+ * `arancelConcepto` es el **concepto del renglón**, resuelto en lectura por lo
+ * mismo que `tipoProcesoNombre`: lo que se guarda es la llave. No viaja el
+ * monto del renglón ni su monto oficial, y eso no es un olvido — el monto que
+ * vale es el de la línea, y un segundo número de dinero al lado sería la
+ * comparación con el arancel que `odd/tasks/arancel-de-honorarios.md` dejó
+ * prohibida.
  */
 export interface LineaDeCotizacion {
   id: string;
@@ -1583,6 +1605,8 @@ export interface LineaDeCotizacion {
   monto: number;
   tipoProcesoId: string | null;
   tipoProcesoNombre: string | null;
+  arancelRenglonId: string | null;
+  arancelConcepto: string | null;
   orden: number;
 }
 

@@ -292,6 +292,12 @@ describe("familiasDelDocumento", () => {
           monto: 150_000,
           tipoProcesoId: null,
           tipoProcesoNombre: null,
+          // Sin procedencia del precio, que es lo que este archivo necesita:
+          // la hoja impresa no la muestra y la comparación de familias no la
+          // mira. El contrato la exige desde T-1 de
+          // `odd/tasks/precios-en-la-cotizacion.md`.
+          arancelRenglonId: null,
+          arancelConcepto: null,
           orden: 0,
         },
         {
@@ -301,6 +307,8 @@ describe("familiasDelDocumento", () => {
           monto: 7_550,
           tipoProcesoId: null,
           tipoProcesoNombre: null,
+          arancelRenglonId: null,
+          arancelConcepto: null,
           orden: 1,
         },
       ],

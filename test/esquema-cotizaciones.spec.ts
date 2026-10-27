@@ -2336,7 +2336,7 @@ describe("la llave foránea de `0011` vuelve indeleble a la cotización que abri
   });
 });
 
-describe("los disparadores de 0004, 0006, 0007 y 0011 están todos y no hay ninguno de más", () => {
+describe("los disparadores de 0004, 0006, 0007, 0011 y 0013 están todos y no hay ninguno de más", () => {
   // La lista va exacta y no por `toContain` a propósito. Un disparador de
   // más sería código muerto —`cotizacion_modulo` no lleva el de `UPDATE` de
   // tenencia porque sus dos únicas columnas comparables son inmutables,
@@ -2368,6 +2368,12 @@ describe("los disparadores de 0004, 0006, 0007 y 0011 están todos y no hay ning
       "cotizacion_modulo_no_sale_de_una_congelada",
     ],
     cotizacion_linea: [
+      /* Los cuatro de `0004`. `0013` **borra y vuelve a escribir estos
+         cuatro** —los dos de tenencia para agregarles la arista de
+         `arancel_renglon_id`, y los dos de inmutabilidad para devolverles la
+         precedencia que la recreación les había quitado—, con los mismos
+         nombres: lo que vigilan no cambió. Esta prueba es la que vería un
+         `DROP` que se quedó sin su `CREATE`. */
       "cotizacion_linea_tenencia_coherente_al_insertar",
       "cotizacion_linea_tenencia_coherente_al_actualizar",
       "cotizacion_linea_tenant_inmutable",
@@ -2375,6 +2381,11 @@ describe("los disparadores de 0004, 0006, 0007 y 0011 están todos y no hay ning
       "cotizacion_linea_no_entra_en_una_congelada",
       "cotizacion_linea_no_cambia_en_una_congelada",
       "cotizacion_linea_no_sale_de_una_congelada",
+      /* `0013`: el origen del precio tiene precio. Son dos y no uno porque un
+         disparador es por par (tabla, operación), y la columna es mutable
+         mientras la cotización sea borrador. */
+      "cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar",
+      "cotizacion_linea_el_origen_del_precio_tiene_precio_al_actualizar",
     ],
     /**
      * `proceso` entra en esta lista desde T-7, aunque sus cinco primeros

@@ -88,6 +88,11 @@ function linea(ajustes: Partial<LineaDeCotizacion> = {}): LineaDeCotizacion {
     monto: 150_000,
     tipoProcesoId: null,
     tipoProcesoNombre: null,
+    // Sin procedencia: el monto lo escribió una persona. El prellenado desde
+    // el arancel es T-2 de `odd/tasks/precios-en-la-cotizacion.md`, y hasta
+    // entonces este doble refleja lo único que el sistema produce.
+    arancelRenglonId: null,
+    arancelConcepto: null,
     orden: 0,
     ...ajustes,
   };
