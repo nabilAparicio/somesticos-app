@@ -128,8 +128,44 @@
   color: var(--color-tinta-apagada);
 }
 
+/*
+ * Lo que borra. Relleno en la pregunta que confirma, y sólo de color cuando
+ * acompaña a `boton--tenue` en la fila: ahí sigue siendo un botón discreto,
+ * pero ya no se parece a «Ver el comprobante» ni a «Subir».
+ */
+.boton--peligro {
+  border-color: var(--color-peligro);
+  background: var(--color-peligro);
+  color: var(--color-superficie);
+}
+
+.boton--peligro:hover {
+  opacity: 0.88;
+  background: var(--color-peligro);
+}
+
+.boton--tenue.boton--peligro {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-peligro);
+}
+
+.boton--tenue.boton--peligro:hover {
+  opacity: 1;
+  background: var(--color-superficie-tenue);
+}
+
+/*
+ * Apagado no es «esperando». `progress` iba en todo `:disabled`, así que
+ * ↑ en la primera etapa —apagado para siempre— prometía que algo estaba por
+ * terminar. Ahora la espera la dice `aria-busy`, que es quien la sabe.
+ */
 .boton:disabled {
   opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.boton[aria-busy="true"] {
   cursor: progress;
 }
 
@@ -480,10 +516,14 @@
   background: var(--color-acento-tenue);
 }
 
-/* Lo cerrado baja de intensidad: está ahí como registro, no como tarea. */
+/*
+ * Lo cerrado se distingue por el borde y por la etiqueta «Cerrado», **no**
+ * apagando el texto: la `opacity: 0.75` que había dejaba la firma en 3.54:1,
+ * por debajo de AA. Está ahí como registro, y un registro se tiene que poder
+ * leer.
+ */
 .pendiente--cerrado {
   border-inline-start-color: var(--color-borde);
-  opacity: 0.75;
 }
 
 .pendiente__texto {
@@ -1084,4 +1124,54 @@
   display: block;
   color: var(--color-tinta-apagada);
   font-size: var(--texto-xs);
+}
+
+/* ======================================================================
+   La pregunta antes de lo que no se deshace (`layout/Confirmacion.tsx`)
+   ====================================================================== */
+
+/*
+ * El mismo dibujo que la vista expandida de `layout.css`, en chico: se
+ * reemplaza el del navegador y **no hay `z-index`**, porque un diálogo modal
+ * vive en la capa superior. El ancho es un tope y no una medida (§9).
+ */
+.confirmacion {
+  inline-size: min(32rem, 100% - var(--espacio-l) * 2);
+  max-inline-size: none;
+  max-block-size: calc(100dvh - var(--espacio-l) * 2);
+  margin: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--espacio-l);
+  border: none;
+  border-radius: var(--radio-l);
+  background: var(--color-superficie);
+  color: var(--color-tinta);
+  box-shadow: var(--sombra-flotante);
+  /* Un concepto o un acuse pegado sin espacios no ensancha la pregunta. */
+  overflow-wrap: anywhere;
+}
+
+.confirmacion::backdrop {
+  background: var(--color-velo);
+}
+
+.confirmacion__titulo {
+  margin: 0;
+  font-size: var(--texto-l);
+}
+
+/* Lo que se va a resolver, citado tal como se anotó. */
+.confirmacion__cita {
+  margin: 0;
+  padding-inline-start: var(--espacio-s);
+  border-inline-start: 3px solid var(--color-borde-fuerte);
+  white-space: pre-wrap;
+}
+
+/* El nombre de una etapa en un proceso cerrado: texto, no campo. */
+.plantilla__nombre {
+  flex: 1 1 12ch;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

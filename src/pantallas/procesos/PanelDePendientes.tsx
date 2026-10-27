@@ -18,7 +18,7 @@
  * del pendiente es texto que alguien escribió, y cambiar de pestaña no
  * puede ser una forma de perderlo.
  */
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 
 import type {
   FallaDeValidacion,
@@ -27,6 +27,7 @@ import type {
 } from "../../../worker/contract";
 import { diaLegible, fechaLegible } from "../../formatos";
 import { Aviso } from "../../layout/Aviso";
+import { Confirmacion } from "../../layout/Confirmacion";
 import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
 import { Prosa } from "../../layout/Prosa";
@@ -91,6 +92,9 @@ function Pendiente({
 }) {
   const vencido = estaVencido(pendiente, hoy);
   const cierre = firmaDeCierre(pendiente);
+  /* La pregunta es de la fila y vive en la fila: dos filas no preguntan a
+     la vez, porque el `<dialog>` modal deja inerte todo lo de atrás. */
+  const [preguntando, setPreguntando] = useState(false);
 
   return (
     <li
@@ -127,19 +131,47 @@ function Pendiente({
           </span>
         )}
 
+        {cierre !== null && <span className="etiqueta">Cerrado</span>}
+
+        {/* «Marcar resuelto» y no «Cerrar», que es lo que decía: en la misma
+            pantalla está «Cerrar el proceso», y sin nombre propio el lector
+            de pantalla anunciaba N botones «Cerrar» iguales. El nombre
+            accesible lleva el texto del pendiente para que cada uno diga
+            cuál resuelve. */}
         {alCerrar !== undefined && (
           <button
             type="button"
             className="boton boton--tenue"
+            aria-label={`Marcar resuelto «${pendiente.texto}»`}
             disabled={trabajando}
             onClick={() => {
-              alCerrar(pendiente.id);
+              setPreguntando(true);
             }}
           >
-            Cerrar
+            Marcar resuelto
           </button>
         )}
       </Fila>
+
+      {/* La firma de quien lo resolvió no se borra: se pregunta antes. */}
+      {preguntando && alCerrar !== undefined && (
+        <Confirmacion
+          titulo="¿Marcar resuelto este pendiente?"
+          accion="Marcar resuelto"
+          alCancelar={() => {
+            setPreguntando(false);
+          }}
+          alConfirmar={() => {
+            setPreguntando(false);
+            alCerrar(pendiente.id);
+          }}
+        >
+          <Prosa como="p" className="confirmacion__cita">
+            {pendiente.texto}
+          </Prosa>
+          <Prosa como="p">{AVISO_PENDIENTE_NO_SE_REABRE}</Prosa>
+        </Confirmacion>
+      )}
 
       <p className="pendiente__firma texto-apagado">
         {firmaDeAutor(pendiente)} · {fechaLegible(pendiente.creadoEn)}
@@ -351,6 +383,7 @@ export function PanelDePendientes({
                   type="submit"
                   className="boton boton--primario"
                   disabled={trabajando || terminado}
+                  aria-busy={trabajando}
                 >
                   {trabajando ? "Guardando…" : "Anotar pendiente"}
                 </button>
@@ -358,8 +391,9 @@ export function PanelDePendientes({
             </Pila>
           </form>
 
-          {/* El aviso va pegado a lo que se cierra, no en un manual: es el
-              momento en que alguien va a apretar «Cerrar». */}
+          {/* El aviso va pegado a lo que se resuelve, no en un manual: es el
+              momento en que alguien va a apretar «Marcar resuelto». Y se
+              repite dentro de la pregunta, que es donde se decide. */}
           <Aviso>{AVISO_PENDIENTE_NO_SE_REABRE}</Aviso>
 
           <h3>Cerrados</h3>

@@ -36,8 +36,13 @@
  * escribió, y las dos cosas tienen que sobrevivir a un clic en otra
  * pestaña igual que sobreviven a un 403. Viven en el armador; acá entran
  * como propiedades.
+ *
+ * La única excepción es la pregunta de «Marcar cumplida» (T-1 de
+ * `procesos-comodidad.md`), y no rompe la regla: no es dato ni texto de
+ * nadie, y mientras está abierta el `<dialog>` modal deja inerte la tira de
+ * pestañas, así que no hay clic en otra pestaña que la pueda perder.
  */
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 
 import type {
   Area,
@@ -46,6 +51,7 @@ import type {
 } from "../../../worker/contract";
 import { VACIO } from "../../formatos";
 import { Aviso } from "../../layout/Aviso";
+import { Confirmacion } from "../../layout/Confirmacion";
 import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
 import { Prosa } from "../../layout/Prosa";
@@ -124,9 +130,11 @@ export function PanelDeTrabajo({
     detalle.etapas,
   );
   const terminado = proceso.estado === "cerrado";
+  const proxima = etapasPendientes[0]?.nombre ?? null;
+  const [preguntando, setPreguntando] = useState(false);
 
   const avance = avanceDelPlan({
-    proxima: etapasPendientes[0]?.nombre ?? null,
+    proxima,
     cerrado: terminado,
     sinGuardar,
     trabajando,
@@ -197,8 +205,10 @@ export function PanelDeTrabajo({
 
           {plan.length === 0 ? (
             <Aviso>
-              Este proceso no tiene plan todavía. Se le pueden agregar los
-              pasos acá abajo.
+              {terminado
+                ? "Este proceso no tiene plan."
+                : "Este proceso no tiene plan todavía. Se le pueden agregar" +
+                  " los pasos acá abajo."}
             </Aviso>
           ) : (
             <ol className="plantilla">
@@ -221,23 +231,33 @@ export function PanelDeTrabajo({
                     key={paso.id ?? `nuevo-${String(indice)}`}
                   >
                     <Fila>
-                      <div className="campo campo--crecer">
-                        <input
-                          className="campo__control"
-                          type="text"
-                          aria-label={`Etapa ${String(indice + 1)}`}
-                          value={paso.nombre}
-                          onChange={(evento) => {
-                            setPlan((anterior) =>
-                              renombrarPaso(
-                                anterior,
-                                indice,
-                                evento.target.value,
-                              ),
-                            );
-                          }}
-                        />
-                      </div>
+                      {terminado ? (
+                        /* Con el proceso cerrado el plan **se lee**: el
+                           nombre va como texto y no como un campo que
+                           después no se podría guardar. Es el borrador lo
+                           que se dibuja, igual que abierto, para que un
+                           cambio a medio hacer no desaparezca de la vista
+                           mientras el proceso está cerrado. */
+                        <span className="plantilla__nombre">{paso.nombre}</span>
+                      ) : (
+                        <div className="campo campo--crecer">
+                          <input
+                            className="campo__control"
+                            type="text"
+                            aria-label={`Etapa ${String(indice + 1)}`}
+                            value={paso.nombre}
+                            onChange={(evento) => {
+                              setPlan((anterior) =>
+                                renombrarPaso(
+                                  anterior,
+                                  indice,
+                                  evento.target.value,
+                                ),
+                              );
+                            }}
+                          />
+                        </div>
+                      )}
                       {marca !== null ? (
                         /* Un paso cumplido se renombra —el nombre lo lee el
                            cliente y una errata se corrige— pero no se mueve
@@ -245,7 +265,7 @@ export function PanelDeTrabajo({
                            dibujan apagados, que sería prometer que existen:
                            en su lugar va la marca, que dice por qué. */
                         <span className="etiqueta">{marca}</span>
-                      ) : (
+                      ) : terminado ? null : (
                         <>
                           <button
                             type="button"
@@ -275,7 +295,7 @@ export function PanelDeTrabajo({
                           </button>
                           <button
                             type="button"
-                            className="boton boton--tenue"
+                            className="boton boton--tenue boton--peligro"
                             aria-label={`Quitar ${paso.nombre}`}
                             onClick={() => {
                               setPlan((anterior) =>
@@ -301,44 +321,53 @@ export function PanelDeTrabajo({
             </Aviso>
           )}
 
-          <form
-            onSubmit={(evento) => {
-              evento.preventDefault();
-              setPlan((anterior) => agregarPaso(anterior, pasoNuevo));
-              setPasoNuevo("");
-            }}
-            noValidate
-          >
-            <Fila>
-              <div className="campo campo--crecer">
-                <label className="campo__rotulo" htmlFor="campo-paso">
-                  Etapa nueva
-                </label>
-                <input
-                  id="campo-paso"
-                  className="campo__control"
-                  type="text"
-                  value={pasoNuevo}
-                  onChange={(evento) => {
-                    setPasoNuevo(evento.target.value);
-                  }}
-                />
-              </div>
-              <button type="submit" className="boton">
-                Agregar etapa
-              </button>
-            </Fila>
-          </form>
+          {/* Cerrado, ni el alta ni «Guardar plan»: antes se dibujaban y el
+              botón de guardar quedaba apagado sin decir por qué, o sea que se
+              podía escribir un paso que no había forma de guardar. El aviso
+              del cierre, en la cabecera, ya dice que el plan no se toca. */}
+          {!terminado && (
+            <form
+              onSubmit={(evento) => {
+                evento.preventDefault();
+                setPlan((anterior) => agregarPaso(anterior, pasoNuevo));
+                setPasoNuevo("");
+              }}
+              noValidate
+            >
+              <Fila>
+                <div className="campo campo--crecer">
+                  <label className="campo__rotulo" htmlFor="campo-paso">
+                    Etapa nueva
+                  </label>
+                  <input
+                    id="campo-paso"
+                    className="campo__control"
+                    type="text"
+                    value={pasoNuevo}
+                    onChange={(evento) => {
+                      setPasoNuevo(evento.target.value);
+                    }}
+                  />
+                </div>
+                <button type="submit" className="boton">
+                  Agregar etapa
+                </button>
+              </Fila>
+            </form>
+          )}
 
           <Fila>
-            <button
-              type="button"
-              className="boton boton--primario"
-              disabled={trabajando || terminado}
-              onClick={alGuardar}
-            >
-              {trabajando ? "Guardando…" : "Guardar plan"}
-            </button>
+            {!terminado && (
+              <button
+                type="button"
+                className="boton boton--primario"
+                disabled={trabajando}
+                aria-busy={trabajando}
+                onClick={alGuardar}
+              >
+                {trabajando ? "Guardando…" : "Guardar plan"}
+              </button>
+            )}
             {sinGuardar && (
               <span className="etiqueta" role="status">
                 Hay cambios sin guardar
@@ -371,7 +400,9 @@ export function PanelDeTrabajo({
               type="button"
               className="boton"
               disabled={!avance.habilitado}
-              onClick={alAvanzar}
+              onClick={() => {
+                setPreguntando(true);
+              }}
             >
               {avance.rotulo}
             </button>
@@ -379,11 +410,32 @@ export function PanelDeTrabajo({
           {avance.impedimento !== null && (
             <Aviso tono="error">{avance.impedimento}</Aviso>
           )}
-          <p className="campo__ayuda">
-            Avanzar marca cumplida esa etapa con la fecha de hoy.{" "}
-            <strong>No se puede deshacer</strong>: lo que ya pasó se queda
-            registrado, igual que las notas que cuelguen de él.
-          </p>
+
+          {/* La pregunta va **delante** de la guarda de cambios sin
+              guardar, no en su lugar: con el borrador a medio editar el
+              botón sigue apagado y diciendo por qué, así que la pregunta ni
+              se abre. El aviso de que no se deshace vivía debajo del botón,
+              donde se leía después de apretar; ahora es el cuerpo de la
+              pregunta. */}
+          {preguntando && proxima !== null && (
+            <Confirmacion
+              titulo={`¿Marcar cumplida «${proxima}»?`}
+              accion="Marcar cumplida"
+              alCancelar={() => {
+                setPreguntando(false);
+              }}
+              alConfirmar={() => {
+                setPreguntando(false);
+                alAvanzar();
+              }}
+            >
+              <Prosa como="p">
+                Queda cumplida con la fecha de hoy.{" "}
+                <strong>No se puede deshacer</strong>: lo que ya pasó se queda
+                registrado, igual que las notas que cuelguen de él.
+              </Prosa>
+            </Confirmacion>
+          )}
         </Pila>
       </section>
 

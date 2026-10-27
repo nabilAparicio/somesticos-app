@@ -777,9 +777,10 @@ test.describe("los procesos del bufete", () => {
     await conProcesosCargados(page);
     await page.goto(DETALLE_URL);
 
-    await expect(
-      page.getByRole("button", { name: `Avanzar a «${PENDIENTE_1}»` }),
-    ).toBeEnabled();
+    const avanzar = page.getByRole("button", {
+      name: `Avanzar a «${PENDIENTE_1}»`,
+    });
+    await expect(avanzar).toBeEnabled();
 
     // El aviso se busca **dentro de la sección donde está el botón**, y no
     // en la página entera. Suelto, era una prueba de que la frase existe en
@@ -789,11 +790,15 @@ test.describe("los procesos del bufete", () => {
     // aviso en otra.
     //
     // La región cambió de nombre con T-2 —«Lo que falta» se fundió en «Plan
-    // de trabajo»—, así que el ancla se mudó con el botón. Lo que no se
-    // aflojó es la exigencia: sigue siendo una región y no la página.
+    // de trabajo»—, así que el ancla se mudó con el botón. Con T-1 de
+    // `procesos-comodidad.md` se mudó otra vez, más cerca todavía: el aviso
+    // es el cuerpo de la pregunta que el botón abre, que es el momento
+    // exacto en que se decide. La exigencia sigue sin aflojarse: no es la
+    // página, es la pregunta.
+    await avanzar.click();
     await expect(
       page
-        .getByRole("region", { name: "Plan de trabajo", exact: true })
+        .getByRole("dialog", { name: `¿Marcar cumplida «${PENDIENTE_1}»?` })
         .getByText(/No se puede deshacer/i),
     ).toBeVisible();
   });
@@ -953,6 +958,10 @@ test.describe("los procesos del bufete", () => {
     await page
       .getByRole("button", { name: `Avanzar a «${PENDIENTE_2}»` })
       .click();
+    await page
+      .getByRole("dialog", { name: `¿Marcar cumplida «${PENDIENTE_2}»?` })
+      .getByRole("button", { name: "Marcar cumplida" })
+      .click();
 
     const cumplidos = page.locator(".plantilla__etapa--cumplida");
     await expect(cumplidos).toHaveCount(3);
@@ -1005,6 +1014,18 @@ test.describe("los procesos del bufete", () => {
     await page.getByRole("button", { name: "Cerrar el proceso" }).click();
     await page.getByRole("button", { name: "Reabrir el proceso" }).waitFor();
 
+    // Cerrado, el plan se lee en vez de editarse (T-1 de
+    // `procesos-comodidad.md`), pero lo que se dibuja sigue siendo el
+    // borrador, y sigue diciendo que no está guardado.
+    await expect(
+      page.locator(".plantilla__nombre", {
+        hasText: "Entrevista en el consulado",
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("Hay cambios sin guardar")).toBeVisible();
+
+    // Y al reabrir vuelve al campo, con lo que se había escrito.
+    await page.getByRole("button", { name: "Reabrir el proceso" }).click();
     await expect(renglon).toHaveValue("Entrevista en el consulado");
     await expect(page.getByText("Hay cambios sin guardar")).toBeVisible();
   });
@@ -1261,8 +1282,12 @@ test.describe("los procesos del bufete", () => {
     await page.goto(PENDIENTES_URL);
 
     await page.locator(".pendiente--vencido").getByRole("button", {
-      name: "Cerrar",
+      name: /^Marcar resuelto/,
     }).click();
+    await page
+      .getByRole("dialog", { name: "¿Marcar resuelto este pendiente?" })
+      .getByRole("button", { name: "Marcar resuelto" })
+      .click();
 
     // La respuesta trae la lista recontada: queda uno abierto y dos
     // cerrados, y el contador lo dice sin pedir nada más.
@@ -1712,6 +1737,10 @@ test.describe("los procesos del bufete", () => {
     await page
       .getByRole("button", { name: new RegExp(`Avanzar a .${PENDIENTE_1}`) })
       .click();
+    await page
+      .getByRole("dialog", { name: `¿Marcar cumplida «${PENDIENTE_1}»?` })
+      .getByRole("button", { name: "Marcar cumplida" })
+      .click();
 
     await expect.poll(() => pedidos.length).toBeGreaterThan(0);
   });
@@ -1801,9 +1830,12 @@ test.describe("los procesos del bufete", () => {
     await expect(
       page.getByRole("button", { name: new RegExp(`Avanzar a .${PENDIENTE_1}`) }),
     ).toBeDisabled();
+    // «Guardar plan» ya no está, ni apagado: cerrado no hay nada que
+    // guardar, porque el plan se lee como texto (T-1 de
+    // `procesos-comodidad.md`).
     await expect(
       page.getByRole("button", { name: "Guardar plan" }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
 
     // Las otras dos reglas viven en otras pestañas, y se llega a ellas por
     // la tira: cambiar de pestaña **no vuelve a montar la pantalla**, así
@@ -2326,5 +2358,154 @@ test.describe("de dónde viene cada proceso", () => {
     await expect(
       page.getByRole("link", { name: "Ver el cliente" }),
     ).toBeVisible();
+  });
+});
+
+/* ==========================================================================
+   Nada irreversible con un solo clic (T-1 de
+   `odd/tasks/procesos-comodidad.md`).
+
+   Marcar cumplida una etapa y marcar resuelto un pendiente escriben un hecho
+   que no se deshace. Hasta acá los dos salían con un clic y el aviso de que
+   no se deshacían quedaba **después** del botón. Ahora preguntan antes, en un
+   `<dialog>` modal, y lo que se mide es lo único que importa de esa pregunta:
+   que cancelar no escriba nada y que confirmar escriba exactamente una vez.
+   ========================================================================== */
+
+/**
+ * Las escrituras que la pantalla manda a la API, en orden.
+ *
+ * Un `GET` no cuenta: la pantalla relee lo que quiera y eso no deja rastro
+ * en la bitácora. Lo que se cuenta es todo lo demás, que sí lo deja. La
+ * lista vacía **sola** no prueba nada —pasaría igual con un escucha que no
+ * engancha—, así que cada prueba termina confirmando y viendo llegar una.
+ */
+function escriturasALaApi(page: Page): string[] {
+  const escrituras: string[] = [];
+  page.on("request", (peticion) => {
+    const ruta = new URL(peticion.url()).pathname;
+    if (ruta.startsWith("/api/") && peticion.method() !== "GET") {
+      escrituras.push(`${peticion.method()} ${ruta}`);
+    }
+  });
+  return escrituras;
+}
+
+test.describe("nada irreversible con un solo clic", () => {
+  test("avanzar pregunta antes, y ni «Cancelar» ni Escape escriben nada", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+    const escrituras = escriturasALaApi(page);
+
+    const avanzar = page.getByRole("button", {
+      name: `Avanzar a «${PENDIENTE_1}»`,
+    });
+    const dialogo = page.getByRole("dialog", {
+      name: `¿Marcar cumplida «${PENDIENTE_1}»?`,
+    });
+
+    await avanzar.click();
+    await expect(dialogo).toBeVisible();
+    // El aviso va **dentro** de la pregunta: es el único momento en que
+    // alguien lo lee justo antes de decidir.
+    await expect(dialogo.getByText(/No se puede deshacer/)).toBeVisible();
+
+    await dialogo.getByRole("button", { name: "Cancelar" }).click();
+    await expect(dialogo).toHaveCount(0);
+    await expect(avanzar).toBeFocused();
+    await expect(page.locator(".plantilla__etapa--cumplida")).toHaveCount(2);
+    expect(escrituras).toEqual([]);
+
+    await avanzar.click();
+    await expect(dialogo).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialogo).toHaveCount(0);
+    await expect(avanzar).toBeFocused();
+    expect(escrituras).toEqual([]);
+
+    await avanzar.click();
+    await dialogo.getByRole("button", { name: "Marcar cumplida" }).click();
+    await expect(page.locator(".plantilla__etapa--cumplida")).toHaveCount(3);
+    expect(escrituras).toEqual([`POST /api/procesos/${PROCESO_ID}/avanzar`]);
+  });
+
+  test("marcar resuelto un pendiente pregunta antes, y cancelar no escribe nada", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(PENDIENTES_URL);
+    const escrituras = escriturasALaApi(page);
+
+    // El botón de la fila dice **qué** resuelve: «Cerrar» suelto se
+    // confundía con «Cerrar el proceso», que está en la misma pantalla.
+    const resolver = page.getByRole("button", {
+      name: `Marcar resuelto «${PENDIENTE_LARGO}»`,
+    });
+    const dialogo = page.getByRole("dialog", {
+      name: "¿Marcar resuelto este pendiente?",
+    });
+
+    await resolver.click();
+    await expect(dialogo).toBeVisible();
+    await expect(dialogo).toContainText(PENDIENTE_LARGO);
+
+    await dialogo.getByRole("button", { name: "Cancelar" }).click();
+    await expect(dialogo).toHaveCount(0);
+    await expect(resolver).toBeFocused();
+    await expect(page.locator(".pendientes .pendiente")).toHaveCount(2);
+    expect(escrituras).toEqual([]);
+
+    await resolver.click();
+    await dialogo.getByRole("button", { name: "Marcar resuelto" }).click();
+    await expect(page.locator(".pendientes .pendiente")).toHaveCount(1);
+    expect(escrituras).toEqual([
+      `POST /api/procesos/${PROCESO_ID}/pendientes/${PENDIENTE_VENCIDO.id}/cerrar`,
+    ]);
+  });
+
+  test("un pendiente cerrado se lee entero: dice «Cerrado» y no se apaga", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(PENDIENTES_URL);
+
+    const cerrado = page.locator(".pendiente--cerrado");
+    await expect(cerrado).toHaveCount(1);
+    await expect(cerrado.locator(".etiqueta", { hasText: "Cerrado" })).toBeVisible();
+    // La opacidad bajaba la firma a 3.54:1, por debajo de AA. Lo cerrado se
+    // dice con la palabra y el borde, no apagando el texto.
+    expect(
+      await cerrado.evaluate((nodo) => getComputedStyle(nodo).opacity),
+    ).toBe("1");
+  });
+
+  test("con el proceso cerrado, el plan se lee y no ofrece nada que no se pueda guardar", async ({
+    page,
+  }) => {
+    await conProcesosCargados(page);
+    await page.goto(DETALLE_URL);
+    await page.locator(".plantilla__etapa .campo__control").first().waitFor();
+
+    await page.getByRole("button", { name: "Cerrar el proceso" }).click();
+    await page.getByRole("button", { name: "Reabrir el proceso" }).waitFor();
+
+    const plan = page.getByRole("region", {
+      name: "Plan de trabajo",
+      exact: true,
+    });
+    // Los nombres siguen ahí, como texto: el plan se lee, no se edita.
+    await expect(plan.getByText(PENDIENTE_1, { exact: true })).toBeVisible();
+    await expect(plan.getByRole("textbox")).toHaveCount(0);
+    await expect(
+      plan.getByRole("button", { name: /^(Subir|Bajar|Quitar) / }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Agregar etapa" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Guardar plan" }),
+    ).toHaveCount(0);
   });
 });

@@ -61,7 +61,8 @@ export const BORRADOR_DE_PENDIENTE_VACIO: BorradorDePendiente = {
  * afirmar en una prueba en vez de quedar enterrado en un `.tsx`.
  */
 export const AVISO_PENDIENTE_NO_SE_REABRE =
-  "Cerrar deja firmado quién lo cerró y cuándo, y no se reabre: esa firma" +
+  "Marcarlo resuelto lo cierra y deja firmado quién y cuándo, y no se" +
+  " reabre: esa firma" +
   " es un hecho y borrarla sería reescribir lo que pasó. Si después resulta" +
   " que faltaba otra cosa, se anota un pendiente nuevo que diga qué falta" +
   " ahora; el cerrado queda como registro de lo que ya se persiguió.";

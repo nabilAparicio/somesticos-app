@@ -61,6 +61,7 @@ import type {
 } from "../../../worker/contract";
 import { diaLegible } from "../../formatos";
 import { Aviso } from "../../layout/Aviso";
+import { Confirmacion } from "../../layout/Confirmacion";
 import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
 import { Prosa } from "../../layout/Prosa";
@@ -165,6 +166,14 @@ export function PanelDeGastos({ procesoId }: Props) {
    */
   const archivo = useRef<HTMLInputElement>(null);
   const [adjuntando, setAdjuntando] = useState<MovimientoDeGasto | null>(null);
+
+  /**
+   * El movimiento que se está por quitar, mientras se pregunta.
+   *
+   * Quitar borra el movimiento **y su comprobante**, y los dos salían con un
+   * clic. La pregunta nombra los dos (T-1 de `procesos-comodidad.md`).
+   */
+  const [porQuitar, setPorQuitar] = useState<MovimientoDeGasto | null>(null);
 
   useEffect(() => {
     const control = new AbortController();
@@ -518,10 +527,12 @@ export function PanelDeGastos({ procesoId }: Props) {
 
                               <button
                                 type="button"
-                                className="boton boton--tenue"
+                                className="boton boton--tenue boton--peligro"
                                 aria-label={`Quitar «${movimiento.concepto}» de la cuenta`}
                                 disabled={ocupado}
-                                onClick={() => void quitar(movimiento)}
+                                onClick={() => {
+                                  setPorQuitar(movimiento);
+                                }}
                               >
                                 Quitar
                               </button>
@@ -680,6 +691,29 @@ export function PanelDeGastos({ procesoId }: Props) {
           </>
         )}
       </Pila>
+
+      {porQuitar !== null && (
+        <Confirmacion
+          titulo={`¿Quitar «${porQuitar.concepto}» (${montoLegible(
+            porQuitar.monto,
+          )})?`}
+          accion="Quitar movimiento"
+          peligro
+          alCancelar={() => {
+            setPorQuitar(null);
+          }}
+          alConfirmar={() => {
+            setPorQuitar(null);
+            void quitar(porQuitar);
+          }}
+        >
+          {/* El comprobante se nombra sólo si existe: decir que se borra un
+              papel que nunca se adjuntó haría dudar de qué movimiento es. */}
+          {porQuitar.tieneComprobante && (
+            <Prosa como="p">También se borra su comprobante.</Prosa>
+          )}
+        </Confirmacion>
+      )}
     </section>
   );
 }

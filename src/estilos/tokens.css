@@ -30,6 +30,12 @@
   --color-acento: #6b4f1f;
   --color-acento-tenue: #efe6d4;
   --color-foco: #2f6f9e;
+  /* T-1 de `procesos-comodidad.md`: lo que borra se distingue de lo que no.
+     Es el único rojo de la paleta y va **sólo** en acciones destructivas,
+     nunca en un estado: lo vencido sigue marcándose con el acento. Medido:
+     6.76:1 sobre `--color-fondo`, 7.37:1 sobre `--color-superficie` y
+     5.94:1 sobre `--color-acento-tenue`, y la superficie sobre él 7.37:1. */
+  --color-peligro: #a3261b;
 
   /* ---------- Espaciado ---------- */
   /* Los tres escalones grandes son fluidos: el aire crece con la pantalla,

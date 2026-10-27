@@ -537,12 +537,116 @@ test.describe("los gastos reales de un proceso", () => {
         name: /Quitar «Mensajería al Registro Público de Panamá»/,
       })
       .click();
+    // Desde T-1 de `procesos-comodidad.md`, quitar pregunta antes.
+    await page
+      .getByRole("dialog", { name: /^¿Quitar «Mensajería al Registro/ })
+      .getByRole("button", { name: "Quitar movimiento" })
+      .click();
 
     await expect(gastos).not.toContainText(
       "Mensajería al Registro Público de Panamá",
     );
     await expect(gastos).toContainText("4,222.22");
     await expect(gastos).not.toContainText("4,340.83");
+  });
+});
+
+/* ==========================================================================
+   Quitar no sale con un solo clic (T-1 de `odd/tasks/procesos-comodidad.md`).
+
+   Quitar borra el movimiento **y su comprobante**, y salía con un clic. Ahora
+   pregunta, nombrando el concepto y el importe, y avisa del papel sólo si lo
+   hay. Lo que se mide es lo que importa de la pregunta: cancelar no manda
+   ninguna escritura, y confirmar manda exactamente una.
+   ========================================================================== */
+
+/**
+ * Las escrituras que la pantalla manda a la API, en orden. Un `GET` no
+ * cuenta. La lista vacía sola no prueba nada —pasaría con un escucha que no
+ * engancha—, así que la prueba termina confirmando y viendo llegar una.
+ */
+function escriturasALaApi(page: Page): string[] {
+  const escrituras: string[] = [];
+  page.on("request", (peticion) => {
+    const ruta = new URL(peticion.url()).pathname;
+    if (ruta.startsWith("/api/") && peticion.method() !== "GET") {
+      escrituras.push(`${peticion.method()} ${ruta}`);
+    }
+  });
+  return escrituras;
+}
+
+test.describe("quitar un movimiento", () => {
+  test("pregunta antes, y ni «Cancelar» ni Escape escriben nada", async ({
+    page,
+  }) => {
+    await conLaCuentaCargada(page);
+    await page.goto(DETALLE_URL);
+    const escrituras = escriturasALaApi(page);
+
+    const gastos = panel(page);
+    const quitar = gastos.getByRole("button", {
+      name: /Quitar «Mensajería al Registro Público de Panamá»/,
+    });
+    const dialogo = page.getByRole("dialog", {
+      name: "¿Quitar «Mensajería al Registro Público de Panamá» (575.39)?",
+    });
+
+    await quitar.click();
+    await expect(dialogo).toBeVisible();
+    await dialogo.getByRole("button", { name: "Cancelar" }).click();
+    await expect(dialogo).toHaveCount(0);
+    await expect(quitar).toBeFocused();
+    await expect(gastos).toContainText(
+      "Mensajería al Registro Público de Panamá",
+    );
+    expect(escrituras).toEqual([]);
+
+    await quitar.click();
+    await expect(dialogo).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialogo).toHaveCount(0);
+    expect(escrituras).toEqual([]);
+
+    await quitar.click();
+    await dialogo.getByRole("button", { name: "Quitar movimiento" }).click();
+    await expect(gastos).not.toContainText(
+      "Mensajería al Registro Público de Panamá",
+    );
+    expect(escrituras).toHaveLength(1);
+    expect(escrituras[0]).toMatch(
+      new RegExp(`^DELETE /api/procesos/${PROCESO_ID}/gastos/`),
+    );
+  });
+
+  test("avisa que se borra el comprobante sólo si el movimiento lo tiene", async ({
+    page,
+  }) => {
+    await conLaCuentaCargada(page);
+    await page.goto(DETALLE_URL);
+    const gastos = panel(page);
+
+    // Con papel: la pregunta lo nombra.
+    await gastos
+      .getByRole("button", { name: /Quitar «Depósito inicial del cliente»/ })
+      .click();
+    const conPapel = page.getByRole("dialog", {
+      name: /^¿Quitar «Depósito inicial del cliente»/,
+    });
+    await expect(conPapel).toContainText("También se borra su comprobante.");
+    await conPapel.getByRole("button", { name: "Cancelar" }).click();
+
+    // Sin papel: no promete borrar algo que nunca se adjuntó.
+    await gastos
+      .getByRole("button", {
+        name: /Quitar «Mensajería al Registro Público de Panamá»/,
+      })
+      .click();
+    const sinPapel = page.getByRole("dialog", {
+      name: /^¿Quitar «Mensajería al Registro/,
+    });
+    await expect(sinPapel).toBeVisible();
+    await expect(sinPapel).not.toContainText("comprobante");
   });
 });
 
