@@ -134,77 +134,77 @@ INSERT INTO cotizacion (id, tenant_id, cliente_id, codigo, estado, fecha, vence_
 -- ---------------------------------------------------------------------------
 
 -- COT-2026-0001 · Inversiones Casco Viejo, S.A. · dos compraventas
-INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, tipo, orden, contenido) VALUES
- ('96000000-0000-4000-8000-000000000101', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000001', 'antecedentes', 0,
+INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, plantilla_id, orden, contenido) VALUES
+ ('96000000-0000-4000-8000-000000000101', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000001', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'antecedentes'), 0,
   'Inversiones Casco Viejo, S.A. nos solicitó el acompañamiento legal para la adquisición de dos inmuebles en la ciudad de Panamá: la finca 30145, correspondiente al lote 14 de Punta Pacífica, y la finca 28870, un local comercial en Avenida B del Casco Antiguo. Las dos operaciones se negociaron por separado con vendedores distintos, pero la sociedad compradora es la misma y el cierre se quiere coordinado, de modo que esta propuesta las trata como un solo encargo.'),
- ('96000000-0000-4000-8000-000000000102', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000001', 'alcance', 1,
+ ('96000000-0000-4000-8000-000000000102', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000001', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'alcance'), 1,
   'Para cada una de las dos fincas el bufete asume: el estudio registral de títulos de los últimos diez años, con revisión de gravámenes, hipotecas, servidumbres y limitaciones de dominio; la redacción y negociación del contrato de promesa de compraventa; la confección de la minuta de la escritura pública de compraventa y su protocolización ante notaría; la gestión de los paz y salvo municipal, de ANATI y del IDAAN; y el seguimiento de la inscripción en el Registro Público hasta la entrega del certificado con la nueva titularidad a nombre de la sociedad.
 
 Se incluyen además dos reuniones de cierre con la contraparte por cada finca y la coordinación con el banco acreedor si la compra se financia.'),
- ('96000000-0000-4000-8000-000000000103', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000001', 'exclusiones', 2,
+ ('96000000-0000-4000-8000-000000000103', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000001', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'exclusiones'), 2,
   'No se incluyen en esta propuesta: el avalúo de los inmuebles; la tramitación de permisos de construcción, remodelación u ocupación; la defensa en procesos judiciales o administrativos que surjan de la operación; la gestión del impuesto de transferencia de bienes inmuebles, que por ley corresponde al vendedor; ni la constitución de sociedades o fideicomisos nuevos para alojar los activos. Cualquiera de estos trabajos se cotiza aparte.'),
- ('96000000-0000-4000-8000-000000000104', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000001', 'supuestos', 3,
+ ('96000000-0000-4000-8000-000000000104', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000001', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'supuestos'), 3,
   'Esta propuesta parte de que las dos fincas están libres de gravámenes y de litigios pendientes, de que los vendedores cuentan con los paz y salvo al día, y de que la sociedad compradora está inscrita y con su agente residente vigente. Si el estudio de títulos revela una hipoteca, un embargo o una sucesión sin liquidar, el trabajo de saneamiento se presupuesta aparte y se avisa antes de empezarlo.'),
- ('96000000-0000-4000-8000-000000000105', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000001', 'clausulas', 4,
+ ('96000000-0000-4000-8000-000000000105', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000001', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'clausulas'), 4,
   'Honorarios en dólares de los Estados Unidos de América, moneda de curso legal en la República de Panamá. Los gastos de registro, notaría y certificaciones son estimados y se liquidan contra comprobante: lo que exceda del estimado se factura al costo y lo que sobre se devuelve. Esta propuesta tiene una vigencia de treinta días calendario contados desde su fecha de emisión. La aceptación se formaliza con la firma del contrato de servicios profesionales y el pago de la primera cuota.');
 
 -- COT-2026-0002 · Hans-Peter Müller · compraventa en Coronado (la que se perdió)
-INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, tipo, orden, contenido) VALUES
- ('96000000-0000-4000-8000-000000000201', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', 'antecedentes', 0,
+INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, plantilla_id, orden, contenido) VALUES
+ ('96000000-0000-4000-8000-000000000201', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'antecedentes'), 0,
   'El señor Hans-Peter Müller, de nacionalidad alemana y con trámite de residencia por jubilación en curso en este mismo bufete, nos consultó por la compra del apartamento 12-B del PH Playa Serena, en Coronado, provincia de Panamá Oeste. La operación se negocia directamente con el promotor y el precio acordado es de US$ 285 000,00.'),
- ('96000000-0000-4000-8000-000000000202', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', 'alcance', 1,
+ ('96000000-0000-4000-8000-000000000202', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'alcance'), 1,
   'El bufete asume el estudio registral de la finca y de su régimen de propiedad horizontal, con revisión del reglamento de copropiedad y de las cuotas de mantenimiento pendientes; la revisión y negociación del contrato de promesa de compraventa ofrecido por el promotor; la confección de la minuta de la escritura pública y su protocolización; la obtención de los paz y salvo de la administración del PH, del municipio y del IDAAN; y el seguimiento de la inscripción en el Registro Público hasta la entrega del certificado de propiedad.'),
- ('96000000-0000-4000-8000-000000000203', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', 'exclusiones', 2,
+ ('96000000-0000-4000-8000-000000000203', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'exclusiones'), 2,
   'Quedan fuera: el avalúo del inmueble; la inspección técnica de la obra; la gestión de financiamiento hipotecario y su escritura de constitución; el trámite de traspaso de los servicios de agua y electricidad; y cualquier reclamo ante la Dirección de Protección al Consumidor por vicios de construcción.'),
- ('96000000-0000-4000-8000-000000000204', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', 'supuestos', 3,
+ ('96000000-0000-4000-8000-000000000204', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'supuestos'), 3,
   'Se asume que el PH Playa Serena está debidamente incorporado al régimen de propiedad horizontal y que la finca matriz está libre de hipoteca del promotor, o que el promotor obtendrá la cancelación parcial antes del cierre. Se asume también que el comprador cuenta con una cuenta bancaria local para el pago, o que el pago se hará por transferencia internacional con el sustento de origen de fondos que el banco exija.'),
- ('96000000-0000-4000-8000-000000000205', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', 'clausulas', 4,
+ ('96000000-0000-4000-8000-000000000205', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'clausulas'), 4,
   'Honorarios en dólares de los Estados Unidos de América. Los gastos de notaría, registro y certificaciones son estimados y se liquidan contra comprobante. Esta propuesta tiene una vigencia de treinta días calendario. La aceptación se formaliza con la firma del contrato de servicios profesionales y el pago del cincuenta por ciento de los honorarios.'),
- ('96000000-0000-4000-8000-000000000206', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', 'nota_cliente', 5,
+ ('96000000-0000-4000-8000-000000000206', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000002', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'nota_cliente'), 5,
   'Señor Müller: como su trámite de residencia por jubilación ya está en curso con nosotros, la compra del apartamento no lo afecta ni lo acelera, pero sí conviene que la escritura quede inscrita antes de la cita en Migración, porque el certificado de propiedad sirve como comprobante de arraigo. Si decide avanzar, avísenos con dos semanas de anticipación para coordinar el estudio de títulos.');
 
 -- COT-2026-0003 · Agropecuaria Chiriquí, S.A. · tres visas de trabajo (emitida)
-INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, tipo, orden, contenido) VALUES
- ('96000000-0000-4000-8000-000000000301', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000003', 'antecedentes', 0,
+INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, plantilla_id, orden, contenido) VALUES
+ ('96000000-0000-4000-8000-000000000301', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000003', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'antecedentes'), 0,
   'Agropecuaria Chiriquí, S.A. contrató a tres técnicos agrícolas extranjeros para su finca de Boquete y necesita regularizar su permanencia en el país antes del inicio de la zafra. La empresa ya tramitó con este bufete el permiso de un cuarto técnico, de nacionalidad británica, que se encuentra en etapa de presentación ante Migración, y pidió una propuesta para los tres restantes.'),
- ('96000000-0000-4000-8000-000000000302', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000003', 'alcance', 1,
+ ('96000000-0000-4000-8000-000000000302', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000003', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'alcance'), 1,
   'Por cada uno de los tres solicitantes el bufete asume: la revisión de la documentación de origen y la indicación de qué debe venir apostillado y traducido por traductor público autorizado; la confección y el refrendo del contrato de trabajo ante el Ministerio de Trabajo y Desarrollo Laboral; la confección del poder y la solicitud ante el Servicio Nacional de Migración; el acompañamiento a la cita de registro biométrico; el seguimiento de la resolución; y el retiro y entrega del carné de residente.
 
 Se incluye además la verificación del porcentaje de trabajadores extranjeros de la planilla, para confirmar que las tres contrataciones caben dentro del diez por ciento que la ley permite.'),
- ('96000000-0000-4000-8000-000000000303', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000003', 'exclusiones', 2,
+ ('96000000-0000-4000-8000-000000000303', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000003', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'exclusiones'), 2,
   'No se incluyen: la obtención de los antecedentes penales del país de origen ni su apostilla, que corresponde gestionar a cada solicitante; la traducción pública de los documentos, que se contrata directamente con el traductor y se paga al costo; el carné de salud panameño; ni la tramitación de permisos para dependientes o familiares, que se cotiza por separado a razón de un permiso por persona.'),
- ('96000000-0000-4000-8000-000000000304', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000003', 'supuestos', 3,
+ ('96000000-0000-4000-8000-000000000304', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000003', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'supuestos'), 3,
   'Esta propuesta asume que los tres solicitantes se encuentran en el país con estatus migratorio regular al momento de presentar la solicitud, que la empresa está al día con la Caja de Seguro Social y con la Dirección General de Ingresos, y que la planilla admite las tres contrataciones dentro del porcentaje legal de personal extranjero. Si alguno de los tres estuviera fuera de estatus, el trámite cambia de categoría y la propuesta se rehace.'),
- ('96000000-0000-4000-8000-000000000305', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000003', 'clausulas', 4,
+ ('96000000-0000-4000-8000-000000000305', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000003', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'clausulas'), 4,
   'Honorarios en dólares de los Estados Unidos de América. Las tasas del Servicio Nacional de Migración y los costos de carné son estimados oficiales vigentes a la fecha de esta propuesta y se liquidan contra comprobante; un ajuste de tarifas de la autoridad se traslada al costo. Esta propuesta tiene una vigencia de sesenta días calendario. El plan de pagos acordado consta al pie y se factura por cuota vencida.');
 
 -- COT-2026-0004 · Hans-Peter Müller · la copia de COT-2026-0002, con la tarifa revisada
 --
 -- Los módulos se copian tal cual, que es lo que hace `duplicar`: la prosa de
 -- la propuesta no cambia, lo que cambia es el honorario.
-INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, tipo, orden, contenido) VALUES
- ('96000000-0000-4000-8000-000000000401', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', 'antecedentes', 0,
+INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, plantilla_id, orden, contenido) VALUES
+ ('96000000-0000-4000-8000-000000000401', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'antecedentes'), 0,
   'El señor Hans-Peter Müller, de nacionalidad alemana y con trámite de residencia por jubilación en curso en este mismo bufete, nos consultó por la compra del apartamento 12-B del PH Playa Serena, en Coronado, provincia de Panamá Oeste. La operación se negocia directamente con el promotor y el precio acordado es de US$ 285 000,00.'),
- ('96000000-0000-4000-8000-000000000402', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', 'alcance', 1,
+ ('96000000-0000-4000-8000-000000000402', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'alcance'), 1,
   'El bufete asume el estudio registral de la finca y de su régimen de propiedad horizontal, con revisión del reglamento de copropiedad y de las cuotas de mantenimiento pendientes; la revisión y negociación del contrato de promesa de compraventa ofrecido por el promotor; la confección de la minuta de la escritura pública y su protocolización; la obtención de los paz y salvo de la administración del PH, del municipio y del IDAAN; y el seguimiento de la inscripción en el Registro Público hasta la entrega del certificado de propiedad.'),
- ('96000000-0000-4000-8000-000000000403', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', 'exclusiones', 2,
+ ('96000000-0000-4000-8000-000000000403', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'exclusiones'), 2,
   'Quedan fuera: el avalúo del inmueble; la inspección técnica de la obra; la gestión de financiamiento hipotecario y su escritura de constitución; el trámite de traspaso de los servicios de agua y electricidad; y cualquier reclamo ante la Dirección de Protección al Consumidor por vicios de construcción.'),
- ('96000000-0000-4000-8000-000000000404', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', 'supuestos', 3,
+ ('96000000-0000-4000-8000-000000000404', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'supuestos'), 3,
   'Se asume que el PH Playa Serena está debidamente incorporado al régimen de propiedad horizontal y que la finca matriz está libre de hipoteca del promotor, o que el promotor obtendrá la cancelación parcial antes del cierre. Se asume también que el comprador cuenta con una cuenta bancaria local para el pago, o que el pago se hará por transferencia internacional con el sustento de origen de fondos que el banco exija.'),
- ('96000000-0000-4000-8000-000000000405', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', 'clausulas', 4,
+ ('96000000-0000-4000-8000-000000000405', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'clausulas'), 4,
   'Honorarios en dólares de los Estados Unidos de América. Los gastos de notaría, registro y certificaciones son estimados y se liquidan contra comprobante. Esta propuesta tiene una vigencia de treinta días calendario. La aceptación se formaliza con la firma del contrato de servicios profesionales y el pago del cincuenta por ciento de los honorarios.'),
- ('96000000-0000-4000-8000-000000000406', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', 'nota_cliente', 5,
+ ('96000000-0000-4000-8000-000000000406', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000004', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'nota_cliente'), 5,
   'Señor Müller: retomamos la propuesta de agosto con el honorario revisado, que es lo único que cambia. El alcance es el mismo y los gastos de notaría y registro siguen siendo los oficiales. Quedamos a la espera de su confirmación para coordinar el estudio de títulos con el promotor.');
 
 -- COT-2026-0005 · Fundación Manglar Vivo · el borrador que el pendiente abierto pide
-INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, tipo, orden, contenido) VALUES
- ('96000000-0000-4000-8000-000000000501', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000005', 'antecedentes', 0,
+INSERT INTO cotizacion_modulo (id, tenant_id, cotizacion_id, plantilla_id, orden, contenido) VALUES
+ ('96000000-0000-4000-8000-000000000501', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000005', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'antecedentes'), 0,
   'La Fundación Manglar Vivo, organización sin fines de lucro dedicada a la restauración de humedales en la bahía de Panamá, recibió a una bióloga de nacionalidad neerlandesa para un programa de voluntariado de dos años y necesita regularizar su permanencia. La fundación nos pidió una propuesta con tarifa social.'),
- ('96000000-0000-4000-8000-000000000502', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000005', 'alcance', 1,
+ ('96000000-0000-4000-8000-000000000502', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000005', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'alcance'), 1,
   'El bufete asume la revisión de la documentación de origen y la indicación de qué debe venir apostillado; la confección del contrato de trabajo y su refrendo ante el Ministerio de Trabajo y Desarrollo Laboral; la solicitud de permiso de residencia y trabajo ante el Servicio Nacional de Migración; el acompañamiento a la cita de registro biométrico; y el retiro y entrega del carné de residente.'),
- ('96000000-0000-4000-8000-000000000503', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000005', 'exclusiones', 2,
+ ('96000000-0000-4000-8000-000000000503', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000005', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'exclusiones'), 2,
   'No se incluyen los antecedentes penales del país de origen ni su apostilla, la traducción pública de los documentos, el carné de salud panameño, ni la renovación del permiso al vencimiento del primer año.'),
- ('96000000-0000-4000-8000-000000000504', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000005', 'nota_cliente', 3,
+ ('96000000-0000-4000-8000-000000000504', 'ead2d071-2ff7-4461-bf95-941c1e90d6d8', 'b5000000-0000-4000-8000-000000000005', (SELECT id FROM modulo_plantilla WHERE tenant_id = 'ead2d071-2ff7-4461-bf95-941c1e90d6d8' AND clave = 'nota_cliente'), 3,
   'El honorario de esta propuesta es la tarifa que el bufete aplica a organizaciones sin fines de lucro inscritas, y está por debajo de la tarifa corriente para este mismo trámite. Las tasas del Servicio Nacional de Migración no admiten rebaja y van al costo.');
 
 -- ---------------------------------------------------------------------------
@@ -293,8 +293,12 @@ UPDATE cotizacion
                                   WHEN 'nota_cliente'  THEN 'Nota al cliente'
                                 END,
                       'contenido', m.contenido))
-               FROM (SELECT tipo, contenido FROM cotizacion_modulo
-                      WHERE cotizacion_id = q.id ORDER BY orden) m),
+               FROM (SELECT p.clave AS tipo, cm.contenido
+                       FROM cotizacion_modulo cm
+                       JOIN modulo_plantilla p
+                         ON p.id = cm.plantilla_id
+                        AND p.tenant_id = cm.tenant_id
+                      WHERE cm.cotizacion_id = q.id ORDER BY cm.orden) m),
            'lineas', (
              SELECT json_group_array(json_object(
                       'clase', l.clase,
@@ -355,8 +359,12 @@ UPDATE cotizacion
                                   WHEN 'nota_cliente'  THEN 'Nota al cliente'
                                 END,
                       'contenido', m.contenido))
-               FROM (SELECT tipo, contenido FROM cotizacion_modulo
-                      WHERE cotizacion_id = q.id ORDER BY orden) m),
+               FROM (SELECT p.clave AS tipo, cm.contenido
+                       FROM cotizacion_modulo cm
+                       JOIN modulo_plantilla p
+                         ON p.id = cm.plantilla_id
+                        AND p.tenant_id = cm.tenant_id
+                      WHERE cm.cotizacion_id = q.id ORDER BY cm.orden) m),
            'lineas', (
              SELECT json_group_array(json_object(
                       'clase', l.clase,
@@ -417,8 +425,12 @@ UPDATE cotizacion
                                   WHEN 'nota_cliente'  THEN 'Nota al cliente'
                                 END,
                       'contenido', m.contenido))
-               FROM (SELECT tipo, contenido FROM cotizacion_modulo
-                      WHERE cotizacion_id = q.id ORDER BY orden) m),
+               FROM (SELECT p.clave AS tipo, cm.contenido
+                       FROM cotizacion_modulo cm
+                       JOIN modulo_plantilla p
+                         ON p.id = cm.plantilla_id
+                        AND p.tenant_id = cm.tenant_id
+                      WHERE cm.cotizacion_id = q.id ORDER BY cm.orden) m),
            'lineas', (
              SELECT json_group_array(json_object(
                       'clase', l.clase,
