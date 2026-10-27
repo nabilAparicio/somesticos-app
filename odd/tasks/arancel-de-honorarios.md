@@ -176,7 +176,9 @@ moneda (`cotizacion.moneda` es un `CHECK` cerrado en `'USD'`).
       siembra, igual que los de `0006_emitir_y_congelar.sql`: si es una cita,
       la base lo sostiene y no la buena intención.
 - [x] **La clave es `(tenant_id, orden)`, nunca el numeral.** T-1 lo midió:
-      31 renglones comparten numeral con otro de su misma categoría, por tres
+      44 renglones, en 15 grupos, comparten numeral con otro de su misma
+      categoría —29 si se cuentan solo las repeticiones más allá de la
+      primera—, por tres
       razones del documento —las letras reinician bajo cada padre,
       «ACTUACIONES EN NEGOCIOS CRIMINALES» tiene dos secciones numeradas `5.`,
       y los renglones sin numerar heredan el del padre—. Un `UNIQUE` sobre el
@@ -256,7 +258,7 @@ merge siguen siendo decisión del usuario.
 - **`sinClasificar` quedó vacío**: ninguna línea del Artículo 4 se descartó.
 - Hay dos cosas que el criterio de aceptación 1 tiene que corregir cuando se
   reescriba: los renglones son 453, no 358, y la clave de un renglón es
-  `orden`, no `numeral` —el acuerdo repite numerales en 31 renglones, ver la
+  `orden`, no `numeral` —el acuerdo repite numerales en 44 renglones, ver la
   lectura 13—.
 - **T-2 cerrada.** `migrations/0012_arancel_de_honorarios.sql` trae
   `arancel_renglon` y `arancel_nota`, la API vive en `worker/arancel/`
