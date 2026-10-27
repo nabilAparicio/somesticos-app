@@ -43,19 +43,23 @@
  * lo único que falta es la sentencia. Lo que no se hizo es abrir la escritura
  * sin la operación que la usa.
  *
- * ## Por qué no hay `crear` ni `borrar`
+ * ## Hay `crear` desde T-7, y no hay `borrar` nunca
  *
- * **`crear` no todavía**, porque está fuera del alcance autorizado de la
- * tajada 1: una plantilla nueva necesita una `clave` derivada del rótulo, y
- * mientras `cotizacion_modulo.tipo` estuvo cerrado por el `CHECK` de `0004`
- * una clave nueva era una plantilla **inservible** —el editor la ofrecía y la
- * base rechazaba el primer módulo que la usara—. **`0017` quitó ese techo**:
- * la columna es `plantilla_id`, una referencia a esta tabla, así que una
- * plantilla nueva ya se puede usar. El alta es T-7, y lo que falta ahora es la
- * ruta y la acuñación de la clave, no un cambio de esquema. Es también por eso
- * que `creado` no está todavía en el vocabulario de bitácora de esta entidad:
- * la ausencia del verbo es cómo se dice que la operación no es de esta unidad,
- * y entra con la ruta que lo emita.
+ * **`crear` llegó cuando `0017` quitó el techo.** Mientras
+ * `cotizacion_modulo.tipo` estuvo cerrado por el `CHECK` de `0004`, una clave
+ * nueva era una plantilla **inservible** —el editor la ofrecía y la base
+ * rechazaba el primer módulo que la usara—, y por eso la tajada 1 no la
+ * construyó. Con la columna convertida en `plantilla_id`, una referencia a
+ * esta tabla, una plantilla nueva ya se puede usar, y lo único que faltaba era
+ * acuñar la clave: eso vive en `acunarClave` de `dominio.ts`, que es puro y
+ * tiene sus bordes probados aparte.
+ *
+ * Con la ruta entró el verbo: `creado` está ahora en el vocabulario de
+ * bitácora de esta entidad, y **no hizo falta migración** —ya estaba en el
+ * `CHECK` de `accion` desde `0012:132`, y la entidad ya estaba en el `CHECK` de
+ * `entidad` desde `0016`—. Que la ausencia del verbo significara «la operación
+ * no es de esta unidad» es justamente lo que hace que agregarlo cueste una
+ * línea.
  *
  * **`borrar` nunca**, y acá el argumento es más fuerte que en el arancel: una
  * plantilla borrada deja sin rótulo los módulos de las cotizaciones vivas.
@@ -88,9 +92,11 @@ import type { PlantillaDeModulo } from "../contract";
 import { accionDeEdicion } from "../bitacora/vocabulario";
 import type { BaseDeDatos } from "../db/base";
 import { recorte, sentencia } from "../db/base";
+import { nuevoId } from "../db/ids";
 import {
   camposSinPreset,
   valorVigente,
+  type DatosDeAlta,
   type DatosDePlantilla,
 } from "./dominio";
 
@@ -102,6 +108,24 @@ export type ResultadoDePlantilla =
    */
   | { estado: "sin_preset"; campos: string[] }
   | { estado: "no_encontrado" };
+
+/**
+ * Lo que puede salir de un alta (T-7).
+ *
+ * `clave_tomada` es la única negativa, y se cuenta **antes de escribir**: es
+ * la disciplina que `nombreTomado` de `worker/catalogos/repositorio.ts` ya
+ * aplica al nombre duplicado y que este proyecto aplica también al borrado
+ * bloqueado. No se atrapa el error de la base para disfrazarlo.
+ *
+ * No lleva la clave ni la fila que choca, y es deliberado: la falla del cable
+ * es `{ campo, motivo }` y no hay dónde ponerla, y la pantalla ya muestra la
+ * clave de cada módulo debajo de su rótulo — incluidas las dadas de baja, que
+ * son las que chocan sin que nadie las esté mirando. La frase del motivo manda
+ * a mirar esa lista, que es donde está la respuesta.
+ */
+export type ResultadoDeAlta =
+  | { estado: "creado"; plantilla: PlantillaDeModulo }
+  | { estado: "clave_tomada" };
 
 export interface ServicioDePlantillas {
   /**
@@ -129,6 +153,24 @@ export interface ServicioDePlantillas {
    * debiendo en `worker/bitacora/rutas.ts`.
    */
   obtener(tenantId: string, id: string): Promise<PlantillaDeModulo | null>;
+
+  /**
+   * Una plantilla propia del bufete, con su clave ya acuñada (T-7).
+   *
+   * Nace **vigente y última**: `activo = 1` porque una plantilla que hay que
+   * reactivar para usarla es un alta a medias, y `orden = MAX(orden) + 1`
+   * porque es la decisión menos sorprendente —el módulo nuevo aparece donde la
+   * persona lo acaba de agregar— y la única que no exige elegir una posición
+   * en un formulario de dos campos.
+   *
+   * Y nace **sin preset**: `rotulo_oficial` y `descripcion_oficial` quedan en
+   * NULL, que es lo que hace que esta fila sea del bufete y de nadie más. Las
+   * dos columnas son nullable desde `0016` justamente para esto, y la
+   * consecuencia visible es que en esta fila **vaciar un campo no vuelve a
+   * nada**: no hay piso debajo, así que `camposSinPreset` la rechaza con el
+   * 409 que T-2 construyó sin poder ejercerlo todavía.
+   */
+  crear(tenantId: string, datos: DatosDeAlta): Promise<ResultadoDeAlta>;
 
   /** El rótulo, la descripción y la vigencia. Lo único editable. */
   guardar(
@@ -226,6 +268,92 @@ export function plantillasSobreD1(base: BaseDeDatos): ServicioDePlantillas {
 
   return {
     obtener,
+
+    async crear(tenantId, datos) {
+      /*
+       * **La clave tomada se cuenta antes de escribir.**
+       *
+       * El único `modulo_plantilla_clave_unica` está debajo y es el que manda,
+       * pero lo que diría es `UNIQUE constraint failed:
+       * modulo_plantilla.tenant_id, modulo_plantilla.clave` envuelto en un
+       * 500 — que no es una negativa sino una caída. Es la misma disciplina
+       * que `nombreTomado` aplica en los catálogos: se cuenta, no se atrapa.
+       *
+       * **Y el índice no mira `activo`**, así que esta consulta tampoco: una
+       * plantilla dada de baja sigue teniendo su clave tomada, y tiene que
+       * seguir teniéndola —los módulos de las cotizaciones vivas la
+       * referencian por llave foránea desde `0017`—. Filtrar por `activo` acá
+       * sería dejar pasar el alta y que el índice la mate abajo, que es
+       * exactamente el 500 que esta consulta existe para evitar.
+       *
+       * Queda una carrera: dos altas simultáneas de la misma clave pasan las
+       * dos por acá y el índice mata la segunda. Se deja dicho en vez de
+       * resuelto con un `INSERT … ON CONFLICT`, por el mismo criterio con que
+       * los catálogos la dejan: el único es el piso que de verdad sostiene la
+       * regla, y esto es la mitad amable que existe para poder contestar.
+       */
+      const tomada = await db
+        .prepare(
+          "SELECT clave FROM modulo_plantilla" +
+            " WHERE tenant_id = ? AND clave = ?",
+        )
+        .bind(tenantId, datos.clave)
+        .first<{ clave: string }>();
+
+      if (tomada !== null) return { estado: "clave_tomada" };
+
+      // `COALESCE(MAX(...), 0) + 1` y no `COUNT(...) + 1`: con una fila
+      // reordenada a mano, contar daría una posición ya ocupada. El empate no
+      // rompe nada —`0016` no le puso único a `orden` y la lectura lo resuelve
+      // por `clave`— pero una plantilla nueva en el medio de la lista es una
+      // sorpresa que nadie pidió.
+      const ultima = await db
+        .prepare(
+          "SELECT COALESCE(MAX(orden), 0) + 1 AS siguiente" +
+            " FROM modulo_plantilla WHERE tenant_id = ?",
+        )
+        .bind(tenantId)
+        .first<{ siguiente: number }>();
+
+      const id = nuevoId();
+
+      await base.mutar(
+        {
+          entidad: "modulo_plantilla",
+          entidadId: id,
+          // El verbo que T-7 estrena. **Sin migración**: `creado` ya estaba
+          // en el `CHECK` de `accion` desde `0012:132`, y lo que faltaba era
+          // la ruta que lo emitiera. El `CHECK` de `entidad` ya tenía
+          // `modulo_plantilla` desde `0016`.
+          accion: "creado",
+          // El rótulo, que acá **es** el vigente: la fila nace sin preset, así
+          // que no hay `COALESCE` que hacer. Recortado por lo mismo que en la
+          // edición: `detalle` es una pista y el rótulo lo escribe una persona.
+          detalle: recorte(datos.rotulo),
+        },
+        sentencia(
+          "INSERT INTO modulo_plantilla (id, tenant_id, clave," +
+            " rotulo_oficial, descripcion_oficial, rotulo, descripcion," +
+            " orden, activo)" +
+            " VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, 1)",
+          id,
+          tenantId,
+          datos.clave,
+          datos.rotulo,
+          datos.descripcion,
+          ultima?.siguiente ?? 1,
+        ),
+      );
+
+      const plantilla = await obtener(tenantId, id);
+      if (plantilla === null) {
+        // Inalcanzable salvo que el `INSERT` no haya escrito: si pasa, es un
+        // defecto y no una negativa de negocio.
+        throw new Error("la plantilla de módulo recién creada no se pudo releer");
+      }
+
+      return { estado: "creado", plantilla };
+    },
 
     async listar(tenantId) {
       // `ORDER BY orden, clave`, y el segundo criterio no es decorativo:

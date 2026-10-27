@@ -28,7 +28,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   CAMPOS_INMUTABLES,
+  LARGO_MAXIMO_DE_LA_CLAVE,
+  acunarClave,
   camposSinPreset,
+  revisarAltaDePlantilla,
   revisarPlantilla,
   valorVigente,
   type DatosDePlantilla,
@@ -413,5 +416,301 @@ describe("el valor vigente es un COALESCE y nada más", () => {
    */
   it("una cadena vacía propia es un valor, no una ausencia", () => {
     expect(valorVigente("", "Alcance")).toBe("");
+  });
+});
+
+/* ==========================================================================
+   La acuñación de la clave (T-7)
+
+   La clave de una plantilla nueva **no se teclea**: sale del rótulo. El
+   abogado nombra «Observaciones del cliente» y el sistema acuña
+   `observaciones_del_cliente`.
+
+   Es la clase de código que está mal exactamente en los casos que nadie
+   escribe a mano, así que las pruebas son los bordes y no el caso feliz: los
+   diacríticos —`Cláusulas` no puede acuñar `cl_usulas`—, los signos, las
+   mayúsculas, las corridas de espacios, los separadores de los extremos y el
+   largo. Y los dos casos en que **no sale ninguna clave**, que son los que
+   tienen que ser una negativa y no una caída.
+   ========================================================================== */
+
+describe("la clave se acuña del rótulo", () => {
+  it("el caso que el usuario pidió por su nombre", () => {
+    expect(acunarClave("Observaciones del cliente")).toBe(
+      "observaciones_del_cliente",
+    );
+  });
+
+  /**
+   * **El caso que decide la implementación.** Un `replace` de lo que no es
+   * `[a-z0-9]` sobre el texto crudo acuñaría `cl_usulas`: la `á` no es ASCII,
+   * así que caería en el separador y partiría la palabra al medio. Lo que lo
+   * evita es descomponer en NFD y tirar las marcas combinantes **antes** de
+   * mirar qué es letra.
+   */
+  it("los diacríticos se pierden sin partir la palabra", () => {
+    expect(acunarClave("Cláusulas")).toBe("clausulas");
+    expect(acunarClave("Cláusulas")).not.toContain("_");
+  });
+
+  it("la eñe y la diéresis también son letras", () => {
+    expect(acunarClave("Año fiscal")).toBe("ano_fiscal");
+    expect(acunarClave("Bilingüe")).toBe("bilingue");
+  });
+
+  it("las mayúsculas bajan", () => {
+    expect(acunarClave("ALCANCE")).toBe("alcance");
+    expect(acunarClave("Nota Al Cliente")).toBe("nota_al_cliente");
+  });
+
+  it("los signos son separadores, y una corrida es uno solo", () => {
+    expect(acunarClave("Gastos / Tasas")).toBe("gastos_tasas");
+    expect(acunarClave("Acuerdo de confidencialidad (NDA)")).toBe(
+      "acuerdo_de_confidencialidad_nda",
+    );
+    expect(acunarClave("Alcance    del     trabajo")).toBe(
+      "alcance_del_trabajo",
+    );
+  });
+
+  it("los separadores de los extremos no quedan", () => {
+    expect(acunarClave("   Alcance   ")).toBe("alcance");
+    expect(acunarClave("¡¿Qué?!")).toBe("que");
+    expect(acunarClave("—Alcance—")).toBe("alcance");
+    expect(acunarClave("_alcance_")).toBe("alcance");
+  });
+
+  it("los números sirven igual", () => {
+    expect(acunarClave("Pagos 2024")).toBe("pagos_2024");
+    expect(acunarClave("2024")).toBe("2024");
+  });
+
+  /* ---- Los dos casos en que no sale ninguna clave ---------------------- */
+
+  /**
+   * El primero de los dos 422 que esta tarea tiene que contestar. Un rótulo
+   * que es solo signos o solo emoji es un rótulo del que no queda **nada**
+   * utilizable, y eso no puede ser un 500: ni el `NOT NULL` de la columna ni
+   * el único de `(tenant_id, clave)` son una negativa que alguien pueda leer.
+   */
+  it("un rótulo de solo signos no acuña nada", () => {
+    expect(acunarClave("«»")).toBeNull();
+    expect(acunarClave("---")).toBeNull();
+    expect(acunarClave("¿?")).toBeNull();
+    expect(acunarClave("   ")).toBeNull();
+    expect(acunarClave("")).toBeNull();
+  });
+
+  it("un rótulo de solo emoji tampoco", () => {
+    expect(acunarClave("🙂🎉")).toBeNull();
+  });
+
+  /**
+   * Un rótulo de solo diacríticos sueltos es el caso que la descomposición
+   * crea sola: `"´¨"` no tiene ninguna letra, y después de tirar las marcas
+   * no queda nada.
+   */
+  it("un rótulo de solo acentos sueltos tampoco", () => {
+    expect(acunarClave("́̈")).toBeNull();
+  });
+
+  /* ---- El largo -------------------------------------------------------- */
+
+  /**
+   * El tope existe porque el rótulo lo escribe una persona y la clave viaja
+   * fuera de esta tabla: la copia la IA en su respuesta y la congela el
+   * snapshot al emitir. Un rótulo de un párrafo acuñaría un identificador de
+   * un párrafo.
+   *
+   * Se corta **al carácter y no a la palabra**, y es deliberado: cortar en el
+   * último `_` dejaría sin clave a un rótulo que es una sola palabra de más
+   * de 40 letras, que es justo el caso que el corte tiene que resolver.
+   */
+  it("una clave larga se corta en el tope, sin dejar separador al final", () => {
+    const largo = acunarClave(
+      "Observaciones del cliente sobre el alcance del encargo",
+    );
+
+    expect(largo).toBe("observaciones_del_cliente_sobre_el_alcan");
+    expect(largo).toHaveLength(LARGO_MAXIMO_DE_LA_CLAVE);
+  });
+
+  it("si el corte cae sobre un separador, el separador se va", () => {
+    // El carácter número 40 de la clave acuñada es el separador, así que el
+    // corte lo deja al final y hay que quitarlo: una clave que termina en
+    // `_` es la que se ve como un identificador partido al medio.
+    const clave = acunarClave("Observaciones del cliente sobre el alca ce");
+
+    expect(clave).toBe("observaciones_del_cliente_sobre_el_alca");
+    expect(clave).toHaveLength(LARGO_MAXIMO_DE_LA_CLAVE - 1);
+  });
+
+  it("un rótulo que entra justo no se toca", () => {
+    const justo = "a".repeat(LARGO_MAXIMO_DE_LA_CLAVE);
+
+    expect(acunarClave(justo)).toBe(justo);
+  });
+
+  /**
+   * La prueba hostil del conjunto: **acuñar una clave dos veces da la misma
+   * clave**. No es una curiosidad —es la propiedad que hace que la clave sea
+   * estable—, y falla en cuanto el tope corta en un lugar que depende de lo
+   * que ya se cortó o un separador sobrevive en un extremo.
+   */
+  it("acuñar lo acuñado no cambia nada", () => {
+    const rotulos = [
+      "Observaciones del cliente",
+      "Cláusulas",
+      "¡¿Qué?!",
+      "Observaciones del cliente sobre el alcance del encargo",
+      "Gastos / Tasas",
+    ];
+
+    for (const rotulo of rotulos) {
+      const primera = acunarClave(rotulo);
+      expect(primera).not.toBeNull();
+      expect(acunarClave(primera as string)).toBe(primera);
+    }
+  });
+});
+
+/* ==========================================================================
+   El cuerpo de un alta (T-7)
+   ========================================================================== */
+
+/** Un cuerpo de alta completo y válido. */
+function alta(parcial: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    rotulo: "Observaciones del cliente",
+    descripcion: "Lo que el cliente dijo y conviene dejar escrito.",
+    ...parcial,
+  };
+}
+
+describe("revisarAltaDePlantilla", () => {
+  it("acuña la clave y recorta los dos textos", () => {
+    const revision = revisarAltaDePlantilla(
+      alta({ rotulo: "  Observaciones del cliente  ", descripcion: " Algo. " }),
+    );
+
+    expect(revision).toEqual({
+      estado: "ok",
+      datos: {
+        clave: "observaciones_del_cliente",
+        rotulo: "Observaciones del cliente",
+        descripcion: "Algo.",
+      },
+    });
+  });
+
+  it("no se puede traer la clave puesta", () => {
+    const revision = revisarAltaDePlantilla(alta({ clave: "la_mia" }));
+
+    expect(revision).toEqual({ estado: "inmutable", campos: ["clave"] });
+  });
+
+  /**
+   * Ni el preset. Un alta que sembrara su propio `rotulo_oficial` se estaría
+   * fabricando un piso al que volver, y el piso es de la migración: es lo que
+   * hace que «vaciar el campo devuelve el original» signifique algo.
+   */
+  it("no se puede traer el preestablecido puesto", () => {
+    const revision = revisarAltaDePlantilla(
+      alta({ descripcionOficial: "El mío", rotuloOficial: "El mío" }),
+    );
+
+    expect(revision).toEqual({
+      estado: "inmutable",
+      campos: ["descripcionOficial", "rotuloOficial"],
+    });
+  });
+
+  /**
+   * `activo` y `orden` se ignoran, y no es lo mismo que rechazarlos: no son
+   * columnas prohibidas sino columnas que esta operación no decide. Una
+   * plantilla nace vigente —igual que un catálogo de T-6— y su posición es la
+   * última, que la calcula el repositorio.
+   */
+  it("`activo` y `orden` no son campos prohibidos: se ignoran", () => {
+    const revision = revisarAltaDePlantilla(
+      alta({ activo: false, orden: 1 }),
+    );
+
+    expect(revision.estado).toBe("ok");
+  });
+
+  it("sin rótulo no hay alta", () => {
+    for (const rotulo of [undefined, null, "", "   "]) {
+      expect(revisarAltaDePlantilla(alta({ rotulo }))).toEqual({
+        estado: "invalido",
+        fallas: [{ campo: "rotulo", motivo: "rotulo_requerido" }],
+      });
+    }
+  });
+
+  /**
+   * **La asimetría con la edición, y es el punto de la tarea.** Un preset
+   * editado se puede vaciar porque `descripcion_oficial` lo cubre; una
+   * plantilla nueva no tiene nada debajo, así que la descripción es
+   * obligatoria desde el formulario. El `CHECK`
+   * `la_plantilla_tiene_descripcion_vigente` ya rechaza la fila; esto es lo
+   * que la convierte en un 422 que se puede leer.
+   */
+  it("sin descripción tampoco, y por eso existe la tajada", () => {
+    for (const descripcion of [undefined, null, "", "   "]) {
+      expect(revisarAltaDePlantilla(alta({ descripcion }))).toEqual({
+        estado: "invalido",
+        fallas: [
+          { campo: "descripcion", motivo: "descripcion_de_modulo_requerida" },
+        ],
+      });
+    }
+  });
+
+  it("devuelve las dos fallas y no la primera", () => {
+    expect(revisarAltaDePlantilla({})).toEqual({
+      estado: "invalido",
+      fallas: [
+        { campo: "rotulo", motivo: "rotulo_requerido" },
+        { campo: "descripcion", motivo: "descripcion_de_modulo_requerida" },
+      ],
+    });
+  });
+
+  it("lo que no es texto es una falla, no un `String(valor)`", () => {
+    expect(revisarAltaDePlantilla(alta({ rotulo: 7 }))).toEqual({
+      estado: "invalido",
+      fallas: [{ campo: "rotulo", motivo: "tipo_invalido" }],
+    });
+    expect(revisarAltaDePlantilla(alta({ descripcion: {} }))).toEqual({
+      estado: "invalido",
+      fallas: [{ campo: "descripcion", motivo: "tipo_invalido" }],
+    });
+  });
+
+  it("un cuerpo que no es objeto no es un alta", () => {
+    expect(revisarAltaDePlantilla("Alcance").estado).toBe("invalido");
+    expect(revisarAltaDePlantilla([]).estado).toBe("invalido");
+    expect(revisarAltaDePlantilla(null).estado).toBe("invalido");
+  });
+
+  /**
+   * **El segundo 422 de los dos, en su mitad pura.** Un rótulo que no acuña
+   * nada es un rótulo escribible —tiene caracteres, no está en blanco— del
+   * que no sale identificador. El motivo es propio y no `rotulo_requerido`:
+   * son dos problemas distintos y la salida que ofrecen es distinta.
+   */
+  it("un rótulo que no acuña nada tiene su propio motivo", () => {
+    expect(revisarAltaDePlantilla(alta({ rotulo: "«»" }))).toEqual({
+      estado: "invalido",
+      fallas: [{ campo: "rotulo", motivo: "rotulo_sin_clave" }],
+    });
+  });
+
+  /** Lo inmutable manda sobre lo inválido, igual que en la edición. */
+  it("lo inmutable manda sobre lo inválido", () => {
+    const revision = revisarAltaDePlantilla({ clave: "la_mia", rotulo: 7 });
+
+    expect(revision.estado).toBe("inmutable");
   });
 });

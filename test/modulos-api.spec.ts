@@ -627,6 +627,56 @@ describe("el alta rechaza lo que no es un módulo", () => {
     }
   });
 
+  /**
+   * **El cierre de la tajada 2, por el cable de módulos** (T-7). El bufete
+   * agrega un módulo desde `/catalogos/modulos` y lo usa en una cotización el
+   * mismo día. Hasta `0017` eso era imposible y no por falta de ruta: el
+   * `CHECK` `el_tipo_de_modulo_es_del_catalogo_cerrado` de `0004` habría
+   * rechazado este `POST`, así que una plantilla nueva era una plantilla
+   * inservible. Con la columna convertida en `plantilla_id`, lo que decide qué
+   * clave entra es la tabla del bufete.
+   *
+   * La plantilla se crea **por su API** y no por SQL, al revés que la baja de
+   * la prueba de arriba: acá lo que se mide es justamente que las dos rutas se
+   * encuentren —la clave que una acuñó es la que la otra acepta— y sembrarla a
+   * mano saltearía la acuñación, que es la mitad nueva.
+   *
+   * Y se retira en un `finally` por lo mismo que la de arriba devuelve
+   * `activo` a 1: el almacenamiento está aislado por archivo, esta tabla la
+   * siembra la migración y una plantilla no se borra. Una plantilla activa de
+   * más deja en rojo a las pruebas que cuentan cuántas hay.
+   */
+  it("una plantilla que el bufete acaba de crear ya se puede usar", async () => {
+    const creada = await comoAutor(
+      conCuerpo("/api/plantillas-modulo", "POST", {
+        rotulo: "Observaciones del cliente",
+        descripcion: "Lo que el cliente dijo y conviene dejar escrito.",
+      }),
+    );
+    expect(creada.status, await creada.clone().text()).toBe(201);
+
+    const { plantilla } = (await creada.json()) as {
+      plantilla: { id: string; clave: string };
+    };
+    expect(plantilla.clave).toBe("observaciones_del_cliente");
+
+    try {
+      const [modulo] = await agregar({
+        tipo: plantilla.clave,
+        contenido: "El cliente dijo que la escritura la tiene el banco.",
+      });
+
+      expect(modulo.tipo).toBe("observaciones_del_cliente");
+      expect((await listar())[0].tipo).toBe("observaciones_del_cliente");
+    } finally {
+      await env.DB.prepare(
+        "UPDATE modulo_plantilla SET activo = 0 WHERE tenant_id = ? AND id = ?",
+      )
+        .bind(TENANT_UNICO_ID, plantilla.id)
+        .run();
+    }
+  });
+
   it("rechaza un contenido que es sólo espacios", async () => {
     const respuesta = await comoAutor(
       conCuerpo(rutaDeModulos(), "POST", {

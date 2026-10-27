@@ -1686,6 +1686,39 @@
 }
 
 /*
+ * El formulario del alta, al pie de la lista (T-7).
+ *
+ * **No lleva la superficie de `.plantilla-modulo` y no es una omisión.** Un
+ * bloque con el mismo borde y el mismo fondo que los módulos se leería como un
+ * séptimo módulo vacío, que es lo contrario de lo que es: no es una fila del
+ * catálogo sino la forma de agregar una. Lo que lo separa de la lista es una
+ * línea arriba, que es lo mismo que `.navegacion__diagnostico` usa para
+ * despegar un bloque de lo que viene antes sin convertirlo en una tarjeta.
+ *
+ * El relleno vive en `__alta-cuerpo` y crece con el ancho del **contenedor**,
+ * por el mismo motivo —y con el mismo reparto— que `.plantilla-modulo__cuerpo`:
+ * una consulta de contenedor no puede dar estilo al elemento que la declaró. El
+ * relleno es sólo vertical: sin borde a los costados, un relleno horizontal
+ * desalinearía los dos campos del alta respecto de los de los módulos de
+ * arriba.
+ */
+.plantillas__alta {
+  container: plantillas-alta / inline-size;
+  min-width: 0;
+  border-block-start: var(--borde-fino);
+}
+
+.plantillas__alta-cuerpo {
+  padding-block: var(--espacio-s);
+}
+
+@container plantillas-alta (min-width: 30rem) {
+  .plantillas__alta-cuerpo {
+    padding-block: var(--espacio-l);
+  }
+}
+
+/*
  * El módulo dado de baja, atenuado y no escondido.
  *
  * Misma política que los catálogos de T-6: lo dado de baja se muestra marcado,

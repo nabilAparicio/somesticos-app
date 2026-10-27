@@ -338,18 +338,20 @@ acotado; el disparador es la regla de escritura y la de preparación.
 
 ### T-7 · Una plantilla nueva nace desde catálogos
 
-- [ ] `POST /api/plantillas-modulo` con la clave **derivada del rótulo** y no
+- [x] `POST /api/plantillas-modulo` con la clave **derivada del rótulo** y no
       tecleada: el abogado nombra «Observaciones del cliente» y el sistema
       acuña `observaciones_del_cliente`. Única por bufete, e inmutable desde
       que nace — el disparador de T-1 ya lo impide.
-- [ ] El verbo `creado` entra a `ACCIONES_POR_ENTIDAD`. **Sin migración**: ya
+- [x] El verbo `creado` entra a `ACCIONES_POR_ENTIDAD`. **Sin migración**: ya
       está en el `CHECK` de `accion`.
-- [ ] Choque de claves resuelto y dicho: dos rótulos que acuñan la misma clave
-      no pueden ser un 500 de la base.
-- [ ] La pantalla gana el alta, con la descripción **obligatoria** desde el
+- [x] Choque de claves resuelto y dicho: dos rótulos que acuñan la misma clave
+      no pueden ser un 500 de la base. **Son dos 422 y no uno**, con motivos y
+      frases distintas: el choque y el rótulo que no acuña nada son dos
+      problemas con dos salidas distintas.
+- [x] La pantalla gana el alta, con la descripción **obligatoria** desde el
       formulario: es lo que la IA va a leer, y una plantilla nueva no tiene
       preset debajo que la cubra.
-- [ ] La plantilla nueva se ofrece en el editor de la cotización **y llega al
+- [x] La plantilla nueva se ofrece en el editor de la cotización **y llega al
       prompt**. Se prueba de punta a punta: crear, usar en una cotización, y
       ver su descripción en el encargo al modelo.
 
@@ -1320,3 +1322,368 @@ antes de tocarlo.
 **Siguiente paso**: T-7, el alta de plantillas, que es lo que esta tarea y
 `0017` habilitan. Entra con el verbo `creado` en `ACCIONES_POR_ENTIDAD` y sin
 migración.
+
+### T-7 cerrada, y con ella la tajada 2 y la unidad entera
+
+**Archivos.** Ninguno nuevo. Modificados, 19: `test/plantillas-api.spec.ts`
+(+403/−4), `e2e/plantillas.spec.ts` (+357), `test/plantillas-ui.spec.ts`
+(+305/−1), `test/plantillas-dominio.spec.ts` (+299),
+`src/pantallas/catalogos/plantillas.ts` (+256/−14),
+`worker/plantillas/dominio.ts` (+233),
+`src/pantallas/catalogos/PlantillasDeModulo.tsx` (+229/−1),
+`test/plantillas-rutas.spec.ts` (+182/−10),
+`worker/plantillas/repositorio.ts` (+140/−12), `worker/contract.ts` (+122/−12),
+`test/generador-api.spec.ts` (+116), `worker/plantillas/rutas.ts` (+107/−23),
+`src/api/plantillas.ts` (+53/−10), `test/modulos-api.spec.ts` (+50),
+`src/mensajes.ts` (+34), `src/estilos/layout.css` (+33),
+`worker/cotizaciones/lineas.ts` (+27/−13), `worker/bitacora/vocabulario.ts`
+(+22/−12) y `worker/ia/modelo.ts` (+14/−6). **2.982 insertadas y 118
+quitadas** sin contar este documento. **Ningún archivo fuera de la superficie
+autorizada**, que es la primera tarea de la unidad en la que eso pasa.
+
+**La regla de acuñación, decidida y con sus bordes.** Cuatro pasos en este
+orden, y el primero es el que decide:
+
+1. **NFD y tirar las marcas combinantes.** Sin él, `Cláusulas` acuña
+   `cl_usulas`: la `á` no es `[a-z0-9]`, cae en el separador y parte la palabra
+   al medio. Descompuesta es una `a` seguida de un acento, así que tirar el
+   acento deja la letra. Vale igual para la eñe —`Año fiscal` da `ano_fiscal`,
+   artefacto conocido y aceptado: la clave es interna y el rótulo es lo que la
+   persona lee— y para la diéresis.
+2. **Minúsculas**, porque dos rótulos que difieren sólo en mayúsculas son el
+   mismo módulo escrito dos veces y el único tiene que verlo.
+3. **Toda corrida de lo que no es `[a-z0-9]` es un separador, uno solo.**
+   `Gastos / Tasas` tiene tres caracteres en el medio y una sola junta.
+4. **Los separadores de los extremos se van.** `¡¿Qué?!` acuña `que`.
+
+Y el tope **al final**, 40 caracteres: cortar antes de juntar las corridas
+dejaría el corte dependiendo de cuántos espacios había. Cuarenta y no veinte
+porque `observaciones_del_cliente` —el ejemplo del usuario— tiene 25, y un tope
+de veinte habría cortado justo el caso que la tarea existe para servir. El
+corte es **al carácter y no a la palabra**, porque cortar en el último `_`
+dejaría sin clave a un rótulo que es una sola palabra de más de 40 letras, que
+es justo el caso que el tope tiene que resolver; lo que sí se quita es el
+separador que el corte pudo dejar al final. El tope **no** es un `CHECK` de la
+base, a propósito: así subirlo mañana no es una migración, y lo que la base
+sostiene es la unicidad, que es la regla que de verdad no se puede violar.
+
+Tiene **19 pruebas propias** en `test/plantillas-dominio.spec.ts`, y la última
+es la hostil del conjunto: **acuñar lo acuñado no cambia nada**. No es una
+curiosidad, es la propiedad que hace que la clave sea estable, y se rompe en
+cuanto el tope corta en un lugar que depende de lo ya cortado o un separador
+sobrevive en un extremo.
+
+**Los dos 422, y por qué son dos.** El enunciado pedía que el choque no fuera
+un 500. Lo que había que decidir es si el otro caso —el rótulo que no acuña
+nada— es el mismo problema, y no lo es:
+
+| Caso | Motivo | Qué pide la frase |
+|---|---|---|
+| `«»`, `---`, emoji, acentos sueltos | `rotulo_sin_clave` | una letra o un número |
+| `Alcance`, `¡Alcance!`, una retirada | `clave_de_modulo_tomada` | otro rótulo, y mirar la lista |
+| rótulo en blanco | `rotulo_requerido` | escribir algo |
+| descripción en blanco | `descripcion_de_modulo_requerida` | que la IA va a leer eso |
+
+Los cuatro motivos entran a `MotivoDeFalla` y por lo tanto a `src/mensajes.ts`,
+cuyo `Record` es exhaustivo. **Ahí está la diferencia con T-2**, que ruteó su
+redacción alrededor de ese archivo: T-2 eligió dos 409 porque la cadena vacía
+que rechazaba era un valor impecable y lo que no admitía la escritura era el
+estado de la fila —la forma de `rubro_sin_precio`—, y eso dejó sus frases en
+`src/api/plantillas.ts`. Acá es lo contrario y por eso el reparto cambia: **hay
+un dato que arreglar y es el rótulo**, que es el campo que la persona está
+escribiendo. 422 con motivo, y la frase vive en `src/mensajes.ts` junto a las
+otras treinta y nueve. Los dos 409 de T-2 siguen donde estaban, y el único que
+se tocó fue el texto de `plantilla_inmutable`: decía «ese dato no se edita» y
+ahora dice «no lo escribe el bufete», porque el mismo cuerpo lo contesta el
+`PUT` y el `POST`.
+
+`descripcion_requerida` **no se reusó** aunque exista, y es el criterio de
+`texto_requerido` leído al revés: aquél dejó de nombrar la nota cuando el
+pendiente empezó a compartirlo, para que una frase sirviera a dos. Acá las dos
+frases **tienen** que decir cosas distintas —una habla del encargo que la IA
+redacta, la otra de lo que la IA lee para redactarlo— porque las consecuencias
+son distintas.
+
+**El choque incluye las dadas de baja, y eso se midió con una mutación.**
+`modulo_plantilla_clave_unica` no mira `activo`, así que una clave retirada
+sigue tomada — y tiene que seguir tomada, porque desde `0017` los módulos de
+las cotizaciones vivas la referencian por llave foránea. Medido agregándole
+`AND activo = 1` a la comprobación: **1 fallando de 41** en
+`test/plantillas-api.spec.ts`, y el error exacto es
+`D1_ERROR: UNIQUE constraint failed: modulo_plantilla.tenant_id,
+modulo_plantilla.clave`. O sea el 500 que el enunciado pedía no dejar llegar al
+usuario, atrapado por una prueba.
+
+Queda una carrera y se dice en vez de resolverse: dos altas simultáneas de la
+misma clave pasan las dos por la comprobación y el único mata la segunda. Es el
+mismo reparto que `nombreTomado` tiene en los catálogos desde T-12 —el índice
+es el piso, la consulta es la mitad amable que permite contestar— y resolverlo
+con un `INSERT … ON CONFLICT` sería atrapar el error de la base para
+disfrazarlo, que es lo que este proyecto no hace.
+
+**El verbo `creado`, y por qué no hubo octava reconstrucción de `bitacora`.**
+Entró con una línea en `ACCIONES_POR_ENTIDAD`. La suposición obvia al leer que
+un verbo nuevo entra al vocabulario es que hace falta una migración, y es
+falsa: `creado` ya estaba en el `CHECK` de `accion` desde `0012:132` —lo
+pusieron los catálogos y la cotización— y `modulo_plantilla` ya estaba en el
+`CHECK` de `entidad` desde `0016`. **Lo que lo prueba es una prueba que ya
+existía y no se tocó**: `test/bitacora-api.spec.ts` lee el `CHECK` de `accion`
+de `sqlite_master` y lo enfrenta a `ACCIONES_DE_BITACORA`, que se **deriva** de
+`ACCIONES_POR_ENTIDAD`; como `creado` ya estaba en el conjunto derivado,
+agregarlo a esta entidad no lo cambió. Se dice en los tres lugares donde
+alguien va a suponer lo contrario: el vocabulario, el contrato y el
+repositorio. `migrations/` no se tocó, y es la única tarea de las siete que no
+lo hizo ni lo necesitó.
+
+**El tercer origen del texto, que el enunciado pedía resolver sin ramas ad
+hoc.** `OrigenDelTexto` tenía dos variantes y T-2 argumentó que no podía haber
+una tercera. Tenía razón con lo que existía entonces —las seis sembradas tienen
+preset en las dos columnas— y la premisa se la quita esta tarea: una plantilla
+propia nace con `rotulo_oficial` y `descripcion_oficial` en NULL. Entra
+`sin_preestablecido`, que es exactamente lo que `OrigenDelPrecio` ya tenía con
+`sin_precio`, y la pantalla cambia en tres cosas:
+
+1. **No lleva marca.** El asterisco dice «el bufete escribió esto encima del
+   preestablecido», y acá no hay nada encima de lo cual escribir. Marcarla sería
+   afirmar una excepción sobre algo que no tiene norma.
+2. **No enciende la leyenda, y ése era un defecto a punto de entrar.**
+   `hayEditadas` miraba `rotulo !== null`, y el rótulo de una plantilla propia
+   nunca es nulo: la leyenda del asterisco se habría dibujado sin que hubiera un
+   solo asterisco en la página. Ahora pregunta por el **origen**, así que la
+   leyenda y la marca salen de la misma función y no pueden discrepar.
+3. **Lleva su distintivo**, `Sin preestablecido`, que dice lo mecánico que
+   importa: vaciar un campo no la devuelve a nada. Hace falta porque la ayuda de
+   arriba afirma que vaciar vuelve al preestablecido, y en esa fila es falso.
+
+Medido apagando la tercera rama de `origenDe`: **2 fallando de 61** en
+`plantillas-ui` y **1 de 40** en `e2e/plantillas.spec.ts` —«el módulo creado
+aparece al final, con su clave y sin marca»—.
+
+**Y el 409 que T-2 construyó sin poder ejercerlo, ejercido.**
+`plantilla_sin_preset` y `camposQueQuedarianVacios` eran un contrato honesto
+sobre una fila que no existía. Ahora existe: vaciar la descripción de una
+plantilla propia contesta 409 con `campos: ["descripcion"]`, la fila queda
+intacta, y la pantalla lo avisa antes de mandar. Las dos mitades tienen prueba,
+una contra D1 y otra en el navegador.
+
+**Dónde va el formulario, que el enunciado dejó a decidir.** Al final de la
+lista y **siempre abierto**. Las tres opciones y lo que las descarta:
+
+- **Detrás de un desplegable, no**: la queja del usuario es literalmente que no
+  veía la opción, y esconderla detrás de un control que hay que abrir es cómo
+  vuelve a no verse. El costo de tenerla abierta son dos campos vacíos al pie.
+- **Arriba, tampoco**: a esta pantalla se entra a leer y a corregir lo que ya
+  está; el alta primero empuja abajo el catálogo que se vino a buscar.
+- **Al final, sí**, y no lo decide el descarte de los otros dos: lo decide que
+  `orden = MAX(orden) + 1`, así que **el módulo nuevo aparece justamente ahí**,
+  donde estaba el formulario que lo creó. Es además lo que los dos catálogos
+  planos de T-6 ya hacen con su fila de alta.
+
+Lo que cuesta, dicho: con veinte módulos el alta queda veinte bloques abajo.
+Hoy son siete y el encabezado es navegable; el día que sean veinte lo que hace
+falta no es mover el formulario sino que la lista se pueda recorrer, que es otra
+tarea. Hay una prueba de punta a punta que compara las dos posiciones en el
+dibujo, así que moverlo arriba se pone rojo.
+
+**Ninguno de los dos campos lleva marca de opcionalidad**, y es la regla de
+`FormularioDeCliente.tsx:4` aplicada al derecho: se marca lo opcional en la
+etiqueta, y acá no hay nada opcional. Que los dos sean obligatorios lo dice el
+párrafo de la sección —junto con que el identificador sale del rótulo y no se
+cambia— **antes** de que alguien falle, y el botón está apagado hasta que los
+dos tengan texto. Medido apagando la obligatoriedad de la descripción en el
+servidor: **6 fallando de 150**, y el detalle importa —el alta contestó **201 y
+escribió la fila**, no un 500: el `CHECK` de la base **no** atrapa este caso
+porque una cadena vacía no es nula, así que la guarda de la API es lo único que
+hay entre un campo en blanco y una plantilla que la IA va a usar mal.
+
+**La pantalla no previsualiza la clave, y es una decisión.** Habría sido el
+mejor acompañamiento para el motivo del choque —«se va a identificar como
+`observaciones_del_cliente`»— y no se hizo por dos razones que se suman:
+
+1. **Una acuñación duplicada no puede diferir en nada.** Una validación
+   duplicada puede ser más laxa que la del servidor sin mentir —es lo que
+   `catalogos/formulario.ts` hace—, pero una previsualización que no coincida
+   carácter por carácter con lo que el servidor va a acuñar es una pantalla que
+   promete un identificador que no es el que va a quedar.
+2. **El hogar común no existe hoy.** `worker/plantillas/dominio.ts` cumple la
+   condición documentada del `include` de `tsconfig.app.json` —ninguna
+   importación en tiempo de ejecución— pero no está listado, así que importarlo
+   desde una pantalla falla con TS6307. Es el mismo pendiente que T-6 dejó
+   anotado, y ese archivo está fuera de la superficie de esta tarea.
+
+Lo que la pantalla hace en su lugar: **dibuja la clave ya acuñada** debajo del
+rótulo de cada módulo —incluido el nuevo, en cuanto existe— y el motivo del
+choque manda a mirar esa lista, diciendo que el módulo que choca puede estar
+dado de baja y seguir ahí. Si mañana `dominio.ts` entra al `include`, la
+previsualización es diez líneas.
+
+**El RED observado, por capa, y dónde no hubo.**
+
+| Capa | RED | GREEN |
+|---|---|---|
+| `plantillas-dominio` (acuñación + revisión del alta) | **25 fallando de 71**, todas `acunarClave is not a function` / `revisarAltaDePlantilla is not a function` | 71 |
+| `plantillas-rutas` (el `POST` y sus códigos) | **10 fallando de 38** | 38 |
+| `plantillas-ui` (el tercer origen y el borrador del alta) | **16 fallando de 60** | 61 |
+
+Las tres son las capas que llevan reglas nuevas, y en las tres la prueba se
+escribió antes. `plantillas-api`, `modulos-api` y `generador-api` se escribieron
+**después** de la implementación y se dice: son integraciones de reglas ya
+probadas arriba, y lo que las vuelve algo más que confirmación son las
+mutaciones medidas —la del `activo = 1` en la comprobación de la clave y la de
+la descripción obligatoria— que es la evidencia de que muerden.
+
+**La plantilla recién creada llega al prompt, medido.** El último eslabón, y el
+que justifica la unidad entera: una plantilla de la que la IA nunca oye hablar
+es una etiqueta. Se creó **por la API** y no por SQL —sembrarla a mano
+saltearía la acuñación, que es la mitad nueva— y después se armó el prompt por
+el camino real del generador:
+
+| Qué | Antes | Después | Diferencia |
+|---|---|---|---|
+| Sección «Tipos de módulo» | **1.600** | **1.743** | **+143** |
+| Prompt completo | 4.921 | 5.064 | +143 |
+| Claves ofrecidas al modelo | 6 | 7 | +1 |
+
+El +143 se descompone entero, que es lo que lo hace auditable: la línea
+`- observaciones_del_cliente · Observaciones del cliente · <descripción>` mide
+**142** caracteres y su salto de línea **1**. La sección crece exactamente lo
+que mide la línea nueva, ni un carácter más.
+
+Los totales de esa tabla son de la base de la suite, cuyo arancel casi no tiene
+filas; la medición que se puede comparar con T-4 es la línea. Con la plantilla
+que quedó en la base local —197 caracteres de descripción— la línea mide
+**256** con su salto, así que sobre los **34.852** que T-4 midió el prompt pasa
+a **35.108**: **+0,73 %**. Ese último número es derivado de la medición de T-4
+más el largo exacto de la línea, no re-medido, y queda dicho así.
+
+**La aplicación manejada a mano contra la base local** (API real, no
+interceptada), en `http://localhost:5174`:
+
+| Qué se midió | Resultado |
+|---|---|
+| Bloques y formulario en `/catalogos/modulos` | **6** bloques, formulario presente, botón apagado, 0 marcas, sin leyenda |
+| El formulario está después del último bloque | sí, medido por `getBoundingClientRect` |
+| Relleno del alta a 1400px | **26px** (el de `--espacio-l`): la consulta de contenedor se aplica |
+| `«»` + descripción → Agregar | **«De ese rótulo no sale ningún identificador…»**, `aria-invalid`, lo tecleado sigue ahí, **6** bloques |
+| `¡Alcance!` + descripción → Agregar | **«Ese rótulo produce el mismo identificador que un módulo que ya existe…»**, 6 bloques |
+| «Observaciones del cliente» → Agregar | **7** bloques, clave `observaciones_del_cliente`, **último**, `orden = 7` |
+| Marcas en el módulo nuevo / en la página | **0 / 0**; leyenda **no** dibujada |
+| Distintivo del módulo nuevo | **«Sin preestablecido»** |
+| El formulario después de crear | los dos campos vacíos, botón apagado, sin avisos |
+| Fila en la base | `rotulo_oficial` y `descripcion_oficial` **NULL**, `activo = 1`, descripción de **197** caracteres |
+| Bitácora de la fila nueva | **una** entrada, `creado`, detalle «Observaciones del cliente» |
+| Desplegable del alta de módulo en `COT-2026-0011` | **7** opciones, con «Observaciones del cliente» |
+| Módulo agregado y guardado | «Tipo del módulo 6: Observaciones del cliente» |
+| La fila en `cotizacion_modulo` | `plantilla_id` apuntando por `JOIN` a `observaciones_del_cliente` |
+
+**Lo que quedó en la base local del usuario, y no se puede deshacer.** Se dice
+entero porque es permanente por diseño:
+
+- **La plantilla `observaciones_del_cliente`**, `orden = 7`, activa, con su
+  rótulo «Observaciones del cliente» y una descripción de 197 caracteres. No se
+  puede borrar: `modulo_plantilla_no_se_borra` aborta todo `DELETE`. Se eligió
+  un módulo que el bufete plausiblemente quiere en vez de un nombre de prueba,
+  justamente porque la fila se queda. Si no la quieren, la salida es
+  `activo = 0` desde la misma pantalla.
+- **Una entrada de bitácora `creado`** de esa plantilla, y **un sexto módulo**
+  en `COT-2026-0011` —un borrador— con su contenido de prueba y tres entradas
+  más de la cotización. La bitácora es inmutable por diseño; el módulo se puede
+  quitar desde el editor, y quitarlo deja su propia entrada.
+- Las dos sondas de 422 **no escribieron nada**, y se midió: 6 bloques antes y
+  después de cada una.
+- Nada más. Las seis plantillas sembradas siguen con `rotulo` y `descripcion`
+  en NULL y `activo = 1`.
+
+**Verificación.** `pnpm lint`: sin hallazgos. `pnpm typecheck`: 0 errores.
+`pnpm test`: **54 archivos, 2.807 pruebas, todas pasando** (desde 2.736: +71,
+sin archivos nuevos). `pnpm test:e2e`: **552 pasando** en 1,5 min (desde 535:
++17, las del alta). En esta corrida `e2e/armazon.spec.ts:475` **no** parpadeó y
+no hubo choque de puerto, así que no hizo falta repetir.
+
+**Lo medido contra lo pronosticado.** La tajada 1 cerró con 9.532 insertadas
+contra un forecast de ~1.000, y dejó escrito que el de la tajada 2 se hiciera
+sobre la medición: unas 2.400 líneas por tarea grande, con tres de comentario y
+de prueba por cada una de código. T-7 entregó **2.982 insertadas y 118
+quitadas** sin este documento, o **3.100 líneas propias**, y el reparto explica
+el número sin excusarlo: de las 2.982, **1.712 son pruebas** (`plantillas-api`
+403, `e2e/plantillas` 357, `plantillas-ui` 305, `plantillas-dominio` 299,
+`plantillas-rutas` 182, `generador-api` 116, `modulos-api` 50) y **1.270 son
+código con su argumentación**. El forecast de la tajada 2 acertó el orden de
+magnitud por primera vez en la unidad.
+
+Está muy por encima de las ~400 líneas que la heurística de planificación
+sugiere por tarea, y conviene decir por qué no se partió: el enunciado de T-7
+es **una** operación —una plantilla nace— y sus cinco piezas no son
+independientes. La acuñación sin la ruta no se puede ejercer, la ruta sin los
+dos 422 es la que deja llegar un `UNIQUE constraint failed` al usuario, y la
+pantalla sin el tercer origen dibuja una leyenda sin asterisco. Partirla habría
+dejado commits que no se pueden verificar por separado, que es lo que el
+tamaño de la tajada 1 ya enseñó a no hacer.
+
+### La tajada 2, cerrada
+
+**Lo que entrega de punta a punta.** El abogado entra a `/catalogos/modulos`,
+**agrega un módulo propio** con su rótulo y su descripción, y el sistema le
+acuña un identificador estable que nadie va a tener que tipear ni corregir.
+Abre una cotización el mismo día, elige ese módulo del desplegable, escribe su
+texto, y cuando le pide una propuesta al asistente, el modelo recibe para qué
+sirve ese módulo con las palabras del bufete. Si el rótulo choca con otro o no
+produce ningún identificador, lee una frase que dice qué pasó y qué hacer, en
+vez de un error de SQLite. Y lo que creó no se puede borrar ni perder: se
+retira con `activo = 0` y los módulos que ya lo usan siguen nombrándolo.
+
+**Los siete criterios de aceptación, todos con su medición.** Son los de la
+unidad entera, y la tajada 2 no los cambió sino que los extendió a las filas
+que antes no existían:
+
+1. **Rótulo y descripción editables desde `/catalogos/modulos`, visibles en el
+   editor** — T-2 (pantalla manejada a mano: 6 bloques, 1 marca tras editar) y
+   T-3 (editor de `COT-2026-0011`, «Qué vamos a hacer» en el módulo 2).
+2. **Vaciar vuelve al preset, y el preset sigue siendo el original** — T-2 (0
+   marcas tras vaciar) y T-1 (nueve sondas hostiles). T-7 agrega la mitad que
+   faltaba: en una plantilla **sin** preset, vaciar es un 409 y la pantalla lo
+   avisa antes, medido contra D1 y en el navegador.
+3. **Ningún camino borra una plantilla ni edita su preset ni su clave** — T-1
+   (las nueve sondas con su mensaje exacto). T-7 lo extiende al alta: un cuerpo
+   que trae `rotuloOficial` es 409 `plantilla_inmutable`, con prueba.
+4. **Una plantilla sin descripción vigente no existe** — T-1 (los dos `CHECK`).
+   T-7 cierra el camino que la habría creado: 422 antes del `CHECK`, y la
+   mutación mostró que el `CHECK` **no** cubre la cadena vacía.
+5. **La descripción de cada módulo llega al prompt, medido en caracteres** —
+   T-4 (494 → 1.599, +1.105 sobre la base local). T-7: la plantilla creada
+   agrega su línea exacta, 1.600 → 1.743, +143 descompuesto en 142 + 1.
+6. **Las 6 cotizaciones emitidas siguen mostrando su rótulo congelado** — T-3
+   (33 entradas idénticas, seis `length(snapshot)` iguales al byte) y T-5 (la
+   medición repetida mutando la fuente viva en el medio).
+7. **Las cuatro verificaciones en verde** — en las siete tareas; hoy 2.807
+   pruebas y 552 de punta a punta.
+
+**Lo medido contra lo pronosticado, en la unidad entera.** Tajada 1: 9.532
+insertadas contra un forecast de ~1.000. Tajada 2: **5.462 insertadas y 636
+quitadas**, contadas con `git show --numstat` —`fea57bd` +1.659/−113,
+`baf1f1d` +49/−37, `ca5fddc` +772/−368, y éste +2.982/−118 más este
+documento—, contra un forecast hecho sobre la medición de la tajada 1.
+**Alrededor de 15.000 líneas insertadas** en siete commits para la unidad
+entera, y el motivo sigue siendo el mismo y sigue siendo
+identificable: este repositorio escribe alrededor de tres líneas de comentario
+y de prueba por cada una de código, y T-7 lo midió fila por fila —1.712 de
+2.982 son pruebas—.
+
+**Lo que no entró y queda anotado, sin agendar.** Ninguno bloquea nada:
+
+- La pantalla de `/catalogos/modulos` **no dibuja la bitácora** de una
+  plantilla, aunque la dirección contesta y tiene prueba desde T-2. Hoy la
+  primera entrada de esta entidad ya existe, así que el despliegue por fila que
+  los catálogos de T-6 tienen vale más que antes. Es una fila de tabla, no un
+  camino nuevo.
+- **Reordenar las plantillas.** `0016` dejó `orden` editable y sin único
+  justamente para eso, y el repositorio dice qué falta: la sentencia, no un
+  cambio de esquema. Hoy el módulo nuevo nace último y no se puede mover.
+- **`worker/plantillas/dominio.ts` en el `include` de `tsconfig.app.json`.**
+  Cumple la condición documentada y agregarlo habilitaría la previsualización
+  de la clave en el formulario, que es la única cosa que esta tarea quiso hacer
+  y no pudo.
+- **La previsualización de la clave**, que depende del punto anterior.
+
+**Empujar la rama, abrir el pull request y mezclar siguen siendo decisión del
+usuario.**

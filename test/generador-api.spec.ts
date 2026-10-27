@@ -1388,6 +1388,122 @@ describe("la descripción de cada módulo llega al prompt desde la base", () => 
   });
 });
 
+/* ==========================================================================
+   Una plantilla recién creada llega al prompt (T-7)
+
+   **Es el último eslabón de la tajada, y el que la justifica entera.** El
+   bufete agrega un módulo desde `/catalogos/modulos` y la pregunta es si el
+   modelo se entera: una plantilla de la que la IA nunca oye hablar es una
+   etiqueta.
+
+   La plantilla se crea **por la API** y no por SQL, a propósito: lo que se mide
+   es el camino completo —la clave acuñada del rótulo, la fila escrita, el
+   catálogo releído y el prompt armado— y una siembra por SQL saltearía
+   justamente la mitad que esta tarea construyó.
+
+   Y se **retira en un `finally`** en vez de borrarse, porque una plantilla no
+   se borra: `modulo_plantilla_no_se_borra` aborta todo `DELETE`. Hace falta
+   porque la prueba de más abajo cuenta cuántas claves se le ofrecen al modelo,
+   y una plantilla viva de más la dejaría en rojo por una razón que no es la
+   suya.
+   ========================================================================== */
+
+describe("una plantilla que el bufete creó llega al prompt", () => {
+  const ROTULO = "Observaciones del cliente";
+  const DESCRIPCION_PROPIA =
+    "Lo que el cliente dijo con sus palabras y conviene dejar escrito, sin" +
+    " interpretarlo.";
+
+  /**
+   * Crea la plantilla por la API, corre el cuerpo, y la retira pase lo que
+   * pase. Devuelve la fila creada para que el cuerpo pueda nombrar su clave.
+   *
+   * **El rótulo lo pone cada prueba y no esta función**, y es forzoso: el
+   * almacenamiento de esta suite está aislado por archivo y no por prueba, y
+   * una plantilla no se borra —sólo se retira—, así que la segunda prueba que
+   * mandara el mismo rótulo chocaría con la clave de la primera. Medido: la
+   * segunda contestaba **422 `clave_de_modulo_tomada`**, que es exactamente lo
+   * que esta tarea construyó y por eso el tropezón no es casual.
+   */
+  async function conUnaPlantillaNueva(
+    rotulo: string,
+    cuerpo: (plantilla: { id: string; clave: string }) => Promise<void>,
+  ): Promise<void> {
+    const respuesta = await comoAutor(
+      conCuerpo("/api/plantillas-modulo", "POST", {
+        rotulo,
+        descripcion: DESCRIPCION_PROPIA,
+      }),
+    );
+    expect(respuesta.status, await respuesta.clone().text()).toBe(201);
+
+    const { plantilla } = (await respuesta.json()) as {
+      plantilla: { id: string; clave: string };
+    };
+
+    try {
+      await cuerpo(plantilla);
+    } finally {
+      await env.DB.prepare(
+        "UPDATE modulo_plantilla SET activo = 0 WHERE tenant_id = ? AND id = ?",
+      )
+        .bind(TENANT_UNICO_ID, plantilla.id)
+        .run();
+    }
+  }
+
+  it("la clave acuñada y su descripción viajan en la misma línea", async () => {
+    await conUnaPlantillaNueva(ROTULO, async (plantilla) => {
+      const { instrucciones, tiposDeModuloOfrecidos } =
+        await promptDeUnaGeneracion();
+
+      expect(plantilla.clave).toBe("observaciones_del_cliente");
+      expect(tiposDeModuloOfrecidos).toContain("observaciones_del_cliente");
+      expect(
+        instrucciones,
+        "el módulo que el bufete agregó no llegó al modelo con su" +
+          " descripción: una plantilla de la que la IA no se entera es una" +
+          " etiqueta",
+      ).toContain(
+        `- observaciones_del_cliente · ${ROTULO} · ${DESCRIPCION_PROPIA}`,
+      );
+    });
+  });
+
+  /**
+   * **Y entra en la lista de ofrecidas, que es lo que la vuelve usable.** Sin
+   * esto, `validarModulo` rechazaría la clave con
+   * `tipo_de_modulo_desconocido`: el módulo que el modelo propusiera para el
+   * tipo nuevo tiraría la propuesta entera.
+   */
+  it("el modelo puede escribir un módulo de ese tipo y la propuesta entra", async () => {
+    await conUnaPlantillaNueva("Comentarios al cierre", async (plantilla) => {
+      expect(plantilla.clave).toBe("comentarios_al_cierre");
+
+      const falso = modeloQueEscribe(
+        JSON.stringify({
+          modulos: [
+            {
+              tipo: plantilla.clave,
+              contenido: "El cliente dijo que la escritura la tiene el banco.",
+            },
+          ],
+          lineas: [
+            { clase: "honorario", concepto: "Honorarios", monto: 150_000 },
+          ],
+        }),
+      );
+
+      const respuesta = await generar(
+        { clienteId, descripcion: DESCRIPCION },
+        { modelo: falso.modelo },
+      );
+
+      expect(respuesta.status, await respuesta.clone().text()).toBe(201);
+    });
+  });
+});
+
 describe("una plantilla dada de baja no se le ofrece al modelo", () => {
   it("no aparece en el texto del prompt, ni por clave ni por rótulo", async () => {
     await conLaPlantilla("exclusiones", { activo: false }, async () => {

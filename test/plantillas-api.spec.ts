@@ -650,10 +650,10 @@ describe("la bitácora de una plantilla", () => {
   });
 
   /**
-   * Y **no hay `creado`**: las seis filas las escribió la migración, que no
-   * pasa por `mutar`, y crear plantillas nuevas está fuera del alcance de la
-   * tajada. La ausencia del verbo es cómo el vocabulario dice que la operación
-   * no es de esta unidad; esto lo mide sobre la base.
+   * Y **las seis sembradas no tienen `creado`**, aunque el verbo exista desde
+   * T-7: las escribió la migración, que no pasa por `mutar`. No es un hueco de
+   * la bitácora sino lo que de verdad pasó — nadie las dio de alta—, y es el
+   * contraste de la prueba del alta de más abajo, que sí deja su entrada.
    */
   it("ninguna plantilla sembrada tiene una entrada `creado`", async () => {
     for (const id of LOS_SEIS) {
@@ -678,4 +678,403 @@ describe("la bitácora de una plantilla", () => {
 
     expect((await historiaDe(ANTECEDENTES)).length).toBe(antes);
   });
+});
+
+/* ==========================================================================
+   El alta (T-7)
+
+   Las palabras del usuario, mirando la pantalla de la tajada 1: «No veo la
+   opción de crear un módulo, sólo editar y dar de baja.»
+
+   Lo que **solo se puede probar contra la base** es casi todo lo de esta
+   sección: que la clave acuñada entre al único de `(tenant_id, clave)`, que el
+   choque contra una fila **dada de baja** rebote igual —porque ese índice no
+   mira `activo`—, que el `orden` salga de un `MAX`, que la fila nazca con el
+   preset en NULL y que la entrada de bitácora diga `creado` sin que ninguna
+   migración lo haya agregado.
+   ========================================================================== */
+
+/** Un rótulo distinto por prueba: una plantilla creada no se puede borrar. */
+function rotuloUnico(que: string): string {
+  return `${que} ${nuevoId().slice(0, 8)}`;
+}
+
+async function crear(cuerpo: Record<string, unknown>): Promise<Response> {
+  return comoAutor(conCuerpo("/api/plantillas-modulo", "POST", cuerpo));
+}
+
+describe("POST /api/plantillas-modulo", () => {
+  /**
+   * El caso que el usuario pidió por su nombre, de punta a punta contra la
+   * base: dos campos entran, una fila sale, y la clave la acuñó el servidor.
+   */
+  it("crea la plantilla con la clave acuñada del rótulo", async () => {
+    const respuesta = await crear({
+      rotulo: "Observaciones del cliente",
+      descripcion: "Lo que el cliente dijo y conviene dejar escrito.",
+    });
+
+    expect(respuesta.status).toBe(201);
+
+    const { plantilla } = (await respuesta.json()) as {
+      plantilla: PlantillaEnElCable;
+    };
+
+    expect(plantilla.clave).toBe("observaciones_del_cliente");
+    expect(respuesta.headers.get("location")).toBe(
+      `/api/plantillas-modulo/${plantilla.id}`,
+    );
+
+    /*
+     * **Nace del bufete y sin piso debajo**, que es lo que la distingue de las
+     * seis: el preset en NULL, el texto propio puesto, y el vigente resuelto
+     * por el `COALESCE` sobre el único de los dos que existe.
+     */
+    expect(plantilla.rotuloOficial).toBeNull();
+    expect(plantilla.descripcionOficial).toBeNull();
+    expect(plantilla.rotulo).toBe("Observaciones del cliente");
+    expect(plantilla.rotuloVigente).toBe("Observaciones del cliente");
+    expect(plantilla.descripcionVigente).toBe(
+      "Lo que el cliente dijo y conviene dejar escrito.",
+    );
+    // Nace vigente: una plantilla que hay que reactivar para usarla es un alta
+    // a medias.
+    expect(plantilla.activo).toBe(true);
+
+    // Y está en la lectura, que es la única prueba de que se guardó.
+    expect((await releer(plantilla.id)).clave).toBe(
+      "observaciones_del_cliente",
+    );
+  });
+
+  /**
+   * **Última, y no primera ni en el medio.** `orden = MAX(orden) + 1` sobre
+   * todo el bufete, así que la plantilla nueva aparece donde estaba el
+   * formulario que la creó. Se mide contra el máximo real de la tabla y no
+   * contra 7, porque las pruebas de este archivo fabrican filas con `orden`
+   * 50 y el número exacto depende de cuántas corrieron antes.
+   */
+  it("nace última en el orden del catálogo", async () => {
+    const maximo = Math.max(
+      ...(await leerCatalogo()).map((cada) => cada.orden),
+    );
+
+    const respuesta = await crear({
+      rotulo: rotuloUnico("Garantías"),
+      descripcion: "Lo que el bufete garantiza y por cuánto tiempo.",
+    });
+
+    const { plantilla } = (await respuesta.json()) as {
+      plantilla: PlantillaEnElCable;
+    };
+
+    expect(plantilla.orden).toBe(maximo + 1);
+
+    // Y la lectura la devuelve al final, que es la consecuencia visible.
+    const catalogo = await leerCatalogo();
+    expect(catalogo[catalogo.length - 1]?.id).toBe(plantilla.id);
+  });
+
+  /**
+   * **El verbo que T-7 estrena, y sin migración.** `creado` ya estaba en el
+   * `CHECK` de `accion` desde `0012:132` y `modulo_plantilla` en el de
+   * `entidad` desde `0016`, así que lo único que faltaba era la ruta que lo
+   * emitiera. Esto lo mide contra la base: si el `CHECK` no lo admitiera, el
+   * `INSERT` de la bitácora abortaría la transacción entera y el alta sería un
+   * 500.
+   */
+  it("deja su entrada de bitácora con el verbo `creado`", async () => {
+    const rotulo = rotuloUnico("Acta de entrega");
+    const respuesta = await crear({
+      rotulo,
+      descripcion: "Qué se entrega al cerrar el encargo.",
+    });
+
+    const { plantilla } = (await respuesta.json()) as {
+      plantilla: PlantillaEnElCable;
+    };
+
+    const historia = await historiaDe(plantilla.id);
+
+    expect(historia).toHaveLength(1);
+    expect(historia[0]?.accion).toBe("creado");
+    // El `detalle` es el rótulo, que acá **es** el vigente: no hay preset que
+    // resolver con un `COALESCE`.
+    expect(historia[0]?.detalle).toBe(rotulo);
+    expect(historia[0]?.usuarioNombre).toBe("Itzel");
+  });
+
+  /* ---- Los dos 422, contra la base ------------------------------------- */
+
+  /**
+   * **El choque contra uno de los seis presets.** «Alcance» acuña `alcance`,
+   * que ya está tomada por la fila que sembró `0016`. Lo que esto mide es que
+   * la negativa sea un 422 con su motivo y **no** el `UNIQUE constraint
+   * failed` del índice envuelto en un 500.
+   */
+  it("un rótulo que acuña la clave de un preset es 422", async () => {
+    const respuesta = await crear({
+      rotulo: "Alcance",
+      descripcion: "Otra cosa.",
+    });
+
+    expect(respuesta.status).toBe(422);
+    await expect(respuesta.json()).resolves.toEqual({
+      error: "datos_invalidos",
+      fallas: [{ campo: "rotulo", motivo: "clave_de_modulo_tomada" }],
+    });
+  });
+
+  /**
+   * **Y dos rótulos distintos chocan igual**, que es la mitad que un único
+   * sobre el rótulo no habría atrapado: «¡Alcance!» no es «Alcance» y las dos
+   * acuñan `alcance`. Lo que choca es el identificador, no el nombre.
+   */
+  it("dos rótulos distintos que acuñan la misma clave chocan", async () => {
+    const respuesta = await crear({
+      rotulo: "  ¡Alcance!  ",
+      descripcion: "Otra cosa.",
+    });
+
+    expect(respuesta.status).toBe(422);
+    await expect(respuesta.json()).resolves.toMatchObject({
+      fallas: [{ motivo: "clave_de_modulo_tomada" }],
+    });
+  });
+
+  /**
+   * **El choque contra una plantilla dada de baja**, y es el caso que una
+   * consulta descuidada deja pasar: `modulo_plantilla_clave_unica` **no mira
+   * `activo`**, así que una clave retirada sigue tomada —y tiene que seguir
+   * tomada, porque los módulos de las cotizaciones vivas la referencian por
+   * llave foránea desde `0017`—.
+   *
+   * Si la comprobación filtrara por `activo`, esto pasaría la guarda y moriría
+   * en el índice: un 500 en vez de una negativa.
+   */
+  it("una clave de una plantilla dada de baja sigue tomada", async () => {
+    const rotulo = rotuloUnico("Retirada");
+    const primera = await crear({ rotulo, descripcion: "La primera." });
+    expect(primera.status).toBe(201);
+
+    const { plantilla } = (await primera.json()) as {
+      plantilla: PlantillaEnElCable;
+    };
+
+    // Se retira mandando su propio texto, porque el `PUT` manda el juego
+    // completo y acá vaciarlo dejaría la fila sin valor vigente.
+    expect(
+      (
+        await guardar(plantilla.id, {
+          rotulo: plantilla.rotulo,
+          descripcion: plantilla.descripcion,
+          activo: false,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await releer(plantilla.id)).activo).toBe(false);
+
+    const segunda = await crear({ rotulo, descripcion: "La segunda." });
+
+    expect(segunda.status).toBe(422);
+    await expect(segunda.json()).resolves.toMatchObject({
+      fallas: [{ motivo: "clave_de_modulo_tomada" }],
+    });
+  });
+
+  /**
+   * **El otro de los dos**, y es un problema distinto con otro motivo: de un
+   * rótulo de solo signos no sale ningún identificador. Sin esta negativa, la
+   * clave llegaría vacía al `INSERT` y lo que saldría sería el `NOT NULL` de la
+   * columna convertido en un 500.
+   */
+  it("un rótulo que no acuña nada es 422 con su propio motivo", async () => {
+    const respuesta = await crear({ rotulo: "«»", descripcion: "Algo." });
+
+    expect(respuesta.status).toBe(422);
+    await expect(respuesta.json()).resolves.toEqual({
+      error: "datos_invalidos",
+      fallas: [{ campo: "rotulo", motivo: "rotulo_sin_clave" }],
+    });
+  });
+
+  /** Y los dos motivos son distintos, que es lo que la tarea pedía decidir. */
+  it("los dos 422 no dicen lo mismo", async () => {
+    const sinClave = await crear({ rotulo: "---", descripcion: "Algo." });
+    const tomada = await crear({ rotulo: "Supuestos", descripcion: "Algo." });
+
+    const unoSinClave = (await sinClave.json()) as {
+      fallas: { motivo: string }[];
+    };
+    const unoTomado = (await tomada.json()) as {
+      fallas: { motivo: string }[];
+    };
+
+    expect(unoSinClave.fallas[0]?.motivo).not.toBe(
+      unoTomado.fallas[0]?.motivo,
+    );
+  });
+
+  /* ---- La descripción obligatoria -------------------------------------- */
+
+  /**
+   * **La asimetría que es la tarea, medida contra la base.** Un preset editado
+   * se puede vaciar porque `descripcion_oficial` lo cubre; una plantilla nueva
+   * no tiene nada debajo, así que el `CHECK
+   * la_plantilla_tiene_descripcion_vigente` rechazaría la fila. Esto mide que
+   * la API niegue **antes** de llegar a ese `CHECK`, porque un
+   * `SQLITE_CONSTRAINT_CHECK` convertido en 500 no es una negativa.
+   */
+  it("sin descripción no hay alta, y no escribe nada", async () => {
+    const cuantas = (await leerCatalogo()).length;
+
+    const respuesta = await crear({ rotulo: rotuloUnico("Sin descripción") });
+
+    expect(respuesta.status).toBe(422);
+    await expect(respuesta.json()).resolves.toEqual({
+      error: "datos_invalidos",
+      fallas: [
+        { campo: "descripcion", motivo: "descripcion_de_modulo_requerida" },
+      ],
+    });
+    expect((await leerCatalogo()).length).toBe(cuantas);
+  });
+
+  it("una descripción en blanco es lo mismo que ninguna", async () => {
+    const respuesta = await crear({
+      rotulo: rotuloUnico("En blanco"),
+      descripcion: "   ",
+    });
+
+    expect(respuesta.status).toBe(422);
+  });
+
+  /* ---- Lo que el alta no escribe --------------------------------------- */
+
+  /**
+   * El cuerpo que trae el preset puesto es el mismo 409 de la edición, y acá
+   * dice algo más fuerte: esas dos columnas **nacen nulas a propósito**, y
+   * fabricárselas desde el cuerpo sería sembrar un piso que nadie publicó.
+   */
+  it("no se puede sembrar su propio preestablecido", async () => {
+    const respuesta = await crear({
+      rotulo: rotuloUnico("Con preset"),
+      descripcion: "Algo.",
+      rotuloOficial: "El mío",
+    });
+
+    expect(respuesta.status).toBe(409);
+    await expect(respuesta.json()).resolves.toEqual({
+      error: "plantilla_inmutable",
+      campos: ["rotuloOficial"],
+    });
+  });
+
+  /* ---- Lo que se puede hacer con ella después -------------------------- */
+
+  /**
+   * **El 409 que T-2 construyó sin poder ejercerlo.** Las seis sembradas
+   * tienen preset en las dos columnas, así que `plantilla_sin_preset` era un
+   * contrato honesto sobre una fila que no existía. Esta tarea la hace existir,
+   * y esto es la prueba que lo mide: vaciar la descripción de una plantilla
+   * propia no es volver atrás —no hay a dónde— sino dejar una plantilla que la
+   * IA va a usar mal.
+   */
+  it("vaciar un campo de una plantilla propia es el 409 sin preset", async () => {
+    const respuesta = await crear({
+      rotulo: rotuloUnico("Sin piso"),
+      descripcion: "La que se va a intentar vaciar.",
+    });
+
+    const { plantilla } = (await respuesta.json()) as {
+      plantilla: PlantillaEnElCable;
+    };
+
+    const vaciada = await guardar(plantilla.id, {
+      rotulo: plantilla.rotulo,
+      descripcion: "",
+      activo: true,
+    });
+
+    expect(vaciada.status).toBe(409);
+    await expect(vaciada.json()).resolves.toEqual({
+      error: "plantilla_sin_preset",
+      campos: ["descripcion"],
+    });
+    // Y la fila quedó como estaba: una negativa no escribe.
+    expect((await releer(plantilla.id)).descripcionVigente).toBe(
+      "La que se va a intentar vaciar.",
+    );
+  });
+
+  /** Y editarla sí se puede: lo único que no admite es quedar en blanco. */
+  it("una plantilla propia se edita como cualquier otra", async () => {
+    const respuesta = await crear({
+      rotulo: rotuloUnico("Corregible"),
+      descripcion: "La primera descripción.",
+    });
+
+    const { plantilla } = (await respuesta.json()) as {
+      plantilla: PlantillaEnElCable;
+    };
+
+    expect(
+      (
+        await guardar(plantilla.id, {
+          rotulo: plantilla.rotulo,
+          descripcion: "La corregida.",
+          activo: true,
+        })
+      ).status,
+    ).toBe(200);
+
+    expect((await releer(plantilla.id)).descripcionVigente).toBe(
+      "La corregida.",
+    );
+    // La clave no cambió, aunque el rótulo se pudiera corregir: es lo que la
+    // separación clave/rótulo compra.
+    expect((await historiaDe(plantilla.id)).map((cada) => cada.accion)).toEqual(
+      ["editado", "creado"],
+    );
+  });
+
+  /**
+   * Una plantilla del bufete vecino **no estorba**: su clave `alcance` ya
+   * existe para él, y crear `alcance` para este bufete rebotaría contra la
+   * propia y no contra la suya. Lo que esto mide es que la comprobación filtre
+   * por `tenant_id` (I-8), y se mide al revés: una clave que **solo** el
+   * vecino tiene se puede crear acá.
+   */
+  it("una clave que solo tiene el bufete vecino está libre", async () => {
+    await env.DB.prepare(
+      "INSERT INTO modulo_plantilla (id, tenant_id, clave, rotulo_oficial," +
+        " descripcion_oficial, rotulo, descripcion, orden, activo)" +
+        " VALUES (?, ?, 'solo_del_vecino', NULL, NULL, ?, ?, 90, 1)",
+    )
+      .bind(nuevoId(), OTRO_TENANT_ID, "Solo del vecino", "La del vecino.")
+      .run();
+
+    const respuesta = await crear({
+      rotulo: "Solo del vecino",
+      descripcion: "La nuestra, con la misma clave.",
+    });
+
+    expect(respuesta.status).toBe(201);
+    const { plantilla } = (await respuesta.json()) as {
+      plantilla: PlantillaEnElCable;
+    };
+    expect(plantilla.clave).toBe("solo_del_vecino");
+  });
+
+  it.each(["PATCH", "DELETE"])(
+    "un %s sobre la colección sigue siendo 405",
+    async (metodo) => {
+      const respuesta = await comoAutor(
+        peticion("/api/plantillas-modulo", { method: metodo }),
+      );
+
+      expect(respuesta.status).toBe(405);
+      expect(respuesta.headers.get("allow")).toBe("GET, POST");
+    },
+  );
 });

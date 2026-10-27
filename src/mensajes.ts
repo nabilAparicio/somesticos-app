@@ -208,6 +208,40 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   porcentaje_sin_cotizacion:
     "Un trámite sin cotización no tiene un total del que sacar un" +
     " porcentaje. Acá la cuota va con su importe en dólares.",
+  /* Las cuatro del alta de un módulo (T-7 de
+     `odd/tasks/plantillas-de-modulo.md`). Ninguna dice «es obligatorio» a
+     secas: las cuatro dicen qué pasa si se manda así, y las cuatro terminan
+     en algo que hacer. Y ninguna nombra una columna, un índice ni un `CHECK`:
+     quien lee esto es un abogado que acaba de escribir dos campos. */
+  /* Dice de dónde sale el identificador porque es lo que hace que el rótulo
+     no sea un campo más: es la única cosa que se escribe una vez y no se
+     puede cambiar después. */
+  rotulo_requerido:
+    "Sin rótulo no hay módulo: es el encabezado que lee el cliente, y de él" +
+    " sale el identificador con el que el sistema lo nombra.",
+  /* No dice «el rótulo es inválido», que no se puede arreglar sin saber qué
+     tiene de inválido: dice qué falta —una letra o un número— y por qué los
+     signos no alcanzan. */
+  rotulo_sin_clave:
+    "De ese rótulo no sale ningún identificador: hace falta al menos una" +
+    " letra o un número, porque el sistema nombra el módulo con lo que queda" +
+    " del rótulo sin tildes y sin signos.",
+  /* Dice que el otro módulo puede estar dado de baja, y es la mitad que de
+     verdad desatasca: la lista de esta pantalla muestra lo retirado marcado y
+     no escondido, así que está a la vista — pero nadie va a mirar un módulo
+     retirado buscando por qué no puede agregar otro. */
+  clave_de_modulo_tomada:
+    "Ese rótulo produce el mismo identificador que un módulo que ya existe, y" +
+    " dos módulos no pueden compartirlo. Conviene mirar la lista —el que" +
+    " choca puede estar dado de baja y sigue ahí, marcado— y elegir un" +
+    " rótulo distinto.",
+  /* La frase que carga con la tajada. Dice las dos cosas: para qué sirve la
+     descripción y por qué acá no se puede dejar vacía, que es lo que la
+     distingue de los seis módulos que vienen configurados. */
+  descripcion_de_modulo_requerida:
+    "Un módulo nuevo no trae texto preestablecido debajo, así que la" +
+    " descripción no puede quedar vacía: es lo que lee el asistente para" +
+    " saber qué escribir en ese módulo cuando redacta una propuesta.",
 };
 
 /**

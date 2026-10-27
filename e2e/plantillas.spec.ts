@@ -778,3 +778,360 @@ test.describe("los módulos de una cotización", () => {
     ).toHaveCount(1);
   });
 });
+
+/* ==========================================================================
+   El alta de un módulo (T-7)
+
+   Las palabras del usuario al mirar esta pantalla sin alta: «No veo la opción
+   de crear un módulo, sólo editar y dar de baja.»
+
+   Lo que **solo se ve acá** son cuatro cosas, y la primera es la queja:
+
+    1. **Que el formulario esté a la vista sin abrir nada.** Es una afirmación
+       sobre el dibujo y no sobre una función: un desplegable cerrado tiene los
+       mismos campos en el DOM.
+    2. Que el bloque del alta **no sea un módulo más**: la cuenta de controles
+       por módulo es la guarda que protege «un valor por campo», y un
+       formulario con la clase de los módulos la falsearía.
+    3. Que el módulo creado aparezca **al final**, con su clave y **sin marca**.
+    4. Que los dos 422 se lean **debajo del campo del que hablan**.
+   ========================================================================== */
+
+/** Lo que el servidor devuelve al crear «Observaciones del cliente». */
+const CREADA = {
+  id: "11111111-2222-3333-4444-555555555555",
+  clave: "observaciones_del_cliente",
+  orden: 7,
+  rotuloOficial: null,
+  descripcionOficial: null,
+  rotulo: "Observaciones del cliente",
+  descripcion: "Lo que el cliente dijo y conviene dejar escrito.",
+  rotuloVigente: "Observaciones del cliente",
+  descripcionVigente: "Lo que el cliente dijo y conviene dejar escrito.",
+  activo: true,
+};
+
+/** El campo del rótulo del alta, que se llama «Rótulo» y nada más. */
+function campoDelAlta(page: Page) {
+  return page.locator("#modulo-nuevo-rotulo");
+}
+
+function campoDeDescripcionDelAlta(page: Page) {
+  return page.locator("#modulo-nuevo-descripcion");
+}
+
+function botonDeAlta(page: Page) {
+  return page
+    .locator(".plantillas__alta")
+    .getByRole("button", { name: "Agregar" });
+}
+
+/**
+ * Contesta el `POST` del alta con lo que `responder` decida.
+ *
+ * Se registra **después** de `conPlantillasCargadas`, por lo mismo que las
+ * pruebas del `PUT`: Playwright resuelve las rutas en orden inverso al de
+ * registro, y el predicado ancho de la lectura taparía esta ruta. El
+ * `fallback` deja pasar el `GET` de la colección, que es la misma dirección.
+ */
+async function conElAltaContestada(
+  page: Page,
+  responder: (cuerpo: { rotulo: string; descripcion: string }) => {
+    status: number;
+    json: unknown;
+  },
+): Promise<void> {
+  await page.route(
+    (url) => url.pathname === "/api/plantillas-modulo",
+    async (ruta) => {
+      if (ruta.request().method() !== "POST") {
+        await ruta.fallback();
+        return;
+      }
+
+      const cuerpo = ruta.request().postDataJSON() as {
+        rotulo: string;
+        descripcion: string;
+      };
+      await ruta.fulfill(responder(cuerpo));
+    },
+  );
+}
+
+test.describe("agregar un módulo", () => {
+  /**
+   * **La queja del usuario, contestada y medida.** El formulario está a la
+   * vista sin abrir nada: sus dos campos son visibles y el botón existe.
+   */
+  test("el formulario está a la vista sin abrir nada", async ({ page }) => {
+    await conPlantillasCargadas(page);
+    await page.goto("/catalogos/modulos");
+    await expect(page.locator(".plantilla-modulo").first()).toBeVisible();
+
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Agregar un módulo" }),
+    ).toBeVisible();
+    await expect(campoDelAlta(page)).toBeVisible();
+    await expect(campoDeDescripcionDelAlta(page)).toBeVisible();
+    await expect(botonDeAlta(page)).toBeVisible();
+  });
+
+  /**
+   * **Va al final de la lista, y no arriba.** A esta pantalla se entra a leer
+   * y a corregir los módulos que ya están: el alta primero empujaría abajo lo
+   * que se vino a buscar. Y es además donde el módulo nuevo va a aparecer,
+   * porque nace con `orden = MAX(orden) + 1`.
+   */
+  test("el formulario va después del último módulo", async ({ page }) => {
+    await conPlantillasCargadas(page);
+    await page.goto("/catalogos/modulos");
+    await expect(page.locator(".plantilla-modulo").first()).toBeVisible();
+
+    const posiciones = await page.evaluate(() => {
+      const ultimo = [...document.querySelectorAll(".plantilla-modulo")].pop();
+      const alta = document.querySelector(".plantillas__alta");
+
+      return ultimo === undefined || alta === null
+        ? null
+        : {
+            modulo: ultimo.getBoundingClientRect().top,
+            alta: alta.getBoundingClientRect().top,
+          };
+    });
+
+    expect(posiciones).not.toBeNull();
+    expect(
+      (posiciones as { modulo: number; alta: number }).alta,
+      "el formulario del alta quedó arriba de la lista: empuja abajo el" +
+        " catálogo que es lo que se vino a leer",
+    ).toBeGreaterThan((posiciones as { modulo: number }).modulo);
+  });
+
+  /**
+   * **Y no es un módulo más.** La cuenta de controles por `.plantilla-modulo`
+   * es la guarda de «un valor por campo»: si el formulario llevara esa clase,
+   * la pantalla tendría un sexto bloque con dos campos vacíos y esa cuenta
+   * dejaría de significar nada.
+   */
+  test("el bloque del alta no cuenta como un módulo", async ({ page }) => {
+    await conPlantillasCargadas(page);
+    await page.goto("/catalogos/modulos");
+    await expect(page.locator(".plantilla-modulo").first()).toBeVisible();
+
+    await expect(page.locator(".plantilla-modulo")).toHaveCount(
+      PLANTILLAS.length,
+    );
+    await expect(page.locator(".plantillas__alta")).toHaveCount(1);
+  });
+
+  /**
+   * El botón apagado hasta que los dos campos tengan algo. Es la mitad que
+   * dice «la descripción es obligatoria» **antes** de que alguien falle, junto
+   * con el párrafo de arriba.
+   */
+  test("el botón está apagado hasta que los dos campos tienen texto", async ({
+    page,
+  }) => {
+    await conPlantillasCargadas(page);
+    await page.goto("/catalogos/modulos");
+    await expect(page.locator(".plantilla-modulo").first()).toBeVisible();
+
+    await expect(botonDeAlta(page)).toBeDisabled();
+
+    await campoDelAlta(page).fill("Observaciones del cliente");
+    await expect(
+      botonDeAlta(page),
+      "el botón se prendió con la descripción vacía: el 422 del servidor va a" +
+        " ser la primera noticia de que es obligatoria",
+    ).toBeDisabled();
+
+    await campoDeDescripcionDelAlta(page).fill("Lo que el cliente dijo.");
+    await expect(botonDeAlta(page)).toBeEnabled();
+
+    // Y sólo espacios no alcanza, que es la normalización del servidor.
+    await campoDeDescripcionDelAlta(page).fill("   ");
+    await expect(botonDeAlta(page)).toBeDisabled();
+  });
+
+  /**
+   * **El alta completa, de punta a punta sobre el dibujo**: el cuerpo que
+   * viaja no lleva clave, el módulo aparece al final con la clave que el
+   * servidor acuñó, **sin marca de editado** y con su distintivo de que no
+   * tiene preestablecido debajo.
+   */
+  test("el módulo creado aparece al final, con su clave y sin marca", async ({
+    page,
+  }) => {
+    const enviados: unknown[] = [];
+
+    await conPlantillasCargadas(page);
+    await conElAltaContestada(page, (cuerpo) => {
+      enviados.push(cuerpo);
+      return { status: 201, json: { plantilla: CREADA } };
+    });
+    await page.goto("/catalogos/modulos");
+    await expect(page.locator(".plantilla-modulo").first()).toBeVisible();
+
+    await campoDelAlta(page).fill("  Observaciones del cliente  ");
+    await campoDeDescripcionDelAlta(page).fill(
+      "Lo que el cliente dijo y conviene dejar escrito.",
+    );
+    await botonDeAlta(page).click();
+
+    // El cuerpo va recortado y **sin clave**: la acuña el servidor.
+    expect(enviados).toEqual([
+      {
+        rotulo: "Observaciones del cliente",
+        descripcion: "Lo que el cliente dijo y conviene dejar escrito.",
+      },
+    ]);
+
+    const nuevo = modulo(page, CREADA.clave);
+    await expect(nuevo).toBeVisible();
+    await expect(nuevo.getByRole("heading", { level: 2 })).toContainText(
+      "Observaciones del cliente",
+    );
+
+    /*
+     * **Sin marca**, y es la decisión que la tarea tenía que tomar: el
+     * asterisco dice «el bufete escribió esto encima del preestablecido», y
+     * acá no hay nada debajo. Marcarlo sería afirmar una excepción sobre algo
+     * que no tiene norma.
+     */
+    await expect(
+      marcas(page, CREADA.clave),
+      "el módulo que el bufete creó salió marcado como editado: no editó" +
+        " nada, lo escribió entero",
+    ).toHaveCount(0);
+
+    // Y lleva su distintivo, que es lo que avisa que no se puede vaciar.
+    await expect(nuevo).toContainText("Sin preestablecido");
+
+    // Al final de la lista, que es donde su `orden` lo pone.
+    const claves = await page
+      .locator(".plantilla-modulo__clave")
+      .allInnerTexts();
+    expect(claves[claves.length - 1]).toBe(CREADA.clave);
+
+    // El formulario quedó limpio: el botón se apaga solo.
+    await expect(campoDelAlta(page)).toHaveValue("");
+    await expect(botonDeAlta(page)).toBeDisabled();
+  });
+
+  /**
+   * **El módulo creado se puede vaciar, y la pantalla lo impide antes de
+   * mandar.** Es el aviso que T-2 escribió sin poder ejercerlo: las seis
+   * sembradas tienen preestablecido en las dos columnas.
+   */
+  test("vaciar un campo del módulo creado avisa en vez de mandar", async ({
+    page,
+  }) => {
+    await conPlantillasCargadas(page);
+    await conElAltaContestada(page, () => ({
+      status: 201,
+      json: { plantilla: CREADA },
+    }));
+    await page.goto("/catalogos/modulos");
+    await expect(page.locator(".plantilla-modulo").first()).toBeVisible();
+
+    await campoDelAlta(page).fill("Observaciones del cliente");
+    await campoDeDescripcionDelAlta(page).fill("Lo que el cliente dijo.");
+    await botonDeAlta(page).click();
+    await expect(modulo(page, CREADA.clave)).toBeVisible();
+
+    await campoDeDescripcion(page, CREADA.clave).fill("");
+
+    const nuevo = modulo(page, CREADA.clave);
+    await expect(nuevo.getByRole("alert")).toContainText("preestablecido");
+    await expect(
+      nuevo.getByRole("button", { name: "Guardar" }),
+    ).toBeDisabled();
+  });
+
+  /* ---- Los dos 422, debajo del campo del que hablan -------------------- */
+
+  /**
+   * El choque de claves. La frase manda a mirar la lista —donde está el
+   * módulo que choca, dado de baja o no— y va **debajo del rótulo**, que es el
+   * campo que la persona puede cambiar.
+   */
+  test("un rótulo cuya clave ya existe se explica debajo del rótulo", async ({
+    page,
+  }) => {
+    await conPlantillasCargadas(page);
+    await conElAltaContestada(page, () => ({
+      status: 422,
+      json: {
+        error: "datos_invalidos",
+        fallas: [{ campo: "rotulo", motivo: "clave_de_modulo_tomada" }],
+      },
+    }));
+    await page.goto("/catalogos/modulos");
+    await expect(page.locator(".plantilla-modulo").first()).toBeVisible();
+
+    await campoDelAlta(page).fill("¡Alcance!");
+    await campoDeDescripcionDelAlta(page).fill("Otra cosa.");
+    await botonDeAlta(page).click();
+
+    const aviso = page.locator(".plantillas__alta").getByRole("alert");
+    await expect(aviso).toContainText("identificador");
+    await expect(aviso).toContainText("dado de baja");
+    // Y el campo queda marcado como inválido, para quien no ve el aviso.
+    await expect(campoDelAlta(page)).toHaveAttribute("aria-invalid", "true");
+    // Lo tecleado sigue ahí: un rechazo que borra el formulario es un rechazo
+    // que hace escribirlo de nuevo.
+    await expect(campoDelAlta(page)).toHaveValue("¡Alcance!");
+  });
+
+  /**
+   * Y el otro, que **no dice lo mismo**: de ese rótulo no sale ningún
+   * identificador. Son dos problemas con dos salidas distintas —uno pide otro
+   * rótulo, el otro pide uno con letras— y aplastarlos dejaría a la pantalla
+   * mandando a cambiar un nombre que no choca con nada.
+   */
+  test("un rótulo del que no sale ninguna clave dice otra cosa", async ({
+    page,
+  }) => {
+    await conPlantillasCargadas(page);
+    await conElAltaContestada(page, () => ({
+      status: 422,
+      json: {
+        error: "datos_invalidos",
+        fallas: [{ campo: "rotulo", motivo: "rotulo_sin_clave" }],
+      },
+    }));
+    await page.goto("/catalogos/modulos");
+    await expect(page.locator(".plantilla-modulo").first()).toBeVisible();
+
+    await campoDelAlta(page).fill("«»");
+    await campoDeDescripcionDelAlta(page).fill("Otra cosa.");
+    await botonDeAlta(page).click();
+
+    const aviso = page.locator(".plantillas__alta").getByRole("alert");
+    await expect(aviso).toContainText("letra");
+    await expect(
+      aviso,
+      "los dos 422 dicen lo mismo: la persona va a cambiar el nombre cuando" +
+        " el problema es que no escribió ninguna letra",
+    ).not.toContainText("ya existe");
+  });
+
+  /* ---- El criterio responsivo de §9 sobre el formulario nuevo ---------- */
+
+  for (const ancho of ANCHOS) {
+    test(`a ${String(ancho)}px de ancho, sobre el alta`, async ({ page }) => {
+      await conPlantillasCargadas(page);
+      await page.setViewportSize({ width: ancho, height: ALTO });
+      await page.goto("/catalogos/modulos");
+      await page.evaluate(() => document.fonts.ready);
+      await page.locator(".plantillas__alta").waitFor();
+
+      const desborde = await medirDesborde(page);
+
+      expect(
+        desborde.scrollWidth,
+        porQueSeSale(ancho, desborde),
+      ).toBeLessThanOrEqual(desborde.clientWidth);
+    });
+  }
+});

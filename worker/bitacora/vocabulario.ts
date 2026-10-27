@@ -278,9 +278,9 @@ export const ACCIONES_POR_ENTIDAD = {
   arancel_renglon: ["editado"],
 
   /* Una plantilla de módulo de prosa (T-1 de
-     `odd/tasks/plantillas-de-modulo.md`). **Tres verbos**, y los tres tienen
-     sitio que los emita: el alcance de la tajada incluye la edición del rótulo
-     y la descripción, la baja y la reactivación.
+     `odd/tasks/plantillas-de-modulo.md`, y `creado` desde T-7). **Cuatro
+     verbos**, y los cuatro tienen sitio que los emita: el alta, la edición del
+     rótulo y la descripción, la baja y la reactivación.
 
      Lo editable de una plantilla es el rótulo, la descripción, el orden y
      `activo`. El preset —`rotulo_oficial` y `descripcion_oficial`— y la
@@ -288,14 +288,24 @@ export const ACCIONES_POR_ENTIDAD = {
      `migrations/0016_una_plantilla_de_modulo_dice_para_que_sirve.sql`, así que
      no hay hecho que registrar sobre ellos: no pueden cambiar.
 
-     **`creado` no entra**, y es la misma regla que `arancel_renglon` aplica a
-     `dado_de_baja` arriba, leída al revés: la ausencia del verbo es cómo este
-     vocabulario dice que la operación no es de esta unidad. Crear plantillas
-     nuevas está fuera del alcance autorizado de esta tajada —la clave tendría
-     que derivarse del rótulo y `cotizacion_modulo.tipo` sigue cerrado por el
-     `CHECK` de `0004`—, y las seis que existen las siembra la migración, que
-     no pasa por `mutar`. El día que exista la ruta, el verbo entra con ella y
-     cuesta una línea, porque su frase ya está en `src/bitacora.ts`.
+     **`creado` entró en T-7, y entró sin migración.** Hasta entonces no
+     estaba, y la ausencia era la misma regla que `arancel_renglon` aplica a
+     `dado_de_baja` arriba leída al revés: la ausencia del verbo es cómo este
+     vocabulario dice que la operación no es de esta unidad. Lo que cambió es
+     que la operación existe —`POST /api/plantillas-modulo`, con la clave
+     acuñada del rótulo—, así que el verbo tiene sitio que lo emita.
+
+     Y **no hizo falta una migración**, que es lo contrario de lo que se
+     supone al leer que un verbo nuevo entra al vocabulario: `creado` ya está
+     en el `CHECK` de `accion` desde `migrations/0012:132` —lo pusieron los
+     catálogos y la cotización mucho antes—, y `modulo_plantilla` ya está en el
+     `CHECK` de `entidad` desde `0016`. La octava reconstrucción de `bitacora`
+     no existe, y no existe porque `0016` ya había pagado la séptima. Lo único
+     que esta línea agrega es el par entidad+verbo, que vive en TypeScript.
+
+     Las seis plantillas sembradas **no tienen** entrada `creado`, y eso no es
+     un hueco: las escribió la migración, que no pasa por `mutar`. La primera
+     entrada de este verbo es la del primer módulo que el bufete agregue.
 
      **`borrado` tampoco**, y éste no entra nunca: una plantilla no se borra.
      `modulo_plantilla_no_se_borra` aborta todo `DELETE` en la base, y la
@@ -307,7 +317,7 @@ export const ACCIONES_POR_ENTIDAD = {
      columna. Y `plantilla_editada` además ya existe, con otro dueño: es el
      hecho de guardar las etapas de un `tipo_proceso`, y reusarlo acá haría
      que dos cosas distintas se leyeran igual. */
-  modulo_plantilla: ["editado", "dado_de_baja", "reactivado"],
+  modulo_plantilla: ["creado", "editado", "dado_de_baja", "reactivado"],
 } as const satisfies Record<EntidadRegistrada, readonly AccionDeBitacora[]>;
 
 /**

@@ -9,19 +9,27 @@
  * de salir del código. Tres copias de estas dos funciones serían tres rutas
  * que se desincronizan.
  *
- * **Lectura y una sola escritura, y la asimetría es el archivo entero.** Se
- * lee el catálogo completo; se escribe el rótulo, la descripción y la
- * vigencia, y nada más. No hay `crearPlantilla` ni `borrarPlantilla` porque no
- * hay ruta, y no hay ruta por dos motivos distintos: crear está fuera del
- * alcance de la tajada —la clave tendría que derivarse del rótulo y
- * `cotizacion_modulo.tipo` sigue cerrado por el `CHECK` de `0004`— y borrar no
- * va a existir nunca, porque una plantilla borrada deja sin rótulo los módulos
- * de las cotizaciones vivas. Y no hay `fijarPreset` por el mismo motivo
- * elevado al cuadrado: eso sería borrar el piso al que se vuelve, y el
- * servidor lo rechaza con un 409 que esta capa sabe explicar.
+ * **Lectura, el alta y una sola edición.** Se lee el catálogo completo; se
+ * crea una plantilla propia con su rótulo y su descripción; se edita el
+ * rótulo, la descripción y la vigencia, y nada más.
+ *
+ * `crearPlantillaDeModulo` llegó en T-7, cuando `0017` quitó el techo que lo
+ * impedía: mientras `cotizacion_modulo.tipo` estuvo cerrado por el `CHECK` de
+ * `0004`, una plantilla nueva era una plantilla que esta pantalla ofrecía y la
+ * base rechazaba al guardar el primer módulo de la cotización.
+ *
+ * Lo que sigue sin existir son dos, por dos motivos distintos:
+ *
+ *  - **`borrarPlantilla` nunca**, porque una plantilla borrada deja sin rótulo
+ *    los módulos de las cotizaciones vivas — y desde `0017`, con una llave
+ *    foránea rota. La salida es `activo = 0`, que viaja en el `PUT`.
+ *  - **`fijarPreset` tampoco**, por el mismo motivo elevado al cuadrado: eso
+ *    sería borrar el piso al que se vuelve, y el servidor lo rechaza con un
+ *    409 que esta capa sabe explicar.
  */
 
 import type {
+  DatosDeAltaDePlantilla,
   PlantillaDeModulo,
   RespuestaDePlantillaDeModulo,
   RespuestaDePlantillasDeModulo,
@@ -57,6 +65,41 @@ export async function cargarPlantillasDeModulo(
 
   return resultado.estado === "ok"
     ? { estado: "ok", valor: resultado.valor.plantillas }
+    : resultado;
+}
+
+/**
+ * Una plantilla propia del bufete (T-7).
+ *
+ * **El cuerpo no lleva clave, y no es un olvido**: la acuña el servidor a
+ * partir del rótulo. Esta capa no la calcula ni la previsualiza, y eso es una
+ * decisión y no una falta: la acuñación es una regla del sistema que vive en
+ * `worker/plantillas/dominio.ts`, y una segunda copia acá tendría que coincidir
+ * **carácter por carácter** con la del servidor o la pantalla estaría
+ * prometiendo un identificador que no es el que va a quedar. Una validación
+ * duplicada puede ser más laxa que la del servidor sin mentir; una acuñación
+ * duplicada no puede diferir en nada.
+ *
+ * Lo que la pantalla muestra en su lugar es la clave **ya acuñada** de cada
+ * módulo, debajo de su rótulo, que es donde la persona la ve en cuanto el
+ * módulo existe.
+ *
+ * Los dos textos van **recortados y no vacíos**: el servidor rechaza los dos
+ * vacíos con un 422 propio, y la pantalla lo dice antes con `validarAlta`.
+ */
+export async function crearPlantillaDeModulo(
+  datos: DatosDeAltaDePlantilla,
+  signal: AbortSignal,
+): Promise<Resultado<PlantillaDeModulo>> {
+  const resultado = await pedir<RespuestaDePlantillaDeModulo>(PLANTILLAS, {
+    ...ESCRITURA,
+    method: "POST",
+    body: JSON.stringify(datos),
+    signal,
+  });
+
+  return resultado.estado === "ok"
+    ? { estado: "ok", valor: resultado.valor.plantilla }
     : resultado;
 }
 

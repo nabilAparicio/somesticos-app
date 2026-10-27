@@ -74,18 +74,25 @@ import type {
  * puede cumplir, y el usuario fue explícito en que el saldo de gastos es
  * informativo y no verdad contable.
  *
- * `as const satisfies` y no una anotación, por lo mismo que
- * `CATALOGO_DE_MODULOS`: así las cadenas conservan sus literales —y
- * `rotuloDeClase` puede devolver el tipo estrecho— pero el compilador sigue
- * exigiendo que cada `clase` sea una de la unión. Una clase inventada acá no
- * compila.
+ * `as const satisfies` y no una anotación: así las cadenas conservan sus
+ * literales —y `rotuloDeClase` puede devolver el tipo estrecho— pero el
+ * compilador sigue exigiendo que cada `clase` sea una de la unión. Una clase
+ * inventada acá no compila.
  *
- * **El registro tiene dos campos y no tres**, por el mismo argumento que el
- * de los módulos: el orden en que se muestran **es** la posición en el
- * arreglo, y una columna `orden` sería un segundo lugar donde decir lo mismo.
- * Tampoco hay `descripcion` ni `aproximado: true`: que el gasto sea
- * aproximado ya lo dice su rótulo, y una bandera paralela es la que mañana
+ * **El registro tiene dos campos y no tres**: el orden en que se muestran **es**
+ * la posición en el arreglo, y una columna `orden` sería un segundo lugar donde
+ * decir lo mismo. Tampoco hay `descripcion` ni `aproximado: true`: que el gasto
+ * sea aproximado ya lo dice su rótulo, y una bandera paralela es la que mañana
  * dice otra cosa que el texto.
+ *
+ * Los dos párrafos de arriba decían «por lo mismo que `CATALOGO_DE_MODULOS`»,
+ * y ese registro **no existe**: T-4 de `odd/tasks/plantillas-de-modulo.md` lo
+ * borró cuando los rótulos y las descripciones de los módulos pasaron a salir
+ * de `modulo_plantilla`. Los dos argumentos se sostienen solos, así que lo que
+ * se fue es la referencia y no el motivo. Y la asimetría que queda es la que
+ * conviene no mezclar: **las dos clases de línea sí son código** —cada una
+ * tiene su columna en la suma de la cotización— mientras que los tipos de
+ * módulo eran sólo etiquetas, que es por lo que se fueron a una tabla.
  */
 export const CATALOGO_DE_CLASES = [
   { clase: "honorario", rotulo: "Honorarios" },
@@ -139,9 +146,16 @@ export type ClasesSinRotulo = DebeSerVacio<
  * Sólo los identificadores, en el mismo orden.
  *
  * Se deriva del catálogo en vez de escribirse de nuevo, igual que
- * `TIPOS_DE_MODULO` y `ACCIONES_DE_BITACORA`: una segunda lista a mano es la
- * que se desincroniza. Es la que `test/lineas-api.spec.ts` compara contra el
- * `CHECK` de la base.
+ * `ACCIONES_DE_BITACORA`: una segunda lista a mano es la que se desincroniza.
+ * Es la que `test/lineas-api.spec.ts` compara contra el `CHECK` de la base.
+ *
+ * Acá nombraba también `TIPOS_DE_MODULO`, que **ya no existe**: T-6 de
+ * `odd/tasks/plantillas-de-modulo.md` lo borró, porque la clave de un módulo
+ * pasó a ser una cadena validada contra las filas de `modulo_plantilla`. Y la
+ * diferencia con esta lista es la que explica por qué ésta se queda: la clase
+ * de una línea decide **cómo suma** —honorarios y gastos estimados van en dos
+ * columnas distintas del total—, así que detrás de cada una hay código. Detrás
+ * de un tipo de módulo no había ninguno: eran seis rótulos.
  */
 export const CLASES_DE_LINEA: readonly ClaseDeLinea[] = CATALOGO_DE_CLASES.map(
   (entrada) => entrada.clase,

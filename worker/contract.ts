@@ -553,7 +553,74 @@ export type MotivoDeFalla =
    * de `docs/diseno.md` §6, y está porque la pregunta «¿porcentaje de qué?»
    * tiene respuesta en un caso y no la tiene en el otro.
    */
-  | "porcentaje_sin_cotizacion";
+  | "porcentaje_sin_cotizacion"
+  /* --- El alta de una plantilla de módulo (T-7 de
+     `odd/tasks/plantillas-de-modulo.md`) ---
+
+     Los tres son del mismo cuerpo y los tres son 422, y están separados
+     porque **son tres problemas distintos con tres salidas distintas**. Un
+     solo motivo para los tres dejaría a la pantalla diciendo «el rótulo es
+     obligatorio» sobre un campo que tiene texto, o «ese nombre ya está en
+     uso» sobre uno que no se pudo convertir en identificador. --- */
+  /**
+   * Un alta de plantilla sin rótulo.
+   *
+   * No reusa `nombre_requerido` —que es el de los catálogos— porque el campo
+   * de esta pantalla se llama «Rótulo» y lo dice en su etiqueta: un mensaje
+   * que habla del «nombre» debajo de un campo rotulado «Rótulo» manda a
+   * buscar un campo que no existe.
+   */
+  | "rotulo_requerido"
+  /**
+   * Un rótulo del que **no sale ninguna clave**.
+   *
+   * Es el rótulo escribible —tiene caracteres, no está en blanco— del que no
+   * queda nada utilizable: solo signos, solo emoji, solo acentos sueltos.
+   * `acunarClave` en `worker/plantillas/dominio.ts` devuelve `null` y esto es
+   * la negativa que se puede leer.
+   *
+   * Sin este motivo, la clave llegaría vacía a un `INSERT` y lo que saldría
+   * sería un `NOT NULL` o el único de `(tenant_id, clave)` envuelto en un
+   * 500. Un 500 no es una negativa: es una caída, y la pantalla no puede
+   * decir nada útil sobre ella.
+   */
+  | "rotulo_sin_clave"
+  /**
+   * Dos rótulos que acuñan la **misma** clave.
+   *
+   * No es «ese rótulo ya está escrito»: `modulo_plantilla` no tiene único
+   * sobre el rótulo, y dos rótulos distintos pueden acuñar la misma clave
+   * —«Observaciones del cliente» y «¡Observaciones del cliente!» acuñan las
+   * dos `observaciones_del_cliente`—. Lo que choca es el identificador, que es
+   * lo que `modulo_plantilla_clave_unica` sostiene.
+   *
+   * Y choca **también contra una plantilla dada de baja**, porque ese índice
+   * no mira `activo`: una clave retirada sigue tomada, y tiene que seguir
+   * tomada —los módulos de las cotizaciones vivas la referencian por llave
+   * foránea—. Es la diferencia con los catálogos de T-6, cuyo 409 distingue
+   * el nombre vigente del dado de baja para ofrecer reactivar: acá la fila de
+   * baja **ya está a la vista** en la misma pantalla, marcada, así que la
+   * salida es mirarla y no una segunda frase.
+   */
+  | "clave_de_modulo_tomada"
+  /**
+   * Un alta de plantilla sin descripción, y **esta asimetría es la tarea**.
+   *
+   * Un preset editado se puede vaciar: vaciarlo significa «uso el
+   * preestablecido» y `descripcion_oficial` lo cubre. Una plantilla nueva no
+   * tiene nada debajo, así que la descripción es obligatoria desde el
+   * formulario. El `CHECK la_plantilla_tiene_descripcion_vigente` de `0016` ya
+   * rechaza la fila; esto es lo que la convierte en un 422 que se puede leer,
+   * y el formulario lo dice **antes** de mandarlo.
+   *
+   * No reusa `descripcion_requerida`, que es el del encargo que la IA redacta:
+   * su frase habla de «de qué se trata y lo que el cliente pidió», y debajo
+   * del campo de una plantilla hablaría de otra cosa. Es el mismo criterio con
+   * el que `texto_requerido` dejó de nombrar la nota cuando el pendiente
+   * empezó a compartirlo, leído al revés: acá las dos frases **tienen** que
+   * decir cosas distintas, porque las consecuencias son distintas.
+   */
+  | "descripcion_de_modulo_requerida";
 
 export interface FallaDeValidacion {
   campo: string;
@@ -2626,17 +2693,21 @@ export type EntidadRegistrada =
    * que renombrar un módulo apareciera en la historia de las cotizaciones que
    * lo usan, y la plantilla es anterior a todas ellas.
    *
-   * Admite tres verbos —`editado`, `dado_de_baja` y `reactivado`—, y los tres
-   * tienen sitio que los emita: el alcance de la tajada 1 incluye la edición,
-   * la baja y la reactivación. Los campos del preset los congela un disparador
-   * de `migrations/0016_una_plantilla_de_modulo_dice_para_que_sirve.sql`, así
-   * que no hay hecho que registrar sobre ellos.
+   * Admite cuatro verbos —`creado`, `editado`, `dado_de_baja` y
+   * `reactivado`—, y los cuatro tienen sitio que los emita. Los campos del
+   * preset los congela un disparador de
+   * `migrations/0016_una_plantilla_de_modulo_dice_para_que_sirve.sql`, así que
+   * no hay hecho que registrar sobre ellos.
    *
-   * **`creado` no entra**, al revés que en los catálogos: crear plantillas
-   * nuevas está fuera del alcance autorizado de esta tajada y las seis que
-   * existen las siembra la migración, que no pasa por `mutar`. La ausencia del
-   * verbo es cómo este vocabulario dice que la operación no es de esta unidad;
-   * el día que exista la ruta, el verbo entra con ella.
+   * **`creado` entró en T-7 y no costó una migración**, que es lo contrario de
+   * lo que se supone al leer que un verbo nuevo entra al vocabulario: ya
+   * estaba en el `CHECK` de `accion` desde `migrations/0012:132` y la entidad
+   * ya estaba en el de `entidad` desde `0016`. Las seis plantillas sembradas no
+   * tienen entrada `creado` porque las escribió la migración, que no pasa por
+   * `mutar`; la primera es la del primer módulo que el bufete agregue.
+   *
+   * **`borrado` no entra nunca**: una plantilla no se borra, y
+   * `modulo_plantilla_no_se_borra` aborta todo `DELETE` en la base.
    */
   | "modulo_plantilla";
 
@@ -3194,9 +3265,48 @@ export interface RespuestaDePlantillasDeModulo {
   plantillas: PlantillaDeModulo[];
 }
 
-/** `PUT /api/plantillas-modulo/{id}`: la plantilla releída después de guardar. */
+/**
+ * `PUT /api/plantillas-modulo/{id}`: la plantilla releída después de guardar.
+ *
+ * Y también el cuerpo del 201 de `POST /api/plantillas-modulo`, que devuelve
+ * la fila recién creada con su clave acuñada y su `orden` resuelto. Es la
+ * misma forma porque es la misma cosa —una plantilla releída de la base— y
+ * partirla en dos nombres obligaría a la pantalla a tratar distinto el
+ * resultado de dos escrituras que deja en el mismo lugar.
+ */
 export interface RespuestaDePlantillaDeModulo {
   plantilla: PlantillaDeModulo;
+}
+
+/**
+ * El cuerpo de `POST /api/plantillas-modulo` (T-7).
+ *
+ * **Dos campos, y la ausencia del tercero es la tarea.** No hay `clave`: la
+ * acuña el servidor a partir del `rotulo` —«Observaciones del cliente» acuña
+ * `observaciones_del_cliente`— y no hay forma de escribirla. El motivo no es
+ * comodidad: la clave es inmutable desde que nace
+ * (`modulo_plantilla_clave_inmutable`), así que un campo para tipearla sería un
+ * campo cuyo error no se puede corregir nunca. El rótulo sí se corrige, y
+ * corregirlo no toca la clave — que es toda la gracia de que estén separadas.
+ *
+ * Tampoco hay `rotuloOficial` ni `descripcionOficial`: una plantilla propia del
+ * bufete **nace sin preset**, y eso es lo que la define. Un alta que sembrara
+ * su propio preset se estaría fabricando un piso al que volver, y el piso es lo
+ * que la migración publicó.
+ *
+ * Ni `activo` ni `orden`: nace vigente y última. Un alta que pudiera nacer dada
+ * de baja sería un alta a medias, y la posición es un `MAX(orden) + 1` que no
+ * tiene por qué ocupar un campo de un formulario de dos.
+ *
+ * **Los dos textos son obligatorios**, y la asimetría con el `PUT` —donde los
+ * dos son nullable y el nulo significa «uso el preestablecido»— es la razón de
+ * ser de esta tarea: una plantilla nueva no tiene preestablecido debajo, así que
+ * un nulo acá no es volver atrás sino una fila sin valor vigente, que es lo que
+ * los dos `CHECK` de `0016` niegan.
+ */
+export interface DatosDeAltaDePlantilla {
+  rotulo: string;
+  descripcion: string;
 }
 
 /**

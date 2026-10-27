@@ -32,14 +32,20 @@ import { MARCA_DE_EDITADO as MARCA_DE_PRECIOS } from "../src/pantallas/catalogos
 import {
   AVISO_SIN_PLANTILLAS,
   AYUDA_DEL_VUELTA_ATRAS,
+  BORRADOR_DE_ALTA_VACIO,
   ETIQUETA_DE_BAJA,
+  ETIQUETA_SIN_PREESTABLECIDO,
+  EXPLICACION_DEL_ALTA,
   EXPLICACION_DE_LA_PANTALLA,
   LEYENDA_DE_LA_MARCA,
   MARCA_DE_EDITADO,
   MARCA_EDITADA_LEIDA,
+  ROTULO_DEL_BOTON_DE_ALTA,
   ROTULO_DEL_ROTULO,
   ROTULO_DE_LA_DESCRIPCION,
+  TITULO_DEL_ALTA,
   TITULO_DE_LA_PANTALLA,
+  aPeticionDeAlta,
   anclaDeLaPlantilla,
   borradorDe,
   camposQueQuedarianVacios,
@@ -48,8 +54,10 @@ import {
   hayCambio,
   hayEditadas,
   rotuloALaVista,
+  sePuedeAgregar,
   sePuedeGuardar,
   sinBorrador,
+  validarAlta,
   type BorradorDePlantilla,
 } from "../src/pantallas/catalogos/plantillas";
 
@@ -461,8 +469,18 @@ describe("lo que la pantalla dice", () => {
   });
 
   /** Y dice que ya vienen configurados: un campo lleno no es un olvido. */
-  it("la explicación dice que los seis ya vienen configurados", () => {
+  it("la explicación dice que los de fábrica ya vienen configurados", () => {
     expect(EXPLICACION_DE_LA_PANTALLA.toLowerCase()).toContain("configurados");
+  });
+
+  /**
+   * **Y dice que se pueden agregar**, que es lo que el usuario no vio: «No veo
+   * la opción de crear un módulo, sólo editar y dar de baja.» Una pantalla que
+   * tiene el formulario al pie y no lo nombra arriba sigue dejando que la
+   * opción se encuentre o no por casualidad.
+   */
+  it("la explicación dice que se pueden agregar módulos", () => {
+    expect(EXPLICACION_DE_LA_PANTALLA.toLowerCase()).toContain("agregar");
   });
 
   /** La forma de volver atrás, dicha una vez y arriba. */
@@ -506,6 +524,12 @@ describe("lo que la pantalla dice", () => {
       MARCA_EDITADA_LEIDA,
       ETIQUETA_DE_BAJA,
       AVISO_SIN_PLANTILLAS,
+      // Y las cuatro del alta (T-7): el vocabulario del formulario nuevo
+      // tiene que pasar la misma prueba que el del resto de la pantalla.
+      TITULO_DEL_ALTA,
+      EXPLICACION_DEL_ALTA,
+      ETIQUETA_SIN_PREESTABLECIDO,
+      ROTULO_DEL_BOTON_DE_ALTA,
     ]
       .join(" ")
       .toLowerCase();
@@ -562,5 +586,285 @@ describe("el ancla de cada módulo", () => {
     expect(anclaDeLaPlantilla("alcance")).not.toBe(
       anclaDeLaPlantilla("exclusiones"),
     );
+  });
+});
+
+/* ==========================================================================
+   Una plantilla propia del bufete, sin preestablecido debajo (T-7)
+
+   Es la fila que T-7 hace existir y que la tajada 1 solo podía imaginar: nace
+   con `rotulo` y `descripcion` del bufete y con el preset en NULL. La pantalla
+   tiene que tratarla distinto en dos cosas, y las dos son de la marca:
+
+    - **no lleva marca de editado**, porque la marca dice «el bufete escribió
+      esto encima del preestablecido» y acá no hay ningún preestablecido
+      debajo. Marcarla sería afirmar una excepción sobre algo que no tiene
+      norma;
+    - **no se puede vaciar**, porque vaciar significa «uso el preestablecido» y
+      no hay ninguno.
+   ========================================================================== */
+
+/** Una plantilla que el bufete creó: texto propio y preset en nulo. */
+function propia(parcial: Partial<PlantillaDeModulo> = {}): PlantillaDeModulo {
+  return plantilla({
+    id: "11111111-2222-3333-4444-555555555555",
+    clave: "observaciones_del_cliente",
+    orden: 7,
+    rotuloOficial: null,
+    descripcionOficial: null,
+    rotulo: "Observaciones del cliente",
+    descripcion: "Lo que el cliente dijo y conviene dejar escrito.",
+    ...parcial,
+  });
+}
+
+describe("una plantilla sin preestablecido", () => {
+  /**
+   * **El tercer origen, y es una variante del vocabulario y no una rama en el
+   * componente.** `OrigenDelPrecio` tiene su `sin_precio` para los 74 rubros
+   * del acuerdo; acá `sin_preestablecido` es lo mismo: el estado en que no hay
+   * dos valores entre los que elegir, porque solo existe uno.
+   *
+   * La alternativa era un `if (plantilla.rotuloOficial === null)` adentro del
+   * `.tsx`, y entonces la decisión de qué marca dibujar viviría en dos lugares
+   * —acá el origen, allá la excepción— y uno de los dos se quedaría viejo.
+   */
+  it("su texto no es ni del preestablecido ni una edición: es el único", () => {
+    expect(rotuloALaVista(propia()).origen).toBe("sin_preestablecido");
+    expect(descripcionALaVista(propia()).origen).toBe("sin_preestablecido");
+  });
+
+  it("el valor a la vista sigue siendo el vigente, que es el propio", () => {
+    expect(rotuloALaVista(propia()).valor).toBe("Observaciones del cliente");
+  });
+
+  /**
+   * **La leyenda del asterisco no se dibuja por una plantilla propia**, y es
+   * el defecto que esta tarea tenía que no dejar entrar: `hayEditadas` miraba
+   * `rotulo !== null`, así que una plantilla propia —cuyo rótulo nunca es
+   * nulo— habría encendido la leyenda sin que hubiera un solo asterisco en la
+   * página. Una leyenda que explica un signo que no aparece manda a buscarlo.
+   *
+   * Lo que lo arregla es que `hayEditadas` pregunte por el **origen** y no por
+   * la columna: así la leyenda y la marca salen de la misma función y no
+   * pueden discrepar.
+   */
+  it("no enciende la leyenda de la marca", () => {
+    expect(hayEditadas([propia()])).toBe(false);
+    expect(hayEditadas([plantilla(), propia()])).toBe(false);
+    // Y una editada de verdad sí la enciende, con la propia en la lista.
+    expect(hayEditadas([propia(), plantilla({ rotulo: "X" })])).toBe(true);
+  });
+
+  /**
+   * El aviso de «esto no se puede vaciar» ya existía desde T-2, escrito sin
+   * poder ejercerlo: las seis sembradas tienen preset en las dos columnas.
+   * Ahora hay una fila que lo ejerce, y esto es la prueba que lo mide.
+   */
+  it("vaciar un campo la dejaría sin texto, y la pantalla lo sabe antes", () => {
+    const vacia = propia();
+
+    expect(
+      camposQueQuedarianVacios(vacia, { rotulo: "", descripcion: "Algo." }),
+    ).toEqual(["rotulo"]);
+    expect(
+      camposQueQuedarianVacios(vacia, { rotulo: "   ", descripcion: "   " }),
+    ).toEqual(["descripcion", "rotulo"]);
+    expect(
+      sePuedeGuardar(vacia, { rotulo: "", descripcion: "Algo." }),
+    ).toBe(false);
+  });
+
+  /**
+   * **Y lo que sí se puede es editarla.** Es la mitad que una guarda
+   * demasiado entusiasta rompería: una plantilla propia se corrige como
+   * cualquier otra, lo único que no admite es quedar en blanco.
+   */
+  it("se edita como cualquier otra", () => {
+    const fila = propia();
+    const borrador = { rotulo: "Observaciones", descripcion: "Otra cosa." };
+
+    expect(hayCambio(fila, borrador)).toBe(true);
+    expect(sePuedeGuardar(fila, borrador)).toBe(true);
+    expect(datosParaGuardar(fila, borrador, true)).toEqual({
+      rotulo: "Observaciones",
+      descripcion: "Otra cosa.",
+      activo: true,
+    });
+  });
+
+  /**
+   * La segunda regla de `propioParaGuardar` —escribir lo que ya se ve sobre un
+   * campo que usa el preestablecido viaja como NULL— **no la alcanza**, y no
+   * podría: su condición es `propioGuardado === null`, y acá nunca lo es. Si
+   * la alcanzara, reescribir el mismo rótulo de una plantilla propia la
+   * dejaría sin valor vigente.
+   */
+  it("reescribir su propio texto no lo convierte en un nulo", () => {
+    const fila = propia();
+    const datos = datosParaGuardar(
+      fila,
+      { rotulo: fila.rotuloVigente, descripcion: fila.descripcionVigente },
+      true,
+    );
+
+    expect(datos.rotulo).toBe(fila.rotulo);
+    expect(datos.descripcion).toBe(fila.descripcion);
+    // Y no hay cambio que guardar: el botón queda apagado.
+    expect(hayCambio(fila, {
+      rotulo: fila.rotuloVigente,
+      descripcion: fila.descripcionVigente,
+    })).toBe(false);
+  });
+});
+
+/* ==========================================================================
+   El alta (T-7)
+
+   Las palabras del usuario, mirando la pantalla de la tajada 1:
+
+   > «No veo la opción de crear un módulo, sólo editar y dar de baja.»
+
+   Esta validación **no autoriza nada**: la que manda es la del Worker, que es
+   la que la base respalda. Ésta existe para avisar antes de mandar, y por eso
+   son dos copias con sus propias pruebas — aflojar una tiene que matar sus
+   pruebas y no las de la otra.
+   ========================================================================== */
+
+describe("el borrador del alta", () => {
+  it("nace con los dos campos vacíos", () => {
+    expect(BORRADOR_DE_ALTA_VACIO).toEqual({ rotulo: "", descripcion: "" });
+  });
+
+  it("lo que viaja va recortado", () => {
+    expect(
+      aPeticionDeAlta({ rotulo: "  Observaciones  ", descripcion: " Algo. " }),
+    ).toEqual({ rotulo: "Observaciones", descripcion: "Algo." });
+  });
+
+  /**
+   * **No lleva clave**, y es la decisión del alta: la acuña el servidor a
+   * partir del rótulo. Esta capa no la calcula —una acuñación duplicada
+   * tendría que coincidir carácter por carácter con la del servidor o la
+   * pantalla prometería un identificador que no es el que va a quedar— y por
+   * eso tampoco la muestra antes de que el módulo exista.
+   */
+  it("la petición tiene dos campos y ninguno es la clave", () => {
+    const peticion = aPeticionDeAlta({ rotulo: "A", descripcion: "B" });
+
+    expect(Object.keys(peticion).sort()).toEqual(["descripcion", "rotulo"]);
+  });
+});
+
+describe("la validación del alta", () => {
+  it("un borrador completo no tiene fallas", () => {
+    expect(
+      validarAlta({ rotulo: "Observaciones", descripcion: "Algo." }),
+    ).toEqual([]);
+  });
+
+  it("sin rótulo, lo dice", () => {
+    expect(validarAlta({ rotulo: "   ", descripcion: "Algo." })).toEqual([
+      { campo: "rotulo", motivo: "rotulo_requerido" },
+    ]);
+  });
+
+  /**
+   * **La descripción es obligatoria acá y no en la edición**, y ahí está la
+   * tarea: un preset editado se puede vaciar porque `descripcion_oficial` lo
+   * cubre; una plantilla nueva no tiene nada debajo.
+   */
+  it("sin descripción, lo dice, y es la asimetría de la tarea", () => {
+    expect(validarAlta({ rotulo: "Observaciones", descripcion: "" })).toEqual([
+      { campo: "descripcion", motivo: "descripcion_de_modulo_requerida" },
+    ]);
+  });
+
+  /** Las dos y no la primera: corregir de a un error por envío es abandonar. */
+  it("devuelve las dos fallas y no la primera", () => {
+    expect(validarAlta(BORRADOR_DE_ALTA_VACIO)).toEqual([
+      { campo: "rotulo", motivo: "rotulo_requerido" },
+      { campo: "descripcion", motivo: "descripcion_de_modulo_requerida" },
+    ]);
+  });
+
+  /**
+   * El botón se apaga con lo mismo que la validación rechaza, y sale de una
+   * sola función: con dos definiciones, un día el botón estaría apretable
+   * sobre un borrador que la validación rechaza, y la pantalla contestaría un
+   * aviso donde prometía una escritura.
+   */
+  it("el botón se apaga exactamente cuando hay fallas", () => {
+    expect(sePuedeAgregar(BORRADOR_DE_ALTA_VACIO)).toBe(false);
+    expect(sePuedeAgregar({ rotulo: "A", descripcion: "   " })).toBe(false);
+    expect(sePuedeAgregar({ rotulo: "   ", descripcion: "B" })).toBe(false);
+    expect(sePuedeAgregar({ rotulo: "A", descripcion: "B" })).toBe(true);
+  });
+
+  /**
+   * **Lo que esta validación no hace, y es deliberado**: no rechaza un rótulo
+   * de solo signos. Eso lo decide `acunarClave`, que vive en el servidor, y
+   * duplicarla acá sería la segunda copia de una regla que no puede diferir en
+   * nada. Lo que la persona ve es el 422 `rotulo_sin_clave` con su frase.
+   */
+  it("un rótulo de solo signos no lo rechaza la pantalla", () => {
+    expect(validarAlta({ rotulo: "«»", descripcion: "Algo." })).toEqual([]);
+    expect(sePuedeAgregar({ rotulo: "«»", descripcion: "Algo." })).toBe(true);
+  });
+});
+
+describe("lo que la pantalla dice del alta", () => {
+  it("el encabezado nombra la operación que faltaba", () => {
+    expect(TITULO_DEL_ALTA.length).toBeGreaterThan(0);
+    expect(TITULO_DEL_ALTA.toLowerCase()).toContain("módulo");
+  });
+
+  /**
+   * La explicación del alta tiene que decir **las dos cosas que cambian el
+   * comportamiento de quien la lee**, y las dos son consecuencias que no se
+   * pueden deshacer desde la pantalla:
+   *
+   *  - que el identificador sale del rótulo y no se cambia después;
+   *  - que la descripción es obligatoria porque no hay preestablecido debajo.
+   *
+   * Es el equivalente de marcar la opcionalidad en la etiqueta y no en una
+   * ayuda al pie: lo que hace abandonar un alta es enterarse de la regla
+   * después de haberla violado.
+   */
+  it("dice de dónde sale el identificador y que no cambia", () => {
+    expect(EXPLICACION_DEL_ALTA.toLowerCase()).toContain("identificador");
+    expect(EXPLICACION_DEL_ALTA.toLowerCase()).toContain("rótulo");
+  });
+
+  it("dice que la descripción es obligatoria antes de que falle", () => {
+    expect(EXPLICACION_DEL_ALTA.toLowerCase()).toContain("descripción");
+    expect(EXPLICACION_DEL_ALTA.toLowerCase()).toContain("preestablecido");
+  });
+
+  /** Ninguna palabra del alta juzga ni se disculpa por el formulario. */
+  it("no se disculpa ni explica cómo funciona un campo de texto", () => {
+    for (const texto of [
+      TITULO_DEL_ALTA,
+      EXPLICACION_DEL_ALTA,
+      ETIQUETA_SIN_PREESTABLECIDO,
+      ROTULO_DEL_BOTON_DE_ALTA,
+    ]) {
+      for (const palabra of ["disculp", "lamentablemente", "simplemente"]) {
+        expect(texto.toLowerCase()).not.toContain(palabra);
+      }
+    }
+  });
+
+  /**
+   * El distintivo de una plantilla propia usa **la palabra que la leyenda ya
+   * enseñó** —preestablecido— y no un sinónimo nuevo: la pantalla ya le dijo a
+   * quien la lee qué significa, así que decir «sin preestablecido» es decir
+   * «esta no tiene a qué volver» sin explicarlo de nuevo.
+   */
+  it("el distintivo de una plantilla propia usa la palabra de la leyenda", () => {
+    expect(ETIQUETA_SIN_PREESTABLECIDO.toLowerCase()).toContain(
+      "preestablecido",
+    );
+    expect(LEYENDA_DE_LA_MARCA.toLowerCase()).toContain("preestablecido");
   });
 });

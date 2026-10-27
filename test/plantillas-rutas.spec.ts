@@ -30,8 +30,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { PlantillaDeModulo } from "../worker/contract";
-import type { DatosDePlantilla } from "../worker/plantillas/dominio";
 import type {
+  DatosDeAlta,
+  DatosDePlantilla,
+} from "../worker/plantillas/dominio";
+import type {
+  ResultadoDeAlta,
   ResultadoDePlantilla,
   ServicioDePlantillas,
 } from "../worker/plantillas/repositorio";
@@ -65,19 +69,30 @@ function plantilla(parcial: Partial<PlantillaDeModulo> = {}): PlantillaDeModulo 
 interface Espia extends ServicioDePlantillas {
   readonly llamadas: string[];
   readonly escrito: DatosDePlantilla[];
+  readonly creado: DatosDeAlta[];
 }
 
 function espia(opciones: {
   readonly fila?: PlantillaDeModulo | null;
   readonly resultado?: ResultadoDePlantilla;
+  readonly alta?: ResultadoDeAlta;
 } = {}): Espia {
   const llamadas: string[] = [];
   const escrito: DatosDePlantilla[] = [];
+  const creado: DatosDeAlta[] = [];
   const fila = opciones.fila === undefined ? plantilla() : opciones.fila;
 
   return {
     llamadas,
     escrito,
+    creado,
+    crear(tenantId, datos) {
+      llamadas.push(`crear(${tenantId}, ${datos.clave})`);
+      creado.push(datos);
+      return Promise.resolve(
+        opciones.alta ?? { estado: "creado", plantilla: plantilla() },
+      );
+    },
     listar(tenantId) {
       llamadas.push(`listar(${tenantId})`);
       return Promise.resolve(fila === null ? [] : [fila]);
@@ -219,14 +234,15 @@ describe("los verbos que cada dirección admite", () => {
   });
 
   /**
-   * **No hay `POST` ni `DELETE`**, y las dos ausencias son decisiones
-   * distintas: crear está fuera del alcance de la tajada, y borrar no va a
-   * existir nunca porque una plantilla borrada deja sin rótulo los módulos de
-   * las cotizaciones vivas. Las dos se dicen con el mismo 405, y el `allow`
-   * dice qué sí.
+   * **`POST` sí desde T-7, `DELETE` nunca**, y las dos decisiones son
+   * distintas. El alta entró cuando `0017` quitó el techo del `CHECK` de
+   * `0004`: hasta entonces una plantilla nueva era una plantilla que el editor
+   * ofrecía y la base rechazaba al guardar el primer módulo. Borrar no va a
+   * existir nunca, porque una plantilla borrada deja sin rótulo los módulos de
+   * las cotizaciones vivas — y desde `0017` es además una llave foránea rota.
    */
-  it.each(["POST", "DELETE", "PUT", "PATCH"])(
-    "un %s sobre la colección es 405 con `allow: GET`",
+  it.each(["DELETE", "PUT", "PATCH"])(
+    "un %s sobre la colección es 405 con `allow: GET, POST`",
     async (metodo) => {
       const puerto = espia();
       const respuesta = await responder(
@@ -235,7 +251,7 @@ describe("los verbos que cada dirección admite", () => {
       );
 
       expect(respuesta?.status).toBe(405);
-      expect(respuesta?.headers.get("allow")).toBe("GET");
+      expect(respuesta?.headers.get("allow")).toBe("GET, POST");
       // Y no consultó: un 405 que pasara por el repositorio sería una lectura
       // que nadie pidió.
       expect(puerto.llamadas).toEqual([]);
@@ -267,13 +283,21 @@ describe("los verbos que cada dirección admite", () => {
       espia(),
     );
     const negado = await responder(
-      peticion("/api/plantillas-modulo", { method: "POST" }),
+      peticion("/api/plantillas-modulo", { method: "DELETE" }),
+      espia(),
+    );
+    const alta = await responder(
+      conCuerpo("/api/plantillas-modulo", "POST", {
+        rotulo: "Garantías",
+        descripcion: "Lo que el bufete garantiza.",
+      }),
       espia(),
     );
 
     expect(lista?.headers.get("cache-control")).toBe("no-store");
     expect(escritura?.headers.get("cache-control")).toBe("no-store");
     expect(negado?.headers.get("cache-control")).toBe("no-store");
+    expect(alta?.headers.get("cache-control")).toBe("no-store");
   });
 });
 
@@ -521,5 +545,153 @@ describe("qué le llega al puerto", () => {
 
     expect(respuesta?.status).toBe(200);
     await expect(respuesta?.json()).resolves.toEqual({ plantilla: guardada });
+  });
+});
+
+/* ==========================================================================
+   El alta (T-7)
+
+   Lo que esta capa decide del alta es qué código sale de cada resultado del
+   puerto, y la decisión que importa es que **el choque de claves es un 422 y
+   no un 500**: el único `modulo_plantilla_clave_unica` no mira `activo`, así
+   que una clave retirada sigue tomada, y lo que la base diría —`UNIQUE
+   constraint failed`— no es una negativa que alguien pueda leer.
+   ========================================================================== */
+
+/** El cuerpo de un alta bien formado, para no repetir dos campos. */
+const ALTA = {
+  rotulo: "Observaciones del cliente",
+  descripcion: "Lo que el cliente dijo y conviene dejar escrito.",
+};
+
+function postear(cuerpo: unknown): Request {
+  return conCuerpo("/api/plantillas-modulo", "POST", cuerpo);
+}
+
+describe("POST /api/plantillas-modulo", () => {
+  /**
+   * 201 con `location`, igual que los catálogos de T-6: el cuerpo trae la fila
+   * releída y la cabecera dice dónde quedó. Sin `location`, un cliente que
+   * quiera editarla tiene que sacar el identificador del cuerpo, que es
+   * adivinar la dirección en vez de leerla.
+   */
+  it("crea y contesta 201 con su dirección", async () => {
+    const puerto = espia();
+    const respuesta = await responder(postear(ALTA), puerto);
+
+    expect(respuesta?.status).toBe(201);
+    expect(respuesta?.headers.get("location")).toBe(
+      `/api/plantillas-modulo/${ALCANCE_ID}`,
+    );
+    await expect(respuesta?.json()).resolves.toEqual({
+      plantilla: plantilla(),
+    });
+  });
+
+  /** La clave la acuña el dominio, y llega acuñada al puerto. */
+  it("la clave que llega al puerto sale del rótulo", async () => {
+    const puerto = espia();
+    await responder(postear(ALTA), puerto);
+
+    expect(puerto.creado).toEqual([
+      {
+        clave: "observaciones_del_cliente",
+        rotulo: ALTA.rotulo,
+        descripcion: ALTA.descripcion,
+      },
+    ]);
+  });
+
+  /* ---- Los dos 422 ----------------------------------------------------- */
+
+  /**
+   * **El primero de los dos.** Un rótulo de solo signos no acuña nada, y la
+   * negativa no llega al puerto: se decide sobre el cuerpo, sin consultar.
+   */
+  it("un rótulo que no acuña nada es 422, y no consulta", async () => {
+    const puerto = espia();
+    const respuesta = await responder(
+      postear({ ...ALTA, rotulo: "«»" }),
+      puerto,
+    );
+
+    expect(respuesta?.status).toBe(422);
+    await expect(respuesta?.json()).resolves.toEqual({
+      error: "datos_invalidos",
+      fallas: [{ campo: "rotulo", motivo: "rotulo_sin_clave" }],
+    });
+    expect(puerto.llamadas).toEqual([]);
+  });
+
+  /**
+   * **El segundo.** Éste sí tiene que consultar —la clave tomada es un hecho
+   * de la base— y lo que esta capa decide es que el resultado del puerto
+   * salga como 422 y con su motivo propio, distinto del de arriba. Las dos
+   * frases dicen cosas distintas: una pide escribir letras, la otra pide otro
+   * rótulo.
+   */
+  it("una clave ya tomada es 422 con su propio motivo", async () => {
+    const puerto = espia({ alta: { estado: "clave_tomada" } });
+    const respuesta = await responder(postear(ALTA), puerto);
+
+    expect(respuesta?.status).toBe(422);
+    await expect(respuesta?.json()).resolves.toEqual({
+      error: "datos_invalidos",
+      fallas: [{ campo: "rotulo", motivo: "clave_de_modulo_tomada" }],
+    });
+  });
+
+  /* ---- El resto del cuerpo -------------------------------------------- */
+
+  it("sin descripción es 422, y por eso existe la tajada", async () => {
+    const puerto = espia();
+    const respuesta = await responder(
+      postear({ rotulo: ALTA.rotulo }),
+      puerto,
+    );
+
+    expect(respuesta?.status).toBe(422);
+    await expect(respuesta?.json()).resolves.toEqual({
+      error: "datos_invalidos",
+      fallas: [
+        { campo: "descripcion", motivo: "descripcion_de_modulo_requerida" },
+      ],
+    });
+    expect(puerto.llamadas).toEqual([]);
+  });
+
+  /**
+   * El cuerpo que trae la clave puesta es el mismo 409 que en la edición, con
+   * el mismo motivo: `campos` ya dice cuál fue. No es un 422 porque no hay
+   * dato que arreglar — esa columna no la escribe nadie desde acá.
+   */
+  it("un cuerpo que trae la clave puesta es 409 `plantilla_inmutable`", async () => {
+    const puerto = espia();
+    const respuesta = await responder(
+      postear({ ...ALTA, clave: "la_mia" }),
+      puerto,
+    );
+
+    expect(respuesta?.status).toBe(409);
+    await expect(respuesta?.json()).resolves.toEqual({
+      error: "plantilla_inmutable",
+      campos: ["clave"],
+    });
+    expect(puerto.llamadas).toEqual([]);
+  });
+
+  it("un cuerpo que no se puede leer es 400 y no 422", async () => {
+    const puerto = espia();
+    const respuesta = await responder(
+      peticion("/api/plantillas-modulo", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{no es json",
+      }),
+      puerto,
+    );
+
+    expect(respuesta?.status).toBe(400);
+    expect(puerto.llamadas).toEqual([]);
   });
 });

@@ -313,3 +313,236 @@ export function valorVigente(
 ): string | null {
   return propio ?? oficial;
 }
+
+/* ==========================================================================
+   El alta (T-7)
+
+   La tajada 1 no tenía alta, y el motivo está escrito en el encabezado de
+   `repositorio.ts`: mientras `cotizacion_modulo.tipo` estuvo cerrado por el
+   `CHECK` de `0004`, una plantilla nueva era una plantilla **inservible**. El
+   techo lo quitó `0017` —la columna es `plantilla_id`, una referencia a esta
+   tabla—, así que lo que falta acá es acuñar la clave.
+
+   Las palabras del usuario, mirando la pantalla de la tajada 1:
+
+   > «No veo la opción de crear un módulo, sólo editar y dar de baja.»
+   ========================================================================== */
+
+/**
+ * El tope de una clave acuñada, en caracteres.
+ *
+ * Existe porque el rótulo lo escribe una persona y **la clave viaja fuera de
+ * esta tabla**: la copia la IA en su respuesta, la congela el snapshot al
+ * emitir y la guarda cada `cotizacion_modulo` por llave foránea. Un rótulo de
+ * un párrafo acuñaría un identificador de un párrafo, y eso se ve en el
+ * prompt, en la pantalla de catálogos y en toda consulta que la imprima.
+ *
+ * Cuarenta y no veinte: la más larga de las seis sembradas es `nota_cliente`
+ * con 12, y `observaciones_del_cliente` —el ejemplo que el usuario dio— tiene
+ * 25. Un tope de veinte lo habría cortado, que es exactamente el caso que esta
+ * tarea existe para servir.
+ *
+ * La columna **no** tiene límite de largo, y es a propósito: un `CHECK` de
+ * longitud en la base habría convertido este tope en una restricción del
+ * esquema, y entonces subirlo mañana sería una migración. Lo que la base
+ * sostiene es la unicidad, que es la regla que de verdad no se puede violar.
+ */
+export const LARGO_MAXIMO_DE_LA_CLAVE = 40;
+
+/**
+ * La clave que le corresponde a un rótulo, o `null` si no le corresponde
+ * ninguna.
+ *
+ * El abogado nombra «Observaciones del cliente» y esto acuña
+ * `observaciones_del_cliente`. **La clave no se teclea nunca**, y eso no es
+ * comodidad: es que la clave es inmutable desde que nace
+ * —`modulo_plantilla_clave_inmutable`— así que un campo para escribirla sería
+ * un campo cuyo error no se puede corregir. El rótulo sí se corrige, y
+ * corregirlo no toca la clave, que es toda la gracia de que estén separadas.
+ *
+ * ## Los cuatro pasos, en este orden, y el orden importa
+ *
+ *  1. **Descomponer en NFD y tirar las marcas combinantes.** Es el paso que
+ *     decide, y el único que no es obvio: sin él, `Cláusulas` acuñaría
+ *     `cl_usulas`, porque la `á` no es `[a-z0-9]` y caería en el separador
+ *     partiendo la palabra al medio. Descompuesta, la `á` es una `a` seguida
+ *     de un acento combinante, así que tirar el acento deja la letra. Vale
+ *     igual para la eñe —`Año` da `ano`, que es un artefacto conocido y
+ *     aceptado: la clave es un identificador interno y el rótulo es lo que la
+ *     persona lee— y para la diéresis.
+ *  2. **Minúsculas.** Dos rótulos que difieren solo en mayúsculas son el
+ *     mismo módulo escrito dos veces, y el único de `(tenant_id, clave)` tiene
+ *     que verlo.
+ *  3. **Toda corrida de lo que no es `[a-z0-9]` es un separador, uno solo.**
+ *     Los espacios, los signos, los guiones y lo que quede de un emoji. Una
+ *     corrida y no un carácter por separador: `Gastos / Tasas` tiene tres
+ *     caracteres entre las dos palabras y una sola junta.
+ *  4. **Los separadores de los extremos se van.** `¡¿Qué?!` acuña `que` y no
+ *     `_que_`: una clave que empieza o termina en `_` se lee como un
+ *     identificador partido al medio.
+ *
+ * Y después el tope, que se aplica **al final**: cortar antes de juntar las
+ * corridas dejaría el corte dependiendo de cuántos espacios había. El corte es
+ * al carácter y no a la palabra, y eso es deliberado: cortar en el último `_`
+ * dejaría sin clave a un rótulo que es una sola palabra de más de cuarenta
+ * letras, que es justo el caso que el tope tiene que resolver. Lo que sí se
+ * quita es el separador que el corte pudo dejar al final.
+ *
+ * ## Devuelve `null`, y ése es el primero de los dos 422 de esta tarea
+ *
+ * Un rótulo de solo signos o solo emoji es un rótulo escribible del que no
+ * queda **nada** utilizable. Eso tiene que ser una negativa que alguien pueda
+ * leer: sin esto, la clave llegaría vacía a un `INSERT` y lo que saldría sería
+ * un `CHECK`, un único o un `NOT NULL` de SQLite envuelto en un 500 — y un 500
+ * no es una negativa, es una caída.
+ *
+ * El `null` **no** significa «el rótulo está vacío»: eso es otro problema, con
+ * otro motivo y otra salida, y `revisarAltaDePlantilla` los separa.
+ */
+export function acunarClave(rotulo: string): string | null {
+  const juntado = rotulo
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  if (juntado === "") return null;
+
+  // El corte no puede dejar la clave vacía: `juntado` no tiene separador al
+  // principio, así que su primer carácter es una letra o un número y
+  // sobrevive a cualquier tope mayor que cero.
+  return juntado.slice(0, LARGO_MAXIMO_DE_LA_CLAVE).replace(/_+$/, "");
+}
+
+/**
+ * Lo que un alta de plantilla escribe, ya normalizado y con su clave acuñada.
+ *
+ * Los dos textos son `string` y no `string | null`, al revés que
+ * `DatosDePlantilla`, y la asimetría **es la tarea**: una plantilla nueva no
+ * tiene preset debajo, así que el nulo no significa «uso el preestablecido»
+ * —no hay ninguno— sino «esta fila no tiene valor vigente», que es lo que los
+ * dos `CHECK` de `0016` niegan. Lo que en la edición es la forma de volver
+ * atrás, acá es la fila que no puede existir.
+ *
+ * No lleva `activo` ni `orden`. Una plantilla **nace vigente**, igual que un
+ * catálogo de T-6 —`BORRADOR_DE_CATALOGO_VACIO` lo dice: «un catálogo recién
+ * creado tiene que poder elegirse sin un segundo paso»— y su posición es la
+ * última, que es un `MAX(orden) + 1` y por lo tanto cosa del repositorio.
+ */
+export interface DatosDeAlta {
+  readonly clave: string;
+  readonly rotulo: string;
+  readonly descripcion: string;
+}
+
+/**
+ * Lo que puede salir de mirar el cuerpo de un alta.
+ *
+ * Las tres variantes son las mismas que `RevisionDePlantilla` y por los mismos
+ * motivos, con una diferencia en qué cae en cada una: acá el rótulo vacío y el
+ * rótulo que no acuña nada son dos `invalido` con **motivos distintos**. Son
+ * dos problemas distintos y la salida que ofrecen es distinta —uno pide
+ * escribir algo, el otro pide escribir algo *con letras*— y aplastarlos
+ * dejaría a la pantalla diciendo «el rótulo es obligatorio» sobre un campo que
+ * tiene texto.
+ */
+export type RevisionDeAlta =
+  | { estado: "ok"; datos: DatosDeAlta }
+  | { estado: "inmutable"; campos: string[] }
+  | { estado: "invalido"; fallas: FallaDeValidacion[] };
+
+/**
+ * Un texto obligatorio del cuerpo de un alta, recortado.
+ *
+ * Devuelve el motivo en vez de empujarlo, para que quien llama decida cuál es
+ * —el del rótulo y el de la descripción son distintos— sin que esta función
+ * tenga que conocer los dos.
+ */
+function textoObligatorio(
+  crudo: Record<string, unknown>,
+  campo: string,
+  siFalta: MotivoDeFalla,
+): { ok: true; valor: string } | { ok: false; motivo: MotivoDeFalla } {
+  const valor = crudo[campo];
+
+  if (valor === undefined || valor === null) {
+    return { ok: false, motivo: siFalta };
+  }
+  if (typeof valor !== "string") return { ok: false, motivo: "tipo_invalido" };
+
+  const limpio = valor.trim();
+  // En blanco es lo mismo que ausente, igual que en la edición. Acá además es
+  // lo único que puede ser: sin preset debajo, un rótulo de tres espacios es
+  // una fila que el `CHECK` de la base acepta y la hoja dibuja en blanco.
+  return limpio === "" ? { ok: false, motivo: siFalta } : { ok: true, valor: limpio };
+}
+
+/**
+ * El cuerpo de `POST /api/plantillas-modulo`, revisado.
+ *
+ * **Lo inmutable manda sobre lo inválido**, igual que en la edición y por el
+ * mismo motivo. Y acá la lista de inmutables dice algo más fuerte que allá: en
+ * la edición esos tres campos *existen y no se escriben*; en el alta, dos de
+ * los tres —el preset— **nacen nulos a propósito**. Una plantilla propia del
+ * bufete no tiene piso al que volver, y fabricárselo desde el cuerpo sería
+ * sembrar un preset que nadie publicó, que es lo contrario de lo que el preset
+ * significa.
+ *
+ * `activo` y `orden` se ignoran en silencio, y eso no contradice lo de arriba:
+ * el argumento es el que `CAMPOS_INMUTABLES` ya tiene escrito —«un campo que
+ * se ignora porque la operación no existe no es un campo prohibido»—. Acá no
+ * es que la operación no exista: es que el alta no la decide.
+ *
+ * Devuelve **las dos fallas y no la primera**, por lo mismo que
+ * `validarTipoProceso`: un formulario que corrige de a un error por envío es
+ * el que hace que nadie cargue nada.
+ */
+export function revisarAltaDePlantilla(cuerpo: unknown): RevisionDeAlta {
+  if (!esObjeto(cuerpo)) {
+    return { estado: "invalido", fallas: [falla("rotulo", "tipo_invalido")] };
+  }
+
+  const inmutables = inmutablesEn(cuerpo);
+  if (inmutables.length > 0) {
+    return { estado: "inmutable", campos: inmutables };
+  }
+
+  const fallas: FallaDeValidacion[] = [];
+
+  const rotulo = textoObligatorio(cuerpo, "rotulo", "rotulo_requerido");
+  if (!rotulo.ok) fallas.push(falla("rotulo", rotulo.motivo));
+
+  const descripcion = textoObligatorio(
+    cuerpo,
+    "descripcion",
+    "descripcion_de_modulo_requerida",
+  );
+  if (!descripcion.ok) fallas.push(falla("descripcion", descripcion.motivo));
+
+  // La acuñación se intenta sólo si hay rótulo: sobre un rótulo ausente,
+  // `acunarClave` devolvería `null` igual y la pantalla recibiría dos fallas
+  // sobre el mismo campo diciendo cosas distintas del mismo vacío.
+  const clave = rotulo.ok ? acunarClave(rotulo.valor) : null;
+  if (rotulo.ok && clave === null) {
+    fallas.push(falla("rotulo", "rotulo_sin_clave"));
+  }
+
+  if (fallas.length > 0) return { estado: "invalido", fallas };
+
+  return {
+    estado: "ok",
+    datos: {
+      // El `as` y las dos cadenas de reserva son inalcanzables: si la clave
+      // fuera nula o cualquiera de los dos textos hubiera fallado, la lista
+      // de fallas no estaría vacía y el `return` de arriba ya salió. Se
+      // escriben así y no con una aserción por cada uno porque lo que se
+      // vería el día que esto se rompiera es una plantilla con el texto en
+      // blanco, que el `CHECK` de la base rechaza, y no un `undefined`
+      // navegando por el cable.
+      clave: clave as string,
+      rotulo: rotulo.ok ? rotulo.valor : "",
+      descripcion: descripcion.ok ? descripcion.valor : "",
+    },
+  };
+}

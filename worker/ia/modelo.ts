@@ -79,12 +79,20 @@ export interface PeticionDeCompletado {
    * de `odd/tasks/plantillas-de-modulo.md`).
    *
    * Sin esto, ningún módulo puede pasar. **Falla cerrada igual que los otros
-   * dos catálogos**, y la novedad frente a ellos es que acá sí hay un catálogo
-   * en código —el `CHECK` de `0004` y `TIPOS_DE_MODULO`— que dice qué claves
-   * son *válidas*: lo que no puede decir es cuáles el bufete tiene *activas*,
-   * porque eso es una columna de una fila que el abogado edita desde
-   * `/catalogos/modulos`. Una plantilla dada de baja es una clave válida que el
-   * prompt no ofreció.
+   * dos catálogos**, y desde T-6 por exactamente el mismo motivo que ellos: ya
+   * no hay ningún catálogo en código con el que cerrar las claves.
+   *
+   * El párrafo que estaba acá decía que sí lo había —«el `CHECK` de `0004` y
+   * `TIPOS_DE_MODULO`»— y los dos se fueron: `0017` reemplazó esa columna por
+   * `plantilla_id` con su llave foránea, y T-6 borró la unión. Lo que distingue
+   * hoy una clave ofrecida de una inventada es **esta lista y nada más**, y por
+   * eso su ausencia tiene que rechazar todo en vez de dejar pasar.
+   *
+   * Lo que no cambió es la distinción que la lista lleva: una plantilla **dada
+   * de baja** tiene su fila y su llave foránea, así que es una clave que se
+   * puede guardar por el cable —corregirle una coma a un módulo viejo tiene que
+   * seguir funcionando— pero **no** es una clave que el prompt ofrezca. Qué es
+   * *válido* y qué es *ofrecido* son dos preguntas, y ésta contesta la segunda.
    */
   readonly tiposDeModuloOfrecidos?: readonly string[];
 

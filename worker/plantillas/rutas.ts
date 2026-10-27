@@ -2,8 +2,9 @@
  * Las rutas HTTP de las plantillas de módulo. Traduce peticiones a llamadas
  * del puerto y resultados a respuestas; no decide ninguna regla de negocio.
  *
- *   GET /api/plantillas-modulo          el catálogo entero, en su orden
- *   PUT /api/plantillas-modulo/{id}     el rótulo, la descripción, la vigencia
+ *   GET  /api/plantillas-modulo         el catálogo entero, en su orden
+ *   POST /api/plantillas-modulo         una plantilla propia del bufete
+ *   PUT  /api/plantillas-modulo/{id}    el rótulo, la descripción, la vigencia
  *
  * `plantillas-modulo` y no `plantillas` a secas, y el nombre lo eligió T-1 al
  * entrar la entidad al vocabulario: en este sistema «plantilla» ya está tomada
@@ -11,15 +12,48 @@
  * `plantilla_guardada`, que son de las etapas de un tipo de proceso— y una
  * dirección ambigua es la que alguien lee al revés.
  *
- * ## No hay `POST` ni `DELETE`, y las dos ausencias son decisiones distintas
+ * ## Hay `POST` desde T-7, y no hay `DELETE` nunca
  *
- *  - **`POST` no**, por alcance: crear una plantilla necesita una `clave`
- *    derivada del rótulo, y `cotizacion_modulo.tipo` sigue cerrado por el
- *    `CHECK` de `0004` durante toda esta tajada. Un alta hoy sería ofrecer en
- *    el editor una clave que la base rechaza al guardar un módulo.
+ *  - **`POST` llegó con `0017`.** El alta faltaba por alcance y no por diseño:
+ *    crear una plantilla necesita una `clave` derivada del rótulo, y mientras
+ *    `cotizacion_modulo.tipo` estuvo cerrado por el `CHECK` de `0004` un alta
+ *    habría sido ofrecerle al editor una clave que la base rechaza al guardar
+ *    el primer módulo. `0017` convirtió esa columna en `plantilla_id`, una
+ *    referencia a esta tabla, así que la plantilla nueva se puede usar el
+ *    mismo día que nace. Las palabras del usuario al mirar la pantalla sin
+ *    alta: «No veo la opción de crear un módulo, sólo editar y dar de baja.»
  *  - **`DELETE` nunca.** Una plantilla borrada deja sin rótulo los módulos de
- *    las cotizaciones vivas. La salida es `activo = 0`, que llega por el
- *    `PUT`, y `modulo_plantilla_no_se_borra` lo aborta en la base.
+ *    las cotizaciones vivas —y desde `0017`, con una llave foránea rota—. La
+ *    salida es `activo = 0`, que llega por el `PUT`, y
+ *    `modulo_plantilla_no_se_borra` lo aborta en la base.
+ *
+ * ## La clave no se teclea, y los dos 422 que eso trae
+ *
+ * El cuerpo del `POST` lleva **el rótulo y la descripción, y nada más**. La
+ * clave la acuña `acunarClave` del dominio, y no hay campo para escribirla:
+ * es inmutable desde que nace —`modulo_plantilla_clave_inmutable`—, así que un
+ * campo para tipearla sería un campo cuyo error no se puede corregir después.
+ *
+ * Eso trae dos negativas que **tienen que ser 422 y no 500**, y son dos
+ * problemas distintos con dos frases distintas:
+ *
+ *  - **El rótulo del que no sale ninguna clave** —solo signos, solo emoji—.
+ *    Se decide sobre el cuerpo, sin consultar: `rotulo_sin_clave`.
+ *  - **La clave que ya está tomada**, que es un hecho de la base y se cuenta
+ *    antes de escribir: `clave_de_modulo_tomada`. Incluye el choque contra una
+ *    plantilla **dada de baja** y contra uno de los seis presets, porque
+ *    `modulo_plantilla_clave_unica` no mira `activo`.
+ *
+ * Los dos son 422 y no 409, al revés que los dos conflictos del `PUT`, y la
+ * distinción es la que esta API ya tiene escrita: 422 dice «entendí el cuerpo
+ * y **hay un dato que arreglar**», y acá lo hay —el rótulo, que es
+ * precisamente el campo que la persona está escribiendo—. Los dos 409 del
+ * `PUT` son lo contrario: el cuerpo está impecable y lo que no admite la
+ * escritura es el estado de la fila.
+ *
+ * El cuerpo que pretende traer la `clave` o el preset puestos **sí** es el
+ * mismo 409 `plantilla_inmutable` de la edición: ahí no hay dato que arreglar,
+ * porque esas tres columnas no las escribe nadie desde acá.
  *
  * ## La baja y la reactivación van por el `PUT`, y no por una ruta propia
  *
@@ -78,7 +112,7 @@ import type {
   RespuestaDePlantillaDeModulo,
   RespuestaDePlantillasDeModulo,
 } from "../contract";
-import { revisarPlantilla } from "./dominio";
+import { revisarAltaDePlantilla, revisarPlantilla } from "./dominio";
 import type { ServicioDePlantillas } from "./repositorio";
 
 const SIN_CACHE = { "cache-control": "no-store" } as const;
@@ -144,6 +178,63 @@ function decodificar(segmento: string): string | null {
   }
 }
 
+/**
+ * El 409 de los tres campos que esta ruta no escribe nunca.
+ *
+ * Lo comparten el `PUT` y el `POST`, y es el mismo cuerpo en los dos: la
+ * negativa que `0016:436` encarga a esta familia por su nombre —«el 409 que
+ * T-2 va a contestar para que la pantalla pueda explicar qué pasó, en vez de
+ * que un `UPDATE` muera acá y salga como un 500 de SQLite crudo»—. No se
+ * descarta el campo en silencio con un 200, que es lo que le enseñaría a la
+ * pantalla que la escritura funcionó.
+ *
+ * En el alta dice algo más fuerte que en la edición: ahí esas tres columnas
+ * existen y no se escriben; acá dos de las tres —el preset— **nacen nulas a
+ * propósito**, y fabricárselas desde el cuerpo sería sembrar un piso que nadie
+ * publicó.
+ */
+function inmutable(campos: string[]): Response {
+  const cuerpo: PlantillaInmutable = {
+    error: "plantilla_inmutable",
+    campos,
+  };
+  return json(cuerpo, { status: 409 });
+}
+
+/** El alta de una plantilla propia del bufete (T-7). */
+async function manejarAlta(
+  request: Request,
+  tenantId: string,
+  servicio: ServicioDePlantillas,
+): Promise<Response> {
+  const leido = await leerCuerpo(request);
+  if (!leido.ok) return leido.respuesta;
+
+  const revision = revisarAltaDePlantilla(leido.valor);
+  if (revision.estado === "inmutable") return inmutable(revision.campos);
+  if (revision.estado === "invalido") return invalido(revision.fallas);
+
+  const resultado = await servicio.crear(tenantId, revision.datos);
+
+  if (resultado.estado === "clave_tomada") {
+    // La falla va sobre `rotulo` y no sobre una `clave` que el cuerpo no
+    // trajo: el campo que se nombra tiene que ser el que la persona puede
+    // corregir, y es el único que mandó.
+    return invalido([{ campo: "rotulo", motivo: "clave_de_modulo_tomada" }]);
+  }
+
+  const cuerpo: RespuestaDePlantillaDeModulo = {
+    plantilla: resultado.plantilla,
+  };
+  return json(cuerpo, {
+    status: 201,
+    headers: {
+      location: `/api/plantillas-modulo/${resultado.plantilla.id}`,
+      ...SIN_CACHE,
+    },
+  });
+}
+
 async function manejarPlantilla(
   request: Request,
   tenantId: string,
@@ -160,18 +251,7 @@ async function manejarPlantilla(
 
   const revision = revisarPlantilla(leido.valor);
 
-  if (revision.estado === "inmutable") {
-    // La negativa que `0016:436` encarga a esta tarea por su nombre: «el 409
-    // que T-2 va a contestar para que la pantalla pueda explicar qué pasó, en
-    // vez de que un `UPDATE` muera acá y salga como un 500 de SQLite crudo».
-    // No se descarta el campo en silencio con un 200, que es lo que le
-    // enseñaría a la pantalla que la escritura funcionó.
-    const cuerpo: PlantillaInmutable = {
-      error: "plantilla_inmutable",
-      campos: revision.campos,
-    };
-    return json(cuerpo, { status: 409 });
-  }
+  if (revision.estado === "inmutable") return inmutable(revision.campos);
 
   if (revision.estado === "invalido") return invalido(revision.fallas);
 
@@ -211,8 +291,12 @@ export function rutasDePlantillas(
   if (segmentos[1] !== "plantillas-modulo") return Promise.resolve(null);
 
   if (segmentos.length === 2) {
+    if (request.method === "POST") {
+      return manejarAlta(request, tenantId, servicio);
+    }
+
     if (request.method !== "GET") {
-      return Promise.resolve(metodoNoPermitido("GET"));
+      return Promise.resolve(metodoNoPermitido("GET, POST"));
     }
 
     return servicio.listar(tenantId).then((plantillas) => {

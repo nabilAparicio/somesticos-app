@@ -41,6 +41,20 @@
  * **arriba de la lista** y solo si hay alguna marca: una leyenda que explica un
  * signo que no aparece manda a buscarlo.
  *
+ * ## El alta, al final y siempre abierta (T-7)
+ *
+ * Las palabras del usuario al mirar esta pantalla sin alta: «No veo la opción
+ * de crear un módulo, sólo editar y dar de baja.» El formulario va **al final
+ * de la lista y abierto**, y las tres decisiones están argumentadas en
+ * `plantillas.ts`, al lado de sus textos. En dos líneas: esconderlo detrás de
+ * un desplegable es cómo vuelve a no verse, ponerlo arriba empuja abajo el
+ * catálogo que se vino a leer, y al final es **donde el módulo nuevo aparece**,
+ * porque nace con `orden = MAX(orden) + 1`.
+ *
+ * Y es un `<form>` de verdad con `onSubmit`, igual que
+ * `FormularioDeCliente.tsx`: así funciona la tecla Enter y el navegador anuncia
+ * los campos como lo que son.
+ *
  * ## La forma del bloque, y por qué no es una tabla
  *
  * Cada módulo es una sección con dos campos apilados, no una fila de tabla, y
@@ -53,11 +67,12 @@
  * flex para una franja unidimensional y grid para el esqueleto; acá cada
  * módulo es una pila y no hay nada bidimensional que acomodar.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import type { PlantillaDeModulo } from "../../../worker/contract";
 import {
   cargarPlantillasDeModulo,
+  crearPlantillaDeModulo,
   guardarPlantillaDeModulo,
   textoDeProblemaDeLasPlantillas,
 } from "../../api/plantillas";
@@ -66,18 +81,25 @@ import { Enlace } from "../../layout/Enlace";
 import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
 import { Prosa } from "../../layout/Prosa";
+import { mensajeDeFalla } from "../../mensajes";
 import { enlaceDe } from "../../ruteo";
 import {
   AVISO_SIN_PLANTILLAS,
   AYUDA_DEL_VUELTA_ATRAS,
+  BORRADOR_DE_ALTA_VACIO,
   ETIQUETA_DE_BAJA,
+  ETIQUETA_SIN_PREESTABLECIDO,
+  EXPLICACION_DEL_ALTA,
   EXPLICACION_DE_LA_PANTALLA,
   LEYENDA_DE_LA_MARCA,
   MARCA_DE_EDITADO,
   MARCA_EDITADA_LEIDA,
+  ROTULO_DEL_BOTON_DE_ALTA,
   ROTULO_DEL_ROTULO,
   ROTULO_DE_LA_DESCRIPCION,
+  TITULO_DEL_ALTA,
   TITULO_DE_LA_PANTALLA,
+  aPeticionDeAlta,
   anclaDeLaPlantilla,
   borradorDe,
   camposQueQuedarianVacios,
@@ -85,9 +107,12 @@ import {
   descripcionALaVista,
   hayEditadas,
   rotuloALaVista,
+  sePuedeAgregar,
   sePuedeGuardar,
   sinBorrador,
+  validarAlta,
   type BorradoresDePlantilla,
+  type BorradorDeAlta,
   type BorradorDePlantilla,
   type OrigenDelTexto,
 } from "./plantillas";
@@ -126,6 +151,24 @@ export function PlantillasDeModulo() {
   /** Qué módulo se está guardando. Apaga su botón, no los de los otros. */
   const [guardando, setGuardando] = useState<string | null>(null);
   const [problema, setProblema] = useState<string | null>(null);
+  /** Lo tecleado en el formulario del alta, mientras no se mandó. */
+  const [alta, setAlta] = useState<BorradorDeAlta>(BORRADOR_DE_ALTA_VACIO);
+  /**
+   * Las fallas del alta, por campo.
+   *
+   * Van **por campo y no en un aviso de arriba**, al revés que `problema`: las
+   * dos negativas del alta hablan de un campo concreto —el rótulo que no acuña
+   * nada, la descripción que falta— y un aviso al pie de la pantalla obliga a
+   * adivinar cuál. Es la misma forma que `ListaDeCatalogo` usa con sus fallas.
+   *
+   * El mapa lo llena tanto `validarAlta` —antes de mandar— como el 422 del
+   * servidor, y las dos escriben el mismo `motivo`, así que el aviso previo y
+   * el rechazo del cable dicen exactamente lo mismo.
+   */
+  const [fallasDelAlta, setFallasDelAlta] = useState<
+    Readonly<Record<string, string>>
+  >({});
+  const [agregando, setAgregando] = useState(false);
 
   useEffect(() => {
     const control = new AbortController();
@@ -208,6 +251,68 @@ export function PlantillasDeModulo() {
       borradorDe(borradores, plantilla),
       !plantilla.activo,
     );
+  }
+
+  /**
+   * El alta.
+   *
+   * La plantilla creada **se agrega al final de la lista en vez de releer el
+   * catálogo entero**, y es honesto: nace con `orden = MAX(orden) + 1` y la
+   * lectura ordena por `orden`, así que el final es exactamente donde iba a
+   * aparecer. Una relectura costaría una petición para llegar al mismo orden,
+   * y la respuesta del `POST` ya trae la fila con su clave acuñada y su vigente
+   * resuelto por el servidor.
+   */
+  async function agregar(evento: FormEvent) {
+    evento.preventDefault();
+
+    const previas = validarAlta(alta);
+    setFallasDelAlta(
+      Object.fromEntries(
+        previas.map((falla) => [falla.campo, mensajeDeFalla(falla.motivo)]),
+      ),
+    );
+    setProblema(null);
+    if (previas.length > 0) return;
+
+    setAgregando(true);
+    const resultado = await crearPlantillaDeModulo(
+      aPeticionDeAlta(alta),
+      new AbortController().signal,
+    );
+    setAgregando(false);
+
+    /*
+     * Los dos 422 de esta ruta —`rotulo_sin_clave` y `clave_de_modulo_tomada`—
+     * llegan acá, y los dos hablan del rótulo. Se dibujan debajo de su campo y
+     * no en el aviso de arriba, que es donde van los problemas que no son de
+     * ningún campo.
+     */
+    if (resultado.estado === "invalido") {
+      setFallasDelAlta(
+        Object.fromEntries(
+          resultado.fallas.map((falla) => [
+            falla.campo,
+            mensajeDeFalla(falla.motivo, falla.cuantos),
+          ]),
+        ),
+      );
+      return;
+    }
+
+    if (resultado.estado !== "ok") {
+      setProblema(textoDeProblemaDeLasPlantillas(resultado));
+      return;
+    }
+
+    const creada = resultado.valor;
+    setEstado((anterior) =>
+      anterior.fase === "listo"
+        ? { fase: "listo", plantillas: [...anterior.plantillas, creada] }
+        : anterior,
+    );
+    setAlta(BORRADOR_DE_ALTA_VACIO);
+    setFallasDelAlta({});
   }
 
   /**
@@ -331,6 +436,24 @@ export function PlantillasDeModulo() {
                     </Pila>
 
                     <Fila alinear="inicio">
+                      {/*
+                        El distintivo de una plantilla que el bufete creó
+                        (T-7). Se decide **con el vocabulario del origen** y no
+                        con un `rotuloOficial === null` escrito acá: la misma
+                        función que decide si va la marca decide si va esto, y
+                        así no pueden discrepar.
+
+                        Hace falta porque la ayuda de arriba dice que vaciar un
+                        campo vuelve al preestablecido, y en esta fila eso es
+                        falso: no hay ninguno. El aviso del pie lo dice cuando
+                        alguien lo intenta; esto lo dice antes.
+                      */}
+                      {(rotulo.origen === "sin_preestablecido" ||
+                        descripcion.origen === "sin_preestablecido") && (
+                        <span className="etiqueta etiqueta--tenue">
+                          {ETIQUETA_SIN_PREESTABLECIDO}
+                        </span>
+                      )}
                       {!plantilla.activo && (
                         <span className="etiqueta etiqueta--tenue">
                           {ETIQUETA_DE_BAJA}
@@ -459,6 +582,111 @@ export function PlantillasDeModulo() {
               </section>
             );
           })}
+
+          {/*
+            **El alta, al final de la lista y abierta.** El argumento de las
+            tres posiciones posibles está en `plantillas.ts`, junto a sus
+            textos; lo que lo decide es que `orden = MAX(orden) + 1`, así que
+            el módulo nuevo aparece justamente acá.
+
+            No es un `.plantilla-modulo`, y no es gusto: `e2e/plantillas.spec.ts`
+            cuenta los controles de texto de cada bloque de esa clase para que
+            una «mejora» que devuelva el preestablecido al lado se ponga roja, y
+            un formulario con la misma clase sería un séptimo módulo con dos
+            campos vacíos que falsearía esa cuenta.
+          */}
+          <section className="plantillas__alta" aria-labelledby="modulo-nuevo">
+            <Pila className="plantillas__alta-cuerpo">
+              <Pila espacio="ceñido">
+                <h2 id="modulo-nuevo">{TITULO_DEL_ALTA}</h2>
+                <Prosa como="p" className="texto-apagado">
+                  {EXPLICACION_DEL_ALTA}
+                </Prosa>
+              </Pila>
+
+              {/*
+                `<form>` de verdad con `onSubmit`, como `FormularioDeCliente`:
+                así la tecla Enter funciona y el navegador anuncia los campos
+                como lo que son.
+
+                **Ninguno de los dos campos lleva marca de opcionalidad**, y es
+                la regla de la casa aplicada al derecho: se marca lo opcional
+                en la etiqueta, y acá no hay nada opcional. Que los dos sean
+                obligatorios lo dice el párrafo de arriba, antes de que alguien
+                falle.
+              */}
+              <form
+                onSubmit={(evento) => {
+                  void agregar(evento);
+                }}
+              >
+                <Pila>
+                  <div className="campo">
+                    <label
+                      className="campo__rotulo"
+                      htmlFor="modulo-nuevo-rotulo"
+                    >
+                      {ROTULO_DEL_ROTULO}
+                    </label>
+                    <input
+                      id="modulo-nuevo-rotulo"
+                      className="campo__control"
+                      type="text"
+                      value={alta.rotulo}
+                      aria-invalid={fallasDelAlta.rotulo !== undefined}
+                      onChange={(evento) => {
+                        setAlta({ ...alta, rotulo: evento.target.value });
+                      }}
+                    />
+                    {fallasDelAlta.rotulo !== undefined && (
+                      <span className="campo__ayuda" role="alert">
+                        {fallasDelAlta.rotulo}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="campo">
+                    <label
+                      className="campo__rotulo"
+                      htmlFor="modulo-nuevo-descripcion"
+                    >
+                      {ROTULO_DE_LA_DESCRIPCION}
+                    </label>
+                    <textarea
+                      id="modulo-nuevo-descripcion"
+                      className="campo__control campo__control--prosa"
+                      value={alta.descripcion}
+                      aria-invalid={fallasDelAlta.descripcion !== undefined}
+                      onChange={(evento) => {
+                        setAlta({ ...alta, descripcion: evento.target.value });
+                      }}
+                    />
+                    {fallasDelAlta.descripcion !== undefined && (
+                      <span className="campo__ayuda" role="alert">
+                        {fallasDelAlta.descripcion}
+                      </span>
+                    )}
+                  </div>
+
+                  <Fila alinear="inicio">
+                    {/*
+                      Apagado hasta que los dos campos tengan algo, y con la
+                      misma función que valida: con dos definiciones, un día el
+                      botón estaría prendido sobre un borrador que la
+                      validación rechaza.
+                    */}
+                    <button
+                      type="submit"
+                      className="boton boton--primario"
+                      disabled={agregando || !sePuedeAgregar(alta)}
+                    >
+                      {ROTULO_DEL_BOTON_DE_ALTA}
+                    </button>
+                  </Fila>
+                </Pila>
+              </form>
+            </Pila>
+          </section>
         </Pila>
       )}
     </Pila>
