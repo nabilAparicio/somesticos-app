@@ -87,8 +87,7 @@ import {
   validarBorrador,
 } from "../clientes/formulario";
 import {
-  AYUDA_DEL_CONTACTO,
-  AYUDA_DE_LA_FICHA_COMPLETA,
+  AYUDA_DEL_CLIENTE_NUEVO,
   CAMPOS_DEL_CLIENTE_NUEVO,
   ROTULO_DE_CREAR_CLIENTE,
   TITULO_DEL_CLIENTE_NUEVO,
@@ -251,8 +250,7 @@ export function ClienteNuevo({ alCrear, alCerrar }: Props) {
           segundo.
         */}
         <div className="cliente-nuevo__ayuda" id={idDeLaAyuda}>
-          <p>{AYUDA_DEL_CONTACTO}</p>
-          <p className="texto-apagado">{AYUDA_DE_LA_FICHA_COMPLETA}</p>
+          <p className="texto-apagado">{AYUDA_DEL_CLIENTE_NUEVO}</p>
         </div>
 
         {problema !== null && <Aviso tono="error">{problema}</Aviso>}
@@ -278,32 +276,40 @@ export function ClienteNuevo({ alCrear, alCerrar }: Props) {
           <Pila espacio="holgado">
             <Rejilla minimo="14rem">
               {CAMPOS_DEL_CLIENTE_NUEVO.map(
-                ({ campo, rotulo, tipo, obligatorio }) => (
+                ({ campo, rotulo, tipo, exigencia }) => (
                   <div className="campo" key={campo}>
+                    {/*
+                      La exigencia se dibuja desde el dato y no con un
+                      condicional por caso: son tres estados —«obligatorio»,
+                      «uno de los dos», «opcional»— y el único que se dibuja
+                      apagado es el que no pide nada.
+                    */}
                     <label className="campo__rotulo" htmlFor={idDe(campo)}>
                       {rotulo}
-                      {obligatorio === true ? (
-                        <span className="campo__marca"> · obligatorio</span>
-                      ) : (
-                        <span className="campo__marca campo__marca--tenue">
-                          {" "}
-                          · opcional
-                        </span>
-                      )}
+                      <span
+                        className={
+                          exigencia === "opcional"
+                            ? "campo__marca campo__marca--tenue"
+                            : "campo__marca"
+                        }
+                      >
+                        {` · ${exigencia}`}
+                      </span>
                     </label>
                     <input
                       id={idDe(campo)}
                       className="campo__control"
                       type={tipo}
+                      /*
+                       * Ya no hace falta un `aria-describedby` hacia un
+                       * párrafo: la exigencia viaja **dentro de la etiqueta**,
+                       * que es lo que un lector de pantalla anuncia al entrar
+                       * al campo. Antes el requisito del contacto vivía en un
+                       * párrafo de arriba y el campo tenía que apuntar hacia
+                       * él; ahora lo dice su propio rótulo, y quien escucha y
+                       * quien mira reciben exactamente lo mismo.
+                       */
                       value={valores[campo]}
-                      /* Los dos contactos apuntan a la ayuda que dice que
-                         alcanza con uno: quien navega con lector de pantalla
-                         no ve el párrafo de arriba al llegar al campo. */
-                      aria-describedby={
-                        campo === "telefono" || campo === "email"
-                          ? idDeLaAyuda
-                          : undefined
-                      }
                       onChange={(evento) => {
                         cambiar(campo, evento.target.value);
                       }}

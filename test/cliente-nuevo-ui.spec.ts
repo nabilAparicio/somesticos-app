@@ -59,15 +59,44 @@ describe("CAMPOS_DEL_CLIENTE_NUEVO", () => {
     ]);
   });
 
-  it("marca obligatorio sólo el nombre", () => {
-    // Lo que hace abandonar un alta es creer que hay que averiguar algo
-    // antes de guardar. Acá el único exigible es el nombre: de los contactos
-    // alcanza uno, y eso lo dice la ayuda del modal, no una marca por campo.
+  it("cada campo dice en su etiqueta qué exige", () => {
+    // Esta prueba afirmaba lo contrario —«de los contactos alcanza uno, y eso
+    // lo dice la ayuda del modal, no una marca por campo»— y se dio vuelta
+    // con el diseño, a pedido del usuario: la ayuda eran dos párrafos arriba
+    // del formulario y el primero existía sólo para **corregir una etiqueta
+    // que mentía**. Los dos contactos decían «opcional» cuando uno de los dos
+    // hace falta.
+    //
+    // Es además la convención que `FormularioDeCliente.tsx` ya tenía escrita:
+    // la exigencia va en la propia etiqueta, no en una ayuda al pie.
     expect(
-      CAMPOS_DEL_CLIENTE_NUEVO.filter((campo) => campo.obligatorio === true).map(
-        (campo) => campo.campo,
+      Object.fromEntries(
+        CAMPOS_DEL_CLIENTE_NUEVO.map((campo) => [campo.campo, campo.exigencia]),
       ),
-    ).toEqual(["nombre"]);
+    ).toEqual({
+      nombre: "obligatorio",
+      telefono: "uno de los dos",
+      email: "uno de los dos",
+    });
+  });
+
+  it("ningún contacto se marca «opcional», porque sería mentira", () => {
+    // El contrapeso de la de arriba, y la que de verdad atrapa la regresión:
+    // `validarBorrador` rechaza un cliente sin teléfono **y** sin correo, así
+    // que una etiqueta que diga «opcional» en cualquiera de los dos está
+    // prometiendo algo que el guardado no cumple.
+    const contactos = CAMPOS_DEL_CLIENTE_NUEVO.filter(
+      ({ campo }) => campo === "telefono" || campo === "email",
+    );
+
+    expect(contactos.length, "la prueba está rota: no encontró los contactos").toBe(2);
+    for (const contacto of contactos) {
+      expect(
+        contacto.exigencia,
+        `«${contacto.rotulo}» se marca «opcional» y no lo es: guardar sin` +
+          " ninguno de los dos contactos falla con `contacto_requerido`",
+      ).not.toBe("opcional");
+    }
   });
 
   it("no nombra ningún campo que el borrador de cliente no tenga", () => {

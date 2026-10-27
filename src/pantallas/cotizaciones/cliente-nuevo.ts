@@ -77,8 +77,20 @@ export type CampoDelClienteNuevo = {
   readonly campo: CampoDeTextoDelClienteNuevo;
   readonly rotulo: string;
   readonly tipo: "text" | "email" | "tel";
-  /** Sólo el nombre. De los contactos alcanza uno, y eso lo dice la ayuda. */
-  readonly obligatorio?: boolean;
+  /**
+   * Qué exige este campo, dicho **en su propia etiqueta**.
+   *
+   * Es la convención de `FormularioDeCliente.tsx`, que la escribe así: «el
+   * resto se marca "opcional" en la propia etiqueta, **no en una ayuda al
+   * pie**». El modal la estaba contradiciendo: marcaba los dos contactos como
+   * «opcional» —que es falso, porque uno de los dos hace falta— y después
+   * corregía esa mentira con un párrafo arriba del formulario. La etiqueta
+   * que dice la verdad vuelve innecesario el párrafo.
+   *
+   * Por eso son tres estados y no un booleano: hay un requisito que no es ni
+   * «este campo» ni «ninguno», sino **uno de estos dos**.
+   */
+  readonly exigencia: "obligatorio" | "uno de los dos" | "opcional";
 };
 
 /**
@@ -94,9 +106,24 @@ export type CampoDelClienteNuevo = {
  * un desplegable que necesita el catálogo, y el componente lo dibuja aparte.
  */
 export const CAMPOS_DEL_CLIENTE_NUEVO: readonly CampoDelClienteNuevo[] = [
-  { campo: "nombre", rotulo: "Nombre", tipo: "text", obligatorio: true },
-  { campo: "telefono", rotulo: "Teléfono", tipo: "tel" },
-  { campo: "email", rotulo: "Correo", tipo: "email" },
+  {
+    campo: "nombre",
+    rotulo: "Nombre",
+    tipo: "text",
+    exigencia: "obligatorio",
+  },
+  {
+    campo: "telefono",
+    rotulo: "Teléfono",
+    tipo: "tel",
+    exigencia: "uno de los dos",
+  },
+  {
+    campo: "email",
+    rotulo: "Correo",
+    tipo: "email",
+    exigencia: "uno de los dos",
+  },
 ] as const;
 
 /**
@@ -126,27 +153,23 @@ export const TITULO_DEL_CLIENTE_NUEVO = "Cliente nuevo";
 export const ROTULO_DE_ABRIR_CLIENTE_NUEVO = "Crear un cliente nuevo";
 
 /**
- * La regla del contacto, dicha **antes** de que alguien la descubra fallando.
+ * Una línea, y las etiquetas hacen el resto.
  *
- * Es ayuda y no error. Un formulario que enseña su regla reprobando a quien
- * la ignoraba enseña tarde: para cuando el aviso aparece, la persona ya
- * decidió que el alta pide más de lo que pide.
- */
-export const AYUDA_DEL_CONTACTO =
-  "Con el nombre y un medio de contacto alcanza: un teléfono o un correo," +
-  " cualquiera de los dos.";
-
-/**
- * Que lo que nace acá no es un cliente de segunda.
+ * Acá había **dos párrafos**: uno explicaba que con el nombre y un contacto
+ * alcanzaba, y el otro que el cliente no era de segunda. Los dos se fueron
+ * por pedido del usuario —«algo como "rellená los datos de un nuevo cliente"
+ * es suficiente»— y tenía razón por una razón que vale escribir: ninguno de
+ * los dos decía nada que la pantalla no pudiera decir sin párrafos.
  *
- * El modal muestra menos campos, no define un cliente más pobre: es el mismo
- * registro, con los campos que todavía nadie sabe. Sin esta línea, quien lo
- * usa puede creer que creó algo incompleto a propósito y volver a cargarlo
- * desde la pantalla completa.
+ * El primero existía para **corregir una etiqueta que mentía**: los dos
+ * contactos decían «opcional» cuando uno de los dos hace falta. Arreglada la
+ * etiqueta (ver `exigencia`), el párrafo sobra. El segundo contestaba una
+ * pregunta que nadie se hace frente a cuatro campos; y si alguien se la hace,
+ * la respuesta está donde se busca, que es la ficha del cliente.
+ *
+ * Un modal con cuatro campos no necesita justificar su existencia antes de
+ * dejar escribir.
  */
-export const AYUDA_DE_LA_FICHA_COMPLETA =
-  "Es un cliente igual a cualquier otro. El resto de la ficha —documento," +
-  " representante legal, notas— se completa después, desde la pantalla del" +
-  " cliente.";
+export const AYUDA_DEL_CLIENTE_NUEVO = "Complete los datos del cliente nuevo.";
 
 export const ROTULO_DE_CREAR_CLIENTE = "Crear cliente";
