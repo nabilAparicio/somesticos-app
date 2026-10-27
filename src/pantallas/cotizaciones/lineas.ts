@@ -1229,34 +1229,19 @@ export function avisoDePrecios(problema: string | null): string | null {
 }
 
 /* --------------------------------------------------------------------------
-   El teclado del selector
+   El teclado del selector **ya no vive acá**
+
+   `moverOpcionActiva` estaba en este archivo desde T-2 bis, cuando el único
+   combobox del proyecto era el de servicio y éste era el módulo de su pantalla.
+   T-1 de `odd/tasks/el-selector-de-cliente-busca.md` agregó un segundo combobox
+   —el de cliente, en el alta— y la movió a `./combobox.ts`, que es el módulo
+   del patrón.
+
+   La razón es la pertenencia y no el orden: lo que esa función decide no tiene
+   nada que ver con una línea de honorarios, y dejarla acá habría obligado al
+   selector de cliente a importar el módulo del dinero para poder mover una
+   flecha. Sus pruebas se mudaron con ella, a `test/combobox-ui.spec.ts`.
+
+   Lo que sí se queda son los textos del selector de servicio, arriba: ésos sí
+   son del arancel y de esta pantalla.
    -------------------------------------------------------------------------- */
-
-/**
- * Qué opción queda activa al mover las flechas, **sin tocar el DOM**.
- *
- * Vive acá y no dentro del componente por la regla del archivo: elegir cuál es
- * la siguiente es una decisión, y una decisión que se puede equivocar en los dos
- * bordes es justamente la que conviene tener probada sin navegador.
- *
- * Tres reglas, y las tres salen del patrón de combobox que el navegador no
- * regala:
- *
- *  - **sin opciones no hay activa**, y el resultado es `-1`. Es el caso de una
- *    búsqueda sin resultados, y sin esto `Enter` elegiría la opción número cero
- *    de una lista vacía;
- *  - **desde ninguna activa**, bajar lleva a la primera y subir a la última. Es
- *    lo que hace que abrir la lista y apretar ↑ sirva para algo;
- *  - **da la vuelta en los dos extremos**. Una lista que se queda trabada en la
- *    última opción obliga a contar cuántas veces hay que subir.
- */
-export function moverOpcionActiva(
-  activa: number,
-  cuantas: number,
-  direccion: -1 | 1,
-): number {
-  if (cuantas === 0) return -1;
-  if (activa < 0 || activa >= cuantas) return direccion === 1 ? 0 : cuantas - 1;
-
-  return (activa + direccion + cuantas) % cuantas;
-}

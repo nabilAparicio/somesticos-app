@@ -62,16 +62,16 @@ reutilización exija.
 
 ### T-1 · El cliente se busca, no se recorre
 
-- [ ] El `<select>` de cliente pasa a combobox buscable, con el monto de
+- [x] El `<select>` de cliente pasa a combobox buscable, con el monto de
       teclado completo que el de servicio ya tiene: flechas, Enter, Escape,
       `aria-activedescendant`, y foco visible.
-- [ ] Una sola implementación del comportamiento. Si hay dos componentes,
+- [x] Una sola implementación del comportamiento. Si hay dos componentes,
       comparten la lógica pura; no se copia el teclado.
-- [ ] El botón de **cliente nuevo** sigue al lado y sigue funcionando: la
+- [x] El botón de **cliente nuevo** sigue al lado y sigue funcionando: la
       tajada anterior lo puso ahí y no se pierde.
-- [ ] Sin clientes, el combobox lo dice y manda al botón, como ya hace hoy
+- [x] Sin clientes, el combobox lo dice y manda al botón, como ya hace hoy
       el texto de ayuda.
-- [ ] Elegir con el teclado deja el cliente elegido de verdad, y la
+- [x] Elegir con el teclado deja el cliente elegido de verdad, y la
       cotización se puede guardar sin tocar el mouse.
 
 ## Criterios de aceptación
@@ -89,3 +89,46 @@ reutilización exija.
 ## Progreso
 
 - Documento creado. Ninguna tarea cerrada.
+- **T-1 cerrada.** Se extrajo el combobox en vez de escribir un segundo, y la
+  decisión se midió sobre `SelectorDeServicio.tsx` antes de tocarlo: de sus
+  375 líneas de código —sin el encabezado—, **unas 215 eran el patrón** (el
+  estado abierto/cerrado, la opción activa, las cuatro teclas, los cuatro
+  atributos del `role="combobox"`, la `<ul role="listbox">` con sus
+  `<li role="option">`, el `onMouseDown` que le gana al `blur`, y el armazón
+  del campo con su ancla) contra **unas 80 del arancel** (el importe al lado de
+  cada opción, la moneda, el botón «Listar todos» con su `<dialog>`, y el texto
+  de reserva de un servicio que dejó de estar tarifado). Dos tercios comunes
+  contra un tercio propio: extraer deja una implementación del teclado y dos
+  archivos cortos que sólo dicen qué son sus opciones.
+  - `src/pantallas/cotizaciones/combobox.ts` — la lógica pura compartida:
+    `opcionesQueCoinciden` (el filtrado, generalización de
+    `serviciosQueCoinciden`), `moverOpcionActiva` (mudada desde `lineas.ts`,
+    que es el módulo del dinero y no del patrón) y `rotuloDeLoElegido`.
+  - `src/pantallas/cotizaciones/Combobox.tsx` — el componente, uno.
+  - `src/pantallas/cotizaciones/SelectorDeCliente.tsx` y
+    `SelectorDeServicio.tsx` — dos archivos que sólo dicen qué dibuja cada
+    opción, qué textos usan y qué botón los acompaña.
+  - El pie del campo de cliente tiene tres ramas y un solo párrafo: lo que
+    falló al traer la lista manda sobre todo; sin ningún cliente se dice que no
+    hay ninguno y se nombra el botón de al lado; y si no, la ayuda de siempre.
+    El control se apaga cuando no hay nada que elegir, con la misma regla que
+    el de servicio: un campo de búsqueda que no puede encontrar nada sobra.
+  - `.campo__con-accion` se fue de `layout.css`: eran las mismas declaraciones
+    que `.combobox__caja` con otro nombre, y al volverse el cliente un combobox
+    quedó sin un solo usuario.
+- Verificación observada: `pnpm lint` limpio · `pnpm typecheck` limpio ·
+  `pnpm test` 2511 pruebas en 49 archivos, todas en verde (eran 2491 en 48:
+  entran 18 de `test/combobox-ui.spec.ts` y 7 de los textos del selector de
+  cliente, y salen 6 de `test/lineas-ui.spec.ts` que se fueron con
+  `moverOpcionActiva`) · `pnpm test:e2e` 506 en verde (eran 497; las 9 nuevas
+  son el combobox de cliente).
+- Fuera de T-1 y dicho acá porque se tocó el mismo archivo: el commit
+  `b686c72`, de otra tajada, sacó los dos párrafos de ayuda del modal de
+  cliente nuevo y dejó dos aserciones de `e2e/cotizaciones.spec.ts` apuntando a
+  un texto que ya no existe. Probado con A/B que la falla es anterior a este
+  trabajo. Se reemplazaron por el contrato que las reemplaza —la línea corta de
+  arriba y que ningún contacto se marque «opcional»—, que es lo que ese commit
+  afirmó sobre el dato y acá se mide sobre el dibujo.
+- Siguiente paso: nada pendiente de T-1. El disparador de la paginación sigue
+  siendo el que el documento fijó: el día que `GET /api/clientes` se mida como
+  un problema, se le pone `LIMIT` más cursor y este control pide de a tandas.

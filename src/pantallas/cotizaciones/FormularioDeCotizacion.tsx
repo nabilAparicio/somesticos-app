@@ -32,7 +32,7 @@ import { enlaceDe } from "../../ruteo";
 import { hoyEnPanama } from "../../../worker/db/momentos";
 import { cargarClientes } from "../clientes/api";
 import { ClienteNuevo } from "./ClienteNuevo";
-import { ROTULO_DE_ABRIR_CLIENTE_NUEVO } from "./cliente-nuevo";
+import { SelectorDeCliente } from "./SelectorDeCliente";
 import {
   actualizarCotizacion,
   cargarCotizacion,
@@ -295,70 +295,31 @@ export function FormularioDeCotizacion({ cotizacionId }: Props) {
       <form onSubmit={(evento) => void enviar(evento)} noValidate>
         <Pila espacio="holgado">
           <Rejilla minimo="16rem">
-            <div className="campo">
-              <label className="campo__rotulo" htmlFor="campo-clienteId">
-                Cliente
-                <span className="campo__marca"> · obligatorio</span>
-              </label>
-              {/*
-                El desplegable y el botón en la misma franja, que es el caso
-                unidimensional de §9: envuelve cuando no entra, y a 320px el
-                botón baja debajo del control en vez de empujar la página.
+            {/*
+              El campo de cliente, que desde T-1 de
+              `odd/tasks/el-selector-de-cliente-busca.md` es un combobox
+              buscable y no un `<select>`: con cien clientes, un desplegable
+              nativo se recorre a ojo y su teclado busca por prefijo del nombre.
+              El control, su botón y sus textos están en `SelectorDeCliente`;
+              acá queda lo que esta pantalla sí decide, que es qué se puede
+              elegir y qué hacer con lo elegido.
 
-                El botón va **al lado del selector y no en el encabezado**
-                porque es lo que le falta al selector: la pregunta «¿y si el
-                que llamó no está en la lista?» se hace mirando la lista.
-              */}
-              <div className="campo__con-accion">
-                <select
-                  id="campo-clienteId"
-                  className="campo__control"
-                  value={borrador.clienteId}
-                  onChange={(evento) => {
-                    setBorrador((anterior) => ({
-                      ...anterior,
-                      clienteId: evento.target.value,
-                    }));
-                  }}
-                >
-                  <option value="">Elegir cliente…</option>
-                  {seleccionables.map((opcion) => (
-                    <option key={opcion.id} value={opcion.id}>
-                      {opcion.nombre}
-                    </option>
-                  ))}
-                </select>
-                {/*
-                  El nombre accesible es el texto visible y dice el verbo
-                  entero. Un «+» o un «Nuevo» al lado de un control rotulado
-                  «Cliente» se lee, fuera de contexto, como «nuevo» a secas: el
-                  rótulo del campo no viaja con el botón.
-                */}
-                <button
-                  type="button"
-                  className="boton boton--tenue campo__accion"
-                  onClick={() => {
-                    setClienteNuevoAbierto(true);
-                  }}
-                >
-                  {ROTULO_DE_ABRIR_CLIENTE_NUEVO}
-                </button>
-              </div>
-              {avisoDeLaLista !== null && (
-                <p className="campo__ayuda">{avisoDeLaLista}</p>
-              )}
-              {avisoDeLaLista === null && seleccionables.length === 0 && (
-                /*
-                  La frase cambió con el botón de al lado: antes decía que
-                  hacía falta un cliente y dejaba a quien leía buscando dónde
-                  crearlo. Nombrar el botón es la mitad del aviso que faltaba.
-                */
-                <p className="campo__ayuda">
-                  Todavía no hay ningún cliente. Para cotizar hace falta uno, y
-                  el botón de al lado lo crea sin salir de esta pantalla.
-                </p>
-              )}
-            </div>
+              El botón va **al lado del selector y no en el encabezado** porque
+              es lo que le falta al selector: la pregunta «¿y si el que llamó no
+              está en la lista?» se hace mirando la lista. Lo que no cambia es
+              quién monta el modal: éste, que es el que tiene el borrador.
+            */}
+            <SelectorDeCliente
+              opciones={seleccionables}
+              elegido={borrador.clienteId}
+              aviso={avisoDeLaLista}
+              alElegir={(id) => {
+                setBorrador((anterior) => ({ ...anterior, clienteId: id }));
+              }}
+              alCrearCliente={() => {
+                setClienteNuevoAbierto(true);
+              }}
+            />
 
             <div className="campo">
               <label className="campo__rotulo" htmlFor="campo-venceEn">

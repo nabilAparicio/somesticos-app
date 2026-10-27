@@ -59,7 +59,6 @@ import {
   SIN_SERVICIOS_OFRECIBLES,
   TITULO_DE_LA_LISTA,
   TOTALES_EN_CERO,
-  moverOpcionActiva,
   sinCoincidencias,
   avisoDePrecios,
   borradorDesdeLinea,
@@ -2095,47 +2094,15 @@ describe("serviciosPorCategoria", () => {
   });
 });
 
-describe("moverOpcionActiva", () => {
-  /*
-   * El teclado del combobox, que es lo que un `<select>` regalaba y acá hay que
-   * escribir. Los bordes son los que se equivocan solos.
-   */
-  it("desde ninguna activa, bajar lleva a la primera", () => {
-    expect(moverOpcionActiva(-1, 3, 1)).toBe(0);
-  });
-
-  it("desde ninguna activa, subir lleva a la última", () => {
-    // Es lo que hace que abrir la lista y apretar ↑ sirva para algo.
-    expect(moverOpcionActiva(-1, 3, -1)).toBe(2);
-  });
-
-  it("avanza y retrocede de a una", () => {
-    expect(moverOpcionActiva(0, 3, 1)).toBe(1);
-    expect(moverOpcionActiva(2, 3, -1)).toBe(1);
-  });
-
-  it("da la vuelta en los dos extremos", () => {
-    // Una lista que se traba en la última opción obliga a contar cuántas veces
-    // hay que subir para volver al principio.
-    expect(moverOpcionActiva(2, 3, 1)).toBe(0);
-    expect(moverOpcionActiva(0, 3, -1)).toBe(2);
-  });
-
-  it("sin opciones no hay ninguna activa", () => {
-    // El caso de una búsqueda sin resultados. Sin esto, `Enter` elegiría la
-    // opción número cero de una lista vacía.
-    expect(moverOpcionActiva(-1, 0, 1)).toBe(-1);
-    expect(moverOpcionActiva(0, 0, -1)).toBe(-1);
-  });
-
-  it("una activa que quedó fuera de rango vuelve al borde", () => {
-    // Pasa de verdad: se teclea una letra más y la lista se acorta sin que la
-    // activa se mueva. Sin esta rama el índice se quedaría apuntando a una
-    // opción que ya no existe.
-    expect(moverOpcionActiva(7, 2, 1)).toBe(0);
-    expect(moverOpcionActiva(7, 2, -1)).toBe(1);
-  });
-});
+/*
+ * `moverOpcionActiva` ya no se prueba acá, y no es que haya dejado de
+ * probarse: T-1 de `odd/tasks/el-selector-de-cliente-busca.md` la movió de
+ * `src/pantallas/cotizaciones/lineas.ts` a `src/pantallas/cotizaciones/combobox.ts`
+ * —el módulo del patrón, que ahora sirve a los dos comboboxes de la pantalla— y
+ * sus pruebas se fueron con ella a `test/combobox-ui.spec.ts`, junto con las del
+ * filtrado y las del texto de lo elegido. Lo que esa función decide no tiene
+ * nada que ver con una línea de honorarios, que es lo que este archivo mide.
+ */
 
 describe("los textos del selector y de la vista expandida", () => {
   it("la ayuda del selector dice que el monto se edita encima", () => {

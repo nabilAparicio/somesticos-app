@@ -19,6 +19,15 @@
  * `documentoNumero` es un documento que existe y está en blanco, y después
  * nada lo distingue de uno que no se preguntó: el argumento entero está en
  * `src/pantallas/clientes/formulario.ts`.
+ *
+ * ## Y los textos del campo al que ese botón acompaña (T-1 de
+ * `odd/tasks/el-selector-de-cliente-busca.md`)
+ *
+ * El selector de cliente pasó de `<select>` a combobox buscable, y sus textos
+ * viven en el mismo módulo que el botón de al lado por una razón que se lee en
+ * las frases: **lo que se dice cuando no hay ningún cliente es un puntero a ese
+ * botón**. Separarlos dejaría la frase en un archivo y el control que nombra en
+ * otro, que es cómo una de las dos mitades se renombra sola.
  */
 import { describe, expect, it } from "vitest";
 
@@ -28,9 +37,16 @@ import {
   validarBorrador,
 } from "../src/pantallas/clientes/formulario";
 import {
+  AYUDA_DEL_CLIENTE,
   CAMPOS_DEL_CLIENTE_NUEVO,
+  MARCADOR_DEL_CLIENTE,
+  NOMBRE_DE_LA_LISTA_DE_CLIENTES,
+  ROTULO_DEL_CLIENTE,
+  ROTULO_DE_ABRIR_CLIENTE_NUEVO,
+  SIN_CLIENTES,
   VALORES_DEL_CLIENTE_NUEVO_VACIOS,
   borradorDelClienteNuevo,
+  sinClienteQueCoincida,
   type ValoresDelClienteNuevo,
 } from "../src/pantallas/cotizaciones/cliente-nuevo";
 
@@ -280,5 +296,87 @@ describe("lo que el modal manda", () => {
       ),
     );
     expect(sinTipo.tipoClienteId).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Los textos del selector de cliente (T-1 de
+// `odd/tasks/el-selector-de-cliente-busca.md`)
+//
+// Viven en este módulo y no en `combobox.ts` por pertenencia: `combobox.ts` es
+// la mecánica, que no sabe de qué dominio son las opciones que recorre, y
+// estas frases son del campo de cliente del alta. Y viven junto al rótulo del
+// botón porque **una de ellas nombra ese botón**: lo que se dice cuando no hay
+// ningún cliente es un puntero a él.
+// ---------------------------------------------------------------------------
+
+describe("los textos del selector de cliente", () => {
+  it("el rótulo es una palabra y el marcador dice qué hacer con el campo", () => {
+    // Corto porque el campo convive con el botón en la misma franja, y un
+    // rótulo de cuatro palabras ocupa dos renglones a 320px. Lo que el campo
+    // ya no puede dar por sentado es que se sepa que se escribe: un
+    // `<select>` se abría, y esto se teclea.
+    expect(ROTULO_DEL_CLIENTE).toBe("Cliente");
+    expect(MARCADOR_DEL_CLIENTE.toLowerCase()).toContain("buscar");
+    expect(MARCADOR_DEL_CLIENTE.toLowerCase()).toContain("cliente");
+  });
+
+  it("la lista tiene nombre propio, y no el del otro combobox", () => {
+    // En el detalle de una cotización hay un `role="listbox"` por línea
+    // —«Servicios que coinciden»— y en el alta está éste. Dos listas que se
+    // anuncian igual son dos controles indistinguibles para quien las oye.
+    expect(NOMBRE_DE_LA_LISTA_DE_CLIENTES.toLowerCase()).toContain("cliente");
+    expect(
+      NOMBRE_DE_LA_LISTA_DE_CLIENTES.toLowerCase(),
+      "la lista de clientes se anuncia como la de servicios: son dos" +
+        " comboboxes distintos y un lector de pantalla no los va a poder" +
+        " separar",
+    ).not.toContain("servicio");
+  });
+
+  it("sin ningún cliente, el texto lo dice y manda al botón de al lado", () => {
+    expect(SIN_CLIENTES.toLowerCase()).toContain("ningún cliente");
+    expect(
+      SIN_CLIENTES.toLowerCase(),
+      "la frase dice que no hay clientes y no dice qué hacer: deja a quien" +
+        " lee buscando dónde se crea uno, que es justo lo que el botón de al" +
+        " lado resolvió",
+    ).toContain("botón");
+    // Y no manda a otra pantalla. El botón crea el cliente sin salir de acá, y
+    // una frase que mandara a `/clientes/nuevo` deshace el viaje ahorrado.
+    expect(SIN_CLIENTES.toLowerCase()).not.toContain("pantalla de clientes");
+  });
+
+  it("la ayuda dice que se escribe para buscar y nombra la salida", () => {
+    // El cambio que hay que explicar no es el control: es que ahora se
+    // escribe. Y la salida —el cliente que no está en la lista— se nombra
+    // siempre y no sólo cuando la lista queda vacía.
+    expect(AYUDA_DEL_CLIENTE.toLowerCase()).toContain("buscar");
+    expect(AYUDA_DEL_CLIENTE.toLowerCase()).toContain("botón");
+  });
+
+  it("una búsqueda sin resultados dice qué fue lo que no se encontró", () => {
+    // Entrecomillado, igual que la del selector de servicio: «ningún
+    // resultado» a secas no deja ver que lo que falta es una letra de más.
+    expect(sinClienteQueCoincida("Pérez")).toBe(
+      "Ningún cliente coincide con «Pérez».",
+    );
+  });
+
+  it("y esa frase no habla de servicios", () => {
+    // La guardia contra el copiado: el texto del otro combobox dice «Ningún
+    // servicio coincide», y pegarlo acá dejaría el selector de cliente
+    // avisando sobre el catálogo de precios.
+    expect(sinClienteQueCoincida("Pérez").toLowerCase()).not.toContain(
+      "servicio",
+    );
+  });
+
+  it("el botón que esas frases nombran sigue diciendo el verbo entero", () => {
+    // La costura entre las dos mitades de este módulo. Si alguien dejara el
+    // botón en «+» o en «Nuevo», las frases seguirían diciendo «el botón de al
+    // lado» y nadie podría saber cuál.
+    expect(ROTULO_DE_ABRIR_CLIENTE_NUEVO.toLowerCase()).toContain("cliente");
+    expect(ROTULO_DE_ABRIR_CLIENTE_NUEVO.toLowerCase()).toContain("nuevo");
   });
 });

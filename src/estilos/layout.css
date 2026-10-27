@@ -1251,12 +1251,32 @@
 }
 
 /* ----------------------------------------------------------------------
-   El selector de servicio: un combobox, con su lista y su botón
+   El combobox buscable: un campo, su lista y su botón
+
+   **Un solo bloque para los dos que hay** (T-1 de
+   `odd/tasks/el-selector-de-cliente-busca.md`): el selector de servicio de cada
+   línea y el selector de cliente del alta. Nació como `.selector-de-servicio__*`
+   cuando el combobox era uno, y se renombró al extraer el componente: dos
+   bloques con las mismas nueve declaraciones son dos que mañana no se parecen.
+
+   Las clases propias de cada selector —`.selector-de-servicio`,
+   `.selector-de-cliente`— siguen puestas en la raíz y en la fila de la lista
+   vacía, y ahí **no pintan nada**: existen para que una prueba pueda decir cuál
+   de los dos comboboxes está mirando. El porqué está en `Combobox.tsx`. La
+   única que sí pinta y es propia es `.selector-de-servicio__importe`, porque la
+   cifra al lado de una opción la tiene uno solo de los dos.
    ---------------------------------------------------------------------- */
 
 /*
  * El campo y su botón en una franja que **envuelve**. Flexbox y no grid: es
  * una dimensión (§9).
+ *
+ * Es también lo que era `.campo__con-accion`, que la tajada del cliente nuevo
+ * escribió para el `<select>` y su botón: tenía estas mismas declaraciones con
+ * otro nombre, y al volverse el cliente un combobox quedó sin un solo usuario.
+ * Se fue de este archivo en vez de quedar como una segunda forma de decir lo
+ * mismo. Lo que sobrevive de ella es `.campo__accion`, abajo, que es del botón
+ * y no de la franja.
  *
  * El campo pide su espacio con `flex` y `min-inline-size: 0`, que es lo que lo
  * deja encogerse por debajo del ancho intrínseco del `<input>` —el ancho fijo
@@ -1271,7 +1291,7 @@
  * 237px enteros. En un hueco ancho los dos siguen cabiendo juntos, que es lo
  * que `wrap` resuelve sin un solo punto de quiebre escrito a mano.
  */
-.selector-de-servicio__caja {
+.combobox__caja {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1285,19 +1305,19 @@
  * Las dos vueltas que costó llegar acá están medidas, y conviene dejarlas
  * escritas porque las dos formas equivocadas parecen razonables:
  *
- *   1. con `position: relative` en `.selector-de-servicio`, el `100%` de la
- *      lista era el del bloque entero —rótulo, campo, botón y párrafo de
- *      ayuda— y las opciones caían media pantalla más abajo, flotando debajo
- *      de la ayuda;
- *   2. con el ancla en `.selector-de-servicio__caja`, que lleva también el
- *      botón y que en un hueco angosto lo baja a su propio renglón, quedaban
- *      **165px** de aire entre el campo y su lista.
+ *   1. con `position: relative` en la raíz del bloque, el `100%` de la lista
+ *      era el del bloque entero —rótulo, campo, botón y párrafo de ayuda— y
+ *      las opciones caían media pantalla más abajo, flotando debajo de la
+ *      ayuda;
+ *   2. con el ancla en `.combobox__caja`, que lleva también el botón y que en
+ *      un hueco angosto lo baja a su propio renglón, quedaban **165px** de
+ *      aire entre el campo y su lista.
  *
  * El `flex` vive acá y no sobre el `.campo__control` por lo mismo: el hijo
  * directo de la caja es este envoltorio, y el campo de adentro ya mide el cien
  * por ciento por la regla de `formulario.css`.
  */
-.selector-de-servicio__ancla {
+.combobox__ancla {
   position: relative;
   flex: 1 1 12rem;
   min-inline-size: 0;
@@ -1321,7 +1341,7 @@
  * siempre la misma cantidad de opciones cualquiera sea el cuerpo de la
  * tipografía, y de ahí para abajo scrollea por dentro.
  */
-.selector-de-servicio__opciones {
+.combobox__opciones {
   position: absolute;
   inset-inline: 0;
   inset-block-start: 100%;
@@ -1347,7 +1367,7 @@
  * `cursor: pointer` porque es un control, aunque no sea un `<button>`: el rol
  * lo dice el `role="option"` y la forma del cursor lo dice acá.
  */
-.selector-de-servicio__opcion {
+.combobox__opcion {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1365,15 +1385,15 @@
  * que ese precio tiene algo distinto. Con `--color-acento-tenue` el contraste
  * del texto no cambia.
  */
-.selector-de-servicio__opcion--activa {
+.combobox__opcion--activa {
   background: var(--color-acento-tenue);
 }
 
-.selector-de-servicio__opcion[aria-selected="true"] {
+.combobox__opcion[aria-selected="true"] {
   font-weight: var(--peso-medio);
 }
 
-.selector-de-servicio__nombre {
+.combobox__nombre {
   flex: 1 1 auto;
   min-inline-size: 0;
   overflow-wrap: break-word;
@@ -1391,7 +1411,7 @@
   white-space: nowrap;
 }
 
-.selector-de-servicio__vacio {
+.combobox__vacio {
   padding: var(--espacio-2xs) var(--espacio-xs);
   color: var(--color-tinta-apagada);
   font-size: var(--texto-s);
@@ -1497,30 +1517,17 @@
    ---------------------------------------------------------------------- */
 
 /*
- * El control y el botón que lo acompaña, en una franja que envuelve.
+ * La franja del control y su botón **ya no se declara acá**: es
+ * `.combobox__caja`, arriba, desde que el selector de cliente dejó de ser un
+ * `<select>` y pasó a ser el mismo combobox que el de servicio (T-1 de
+ * `odd/tasks/el-selector-de-cliente-busca.md`). Las dos reglas que había —la
+ * franja y el `min-inline-size: 0` del control, que es lo que desarma su ancho
+ * intrínseco para que a 320px no empuje la página— eran las mismas con otro
+ * nombre, y dos nombres para una franja son dos franjas que mañana no se
+ * parecen.
  *
- * Es flexbox y no grid, que es el reparto de §9 entre los dos: una franja es
- * unidimensional. Y es `flex-wrap` y no una `@container` con un umbral: el
- * botón baja debajo del control cuando no entra, y cuándo no entra depende del
- * largo del rótulo del botón, no de un ancho de pantalla que alguien elija.
- *
- * El `min-inline-size: 0` sobre el control es la línea que desarma su ancho
- * intrínseco. Sin ella un `<select>` en una franja flex se niega a encogerse
- * por debajo de su contenido —y el contenido de este desplegable es el nombre
- * más largo del catálogo de clientes—, así que a 320px empujaría la página.
+ * Lo que sí se queda es el botón, abajo: es del botón y no de la franja.
  */
-.campo__con-accion {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: var(--espacio-xs);
-  min-width: 0;
-}
-
-.campo__con-accion > .campo__control {
-  flex: 1 1 12rem;
-  min-inline-size: 0;
-}
 
 /*
  * El botón no se estira ni se encoge por debajo de su texto: es el único

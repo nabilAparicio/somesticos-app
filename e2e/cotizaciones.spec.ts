@@ -1364,6 +1364,13 @@ test.describe("las cotizaciones del bufete", () => {
      *
      * Lo que esta prueba fija es la coincidencia entre las dos puntas: lo
      * que el control dice y lo que el cuerpo lleva.
+     *
+     * **Con el combobox de T-1 esa coincidencia se mide distinto y no más
+     * débil.** Ya no hay una opción seleccionada que leer: lo que se ve es el
+     * valor del campo, y lo escribe `clientesSeleccionables` inyectando el
+     * cliente que la cotización ya tiene. La forma del defecto es la misma
+     * —el control diciendo que no hay nadie elegido— y lo que la delata
+     * también: un campo vacío sobre un `PUT` que lleva el identificador.
      */
     await conCotizacionesCargadas(page);
 
@@ -1395,16 +1402,14 @@ test.describe("las cotizaciones del bufete", () => {
     const cliente = page.locator("#campo-clienteId");
     await expect(cliente).toBeVisible();
 
-    // Lo que se lee en el control, que es la opción seleccionada y no el
-    // `value`: el defecto consistía justamente en que las dos cosas se
-    // separaran.
-    const visible = await cliente.evaluate((nodo) => {
-      const control = nodo as HTMLSelectElement;
-      return control.selectedIndex < 0
-        ? "(ninguna)"
-        : control.options[control.selectedIndex].text;
-    });
-    expect(visible).toBe(NOMBRE_DEL_CLIENTE);
+    // Lo que se lee en el control. El defecto consistía justamente en que
+    // esto y el cuerpo enviado se separaran.
+    await expect(
+      cliente,
+      "el control no nombra al cliente que la cotización tiene, y el `PUT` de" +
+        " más abajo sí lo lleva: quien lee «no hay ninguno elegido» puede" +
+        " elegir otro creyendo que confirma",
+    ).toHaveValue(NOMBRE_DEL_CLIENTE);
 
     // Y que la lista no cargó se dice, en vez de dejar un desplegable de un
     // solo cliente que parece el catálogo entero.
@@ -3342,17 +3347,22 @@ test.describe("un cliente nace desde el alta de cotización", () => {
     );
   }
 
-  /** El texto de la opción elegida, que es lo que la persona lee. */
+  /**
+   * El cliente elegido, dicho como la persona lo lee.
+   *
+   * Desde T-1 el control es un combobox y no un `<select>`, así que lo que se
+   * lee **es** el valor del campo: ya no hay una opción seleccionada cuyo
+   * texto pueda discrepar del `value`. Sigue siendo una función aparte porque
+   * lo que estas pruebas afirman es el texto a la vista, y nombrarlo así deja
+   * dicho de qué se trata la aserción.
+   */
   function clienteElegido(page: Page): Promise<string> {
-    return page.locator("#campo-clienteId").evaluate((nodo) => {
-      const control = nodo as HTMLSelectElement;
-      return control.selectedIndex < 0
-        ? "(ninguna)"
-        : control.options[control.selectedIndex].text;
-    });
+    return page
+      .locator("#campo-clienteId")
+      .evaluate((nodo) => (nodo as HTMLInputElement).value);
   }
 
-  test("el botón junto al selector abre un modal que dice la regla antes de fallar", async ({
+  test("el botón junto al selector abre un modal cuyas etiquetas dicen lo que exigen", async ({
     page,
   }) => {
     await conCotizacionesCargadas(page);
@@ -3366,22 +3376,41 @@ test.describe("un cliente nace desde el alta de cotización", () => {
     const caja = modal(page);
     await expect(caja).toBeVisible();
 
-    // La regla del contacto, dicha **antes** de que alguien la descubra
-    // fallando. Es ayuda y no error: un formulario que enseña su regla
-    // reprobando a quien la ignoraba enseña tarde.
+    /*
+     * **Esta prueba medía otra cosa hasta el commit `b686c72`**, que es de otra
+     * tajada y no de T-1 del selector de cliente: el modal tenía dos párrafos
+     * de ayuda —la regla del contacto y que el cliente no era de segunda— y
+     * aquí se afirmaba que los dibujara. El usuario los sacó —«algo como
+     * "rellená los datos de un nuevo cliente" es suficiente»— con el argumento
+     * de que el primero existía para corregir una etiqueta que mentía, y que
+     * arreglada la etiqueta el párrafo sobra. Ese commit cambió el componente y
+     * su prueba de unidad y **dejó estas dos aserciones apuntando a un texto
+     * que ya no existe**.
+     *
+     * Así que lo que se mide ahora es el contrato que lo reemplazó, y no es más
+     * flojo: una línea corta arriba, y la exigencia **dentro de cada etiqueta**,
+     * que es lo que un lector de pantalla anuncia al entrar al campo.
+     */
     await expect(
-      caja.getByText("un teléfono o un correo", { exact: false }),
-      "el modal no dice que alcanza con uno de los dos contactos, así que la" +
-        " única forma de enterarse es que el guardado falle",
+      caja.getByText("los datos del cliente nuevo", { exact: false }),
+      "el modal no dice para qué es: cuatro campos sin una línea arriba" +
+        " obligan a deducir qué se está dando de alta",
     ).toBeVisible();
 
-    // Y que lo que nace acá no es un cliente de segunda: el resto de la
-    // ficha se completa después, desde la pantalla del cliente.
-    await expect(
-      caja.getByText("pantalla del cliente", { exact: false }),
-      "el modal no dice dónde se completa el resto de la ficha: quien lo usa" +
-        " puede creer que creó un cliente incompleto a propósito",
-    ).toBeVisible();
+    /*
+     * Y el defecto que esos párrafos tapaban, medido sobre el dibujo: los dos
+     * contactos **no se pueden marcar «opcional»**, porque `validarBorrador`
+     * rechaza un cliente que no traiga ninguno de los dos. La prueba de unidad
+     * lo afirma sobre el dato; ésta, sobre la etiqueta que se lee.
+     */
+    for (const contacto of ["Teléfono", "Correo"]) {
+      await expect(
+        caja.getByLabel(`${contacto} · opcional`, { exact: true }),
+        `la etiqueta de «${contacto}» dice «opcional» y es falso: sin ninguno` +
+          " de los dos contactos el alta se rechaza, así que la etiqueta manda" +
+          " a dejar en blanco los dos campos",
+      ).toHaveCount(0);
+    }
 
     // Los cuatro campos, cada uno con rótulo visible. Ni el documento ni las
     // notas: ésos son de la pantalla completa.
@@ -3478,10 +3507,15 @@ test.describe("un cliente nace desde el alta de cotización", () => {
       notas: null,
     });
 
-    // Y el punto entero de la tajada: **queda elegido**, sin ir a buscarlo.
-    await expect(page.locator("#campo-clienteId")).toHaveValue(
-      CLIENTE_NUEVO_ID,
-    );
+    /*
+     * Y el punto entero de la tajada: **queda elegido**, sin ir a buscarlo.
+     *
+     * Con el combobox de T-1 lo que el campo muestra es el nombre y no el
+     * identificador, así que el `value` y el texto a la vista son lo mismo. Lo
+     * que esta prueba fija sigue siendo lo de antes —que el recién nacido
+     * quede elegido— y la aserción de abajo lo dice con el nombre, que es lo
+     * que de verdad se lee en pantalla.
+     */
     expect(
       await clienteElegido(page),
       "el cliente recién creado no quedó elegido en el desplegable: hay que" +
@@ -3643,6 +3677,330 @@ test.describe("un cliente nace desde el alta de cotización", () => {
     // El ancho más angosto de §9, que es donde un `<dialog>` con el dibujo
     // por defecto del navegador empuja la página: trae `max-width` propio y
     // márgenes que no son los del sistema.
+    const desborde = await medirDesborde(page);
+    expect(
+      desborde.scrollWidth,
+      porQueSeSale(320, desborde),
+    ).toBeLessThanOrEqual(desborde.clientWidth);
+  });
+});
+
+/* ==========================================================================
+   T-1 · El cliente se busca, no se recorre
+   (`odd/tasks/el-selector-de-cliente-busca.md`)
+
+   Las palabras del usuario, que son el criterio: «Ese dropdown hay que
+   mejorarlo con un buscador. ¿Qué pasará cuando haya 50 clientes o 100
+   clientes?» Un `<select>` nativo con cien opciones se recorre a ojo, y su
+   teclado busca por **prefijo** del texto de la opción, así que escribir
+   «istmo» no encuentra «Inmobiliaria del Istmo».
+
+   Lo que sólo se puede comprobar acá son las cuatro cosas que el combobox
+   tiene que hacer y que una prueba de función no ve:
+
+    1. **que escribir filtre de verdad**, o sea que el filtro esté cableado al
+       campo y no sólo probado aparte;
+    2. **que se pueda cotizar sin mouse de punta a punta.** Es la mitad que un
+       `<select>` traía de regalo y que un combobox a medias pierde: un campo
+       de texto con una lista debajo y sin flechas deja el campo obligatorio de
+       la cotización inalcanzable para quien no usa mouse;
+    3. **que el botón de cliente nuevo siga dejando el cliente elegido.** Era
+       el punto entero de la tajada anterior, y un selector nuevo es
+       exactamente la clase de cambio que lo rompe sin que nadie lo note;
+    4. **que sin ningún cliente el control lo diga y mande al botón**, en vez
+       de dejar una caja de búsqueda que no puede encontrar nada.
+   ========================================================================== */
+
+test.describe("el cliente se busca, no se recorre", () => {
+  /** El campo del combobox de cliente, que conserva el `id` del `<select>`. */
+  function campoDeCliente(page: Page) {
+    return page.locator("#campo-clienteId");
+  }
+
+  /**
+   * Las opciones del combobox de cliente, **acotadas a su bloque**.
+   *
+   * Es la misma precaución que `opcionesDelAlta` toma en
+   * `e2e/precios-en-cotizacion.spec.ts`: un `<option>` nativo tiene el rol
+   * `option` igual que los de este combobox, así que un `getByRole("option")`
+   * sin acotar devolvería además los del desplegable de vencimiento el día que
+   * esta pantalla tenga uno.
+   */
+  function opcionesDeCliente(page: Page) {
+    return page.locator(".selector-de-cliente").getByRole("option");
+  }
+
+  function botonDeClienteNuevo(page: Page) {
+    return page.getByRole("button", { name: "Crear un cliente nuevo" });
+  }
+
+  test("el campo tiene rótulo a la vista y dice que se busca", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto("/cotizaciones/nuevo");
+
+    const campo = campoDeCliente(page);
+    await expect(campo).toBeVisible();
+
+    // El rótulo a la vista, que es lo que WCAG 2.5.3 pide y lo que el usuario
+    // pidió con todas las letras para los controles de esta pantalla.
+    await expect(
+      page.getByLabel("Cliente · obligatorio", { exact: true }),
+      "el campo de cliente perdió su rótulo visible al pasar de `<select>` a" +
+        " combobox: queda un campo de texto sin nombre en el único campo" +
+        " obligatorio de la cotización",
+    ).toBeVisible();
+
+    // Y es un combobox de verdad, con los cuatro atributos del patrón.
+    await expect(campo).toHaveAttribute("role", "combobox");
+    await expect(campo).toHaveAttribute("aria-expanded", "false");
+    await expect(campo).toHaveAttribute("aria-autocomplete", "list");
+  });
+
+  test("escribir filtra la lista de clientes", async ({ page }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto("/cotizaciones/nuevo");
+
+    const campo = campoDeCliente(page);
+    await campo.click();
+    await expect(opcionesDeCliente(page)).toHaveCount(2);
+
+    /*
+     * «istmo» está **en el medio** del nombre de la sociedad, no al principio.
+     * Es justo lo que el teclado de un `<select>` no sabe hacer, y la razón
+     * por la que este control existe.
+     */
+    await campo.fill("istmo");
+    await expect(
+      opcionesDeCliente(page),
+      "la búsqueda no encontró un cliente por una palabra que está en el" +
+        " medio de su nombre: eso es lo que ya hacía el `<select>` nativo",
+    ).toHaveCount(1);
+    await expect(opcionesDeCliente(page).first()).toContainText("ISTMO");
+
+    // Sin tilde, que es como se teclea un apellido con prisa.
+    await campo.fill("perez");
+    await expect(opcionesDeCliente(page)).toHaveCount(1);
+    await expect(opcionesDeCliente(page).first()).toContainText(
+      NOMBRE_DEL_CLIENTE,
+    );
+  });
+
+  test("una búsqueda sin resultados lo dice en vez de quedar en blanco", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto("/cotizaciones/nuevo");
+
+    const campo = campoDeCliente(page);
+    await campo.click();
+    await campo.fill("sociedad fiduciaria");
+
+    await expect(opcionesDeCliente(page)).toHaveCount(0);
+    await expect(
+      page.locator(".selector-de-cliente__vacio"),
+      "la lista quedó vacía y sin decir nada: una caja en blanco debajo de un" +
+        " campo de búsqueda se lee como un control roto",
+    ).toContainText("Ningún cliente coincide");
+  });
+
+  test("se elige el cliente y se guarda la cotización sin tocar el mouse", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let enviado: string | null = null;
+    await page.route(
+      (url) => url.pathname === "/api/cotizaciones",
+      async (ruta) => {
+        if (ruta.request().method() !== "POST") {
+          await ruta.fallback();
+          return;
+        }
+        enviado = ruta.request().postData();
+        await ruta.fulfill({ status: 201, json: { cotizacion: BORRADOR } });
+      },
+    );
+
+    await page.goto("/cotizaciones/nuevo");
+
+    const campo = campoDeCliente(page);
+    await expect(campo).toBeVisible();
+
+    // El foco se pone sobre el campo y de ahí en adelante no se toca el mouse.
+    await campo.focus();
+    await page.keyboard.type("perez");
+
+    await expect(campo).toHaveAttribute("aria-expanded", "true");
+    await expect(opcionesDeCliente(page)).toHaveCount(1);
+
+    await page.keyboard.press("ArrowDown");
+    // `aria-activedescendant` es lo que anuncia la opción **sin mover el
+    // foco**: el foco se queda en el campo, porque ahí se sigue escribiendo.
+    const activa = await campo.getAttribute("aria-activedescendant");
+    expect(
+      activa,
+      "la flecha no dejó ninguna opción activa: sin `aria-activedescendant`" +
+        " un lector de pantalla no tiene qué anunciar, y `Enter` no sabe qué" +
+        " elegir",
+    ).not.toBeNull();
+
+    await page.keyboard.press("Enter");
+
+    // Elegido de verdad: el campo dice el nombre y la lista se cerró.
+    await expect(campo).toHaveValue(NOMBRE_DEL_CLIENTE);
+    await expect(campo).toHaveAttribute("aria-expanded", "false");
+
+    /*
+     * Y con la lista cerrada `Enter` vuelve a ser el envío del formulario, que
+     * es lo que cierra el recorrido sin mouse. Un combobox que se quedara con
+     * la tecla dejaría el teclado sin forma de guardar.
+     */
+    await page.keyboard.press("Enter");
+
+    await expect.poll(() => enviado).not.toBeNull();
+    expect(
+      JSON.parse(enviado ?? "{}"),
+      "la cotización se mandó sin el cliente que se eligió con el teclado:" +
+        " elegir dejó el texto en el campo pero no el identificador en el" +
+        " borrador",
+    ).toMatchObject({ clienteId: CLIENTE_ID });
+  });
+
+  test("Escape deshace la búsqueda y deja el cliente que ya estaba", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto(`/cotizaciones/${BORRADOR_ID}/editar`);
+
+    const campo = campoDeCliente(page);
+    await expect(campo).toHaveValue(NOMBRE_DEL_CLIENTE);
+
+    await campo.fill("istmo");
+    await page.keyboard.press("Escape");
+
+    await expect(campo).toHaveAttribute("aria-expanded", "false");
+    await expect(
+      campo,
+      "el campo quedó con el texto de una búsqueda abandonada encima de un" +
+        " cliente que no cambió. `Escape` en un combobox es abandonar lo que" +
+        " se estaba escribiendo",
+    ).toHaveValue(NOMBRE_DEL_CLIENTE);
+  });
+
+  test("vaciar el campo deja la cotización sin cliente, y el guardado lo dice", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    let huboPut = false;
+    await page.route(
+      (url) => url.pathname === `/api/cotizaciones/${BORRADOR_ID}`,
+      async (ruta) => {
+        if (ruta.request().method() === "PUT") huboPut = true;
+        await ruta.fallback();
+      },
+    );
+
+    await page.goto(`/cotizaciones/${BORRADOR_ID}/editar`);
+
+    const campo = campoDeCliente(page);
+    await expect(campo).toHaveValue(NOMBRE_DEL_CLIENTE);
+
+    // Vaciar y salir del campo es el mismo gesto que desvincula un servicio de
+    // una línea: el campo vacío es «ninguno», y confirmarlo es salir.
+    await campo.fill("");
+    await page.getByLabel("Vence el").click();
+    await expect(campo).toHaveValue("");
+
+    await page.getByRole("button", { name: "Guardar" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "Hay que elegir el cliente.",
+    );
+    expect(
+      huboPut,
+      "se mandó un `PUT` sin cliente: el campo vacío tiene que quedar como" +
+        " «ninguno» en el borrador y la validación previa tiene que verlo",
+    ).toBe(false);
+  });
+
+  test("sin ningún cliente, el campo lo dice y manda al botón de al lado", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+
+    // Registrada después y por eso gana: Playwright atiende las rutas en
+    // orden inverso al de registro.
+    await page.route(
+      (url) => url.pathname === "/api/clientes",
+      async (ruta) => {
+        if (ruta.request().method() !== "GET") {
+          await ruta.fallback();
+          return;
+        }
+        await ruta.fulfill({ status: 200, json: { clientes: [] } });
+      },
+    );
+
+    await page.goto("/cotizaciones/nuevo");
+
+    const campo = campoDeCliente(page);
+    await expect(campo).toBeVisible();
+    await expect(
+      campo,
+      "el campo quedó usable sobre una lista sin un solo cliente: un campo de" +
+        " búsqueda que no puede encontrar nada es un control que sobra",
+    ).toBeDisabled();
+
+    await expect(
+      page.getByText("Todavía no hay ningún cliente", { exact: false }),
+      "no se dice que no hay ningún cliente: queda un campo apagado sin" +
+        " explicación sobre el único campo obligatorio de la cotización",
+    ).toBeVisible();
+
+    // Y la salida está al lado y sigue estando: es la tajada anterior.
+    await expect(botonDeClienteNuevo(page)).toBeVisible();
+    await expect(botonDeClienteNuevo(page)).toBeEnabled();
+  });
+
+  test("el botón de cliente nuevo sigue al lado del campo, en la misma franja", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.goto("/cotizaciones/nuevo");
+
+    /*
+     * **Al lado y no en otra parte de la pantalla**, que es lo que la tajada
+     * anterior decidió: la pregunta «¿y si el que llamó no está en la lista?»
+     * se hace mirando la lista. Se mide por la pertenencia al bloque del
+     * selector, no por coordenadas: a 320px el botón baja a su propio renglón
+     * y sigue estando al lado en el sentido que importa.
+     */
+    await expect(
+      page.locator(".selector-de-cliente").getByRole("button", {
+        name: "Crear un cliente nuevo",
+      }),
+      "el botón de cliente nuevo salió del bloque del selector de cliente:" +
+        " dejó de ser lo que le falta a la lista y pasó a ser un control" +
+        " suelto de la pantalla",
+    ).toHaveCount(1);
+  });
+
+  test("a 320px de ancho, con la lista de clientes abierta, nada se sale", async ({
+    page,
+  }) => {
+    await conCotizacionesCargadas(page);
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.goto("/cotizaciones/nuevo");
+
+    const campo = campoDeCliente(page);
+    await campo.click();
+    // El nombre pegado de la sociedad es el contenido hostil: sin un punto de
+    // corte, una opción que no sepa envolver empuja la página.
+    await expect(opcionesDeCliente(page)).toHaveCount(2);
+
     const desborde = await medirDesborde(page);
     expect(
       desborde.scrollWidth,

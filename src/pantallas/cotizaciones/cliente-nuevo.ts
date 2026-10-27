@@ -34,6 +34,18 @@
  * después, desde la pantalla del cliente, y el modal lo dice. Un campo más
  * acá es la pantalla completa metida en un modal, que es exactamente lo que
  * esta tajada no es.
+ *
+ * ## Y los textos del campo al que ese botón acompaña (T-1 de
+ * `odd/tasks/el-selector-de-cliente-busca.md`)
+ *
+ * El selector de cliente pasó de `<select>` a combobox buscable, y sus textos
+ * están al final de este archivo. Viven acá y no en `./combobox.ts` por
+ * pertenencia —aquél es la mecánica, que no sabe de qué dominio son las
+ * opciones que recorre— y viven junto al rótulo del botón por una razón que se
+ * lee en las frases: **lo que se dice cuando no hay ningún cliente es un
+ * puntero a ese botón**, y la ayuda de siempre lo vuelve a nombrar. Separarlos
+ * dejaría la frase en un archivo y el control que nombra en otro, que es cómo
+ * una de las dos mitades se renombra sola.
  */
 
 import {
@@ -173,3 +185,83 @@ export const ROTULO_DE_ABRIR_CLIENTE_NUEVO = "Crear un cliente nuevo";
 export const AYUDA_DEL_CLIENTE_NUEVO = "Complete los datos del cliente nuevo.";
 
 export const ROTULO_DE_CREAR_CLIENTE = "Crear cliente";
+
+/* --- Los textos del selector de cliente (T-1) ----------------------------
+ *
+ * El porqué de que vivan en este archivo está en el encabezado. Lo que sigue
+ * es el vocabulario del campo: cómo se llama, qué invita a hacer, cómo se
+ * anuncia su lista, y las dos cosas que dice cuando no tiene nada que ofrecer.
+ */
+
+/**
+ * El rótulo a la vista. Una palabra, y no «Elegir el cliente».
+ *
+ * Corto porque el campo convive con el botón en la misma franja y porque la
+ * marca de obligatorio va pegada: «Cliente · obligatorio» es el nombre
+ * accesible entero, y de ahí para arriba el rótulo ocupa dos renglones a
+ * 320px. Lo que hay que decir es **qué dato va ahí**, y para eso alcanza una
+ * palabra: qué se hace con el campo lo dice el marcador de abajo.
+ */
+export const ROTULO_DEL_CLIENTE = "Cliente";
+
+/**
+ * Lo que dice el campo vacío.
+ *
+ * Hace falta y es nuevo: un `<select>` se abría, y de esto hay que enterarse de
+ * que **se escribe**. Es la misma frase que el selector de servicio usa un
+ * control más abajo, con su sustantivo, porque las dos cosas se hacen igual y
+ * decirlas distinto haría creer que no.
+ */
+export const MARCADOR_DEL_CLIENTE = "Buscar un cliente";
+
+/**
+ * Cómo se anuncia la lista de resultados, para quien la oye y no la ve.
+ *
+ * **No puede ser la del otro combobox.** El detalle de una cotización dibuja un
+ * `role="listbox"` por línea —«Servicios que coinciden»— y dos listas que se
+ * anuncian igual son dos controles que un lector de pantalla no separa.
+ */
+export const NOMBRE_DE_LA_LISTA_DE_CLIENTES = "Clientes que coinciden";
+
+/**
+ * La ayuda del campo, dicha siempre.
+ *
+ * Dos mitades, y las dos hacen falta. La primera es que el control se teclea,
+ * que es el cambio de esta tajada. La segunda es la salida —el cliente que no
+ * está en la lista— y va **siempre** y no sólo cuando la lista queda vacía: la
+ * pregunta «¿y si el que llamó no está?» aparece mirando una lista llena, que
+ * es justo cuando un aviso condicionado a «no hay ninguno» no está.
+ */
+export const AYUDA_DEL_CLIENTE =
+  "Escribí para buscar entre los clientes del bufete: se puede buscar por" +
+  " cualquier parte del nombre, y se elige con las flechas y Enter. Si quien" +
+  " llamó no está en la lista, el botón de al lado lo crea sin salir de esta" +
+  " pantalla.";
+
+/**
+ * Lo que se dice cuando no hay un solo cliente que ofrecer.
+ *
+ * Es la frase que el texto de ayuda del formulario ya decía antes de esta
+ * tajada, y se conserva entera: **nombrar el botón es la mitad del aviso**. La
+ * versión anterior a la tajada del cliente nuevo decía que hacía falta un
+ * cliente y dejaba a quien leía buscando dónde crearlo.
+ *
+ * Y no manda a otra pantalla a propósito: el botón de al lado crea el cliente
+ * acá, que es exactamente el viaje que esa tajada ahorró.
+ */
+export const SIN_CLIENTES =
+  "Todavía no hay ningún cliente. Para cotizar hace falta uno, y el botón de" +
+  " al lado lo crea sin salir de esta pantalla.";
+
+/**
+ * Lo que se dice cuando la búsqueda no encuentra ningún cliente.
+ *
+ * Entrecomilla lo buscado, igual que `sinCoincidencias` hace con los
+ * servicios: «ningún resultado» a secas no deja ver que lo que sobra es una
+ * letra. Son dos funciones y no una compartida porque lo que cambia es el
+ * sustantivo, y un texto genérico —«ninguna opción coincide»— diría menos en
+ * los dos controles para no repetir una línea.
+ */
+export function sinClienteQueCoincida(consulta: string): string {
+  return `Ningún cliente coincide con «${consulta}».`;
+}

@@ -69,6 +69,16 @@
     // y **no** importa ninguna validación propia, que es el invariante
     // entero de ese módulo.
     "../src/pantallas/cotizaciones/cliente-nuevo.ts",
+    // La mecánica pura del combobox que los dos selectores de la pantalla de
+    // cotización comparten (T-1 de
+    // `odd/tasks/el-selector-de-cliente-busca.md`): qué opciones coinciden,
+    // cuál queda activa al mover una flecha y qué dice el campo sobre lo
+    // elegido. Entra acá por lo mismo que las demás —no importa React ni toca
+    // el DOM— y la barrera de este proyecto le sirve de guardia: el día que
+    // alguien le meta un `KeyboardEvent` o un `document`, deja de compilar
+    // acá, que es exactamente lo que tiene que pasar. Las teclas las cablea
+    // `Combobox.tsx`, que no es lógica.
+    "../src/pantallas/cotizaciones/combobox.ts",
     "../src/pantallas/cotizaciones/generar.ts",
     "../src/pantallas/cotizaciones/presentacion.ts",
     "../src/pantallas/cotizaciones/ciclo.ts",
