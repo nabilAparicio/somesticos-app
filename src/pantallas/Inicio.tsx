@@ -1,70 +1,88 @@
+/**
+ * Inicio: lo primero que alguien abre. Qué me espera a mí —mis pendientes,
+ * mis cotizaciones por atender— y cómo se movieron las cotizaciones este mes
+ * (`odd/tasks/inicio-tablero.md`).
+ *
+ * Es el contenedor: pide los datos y decide qué fase mostrar. El dibujo vive
+ * en `src/pantallas/inicio/`, y lo que se decide sin React en su
+ * `presentacion.ts`, con pruebas.
+ *
+ * **El alcance cambia los números, no lo mío.** «Mías / Del bufete» mueve
+ * los indicadores y los dos gráficos; mis pendientes y mis cotizaciones son
+ * los míos en los dos casos, porque así lo contesta el servidor.
+ *
+ * Al cambiar de alcance **se queda lo que ya estaba** mientras llega lo
+ * nuevo: vaciar la pantalla para volver a llenarla con casi lo mismo es un
+ * parpadeo que no informa nada.
+ *
+ * ## Lo que se fue: el estado del sistema
+ *
+ * La portada mostraba `/api/health` en tres tarjetas. Era diagnóstico, no
+ * trabajo, y la portada ahora es del trabajo. `/api/health` sigue existiendo
+ * y sigue siendo público, que es para lo que está: para que lo mire un
+ * monitor, no una persona.
+ *
+ * La identidad tampoco se lee acá: vive en el armazón
+ * (`src/layout/Esqueleto.tsx`), permanente y en toda pantalla.
+ */
 import { useEffect, useState } from "react";
 
-import type { HealthReport } from "../../worker/contract";
+import type {
+  AlcanceDelInicio,
+  RespuestaDelInicio,
+} from "../../worker/contract";
+import { cargarInicio } from "../api/inicio";
+import { textoDeProblema } from "../api/peticiones";
+import { Aviso } from "../layout/Aviso";
 import { Enlace } from "../layout/Enlace";
 import { Pila } from "../layout/Pila";
 import { Prosa } from "../layout/Prosa";
 import { Rejilla } from "../layout/Rejilla";
-import { Tarjeta } from "../layout/Tarjeta";
+import { GraficoDeDistribucion } from "./inicio/GraficoDeDistribucion";
+import { GraficoDeSerie } from "./inicio/GraficoDeSerie";
+import { Indicadores } from "./inicio/Indicadores";
+import { MisCotizaciones } from "./inicio/MisCotizaciones";
+import { MisPendientes } from "./inicio/MisPendientes";
 
-type HealthState =
-  | { kind: "loading" }
-  | { kind: "ready"; report: HealthReport }
-  | { kind: "error"; message: string };
+type Estado =
+  | { fase: "cargando" }
+  | { fase: "listo"; datos: RespuestaDelInicio }
+  | { fase: "problema"; mensaje: string };
 
-/*
- * **La identidad ya no se lee acá, y eso es lo que T-3 entregó.**
- *
- * Esta pantalla tenía un `fetch("/api/yo")` a mano y una línea apagada que
- * decía «Entró …» o «Sin identidad reconocida». Se fue entera, por dos
- * razones distintas:
- *
- *  1. **Estaba en el lugar equivocado.** La identidad es del armazón y no de
- *     ninguna pantalla: dicha sólo en la portada, se perdía en cuanto
- *     alguien navegaba, que es cuando hace falta. Ahora vive en
- *     `src/layout/Esqueleto.tsx`, permanente y en toda pantalla, con el
- *     correo y con «Salir» al lado. Repetirla acá sería decir dos veces lo
- *     mismo en la misma pantalla, y peor: sin correo y sin salida.
- *  2. **Pedía por fuera del cliente HTTP.** El `fetch` a mano comparaba
- *     contra 200 y aplastaba los cuatro motivos de rechazo de la puerta en
- *     la misma nada. Lo que pide ahora es `src/api/identidad.ts`, sobre el
- *     `pedir` que ya distingue 403 y 503 y conserva el motivo.
- *
- * El `fetch` de `/api/health` de abajo **se queda a mano**, y la asimetría
- * es deliberada: `/api/health` corre antes de la puerta y su 503 es una
- * respuesta válida con cuerpo, o sea exactamente lo que `pedir` trataría
- * como `sin_acceso`. No es un cliente que falte; es una ruta que no sigue el
- * contrato de las demás porque está para contestar cuando las demás no
- * pueden.
- */
+const ALCANCES: { valor: AlcanceDelInicio; rotulo: string }[] = [
+  { valor: "mio", rotulo: "Mías" },
+  { valor: "bufete", rotulo: "Del bufete" },
+];
 
 export function Inicio() {
-  const [health, setHealth] = useState<HealthState>({ kind: "loading" });
+  const [alcance, setAlcance] = useState<AlcanceDelInicio>("mio");
+  const [estado, setEstado] = useState<Estado>({ fase: "cargando" });
+  /** Qué alcance muestran los números que están en pantalla. */
+  const [mostrado, setMostrado] = useState<AlcanceDelInicio | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
+    const control = new AbortController();
 
-    fetch("/api/health", { signal: controller.signal })
-      .then((response) => {
-        // 503 is a valid, meaningful answer here: the service reports itself
-        // degraded and the body still carries the report. Anything else is a
-        // transport or routing failure and must not be parsed as a report.
-        if (response.status !== 200 && response.status !== 503) {
-          throw new Error(`respuesta inesperada: HTTP ${String(response.status)}`);
-        }
-        return response.json() as Promise<HealthReport>;
-      })
-      .then((report) => setHealth({ kind: "ready", report }))
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setHealth({
-          kind: "error",
-          message: error instanceof Error ? error.message : String(error),
+    void cargarInicio(alcance, control.signal).then((resultado) => {
+      if (control.signal.aborted) return;
+
+      if (resultado.estado === "ok") {
+        setEstado({ fase: "listo", datos: resultado.valor });
+        setMostrado(alcance);
+      } else {
+        setEstado({
+          fase: "problema",
+          mensaje: textoDeProblema(resultado, "ese tablero"),
         });
-      });
+      }
+    });
 
-    return () => controller.abort();
-  }, []);
+    return () => {
+      control.abort();
+    };
+  }, [alcance]);
+
+  const actualizando = estado.fase === "listo" && mostrado !== alcance;
 
   return (
     <Pila espacio="holgado">
@@ -102,30 +120,84 @@ export function Inicio() {
           y cuándo. Un proceso se cierra cuando termina, y se reabre si hacía
           falta.
         </p>
+        <p>
+          Debajo, cada quien ve lo que le espera: los pendientes abiertos a su
+          nombre, sus borradores y sus cotizaciones emitidas que vencen pronto;
+          y cuántas cotizaciones se abrieron, se emitieron, se ganaron y se
+          perdieron este mes, las suyas o las de todo el bufete.
+        </p>
       </Prosa>
 
-      <section aria-labelledby="estado">
-        <Pila>
-          <h2 id="estado">Estado del sistema</h2>
-          {health.kind === "loading" && <p>Consultando…</p>}
-          {health.kind === "error" && (
-            <p>No se pudo consultar: {health.message}</p>
-          )}
-          {health.kind === "ready" && (
-            <Rejilla minimo="14rem">
-              <Tarjeta titulo="Servicio">
-                <p className="dato">{health.report.status}</p>
-              </Tarjeta>
-              <Tarjeta titulo="D1">
-                <p className="dato">{health.report.d1}</p>
-              </Tarjeta>
-              <Tarjeta titulo="Momento">
-                <p className="dato dato--largo">{health.report.timestamp}</p>
-              </Tarjeta>
-            </Rejilla>
-          )}
+      {estado.fase === "cargando" && <p>Consultando…</p>}
+
+      {estado.fase === "problema" && (
+        <Aviso tono="error">{estado.mensaje}</Aviso>
+      )}
+
+      {estado.fase === "listo" && (
+        <Pila espacio="holgado">
+          <Rejilla minimo="20rem">
+            <MisPendientes
+              pendientes={estado.datos.misPendientes}
+              hoy={estado.datos.hoy}
+            />
+            <MisCotizaciones
+              cotizaciones={estado.datos.misCotizaciones}
+              hoy={estado.datos.hoy}
+            />
+          </Rejilla>
+
+          <section aria-labelledby="el-mes" aria-busy={actualizando}>
+            <Pila>
+              <div className="inicio__cabecera">
+                <h2 id="el-mes">Cotizaciones del mes</h2>
+                <div
+                  className="inicio__alcance"
+                  role="group"
+                  aria-label="De quién se cuentan"
+                >
+                  {ALCANCES.map((opcion) => (
+                    <button
+                      key={opcion.valor}
+                      type="button"
+                      className={
+                        opcion.valor === alcance
+                          ? "boton boton--primario"
+                          : "boton"
+                      }
+                      aria-pressed={opcion.valor === alcance}
+                      onClick={() => {
+                        setAlcance(opcion.valor);
+                      }}
+                    >
+                      {opcion.rotulo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Indicadores mes={estado.datos.mes} />
+
+              <Rejilla minimo="20rem">
+                <section aria-labelledby="la-serie">
+                  <Pila>
+                    <h3 id="la-serie">Los últimos seis meses</h3>
+                    <GraficoDeSerie serie={estado.datos.serie} />
+                  </Pila>
+                </section>
+                <section aria-labelledby="la-distribucion">
+                  <Pila>
+                    <h3 id="la-distribucion">Dónde están hoy</h3>
+                    <GraficoDeDistribucion
+                      distribucion={estado.datos.distribucion}
+                    />
+                  </Pila>
+                </section>
+              </Rejilla>
+            </Pila>
+          </section>
         </Pila>
-      </section>
+      )}
     </Pila>
   );
 }

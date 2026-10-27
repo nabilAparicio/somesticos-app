@@ -40,7 +40,7 @@ entity or verb, no migration.
 - [x] **T-1** `GET /api/inicio`: new `worker/inicio/*` feature, contract types,
   wiring, `test/inicio-api.spec.ts` (RED first).
   Route: delegated (2+ non-trivial files).
-- [ ] **T-2** Inicio screen: pending lists, KPI row, scope toggle, two SVG
+- [x] **T-2** Inicio screen: pending lists, KPI row, scope toggle, two SVG
   charts, `test/inicio-ui.spec.ts`. Route: delegated (2+ non-trivial files).
 
 ## Acceptance
@@ -67,4 +67,21 @@ entity or verb, no migration.
   bitácora row; unknown `alcance` is 422 `tipo_invalido`, absent is `mio`;
   the response carries `hoy` (Panama) so the screen groups against the same
   day the server used. Panama offset is derived from `finDelDiaEnPanama`,
-  not rewritten.
+  not rewritten. Commit `62bec3a`.
+- T-2 implemented, **not committed — blocked on an edit surface**.
+  RED: `pnpm vitest run test/inicio-ui.spec.ts` failed (module missing).
+  GREEN: 18/18; full `pnpm test` 51 files / 2549 tests; `pnpm lint` clean.
+  `pnpm typecheck` fails with one error, TS6307: `test/tsconfig.json` lists
+  pure `src/` modules one by one and needs
+  `"../src/pantallas/inicio/presentacion.ts"`, a file outside the authorized
+  surfaces. Parent added it; `pnpm typecheck` exit 0, `pnpm lint` exit 0,
+  inicio specs 33/33.
+  Decisions: a fourth pendientes group, "Más adelante o sin fecha", so no open
+  pendiente is hidden; grouped (not stacked) columns, since the four counts
+  are not additive; the distribution is HTML text plus a drawn bar; state
+  palette = reference categorical slots 1-4, validated on `#ffffff` (CVD ΔE
+  9.1, normal ΔE 22.9; ganada/perdida below 3:1, relieved by legend, labels
+  and the table view); the `/api/health` cards left Inicio (no e2e asserts
+  them; the `Procesos del bufete` heading the e2e checks stays).
+- T-2 committed as `feat: el inicio muestra mis pendientes, el mes y sus gráficos (T-2)`.
+- Not yet seen in a browser: e2e/dev server share state with the other session.
