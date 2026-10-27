@@ -715,8 +715,17 @@ describe("la validación es total: devuelve, nunca tira", () => {
     expect(typeof validacion.ok).toBe("boolean");
   });
 
+  /*
+   * El carácter nulo va escrito `\u0000` y **no** como el byte crudo, que es
+   * lo que había. Los dos producen el mismo carácter en ejecución, así que la
+   * prueba afirma exactamente lo mismo; lo que cambia es el archivo. Un NUL
+   * literal en el fuente lo vuelve binario para `rg`, `grep` y `diff`: la
+   * búsqueda deja de entrar acá y el `git diff` muestra «Binary files
+   * differ». Y en el editor no se ve, así que nadie entiende por qué su
+   * búsqueda no encuentra lo que está mirando.
+   */
   it("no tira con un texto que no es JSON, por largo o raro que sea", () => {
-    for (const texto of ["", " ", "{".repeat(5000), "ñ".repeat(10000)]) {
+    for (const texto of ["", "\u0000", "{".repeat(5000), "ñ".repeat(10000)]) {
       expect(typeof validarTextoDePropuesta(texto).ok).toBe("boolean");
     }
   });
