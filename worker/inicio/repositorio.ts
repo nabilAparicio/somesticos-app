@@ -9,12 +9,12 @@
  * I-8 (`docs/diseno.md` §5) vive en cada consulta: todas filtran por
  * `tenant_id`, y las uniones lo repiten en el `ON`, igual que T-7.
  *
- * ## Cinco consultas, ninguna por fila
+ * ## Cuatro consultas, ninguna por fila
  *
- * Los pendientes, las cotizaciones por atender, los borradores por mes, las
- * transiciones por mes y la distribución. Cada una es **una** consulta que
- * agrega en la base; ninguna se repite por proceso ni por mes. Corren en
- * paralelo porque no dependen entre sí.
+ * Los pendientes, las cotizaciones por atender, los borradores del mes y las
+ * transiciones del mes. Cada una es **una** consulta que agrega en la base;
+ * ninguna se repite por proceso. Corren en paralelo porque no dependen entre
+ * sí.
  *
  * ## De dónde sale cada número
  *
@@ -36,7 +36,6 @@
 import type {
   AlcanceDelInicio,
   CotizacionDelInicio,
-  CuentaPorEstado,
   EstadoDeCotizacion,
   MesDelInicio,
   PendienteDelInicio,
@@ -48,7 +47,6 @@ import {
   AL_RELOJ_DE_PANAMA,
   DIAS_DE_AVISO,
   cuentaVacia,
-  mesesDeLaSerie,
   sumarDias,
   tasaDeCierre,
 } from "./dominio";
@@ -80,7 +78,6 @@ interface FilaDeCotizacion {
 }
 
 interface FilaDeConteo {
-  mes: string;
   estado: EstadoDeCotizacion;
   cuantas: number;
 }
@@ -168,16 +165,14 @@ export function inicioSobreD1(base: BaseDeDatos): ServicioDelInicio {
   }
 
   /**
-   * Los borradores abiertos y las transiciones, por mes de Panamá y por
-   * estado, de los meses de la serie. Dos consultas que agregan, unidas en
-   * una lista de conteos.
+   * Los borradores abiertos y las transiciones del mes de Panamá, por
+   * estado. Dos consultas que agregan, unidas en una lista de conteos.
    */
-  async function conteosPorMes(
+  async function conteosDelMes(
     tenantId: string,
     usuarioId: string,
     alcance: AlcanceDelInicio,
-    desde: string,
-    hasta: string,
+    mes: string,
   ): Promise<FilaDeConteo[]> {
     const mio = alcance === "mio";
     const deQuien = mio ? " AND q.creada_por = ?" : "";
@@ -185,27 +180,17 @@ export function inicioSobreD1(base: BaseDeDatos): ServicioDelInicio {
 
     const borradores = db
       .prepare(
-        "SELECT strftime('%Y-%m', q.creada_en, ?) AS mes," +
-          " 'borrador' AS estado, count(*) AS cuantas FROM cotizacion q" +
+        "SELECT 'borrador' AS estado, count(*) AS cuantas FROM cotizacion q" +
           " WHERE q.tenant_id = ?" +
           deQuien +
-          "   AND strftime('%Y-%m', q.creada_en, ?) BETWEEN ? AND ?" +
-          " GROUP BY mes",
+          "   AND strftime('%Y-%m', q.creada_en, ?) = ?",
       )
-      .bind(
-        AL_RELOJ_DE_PANAMA,
-        tenantId,
-        ...quien,
-        AL_RELOJ_DE_PANAMA,
-        desde,
-        hasta,
-      )
+      .bind(tenantId, ...quien, AL_RELOJ_DE_PANAMA, mes)
       .all<FilaDeConteo>();
 
     const transiciones = db
       .prepare(
-        "SELECT strftime('%Y-%m', b.ocurrido_en, ?) AS mes," +
-          ` ${ESTADO_DE_LA_ACCION} AS estado,` +
+        `SELECT ${ESTADO_DE_LA_ACCION} AS estado,` +
           " count(DISTINCT b.entidad_id) AS cuantas" +
           " FROM bitacora b" +
           " JOIN cotizacion q ON q.id = b.entidad_id" +
@@ -213,77 +198,30 @@ export function inicioSobreD1(base: BaseDeDatos): ServicioDelInicio {
           " WHERE b.tenant_id = ? AND b.entidad = 'cotizacion'" +
           "   AND b.accion IN ('emitido', 'ganado', 'perdido')" +
           deQuien +
-          "   AND strftime('%Y-%m', b.ocurrido_en, ?) BETWEEN ? AND ?" +
-          " GROUP BY mes, b.accion",
+          "   AND strftime('%Y-%m', b.ocurrido_en, ?) = ?" +
+          " GROUP BY b.accion",
       )
-      .bind(
-        AL_RELOJ_DE_PANAMA,
-        tenantId,
-        ...quien,
-        AL_RELOJ_DE_PANAMA,
-        desde,
-        hasta,
-      )
+      .bind(tenantId, ...quien, AL_RELOJ_DE_PANAMA, mes)
       .all<FilaDeConteo>();
 
     const [a, b] = await Promise.all([borradores, transiciones]);
     return [...a.results, ...b.results];
   }
 
-  /** Cuántas hay hoy en cada estado, sin importar cuándo nacieron. */
-  async function distribucion(
-    tenantId: string,
-    usuarioId: string,
-    alcance: AlcanceDelInicio,
-  ): Promise<CuentaPorEstado> {
-    const mio = alcance === "mio";
-    const { results } = await db
-      .prepare(
-        "SELECT q.estado, count(*) AS cuantas FROM cotizacion q" +
-          " WHERE q.tenant_id = ?" +
-          (mio ? " AND q.creada_por = ?" : "") +
-          " GROUP BY q.estado",
-      )
-      .bind(tenantId, ...(mio ? [usuarioId] : []))
-      .all<{ estado: EstadoDeCotizacion; cuantas: number }>();
-
-    const cuenta = cuentaVacia();
-    for (const fila of results) cuenta[fila.estado] = fila.cuantas;
-    return cuenta;
-  }
-
   return {
     async resumen(tenantId, usuarioId, alcance, ahora) {
       const hoy = hoyEnPanama(ahora);
-      const meses = mesesDeLaSerie(ahora);
+      const mes = hoy.slice(0, 7);
 
-      const [pendientes, cotizaciones, conteos, actual] = await Promise.all([
+      const [pendientes, cotizaciones, conteos] = await Promise.all([
         misPendientes(tenantId, usuarioId),
         misCotizaciones(tenantId, usuarioId, hoy),
-        conteosPorMes(
-          tenantId,
-          usuarioId,
-          alcance,
-          meses[0],
-          meses[meses.length - 1],
-        ),
-        distribucion(tenantId, usuarioId, alcance),
+        conteosDelMes(tenantId, usuarioId, alcance, mes),
       ]);
 
-      // Los meses sin ninguna fila también van, en cero: una serie con
-      // huecos dibuja un mes vacío como si no existiera.
-      const porMes = new Map<string, MesDelInicio>(
-        meses.map((mes) => [mes, { mes, ...cuentaVacia() }]),
-      );
-      for (const fila of conteos) {
-        const mes = porMes.get(fila.mes);
-        if (mes !== undefined) mes[fila.estado] = fila.cuantas;
-      }
-
-      const serie = meses.map(
-        (mes) => porMes.get(mes) ?? { mes, ...cuentaVacia() },
-      );
-      const delMes = serie[serie.length - 1];
+      // Un estado sin ninguna fila también va, en cero.
+      const delMes: MesDelInicio = { mes, ...cuentaVacia() };
+      for (const fila of conteos) delMes[fila.estado] = fila.cuantas;
 
       return {
         alcance,
@@ -291,8 +229,6 @@ export function inicioSobreD1(base: BaseDeDatos): ServicioDelInicio {
         misPendientes: pendientes,
         misCotizaciones: cotizaciones,
         mes: { ...delMes, tasaDeCierre: tasaDeCierre(delMes) },
-        serie,
-        distribucion: actual,
       };
     },
   };

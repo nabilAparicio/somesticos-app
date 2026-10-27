@@ -7,8 +7,17 @@
  * en `src/pantallas/inicio/`, y lo que se decide sin React en su
  * `presentacion.ts`, con pruebas.
  *
+ * **Primero el mes, después lo mío.** Los indicadores del mes abren la
+ * pantalla; debajo, mis pendientes y mis cotizaciones por atender, lado a
+ * lado. Los gráficos de seis meses y de la distribución se fueron: las
+ * tarjetas ya dicen lo mismo, y dos dibujos que repiten cuatro números son
+ * ruido entre la persona y lo que tiene que hacer.
+ *
+ * Sin título visible: el armazón ya dice dónde se está. El `h1` queda para
+ * los lectores de pantalla, que navegan por encabezados.
+ *
  * **El alcance cambia los números, no lo mío.** «Mías / Del bufete» mueve
- * los indicadores y los dos gráficos; mis pendientes y mis cotizaciones son
+ * los indicadores; mis pendientes y mis cotizaciones son
  * los míos en los dos casos, porque así lo contesta el servidor.
  *
  * Al cambiar de alcance **se queda lo que ya estaba** mientras llega lo
@@ -36,8 +45,6 @@ import { textoDeProblema } from "../api/peticiones";
 import { Aviso } from "../layout/Aviso";
 import { Pila } from "../layout/Pila";
 import { Rejilla } from "../layout/Rejilla";
-import { GraficoDeDistribucion } from "./inicio/GraficoDeDistribucion";
-import { GraficoDeSerie } from "./inicio/GraficoDeSerie";
 import { Indicadores } from "./inicio/Indicadores";
 import { MisCotizaciones } from "./inicio/MisCotizaciones";
 import { MisPendientes } from "./inicio/MisPendientes";
@@ -84,9 +91,7 @@ export function Inicio() {
 
   return (
     <Pila espacio="holgado">
-      <header>
-        <h1>Procesos del bufete</h1>
-      </header>
+      <h1 className="oculto-visualmente">Inicio</h1>
 
       {estado.fase === "cargando" && <p>Consultando…</p>}
 
@@ -96,17 +101,6 @@ export function Inicio() {
 
       {estado.fase === "listo" && (
         <Pila espacio="holgado">
-          <Rejilla minimo="20rem">
-            <MisPendientes
-              pendientes={estado.datos.misPendientes}
-              hoy={estado.datos.hoy}
-            />
-            <MisCotizaciones
-              cotizaciones={estado.datos.misCotizaciones}
-              hoy={estado.datos.hoy}
-            />
-          </Rejilla>
-
           <section aria-labelledby="el-mes" aria-busy={actualizando}>
             <Pila>
               <div className="inicio__cabecera">
@@ -137,25 +131,19 @@ export function Inicio() {
               </div>
 
               <Indicadores mes={estado.datos.mes} />
-
-              <Rejilla minimo="20rem">
-                <section aria-labelledby="la-serie">
-                  <Pila>
-                    <h3 id="la-serie">Los últimos seis meses</h3>
-                    <GraficoDeSerie serie={estado.datos.serie} />
-                  </Pila>
-                </section>
-                <section aria-labelledby="la-distribucion">
-                  <Pila>
-                    <h3 id="la-distribucion">Dónde están hoy</h3>
-                    <GraficoDeDistribucion
-                      distribucion={estado.datos.distribucion}
-                    />
-                  </Pila>
-                </section>
-              </Rejilla>
             </Pila>
           </section>
+
+          <Rejilla minimo="20rem">
+            <MisPendientes
+              pendientes={estado.datos.misPendientes}
+              hoy={estado.datos.hoy}
+            />
+            <MisCotizaciones
+              cotizaciones={estado.datos.misCotizaciones}
+              hoy={estado.datos.hoy}
+            />
+          </Rejilla>
         </Pila>
       )}
     </Pila>

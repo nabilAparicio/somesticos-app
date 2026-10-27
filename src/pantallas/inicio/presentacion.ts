@@ -1,7 +1,7 @@
 /**
  * Lo que el tablero de Inicio decide sin React: cómo se agrupan los
- * pendientes, qué se dice de cada cotización y la geometría de los dos
- * gráficos. Lo prueba `test/inicio-ui.spec.ts`.
+ * pendientes, qué se dice de cada cotización y cómo se nombran los números
+ * del mes. Lo prueba `test/inicio-ui.spec.ts`.
  *
  * ## «Hoy» es el de Panamá, y lo pone el servidor
  *
@@ -16,16 +16,14 @@
 import type {
   Cotizacion,
   CotizacionDelInicio,
-  CuentaPorEstado,
   EstadoDeCotizacion,
-  MesDelInicio,
   PendienteDelInicio,
 } from "../../../worker/contract";
 import { VACIO, diaLegible } from "../../formatos";
 import { enlaceDe } from "../../ruteo";
 import { estadoLegible } from "../cotizaciones/presentacion";
 
-/** Los cuatro estados en el orden del ciclo de vida. El de toda leyenda. */
+/** Los cuatro estados en el orden del ciclo de vida. El de los indicadores. */
 export const ESTADOS = [
   "borrador",
   "emitida",
@@ -131,161 +129,25 @@ export function tasaLegible(tasa: number | null): string {
 }
 
 const MESES = [
-  ["ene", "enero"],
-  ["feb", "febrero"],
-  ["mar", "marzo"],
-  ["abr", "abril"],
-  ["may", "mayo"],
-  ["jun", "junio"],
-  ["jul", "julio"],
-  ["ago", "agosto"],
-  ["sep", "septiembre"],
-  ["oct", "octubre"],
-  ["nov", "noviembre"],
-  ["dic", "diciembre"],
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
 ] as const;
 
-function partesDe(mes: string): { anio: string; nombres: readonly string[] } {
-  const [anio, numero] = mes.split("-");
-  return { anio, nombres: MESES[Number(numero) - 1] ?? [mes, mes] };
-}
-
 /**
- * El mes del eje: tres letras. Escritas a mano y no con `Intl`, porque
- * según el motor `Intl` dice «oct» o «oct.», y el eje no puede cambiar de
- * ortografía entre un navegador y otro.
+ * El mes de los indicadores, «octubre de 2026». Escrito a mano y no con
+ * `Intl`, para que no cambie de ortografía entre un navegador y otro.
  */
-export function mesCorto(mes: string): string {
-  return partesDe(mes).nombres[0];
-}
-
 export function mesLargo(mes: string): string {
-  const { anio, nombres } = partesDe(mes);
-  return `${nombres[1]} de ${anio}`;
-}
-
-// --- Geometría de los gráficos ---------------------------------------------
-
-/**
- * Las marcas del eje: de cero a un tope redondo, con paso 1, 2 o 5 por una
- * potencia de diez, y no más de cinco intervalos. Sin datos el eje va de 0
- * a 1: un eje de 0 a 0 no tiene dónde dibujar nada.
- */
-export function marcasDelEje(maximo: number): number[] {
-  const tope = Math.max(1, maximo);
-  let paso = 1;
-  for (let potencia = 1; ; potencia *= 10) {
-    const elegido = [1, 2, 5]
-      .map((m) => m * potencia)
-      .find((candidato) => Math.ceil(tope / candidato) <= 5);
-    if (elegido !== undefined) {
-      paso = elegido;
-      break;
-    }
-  }
-  const intervalos = Math.ceil(tope / paso);
-  return Array.from({ length: intervalos + 1 }, (_, i) => i * paso);
-}
-
-export interface Lienzo {
-  ancho: number;
-  alto: number;
-}
-
-export interface BarraDeLaSerie {
-  mes: string;
-  estado: EstadoDeCotizacion;
-  valor: number;
-  x: number;
-  y: number;
-  ancho: number;
-  alto: number;
-}
-
-/** El tope de grosor de una barra: nunca llena su hueco. */
-const GROSOR_MAXIMO = 24;
-/** El hueco de superficie entre barras vecinas del mismo mes. */
-const SEPARACION = 2;
-
-/**
- * Columnas agrupadas: un grupo por mes y, dentro, una barra por estado en
- * el orden de `ESTADOS`. Agrupadas y no apiladas porque los cuatro números
- * son de naturaleza distinta —un borrador abierto y una cotización ganada
- * no se suman— y apilarlos dibujaría un total que no significa nada.
- *
- * Las coordenadas son las del área de trazado: `y` crece hacia abajo y la
- * línea base es `lienzo.alto`.
- */
-export function barrasDeLaSerie(
-  serie: readonly MesDelInicio[],
-  lienzo: Lienzo,
-): BarraDeLaSerie[] {
-  if (serie.length === 0) return [];
-
-  const maximo = Math.max(0, ...serie.flatMap((m) => ESTADOS.map((e) => m[e])));
-  const marcas = marcasDelEje(maximo);
-  const tope = marcas[marcas.length - 1];
-
-  const hueco = lienzo.ancho / serie.length;
-  // Un tercio del hueco queda de aire entre meses.
-  const grosor = Math.min(
-    GROSOR_MAXIMO,
-    (hueco * (2 / 3) - SEPARACION * (ESTADOS.length - 1)) / ESTADOS.length,
-  );
-  const anchoDelGrupo =
-    grosor * ESTADOS.length + SEPARACION * (ESTADOS.length - 1);
-
-  return serie.flatMap((mes, i) => {
-    const inicio = i * hueco + (hueco - anchoDelGrupo) / 2;
-    return ESTADOS.map((estado, j) => {
-      const valor = mes[estado];
-      const alto = (valor / tope) * lienzo.alto;
-      return {
-        mes: mes.mes,
-        estado,
-        valor,
-        x: inicio + j * (grosor + SEPARACION),
-        y: lienzo.alto - alto,
-        ancho: grosor,
-        alto,
-      };
-    });
-  });
-}
-
-export interface BarraDeLaDistribucion {
-  estado: EstadoDeCotizacion;
-  valor: number;
-  largo: number;
-}
-
-/**
- * Barras horizontales, una por estado. La más larga llena `ancho`; sin
- * ninguna cotización todas miden cero en vez de dividir por cero.
- */
-export function barrasDeLaDistribucion(
-  cuenta: CuentaPorEstado,
-  ancho: number,
-): BarraDeLaDistribucion[] {
-  const maximo = Math.max(...ESTADOS.map((e) => cuenta[e]));
-  return ESTADOS.map((estado) => ({
-    estado,
-    valor: cuenta[estado],
-    largo: maximo === 0 ? 0 : (cuenta[estado] / maximo) * ancho,
-  }));
-}
-
-export function descripcionDeLaSerie(serie: readonly MesDelInicio[]): string {
-  if (serie.length === 0) return "Cotizaciones por estado: sin meses.";
-  return (
-    `Cotizaciones por estado de ${mesLargo(serie[0].mes)}` +
-    ` a ${mesLargo(serie[serie.length - 1].mes)}.`
-  );
-}
-
-export function descripcionDeLaDistribucion(cuenta: CuentaPorEstado): string {
-  const partes = ESTADOS.map(
-    (estado) => `${etiquetaDeEstado(estado)} ${String(cuenta[estado])}`,
-  );
-  return `Cotizaciones por estado hoy: ${partes.join(", ")}.`;
+  const [anio, numero] = mes.split("-");
+  return `${MESES[Number(numero) - 1] ?? mes} de ${anio}`;
 }

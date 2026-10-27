@@ -57,7 +57,7 @@ export async function rutasDelInicio(
   }
 
   // El reloj se lee una sola vez por petición: «hoy» y «este mes» tienen que
-  // ser el mismo instante para las cinco consultas.
+  // ser el mismo instante para las cuatro consultas.
   const cuerpo: RespuestaDelInicio = await servicio.resumen(
     tenantId,
     identidad.usuarioId,

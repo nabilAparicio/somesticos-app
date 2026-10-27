@@ -3075,8 +3075,4 @@ export interface RespuestaDelInicio {
     /** ganadas / (ganadas + perdidas) del mes; nula si no hubo ninguna. */
     tasaDeCierre: number | null;
   };
-  /** Los últimos seis meses, el más viejo primero; el último es `mes`. */
-  serie: MesDelInicio[];
-  /** Cuántas cotizaciones están hoy en cada estado. */
-  distribucion: CuentaPorEstado;
 }

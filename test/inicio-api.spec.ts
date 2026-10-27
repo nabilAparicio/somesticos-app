@@ -72,8 +72,6 @@ interface InicioEnElCable {
     venceEn: string | null;
   }[];
   mes: MesEnElCable & { tasaDeCierre: number | null };
-  serie: MesEnElCable[];
-  distribucion: CuentaEnElCable;
 }
 
 let yoId: string;
@@ -125,12 +123,6 @@ function hoy(): string {
 
 function mesDe(dia: string): string {
   return dia.slice(0, 7);
-}
-
-function mesAnterior(mes: string): string {
-  const [anio, numero] = mes.split("-").map(Number);
-  const fecha = new Date(Date.UTC(anio, numero - 2, 1));
-  return fecha.toISOString().slice(0, 7);
 }
 
 function sumarDias(dia: string, dias: number): string {
@@ -541,7 +533,7 @@ describe("mis cotizaciones por atender", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3, 4 y 5 · El mes, la serie y la distribución
+// 3, 4 y 5 · El mes y el alcance
 // ---------------------------------------------------------------------------
 
 describe("el mes cuenta los cuatro estados por separado", () => {
@@ -572,7 +564,6 @@ describe("el mes cuenta los cuatro estados por separado", () => {
 
   it("el mes es el de Panamá: las 23:59 del último día son del mes que termina", async () => {
     const mes = mesDe(hoy());
-    const anterior = mesAnterior(mes);
 
     await cotizacion({ estado: "borrador", creadaEn: inicioDelMes(mes) });
     await cotizacion({ estado: "borrador", creadaEn: justoAntesDelMes(mes) });
@@ -581,16 +572,14 @@ describe("el mes cuenta los cuatro estados por separado", () => {
 
     const cuerpo = await inicio("mio");
 
-    expect(cuerpo.mes.borrador).toBe(1);
-    expect(cuerpo.mes.ganada).toBe(0);
-
-    const delAnterior = cuerpo.serie.find((m) => m.mes === anterior);
-    expect(delAnterior).toEqual({
-      mes: anterior,
+    // Leídos en UTC, los dos de las 04:59Z caerían en este mes.
+    expect(cuerpo.mes).toEqual({
+      mes,
       borrador: 1,
       emitida: 0,
-      ganada: 1,
+      ganada: 0,
       perdida: 0,
+      tasaDeCierre: null,
     });
   });
 
@@ -604,28 +593,7 @@ describe("el mes cuenta los cuatro estados por separado", () => {
     expect(cuerpo.mes.emitida).toBe(1);
     expect(cuerpo.mes.tasaDeCierre).toBeNull();
   });
-
-  it("la serie son los últimos seis meses, el más viejo primero", async () => {
-    const mes = mesDe(hoy());
-    const esperados = [mes];
-    while (esperados.length < 6) esperados.unshift(mesAnterior(esperados[0]));
-
-    const viejo = await cotizacion({ estado: "perdida" });
-    // Siete meses atrás: fuera de la serie.
-    await transicion(viejo, "perdido", inicioDelMes(mesAnterior(esperados[0])));
-
-    const { serie, mes: actual } = await inicio("mio");
-
-    expect(serie.map((m) => m.mes)).toEqual(esperados);
-    expect(serie.every((m) => m.perdida === 0)).toBe(true);
-    // El mes en curso es el último de la serie, con los mismos números.
-    expect(serie[5]).toEqual(cuentaYMes(actual));
-  });
 });
-
-function cuentaYMes(mes: MesEnElCable): MesEnElCable {
-  return { mes: mes.mes, ...cuentaDe(mes) };
-}
 
 describe("el alcance", () => {
   it("«mías» cuenta lo que yo creé; «del bufete» suma al colega y nunca al vecino", async () => {
@@ -658,7 +626,6 @@ describe("el alcance", () => {
     const bufete = await inicio("bufete");
 
     expect(cuentaDe(mio.mes)).toEqual({ borrador: 1, emitida: 0, ganada: 0, perdida: 0 });
-    expect(mio.distribucion).toEqual({ borrador: 1, emitida: 0, ganada: 0, perdida: 0 });
 
     expect(restar(cuentaDe(bufete.mes), cuentaDe(antes.mes))).toEqual({
       borrador: 1,
@@ -666,21 +633,5 @@ describe("el alcance", () => {
       ganada: 1,
       perdida: 0,
     });
-    expect(restar(bufete.distribucion, antes.distribucion)).toEqual({
-      borrador: 1,
-      emitida: 0,
-      ganada: 1,
-      perdida: 0,
-    });
-  });
-
-  it("la distribución es el estado de hoy de cada cotización, sin importar cuándo nació", async () => {
-    await cotizacion({ estado: "borrador" });
-    await cotizacion({ estado: "emitida" });
-    await cotizacion({ estado: "emitida" });
-    await cotizacion({ estado: "ganada" });
-
-    const { distribucion } = await inicio("mio");
-    expect(distribucion).toEqual({ borrador: 1, emitida: 2, ganada: 1, perdida: 0 });
   });
 });

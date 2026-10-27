@@ -11,7 +11,7 @@
  */
 
 import type { AlcanceDelInicio, CuentaPorEstado } from "../contract";
-import { finDelDiaEnPanama, hoyEnPanama } from "../db/momentos";
+import { finDelDiaEnPanama } from "../db/momentos";
 
 const UNA_HORA = 3_600_000;
 
@@ -32,9 +32,6 @@ const HORAS_DETRAS_DE_UTC =
  */
 export const AL_RELOJ_DE_PANAMA = `-${String(HORAS_DETRAS_DE_UTC)} hours`;
 
-/** Cuántos meses mira la serie, contando el actual. */
-export const MESES_DE_LA_SERIE = 6;
-
 /** Cuántos días hacia adelante «vence pronto» una cotización emitida. */
 export const DIAS_DE_AVISO = 7;
 
@@ -50,21 +47,6 @@ export function sumarDias(dia: string, dias: number): string {
   const fecha = new Date(`${dia}T12:00:00.000Z`);
   fecha.setUTCDate(fecha.getUTCDate() + dias);
   return fecha.toISOString().slice(0, 10);
-}
-
-/**
- * Los `AAAA-MM` de los últimos `MESES_DE_LA_SERIE` meses de Panamá, el más
- * viejo primero y el actual al final.
- */
-export function mesesDeLaSerie(ahora: Date): string[] {
-  const [anio, mes] = hoyEnPanama(ahora).split("-").map(Number);
-  const meses: string[] = [];
-  for (let atras = MESES_DE_LA_SERIE - 1; atras >= 0; atras -= 1) {
-    meses.push(
-      new Date(Date.UTC(anio, mes - 1 - atras, 1)).toISOString().slice(0, 7),
-    );
-  }
-  return meses;
 }
 
 /**

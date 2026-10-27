@@ -3,16 +3,16 @@
  *
  * ## La paleta de los cuatro estados
  *
- * Una sola, y la usan todas las piezas del tablero —indicadores, leyenda, las
- * dos series de barras y la marca de cada cotización—: un estado tiene un
+ * Una sola, y la usan las dos piezas del tablero que hablan de estados —el
+ * filo de cada indicador y la marca de cada cotización—: un estado tiene un
  * color y lo tiene en todas partes.
  *
  * Son los cuatro primeros tonos categóricos de la paleta de referencia de
  * gráficos, en orden fijo, validados contra la superficie blanca de las
  * tarjetas: separación para daltonismo ΔE 9,1 (mínimo 8) y visión normal
  * ΔE 22,9 (mínimo 15) entre vecinos. Ganada y perdida quedan por debajo de
- * 3:1 de contraste, y por eso **el color nunca va solo**: siempre hay leyenda
- * o etiqueta al lado, y el gráfico de seis meses trae su tabla.
+ * 3:1 de contraste, y por eso **el color nunca va solo**: el indicador lleva
+ * el estado en su título y la marca va junto a la etiqueta.
  *
  * No son los colores de «bien» y «mal» a propósito: ganada y perdida son
  * desenlaces, no alertas, y pintarlas de verde y rojo convertiría el tablero
@@ -125,125 +125,4 @@
   color: var(--color-tinta);
   font-size: var(--texto-2xl);
   font-variant-numeric: tabular-nums;
-}
-
-/* ---------- Gráficos ---------- */
-
-.inicio__grafico {
-  display: flex;
-  flex-direction: column;
-  gap: var(--espacio-s);
-  min-width: 0;
-  margin: 0;
-}
-
-.inicio__leyenda {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--espacio-xs) var(--espacio-m);
-  margin: 0;
-  padding: 0;
-  color: var(--color-tinta-apagada);
-  font-size: var(--texto-s);
-  list-style: none;
-}
-
-.inicio__lienzo {
-  display: block;
-  inline-size: 100%;
-  block-size: auto;
-}
-
-.inicio__reticula {
-  stroke: var(--color-borde);
-  stroke-width: 1;
-}
-
-.inicio__eje {
-  fill: var(--color-tinta-apagada);
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.inicio__barra--borrador {
-  fill: var(--estado-borrador);
-  background: var(--estado-borrador);
-}
-
-.inicio__barra--emitida {
-  fill: var(--estado-emitida);
-  background: var(--estado-emitida);
-}
-
-.inicio__barra--ganada {
-  fill: var(--estado-ganada);
-  background: var(--estado-ganada);
-}
-
-.inicio__barra--perdida {
-  fill: var(--estado-perdida);
-  background: var(--estado-perdida);
-}
-
-.inicio__barra:hover {
-  opacity: 0.8;
-}
-
-.inicio__numeros summary {
-  color: var(--color-tinta-apagada);
-  font-size: var(--texto-s);
-  cursor: pointer;
-}
-
-.inicio__numeros[open] summary {
-  margin-block-end: var(--espacio-xs);
-}
-
-/* La distribución: nombre, barra y número en una fila. */
-.inicio__distribucion {
-  display: flex;
-  flex-direction: column;
-  gap: var(--espacio-s);
-  margin: 0;
-}
-
-.inicio__distribucion-fila {
-  display: grid;
-  grid-template-columns: minmax(5rem, auto) 1fr;
-  align-items: center;
-  gap: var(--espacio-s);
-}
-
-.inicio__distribucion-fila dt {
-  color: var(--color-tinta-apagada);
-  font-size: var(--texto-s);
-}
-
-.inicio__distribucion-fila dd {
-  display: flex;
-  align-items: center;
-  gap: var(--espacio-xs);
-  min-width: 0;
-  margin: 0;
-}
-
-.inicio__pista {
-  flex: 1;
-  min-width: 0;
-}
-
-.inicio__barra-h {
-  display: block;
-  /* El grosor tope de una barra: nunca llena su hueco. */
-  block-size: 1.25rem;
-  /* Extremo de datos redondeado, base recta contra el eje. */
-  border-start-end-radius: 4px;
-  border-end-end-radius: 4px;
-}
-
-.inicio__valor {
-  min-inline-size: 2ch;
-  color: var(--color-tinta);
-  font-variant-numeric: tabular-nums;
-  text-align: end;
 }

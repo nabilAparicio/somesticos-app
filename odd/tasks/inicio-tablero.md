@@ -17,8 +17,8 @@ quotations moved this month.
 - **Monthly KPIs by state, the four kept separate**: `borrador`, `emitida`,
   `ganada`, `perdida` (counts only). Win rate = ganadas / (ganadas + perdidas).
   Scope toggle: mine / whole firm.
-- **Charts**: last 6 months by state (bars), and the current distribution by
-  state.
+- ~~**Charts**: last 6 months by state, and the current distribution~~ —
+  removed in T-3 (user decision): the KPI cards already carry the numbers.
 
 Out of scope: **no money KPIs** (user decision), no roles, no new bitácora
 entity or verb, no migration.
@@ -42,6 +42,12 @@ entity or verb, no migration.
   Route: delegated (2+ non-trivial files).
 - [x] **T-2** Inicio screen: pending lists, KPI row, scope toggle, two SVG
   charts, `test/inicio-ui.spec.ts`. Route: delegated (2+ non-trivial files).
+- [x] **T-3** Inicio opens with the month: drop both charts (screen, helpers,
+  CSS, UI tests) and the dead `serie` / `distribucion` from the API end to
+  end; "Cotizaciones del mes" first, then the two "mis" lists side by side;
+  no visible title, a visually hidden `<h1>Inicio</h1>`; e2e assertion in
+  `e2e/identidad.spec.ts` follows the new heading. Route: delegated (2+
+  non-trivial files).
 
 ## Acceptance
 
@@ -85,3 +91,16 @@ entity or verb, no migration.
   them; the `Procesos del bufete` heading the e2e checks stays).
 - T-2 committed as `feat: el inicio muestra mis pendientes, el mes y sus gráficos (T-2)`.
 - Not yet seen in a browser: e2e/dev server share state with the other session.
+- T-3 done (delegated writer). User decisions: the charts repeated what the
+  KPI cards say, so they left the screen and the API (`serie`,
+  `distribucion`, `mesesDeLaSerie`, the distribution query; the month query
+  now matches one Panama month with `=`). Order: month first, then mis
+  pendientes / mis cotizaciones in the same two-column `Rejilla`. The title
+  "Procesos del bufete" left; `h1.oculto-visualmente` "Inicio" stays for
+  screen-reader heading navigation. The 4-colour palette stays: KPI card
+  edges and the cotizaciones list marks still use it. Panama-boundary API
+  test now asserts the whole current month (the two 04:59Z rows would count
+  if read in UTC) instead of reading the previous month from `serie`.
+  Checks: `pnpm test` 51 files / 2538 tests green (inicio specs 22/22);
+  `pnpm typecheck` exit 0; `pnpm lint` exit 0. e2e not run (shared state).
+  Commit: `refactor: el inicio abre con el mes y suelta los gráficos (T-3)`.
