@@ -232,6 +232,11 @@ ahí, y lo coherente sería el mismo asterisco. No se cambia en esta tarea
 porque es una pantalla entregada con sus pruebas y el usuario habló del flujo
 de cotización; queda anotado para preguntarlo.
 
+> **Preguntado y cerrado (T-2 ter).** El usuario lo pidió al ver las dos
+> pantallas juntas. `/catalogos/precios` dejó de decir «sugerido» y pasó a la
+> misma marca y la misma leyenda que la vista expandida. Ver abajo, en
+> «Progreso».
+
 ## Entrega
 
 Tres commits de unidad de trabajo en `feat/r1-fundacion`, uno por tarea, más
@@ -601,10 +606,10 @@ dice la verdad en los tres casos.
   tabla angosta y el `.tabla-contenedor` de la casa ya la implementa, pero es la
   acción principal de esa fila: si molesta, la salida es apilar las celdas bajo
   `@container tabla`, que es una decisión de dibujo sobre una pantalla entregada.
-- **`/catalogos/precios` sigue diciendo «sugerido»**, y sigue siendo la pregunta
-  abierta de más arriba. Lo que esta tarea garantiza es que la palabra no está en
-  el vocabulario de la cotización, y hay una prueba que recorre los textos
-  buscándola.
+- ~~**`/catalogos/precios` sigue diciendo «sugerido»**~~, y sigue siendo la
+  pregunta abierta de más arriba. Lo que esta tarea garantiza es que la palabra
+  no está en el vocabulario de la cotización, y hay una prueba que recorre los
+  textos buscándola. **Cerrado por T-2 ter**, abajo.
 - **La base local quedó exactamente como se encontró**, y está medido: 453
   renglones con **7 precios del bufete** —282 con cifra—, 49 líneas con **1
   origen**, 10 cotizaciones, 8 clientes, 9 procesos, 57 notas del arancel y 157
@@ -618,6 +623,89 @@ dice la verdad en los tres casos.
   desarrollo**, con un «fetch failed» de `undici` por debajo. Es anterior a esta
   tarea y no la toca —la suite de punta a punta intercepta la API—, pero conviene
   anotarlo porque ensucia cualquier prueba a mano sobre esa pantalla.
+
+### T-2 ter cerrada · una sola marca para las dos pantallas
+
+El usuario pidió cerrar la pregunta abierta de T-2 bis al ver las dos pantallas
+juntas. Había **dos convenciones para la misma pregunta y con el signo al
+revés**: `/catalogos/precios` escribía la palabra «sugerido» al lado de la fila
+que el bufete **no** había editado —marcaba la norma— y la vista expandida de la
+cotización ponía un asterisco en la que **sí** —marcaba la excepción—. La frase
+del usuario decide cuál sobrevive: «son la norma hasta que se editen, no son una
+subcategoría». **Se marca la excepción y nunca la norma.**
+
+**Qué entró.** `MARCA_SUGERIDO` se fue. `MARCA_DE_EDITADO`,
+`LEYENDA_DE_LA_MARCA` y `MARCA_DE_EDITADO_LEIDA` subieron al bloque de textos de
+`src/pantallas/catalogos/precios.ts` porque dejaron de ser de una pantalla, y
+`/catalogos/precios` los dibuja: el asterisco con su nombre leído al lado del
+campo de la fila editada, y la leyenda **arriba de las tablas**. El `origen` del
+precio pasó de `sugerido` a `preestablecido` —no se dibuja, pero es el
+vocabulario con el que se piensa la pantalla—. En CSS, `.precio__marca` y
+`.lista-de-servicios__marca` comparten **una sola declaración**: la marca tiene
+que leerse como la misma cosa en las dos pantallas, y dos bloques que hay que
+mantener idénticos son el par que se desincroniza.
+
+**Tres decisiones que vale la pena dejar escritas.**
+
+- *La leyenda va arriba y no al pie*, que es la lección que la vista expandida ya
+  había aprendido en el navegador y acá pesa más: son 453 renglones repartidos en
+  **27 tablas** en la base local, así que un pie de página queda a varias
+  pantallas de scroll de la primera marca. Y se dibuja **sólo si hay alguna fila
+  marcada entre las visibles** —`hayPrecioDelBufete` sobre los grupos ya
+  filtrados—: una leyenda que explica un signo que no aparece manda a buscarlo.
+- *La leyenda dejó de nombrar la línea de la cotización.* Decía que elegir un
+  servicio escribe su monto «en la línea», que es verdad en una pantalla y no
+  significa nada en la otra. Un texto que sólo sirve en una pantalla es el
+  segundo literal esperando a ser escrito, o sea volver a tener dos.
+- *La marca no mira el borrador.* Dice de quién es el precio **guardado**, y
+  teclear encima todavía no guardó nada; un signo que aparece y desaparece
+  mientras alguien escribe se lee como un aviso.
+
+**El verbo se queda, el participio se va.** «El sistema sabe cuánto cuesta y te
+lo sugiere» es la frase con la que el usuario describió lo que la aplicación
+hace, y vive en la nota de procedencia de la tabla del arancel, que es el lugar
+al que alguien llegó justamente a preguntar. Lo que se fue es la palabra usada
+como rótulo encima del valor por defecto. Hay dos pruebas que lo sostienen, una
+por flanco: `test/precios-ui.spec.ts` recorre los textos del módulo y
+`e2e/precios.spec.ts` recorre el cuerpo de la pantalla dibujada, con la misma
+forma que la prueba que T-2 bis dejó sobre la cotización.
+
+**Lo que no cambió, y está medido.** Ni columna oficial, ni «mínimo: X», ni
+color sobre el precio propio: las tres pruebas de
+`odd/tasks/arancel-de-honorarios.md` —una cifra por fila, el monto del acuerdo
+en ningún lado, ninguna palabra de comparación— siguen verdes sin tocarlas. La
+fila típica sigue midiendo **95px a 1440px**, el mismo número que midió T-3: la
+marca no costó alto.
+
+**Checks observados, en primer plano.** `pnpm lint`: limpio. `pnpm typecheck`:
+limpio. `pnpm test`: **2452 en 47 archivos** (eran 2445; +7). `pnpm test:e2e`:
+**486 de 487** (eran 484; +3). El único fallo es
+`e2e/sin-scroll-horizontal.spec.ts` «la pantalla de alta se dibuja aunque la API
+no conteste», el intermitente anterior a esta tarea que pasa aislado. En la
+primera corrida completa cayó además `e2e/clientes.spec.ts` «un cliente sin
+cotizaciones lo dice…»; pasa aislado y no volvió a caer en la segunda corrida
+completa, así que es el mismo tipo de intermitente de carga y no toca ninguna de
+las dos pantallas de esta tarea.
+
+**A mano, con los 453 renglones de verdad.** `/catalogos/precios` dibuja **7
+marcas**, exactamente las 7 filas con precio del bufete, y ninguna sobre las 275
+preestablecidas; la leyenda está antes de la primera de las 27 tablas; la palabra
+«sugerido» no aparece en el cuerpo de la página. La vista expandida de un
+borrador dibuja las mismas 7 marcas sobre 282 servicios. **Las dos marcas se
+calculan idénticas**: `rgb(96, 90, 80)`, `12.48px`, `font-style: normal`,
+`margin-inline-start: 4px`. El centro del asterisco y el centro del campo caen en
+el mismo píxel.
+
+**La base local quedó como se encontró**, y está medido después de las dos
+corridas completas: 453 renglones con **7 precios del bufete** —282 con cifra—,
+49 líneas con **1 origen**, 10 cotizaciones, 8 clientes, 9 procesos, 57 notas y
+157 asientos de bitácora. Esta tarea no escribe nada: las pruebas interceptan la
+API y lo que se miró a mano fue sólo lectura.
+
+**Deuda que deja a la vista.** `src/pantallas/catalogos/Catalogos.tsx` todavía
+dice «Es de donde sale cada valor sugerido» describiendo el enlace a la tabla del
+arancel. Es una tercera pantalla y quedó fuera de la superficie autorizada; por
+el mismo principio esa frase debería hablar de preestablecidos.
 
 - Próximo paso: T-3, el agente elige y el sistema tarifa. El prompt, el esquema
   de salida con su `xor` y el generador. `DatosDeLineaConOrigen` y

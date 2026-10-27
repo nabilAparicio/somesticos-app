@@ -34,7 +34,11 @@
  *     **no ofrece campo de precio**. La base lo rechaza con
  *     `un_rubro_no_lleva_precio`; que la pantalla no lo pida se ve acá.
  *  4. Que editar un precio lo manda, y que borrar el campo manda un nulo y
- *     devuelve la sugerencia a la vista.
+ *     devuelve el preestablecido a la vista.
+ *  5. Que la marca sutil va sobre la fila que el bufete **editó** —nunca sobre
+ *     la preestablecida— y que su leyenda se lee antes de la primera tabla. Es
+ *     la misma convención que la vista expandida de la cotización, porque la
+ *     pregunta que contestan es la misma.
  *
  * **Las respuestas de la API van interceptadas**, por lo mismo que en
  * `catalogos.spec.ts`: `vite dev` corre sin identidad de Access, así que la
@@ -67,8 +71,8 @@ const PROSA = "OTROS ASUNTOS";
 const OFICIAL_DEL_PENSIONADO = "150.00";
 const PROPIO_DEL_PENSIONADO = "400.00";
 
-/** La sugerencia de la fila que todavía no tiene precio propio. */
-const SUGERIDO_DEL_TRABAJO = "300.00";
+/** El preestablecido de la fila que todavía no tiene precio propio. */
+const PREESTABLECIDO_DEL_TRABAJO = "300.00";
 
 const CATEGORIAS = [
   {
@@ -228,6 +232,20 @@ function campoDePrecio(page: Page, concepto: string) {
   return page.getByRole("textbox", { name: `Precio de ${concepto}` });
 }
 
+/**
+ * La marca sutil de una fila, localizada por su clase y no por su texto.
+ *
+ * Es la misma forma que `e2e/precios-en-cotizacion.spec.ts` usa sobre la vista
+ * expandida: un asterisco no se busca por texto —aparecería en cualquier otro
+ * glifo de la página— y su nombre accesible está en un `span` oculto, que es
+ * exactamente lo que no se puede localizar por lo que se ve.
+ */
+function marcaDeEditado(page: Page, concepto: string) {
+  return page
+    .locator("table tbody tr", { hasText: concepto })
+    .locator(".precio__marca");
+}
+
 test.describe("los precios del bufete", () => {
   test("ninguna fila dibuja dos cifras de dinero", async ({ page }) => {
     await conArancelCargado(page);
@@ -329,30 +347,127 @@ test.describe("los precios del bufete", () => {
     expect(rubro?.cifras).toEqual([]);
   });
 
-  test("el servicio sin precio propio arranca con la sugerencia, marcada", async ({
+  /**
+   * **La marca va sobre la excepción y nunca sobre la norma.**
+   *
+   * Esta prueba cambió de signo a propósito. Hasta la corrección de vocabulario
+   * afirmaba lo contrario —la palabra «sugerido» sobre la fila que el bufete no
+   * había editado— y eso era una convención opuesta a la de la vista expandida
+   * de la cotización, que marca la editada. La frase del usuario decide cuál de
+   * las dos sobrevive: «los preestablecidos son eso, preestablecidos: son la
+   * norma hasta que se editen, no son una subcategoría».
+   */
+  test("la marca va en la fila que el bufete editó, y no en la preestablecida", async ({
     page,
   }) => {
     await conArancelCargado(page);
     await page.goto("/catalogos/precios");
 
-    // Ni vacío ni cero: el sistema sabe cuánto cuesta y lo dice.
+    // Ni vacío ni cero: el sistema sabe cuánto cuesta y lo pone en el campo.
     await expect(
       campoDePrecio(page, "Permiso de trabajo por contrato"),
-    ).toHaveValue(SUGERIDO_DEL_TRABAJO);
+    ).toHaveValue(PREESTABLECIDO_DEL_TRABAJO);
+    await expect(
+      marcaDeEditado(page, "Permiso de trabajo por contrato"),
+      "la fila preestablecida lleva marca: eso vuelve a señalar la norma en" +
+        " vez de la excepción",
+    ).toHaveCount(0);
 
-    const fila = page.locator("table tbody tr", {
-      hasText: "Permiso de trabajo por contrato",
-    });
-    await expect(fila.getByText("sugerido")).toBeVisible();
-
-    // Y la fila que sí tiene precio decidido no lleva la marca.
-    const decidida = page.locator("table tbody tr", {
-      hasText: "Visa de pensionado o jubilado",
-    });
+    // Y la fila que el bufete decidió sí la lleva.
     await expect(campoDePrecio(page, "Visa de pensionado o jubilado")).toHaveValue(
       PROPIO_DEL_PENSIONADO,
     );
-    await expect(decidida.getByText("sugerido")).toHaveCount(0);
+    await expect(
+      marcaDeEditado(page, "Visa de pensionado o jubilado"),
+    ).toBeVisible();
+    await expect(
+      marcaDeEditado(page, "Visa de pensionado o jubilado"),
+    ).toHaveText(new RegExp("^\\*"));
+  });
+
+  /**
+   * **La leyenda, arriba de las tablas.**
+   *
+   * Es la lección que la vista expandida de la cotización ya había aprendido en
+   * el navegador y acá pesa más: son 453 renglones repartidos en 29 tablas, así
+   * que un pie de tabla queda a varias pantallas de scroll de la primera marca
+   * y explicaría un signo que para entonces nadie tiene a la vista. Se afirma
+   * el **orden en el documento** y no una coordenada, porque la coordenada
+   * cambia con el ancho y el orden no.
+   */
+  test("la leyenda de la marca se lee antes de la primera tabla", async ({
+    page,
+  }) => {
+    await conArancelCargado(page);
+    await page.goto("/catalogos/precios");
+
+    const leyenda = page.locator(".precios__leyenda");
+    await expect(leyenda).toBeVisible();
+    await expect(leyenda).toContainText("asterisco");
+
+    const antes = await page.evaluate(() => {
+      const leyenda = document.querySelector(".precios__leyenda");
+      const tabla = document.querySelector("table");
+      if (leyenda === null || tabla === null) return null;
+      return Boolean(
+        leyenda.compareDocumentPosition(tabla) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    });
+
+    expect(
+      antes,
+      "la leyenda o la tabla no existen: esto es la prueba rota",
+    ).not.toBeNull();
+    expect(
+      antes,
+      "la leyenda quedó debajo de la tabla. Con 453 renglones en 29 tablas," +
+        " eso explica un asterisco que quien lo encontró ya no tiene a la" +
+        " vista",
+    ).toBe(true);
+  });
+
+  test("sin ninguna fila editada no hay leyenda que explicar", async ({
+    page,
+  }) => {
+    await conArancelCargado(page);
+    await page.goto("/catalogos/precios");
+    await expect(page.locator("table tbody tr").first()).toBeVisible();
+
+    // La única fila con precio del bufete es la visa de pensionado; buscando
+    // el permiso de trabajo no queda ninguna marca a la vista.
+    await page.getByRole("searchbox", { name: "Buscar" }).fill("trabajo");
+
+    await expect(
+      page.locator(".precios__leyenda"),
+      "la leyenda explica un asterisco que no aparece en ninguna fila: eso" +
+        " manda a buscarlo por una tabla entera",
+    ).toHaveCount(0);
+  });
+
+  test("la palabra «sugerido» no aparece en ninguna parte de la pantalla", async ({
+    page,
+  }) => {
+    await conArancelCargado(page);
+    await page.goto("/catalogos/precios");
+    await expect(page.locator("table tbody tr").first()).toBeVisible();
+
+    const texto = (await page.locator("body").textContent())?.toLowerCase();
+
+    expect(
+      texto,
+      "la pantalla no llegó a dibujarse: esto es la prueba rota",
+    ).toBeTruthy();
+
+    // La misma forma que la prueba que T-2 bis dejó sobre la vista expandida
+    // de la cotización, para que las dos pantallas queden sostenidas por la
+    // misma regla y no por dos criterios parecidos.
+    expect(
+      texto?.includes("sugerid"),
+      "la pantalla de precios dice «sugerido». Esa palabra sobre el valor" +
+        " por defecto lo convierte en una subcategoría, y la corrección del" +
+        " usuario es que son la norma hasta que se editen",
+    ).toBe(false);
   });
 
   test("buscar por concepto deja solo lo que coincide", async ({ page }) => {
@@ -413,16 +528,15 @@ test.describe("los precios del bufete", () => {
     await expect.poll(() => enviado).not.toBeNull();
     expect(JSON.parse(enviado ?? "{}")).toEqual({ monto: 52000 });
 
-    // Lo que se dibuja es lo que contestó el servidor, y la marca de
-    // sugerencia se cae porque ya hay una decisión del bufete.
+    // Lo que se dibuja es lo que contestó el servidor, y la marca **aparece**
+    // porque la cifra de esa fila ya la escribió el bufete.
     await expect(campo).toHaveValue("520.00");
-    const fila = page.locator("table tbody tr", {
-      hasText: "Permiso de trabajo por contrato",
-    });
-    await expect(fila.getByText("sugerido")).toHaveCount(0);
+    await expect(
+      marcaDeEditado(page, "Permiso de trabajo por contrato"),
+    ).toBeVisible();
   });
 
-  test("borrar el campo manda un nulo y devuelve la sugerencia", async ({
+  test("borrar el campo manda un nulo y devuelve el preestablecido", async ({
     page,
   }) => {
     await conArancelCargado(page);
@@ -458,14 +572,14 @@ test.describe("los precios del bufete", () => {
 
     await expect.poll(() => enviado).not.toBeNull();
     // Nulo, no cero. Cero es «esto no lo cobramos» y nulo es «todavía no lo
-    // decidimos», que es lo que hace volver la sugerencia a la vista.
+    // decidimos», que es lo que hace volver el preestablecido a la vista.
     expect(JSON.parse(enviado ?? "{}")).toEqual({ monto: null });
 
     await expect(campo).toHaveValue(OFICIAL_DEL_PENSIONADO);
-    const fila = page.locator("table tbody tr", {
-      hasText: "Visa de pensionado o jubilado",
-    });
-    await expect(fila.getByText("sugerido")).toBeVisible();
+    // Y la marca se cae: la cifra a la vista ya no la escribió el bufete.
+    await expect(
+      marcaDeEditado(page, "Visa de pensionado o jubilado"),
+    ).toHaveCount(0);
   });
 
   test("el enlace lleva al renglón que corresponde en la tabla del arancel", async ({

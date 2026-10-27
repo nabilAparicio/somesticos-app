@@ -42,9 +42,12 @@ import type {
 } from "../worker/contract";
 import {
   AYUDA_DEL_PRECIO_PROPIO,
-  MARCA_SUGERIDO,
+  LEYENDA_DE_LA_MARCA,
+  MARCA_DE_EDITADO,
+  MARCA_DE_EDITADO_LEIDA,
   NOTA_DE_PROCEDENCIA,
   ROTULO_DE_PROCEDENCIA,
+  SERVICIO_SIN_NOMBRE,
   TITULO_DE_PROCEDENCIA,
   anclaDelRenglon,
   categoriasFiltradas,
@@ -53,6 +56,7 @@ import {
   enlaceAlRenglonDelArancel,
   gruposDePrecios,
   hayCambioDePrecio,
+  hayPrecioDelBufete,
   llevaPrecio,
   montoParaGuardar,
   precioALaVista,
@@ -115,10 +119,16 @@ describe("el precio a la vista", () => {
     );
   });
 
-  it("es la sugerencia del acuerdo cuando todavía no hay precio propio", () => {
+  it("es el preestablecido cuando todavía no hay precio propio", () => {
     // Ni un campo vacío ni un cero: el sistema sabe cuánto cuesta y lo dice.
+    //
+    // El `origen` se llama `preestablecido` y no `sugerido`, y es la palabra
+    // del usuario: «los preestablecidos son eso, preestablecidos: son la norma
+    // hasta que se editen, no son una subcategoría». Es un dato interno y
+    // podría llamarse de cualquier forma, pero una sola pantalla de este
+    // sistema con dos vocabularios es como empezó la inconsistencia.
     expect(precioALaVista(renglon({ monto: null, montoOficial: 15000 }))).toEqual(
-      { centavos: 15000, origen: "sugerido", texto: "150.00" },
+      { centavos: 15000, origen: "preestablecido", texto: "150.00" },
     );
   });
 
@@ -313,6 +323,46 @@ describe("los grupos de la pantalla de precios", () => {
     expect(cuantasFilas(gruposDePrecios(TABLA, ""))).toBe(4);
     expect(cuantasFilas(gruposDePrecios(TABLA, "pensionado"))).toBe(2);
   });
+
+  /**
+   * **Si hay alguna fila marcada**, que es lo que decide si la leyenda se
+   * dibuja.
+   *
+   * Es la misma regla que la vista expandida de la cotización aplica con
+   * `hayAlgunEditado`: una leyenda que explica un signo que no aparece en
+   * ninguna parte manda a buscarlo por una tabla de 453 filas.
+   *
+   * Se mide sobre los grupos **filtrados** y no sobre el catálogo entero, y
+   * eso es la decisión: lo que importa es si hay una marca a la vista.
+   */
+  describe("si hay algún precio del bufete entre lo que se ve", () => {
+    const EDITADO = renglon({
+      id: "r-editado",
+      orden: 11,
+      concepto: "Visa de pensionado o jubilado",
+      montoOficial: 15000,
+      monto: 40000,
+    });
+    const CON_UNO = [categoria(MIGRACION, [INMIGRANTES, EDITADO, TRABAJO])];
+
+    it("con una fila editada, sí", () => {
+      expect(hayPrecioDelBufete(gruposDePrecios(CON_UNO, ""))).toBe(true);
+    });
+
+    it("con todas preestablecidas, no", () => {
+      expect(hayPrecioDelBufete(gruposDePrecios(TABLA, ""))).toBe(false);
+    });
+
+    it("una búsqueda que deja afuera la fila editada apaga la leyenda", () => {
+      expect(hayPrecioDelBufete(gruposDePrecios(CON_UNO, "trabajo"))).toBe(
+        false,
+      );
+    });
+
+    it("sin grupos, no", () => {
+      expect(hayPrecioDelBufete([])).toBe(false);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -483,16 +533,109 @@ const PALABRAS_DE_COMPARACION = [
   "ley",
 ];
 
-describe("los textos de la pantalla de precios", () => {
-  it("la marca del valor sugerido es una palabra y no una advertencia", () => {
-    expect(MARCA_SUGERIDO).toBe("sugerido");
+/**
+ * Los textos de este módulo que alguna de las dos pantallas dibuja.
+ *
+ * Están juntos para poder recorrerlos: una regla de vocabulario que se afirma
+ * sobre una constante a la vez deja afuera la próxima que alguien agregue.
+ */
+const TEXTOS_A_LA_VISTA: readonly string[] = [
+  AYUDA_DEL_PRECIO_PROPIO,
+  ROTULO_DE_PROCEDENCIA,
+  TITULO_DE_PROCEDENCIA,
+  ...NOTA_DE_PROCEDENCIA,
+  MARCA_DE_EDITADO,
+  LEYENDA_DE_LA_MARCA,
+  MARCA_DE_EDITADO_LEIDA,
+  SERVICIO_SIN_NOMBRE,
+];
+
+describe("la marca es la misma en las dos pantallas", () => {
+  /**
+   * **Se marca la excepción y nunca la norma**, y ésta es la prueba de esa
+   * polaridad.
+   *
+   * Hasta esta corrección la pantalla de precios escribía «sugerido» al lado
+   * del renglón que el bufete **no** había editado, y la vista expandida de la
+   * cotización marcaba con un asterisco el que **sí**. Dos convenciones para la
+   * misma pregunta, y con el signo al revés. La que queda es la segunda, por la
+   * frase del usuario: «los preestablecidos son eso, preestablecidos: son la
+   * norma hasta que se editen, no son una subcategoría». Una palabra encima del
+   * valor por defecto convierte la norma en un estado menor.
+   */
+  it("es un asterisco, con su nombre leído y su leyenda", () => {
+    expect(MARCA_DE_EDITADO).toBe("*");
+    expect(MARCA_DE_EDITADO_LEIDA.toLowerCase()).toContain("editado");
+    expect(MARCA_DE_EDITADO_LEIDA.toLowerCase()).toContain("bufete");
+    expect(LEYENDA_DE_LA_MARCA.toLowerCase()).toContain("editó");
+    expect(LEYENDA_DE_LA_MARCA.toLowerCase()).toContain("preestablecidos");
   });
 
+  it("la leyenda sirve en las dos pantallas y no nombra ninguna de las dos", () => {
+    // El mismo literal lo dibujan `/catalogos/precios` y la vista expandida de
+    // la cotización. Si nombrara la línea de una cotización, la pantalla de
+    // precios estaría explicando su marca con algo que ahí no existe, y la
+    // salida sería un segundo literal: o sea, volver a tener dos.
+    const plano = LEYENDA_DE_LA_MARCA.toLowerCase();
+
+    for (const palabra of ["línea", "cotización", "fila", "tabla"]) {
+      expect(
+        plano.includes(palabra),
+        `la leyenda dice «${palabra}»: es un texto de las dos pantallas y` +
+          " nombrar la mecánica de una lo vuelve falso en la otra",
+      ).toBe(false);
+    }
+  });
+
+  it("la palabra «sugerido» no está en el vocabulario de ninguna de las dos", () => {
+    // La misma forma que la prueba que T-2 bis dejó sobre el flujo de la
+    // cotización, ahora sobre el módulo que alimenta a las dos pantallas.
+    //
+    // Lo prohibido es **la palabra como marca**: el participio con el que se
+    // rotulaba el valor por defecto. El verbo no: «el sistema sabe cuánto
+    // cuesta y te lo sugiere» es la frase con la que el usuario describió lo
+    // que la aplicación hace, y vive en la nota de procedencia de la tabla del
+    // arancel, que es el lugar donde alguien fue a preguntar.
+    for (const texto of TEXTOS_A_LA_VISTA) {
+      expect(
+        texto.toLowerCase().includes("sugerid"),
+        `«${texto}» dice «sugerido». Esa palabra encima del valor por` +
+          " defecto lo convierte en una subcategoría, que es justo lo que el" +
+          " usuario corrigió: son la norma hasta que se editen",
+      ).toBe(false);
+    }
+  });
+
+  it("el origen del precio tampoco la dice", () => {
+    // El `origen` no se dibuja, pero es el vocabulario con el que se piensa la
+    // pantalla: dejarlo en «sugerido» es dejar puesta la idea de la que salió
+    // la palabra.
+    const precios = [
+      precioALaVista(renglon({ monto: 40000 })),
+      precioALaVista(renglon({ monto: null, montoOficial: 15000 })),
+      precioALaVista(renglon({ clase: "rubro", montoOficial: null })),
+    ];
+
+    for (const precio of precios) {
+      expect(precio.origen).not.toContain("sugerid");
+    }
+  });
+});
+
+describe("los textos de la pantalla de precios", () => {
   it("ninguno de sus textos mide el precio del bufete contra nada", () => {
     // El criterio de aceptación 4 del lado de las palabras. En la pantalla
     // de precios no hay comparación: ni «mínimo», ni «oficial», ni el
     // acuerdo nombrado encima de una decisión que ya tomó el abogado.
-    for (const texto of [MARCA_SUGERIDO, AYUDA_DEL_PRECIO_PROPIO]) {
+    //
+    // La leyenda de la marca entra a la lista: es texto nuevo de esta pantalla
+    // y dice de cuál de dos orígenes salió una cifra, que es un hecho. En
+    // cuanto dijera cuál de las dos es mayor sería la vara de vuelta.
+    for (const texto of [
+      AYUDA_DEL_PRECIO_PROPIO,
+      LEYENDA_DE_LA_MARCA,
+      MARCA_DE_EDITADO_LEIDA,
+    ]) {
       for (const palabra of PALABRAS_DE_COMPARACION) {
         expect(
           texto.toLowerCase().includes(palabra),

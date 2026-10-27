@@ -421,3 +421,19 @@ merge siguen siendo decisión del usuario.
   antes; +14 de `precios`). Ninguna prueba previa se tocó salvo `PANTALLAS`
   de `e2e/navegacion.spec.ts`, que **no compila** hasta que una variante
   nueva de `Ruta` declara bajo qué sección vive.
+
+- **Corrección posterior: la marca de esta pantalla cambió de signo.** Donde
+  arriba dice «la única marca es la palabra "sugerido", apagada y en
+  minúscula, que se cae en cuanto el bufete decide», hoy hay un asterisco
+  apagado sobre la fila que el bufete **sí** editó, con su leyenda arriba de
+  las tablas. Es el mismo literal que dibuja la vista expandida de la
+  cotización, y el motivo es la frase con la que el usuario corrigió T-2 de
+  `odd/tasks/precios-en-la-cotizacion.md`: «los preestablecidos son eso,
+  preestablecidos: son la norma hasta que se editen, no son una
+  subcategoría». Marcar el valor por defecto lo convierte en un estado menor.
+  **La corrección de T-3 queda intacta y es lo que esto sostiene**: la marca
+  sigue sin ser una comparación y sin ser un aviso —no es un color, no nombra
+  el acuerdo, no dice que haya nada que revisar—, y las tres pruebas del
+  criterio de aceptación 4 siguen verdes sin tocarse. El detalle, con sus
+  medidas, está en «T-2 ter cerrada» de
+  `odd/tasks/precios-en-la-cotizacion.md`.

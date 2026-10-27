@@ -21,13 +21,32 @@
  * vez que el abogado miraba su precio, el sistema le mostraba la vara con la
  * que lo medía. El Artículo 1 del acuerdo existe y dice lo que dice, pero no
  * es trabajo de esta aplicación vigilarlo. Lo que sí es trabajo suyo es
- * saber cuánto cuesta y sugerirlo, y de eso se trata la fila: donde el bufete
- * todavía no decidió, el campo **arranca con el valor sugerido** —no vacío y
- * no en cero— marcado con una palabra apagada.
+ * saber cuánto cuesta y traerlo puesto, y de eso se trata la fila: donde el
+ * bufete todavía no decidió, el campo **arranca con el preestablecido** —no
+ * vacío y no en cero—.
  *
  * La cita completa se consulta en la otra pantalla, a un clic de distancia
  * desde cada fila. `e2e/precios.spec.ts` cuenta las cifras de dinero de cada
  * fila para que una «mejora» que devuelva la columna oficial se ponga roja.
+ *
+ * ## La marca va sobre la excepción, nunca sobre la norma
+ *
+ * Esta pantalla escribía la palabra «sugerido» al lado de la fila que el bufete
+ * **no** había editado, y la vista expandida de la cotización marcaba con un
+ * asterisco la que **sí**: dos convenciones para la misma pregunta y con el
+ * signo al revés. La que quedó es la segunda, por la frase del usuario:
+ *
+ * > «Los preestablecidos son eso, preestablecidos: siempre pueden ser
+ * > editables, pero **son la norma hasta que se editen, no son una
+ * > subcategoría**.»
+ *
+ * Una palabra encima del valor por defecto lo convierte en un estado menor, que
+ * es justo lo que esa frase rechaza. Así que la marca —`MARCA_DE_EDITADO`, el
+ * mismo literal que dibuja la otra pantalla— va sobre la fila que el bufete
+ * editó, y la leyenda que la explica va **arriba de las tablas**: con 453
+ * renglones repartidos en 29 tablas, un pie de página explica un asterisco que
+ * quien lo encontró ya no tiene a la vista. Es la misma lección que la vista
+ * expandida aprendió en el navegador con sus 282 filas, y acá pesa más.
  *
  * ## Tres clases de fila, porque el acuerdo imprime tres
  *
@@ -62,13 +81,16 @@ import { Prosa } from "../../layout/Prosa";
 import { enlaceDe } from "../../ruteo";
 import {
   AYUDA_DEL_PRECIO_PROPIO,
-  MARCA_SUGERIDO,
+  LEYENDA_DE_LA_MARCA,
+  MARCA_DE_EDITADO,
+  MARCA_DE_EDITADO_LEIDA,
   ROTULO_DE_PROCEDENCIA,
   cuantasFilas,
   cuantosRenglones,
   enlaceAlRenglonDelArancel,
   gruposDePrecios,
   hayCambioDePrecio,
+  hayPrecioDelBufete,
   montoParaGuardar,
   sinBorrador,
   type BorradoresDePrecio,
@@ -182,6 +204,7 @@ export function Precios() {
   const grupos = gruposDePrecios(categorias, consulta);
   const total = cuantosRenglones(categorias);
   const visibles = cuantasFilas(grupos);
+  const hayEditados = hayPrecioDelBufete(grupos);
 
   return (
     <Pila espacio="holgado">
@@ -193,8 +216,8 @@ export function Precios() {
           <h1>Los precios del bufete</h1>
           <Prosa como="p" className="texto-apagado">
             Un precio por servicio: el que cobra el bufete. Donde todavía no
-            hay uno decidido, el campo arranca con el valor que el sistema
-            sugiere; escribir encima lo convierte en el precio del bufete.
+            hay uno decidido, el campo arranca con el preestablecido; escribir
+            encima lo convierte en el precio del bufete.
           </Prosa>
         </Pila>
       </header>
@@ -250,6 +273,24 @@ export function Precios() {
               ? `${String(total)} servicio(s).`
               : `${String(visibles)} de ${String(total)} servicio(s).`}
           </p>
+
+          {/*
+            La leyenda de la marca, **encima de las tablas y no debajo**. Es la
+            misma decisión que la vista expandida de la cotización tomó después
+            de verlo en el navegador, y acá pesa más: son 453 renglones
+            repartidos en 29 tablas, así que un pie de página queda a varias
+            pantallas de scroll de la primera marca y explicaría un asterisco
+            que para entonces ya nadie tiene a la vista.
+
+            Y se dibuja **sólo cuando hay alguna fila marcada**: una leyenda que
+            explica un signo que no aparece en ninguna parte manda a buscarlo.
+          */}
+          {hayEditados && (
+            <Prosa como="p" className="texto-apagado precios__leyenda">
+              <span aria-hidden="true">{MARCA_DE_EDITADO} </span>
+              {LEYENDA_DE_LA_MARCA}
+            </Prosa>
+          )}
 
           {grupos.length === 0 && (
             <Aviso>Ningún servicio coincide con «{consulta}».</Aviso>
@@ -338,16 +379,35 @@ export function Precios() {
                                   }}
                                 />
                                 {/*
-                                  La marca de que el número todavía es una
-                                  sugerencia. Una palabra apagada y nada
-                                  más: no nombra de dónde sale, porque eso
-                                  encima del precio propio sería la
-                                  advertencia permanente que esta pantalla
-                                  no tiene.
+                                  La marca de que esa cifra la escribió el
+                                  bufete: el mismo asterisco y la misma
+                                  leyenda que la vista expandida de la
+                                  cotización, porque la pregunta que
+                                  contestan es la misma. Va **sobre la fila
+                                  editada y no sobre la preestablecida**, que
+                                  es la norma hasta que alguien la edite.
+
+                                  Se dibuja al lado del campo y no del
+                                  concepto —ahí la pone la vista expandida—
+                                  porque lo que la marca califica es **la
+                                  cifra**, y acá la cifra tiene su propia
+                                  celda. El asterisco no se lee en voz alta,
+                                  así que lleva su nombre al lado.
+
+                                  No mira `tocada`: lo que dice es de quién
+                                  es el precio **guardado**, y teclear encima
+                                  todavía no guardó nada. Que apareciera y
+                                  desapareciera mientras alguien escribe
+                                  sería un signo que se lee como un aviso.
                                 */}
-                                {precio.origen === "sugerido" && !tocada && (
+                                {precio.origen === "bufete" && (
                                   <span className="precio__marca">
-                                    {MARCA_SUGERIDO}
+                                    <span aria-hidden="true">
+                                      {MARCA_DE_EDITADO}
+                                    </span>
+                                    <span className="oculto-visualmente">
+                                      {MARCA_DE_EDITADO_LEIDA}
+                                    </span>
                                   </span>
                                 )}
                                 {tocada && (

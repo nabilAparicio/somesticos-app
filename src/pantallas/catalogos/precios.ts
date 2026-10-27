@@ -85,18 +85,73 @@ import { enlaceDe } from "../../ruteo";
    en una prueba en vez de quedar enterrados en un componente.
    ========================================================================== */
 
+/* --------------------------------------------------------------------------
+   La marca, que es **una sola** para las dos pantallas que la dibujan
+
+   Vive acá arriba y no en la sección de la vista expandida —de donde salió—
+   porque dejó de ser de una pantalla: la dibujan `/catalogos/precios` y la
+   vista expandida de la cotización, y las dos contestan la misma pregunta.
+
+   ## La corrección de polaridad, que es de qué se trata esta sección
+
+   Hubo un rato en que este archivo tenía **dos** convenciones para la misma
+   pregunta, con el signo al revés. `MARCA_SUGERIDO` escribía la palabra
+   «sugerido» al lado del renglón que el bufete **no** había editado —marcaba
+   la norma— y `MARCA_DE_EDITADO` ponía un asterisco en el que **sí** —marcaba
+   la excepción—. La frase del usuario decide cuál sobrevive:
+
+     > «Los preestablecidos son eso, preestablecidos: siempre pueden ser
+     > editables, pero **son la norma hasta que se editen, no son una
+     > subcategoría**.»
+
+   Una palabra encima del valor por defecto convierte la norma en un estado
+   menor, que es exactamente lo que esa frase rechaza. Así que se marca la
+   excepción y nunca la norma, y la palabra «sugerido» sale del vocabulario de
+   las dos pantallas —`test/precios-ui.spec.ts` lo recorre y
+   `e2e/precios.spec.ts` lo mide sobre el dibujo—. El verbo se queda donde
+   siempre estuvo: «el sistema sabe cuánto cuesta y te lo sugiere» es la frase
+   con la que el usuario describió lo que la aplicación hace, y vive en la nota
+   de procedencia de la tabla del arancel, que es el lugar al que alguien llegó
+   justamente a preguntar.
+   -------------------------------------------------------------------------- */
+
 /**
- * La marca de que el número a la vista todavía es la sugerencia del acuerdo
- * y no una decisión del bufete.
+ * La marca sutil de que la cifra la escribió el bufete.
  *
- * **Una palabra en minúscula y apagada, y eso es todo lo que puede ser.** No
- * es un aviso, no es un tono de error y no nombra el acuerdo: nombrar el
- * acuerdo encima del precio propio sería la advertencia permanente que el
- * usuario pidió sacar. Lo único que tiene que decir es que ese número lo
- * puso el sistema y no el bufete, para que nadie lo lea como una decisión que
- * ya se tomó.
+ * **Un asterisco, y eso es todo lo que puede ser.** Es la palabra del usuario
+ * —«algo sutil, una marca, un asterisco»— y es deliberadamente lo contrario de
+ * un aviso: no es un color, no es un ícono de alerta y no dice nada de si el
+ * número está bien. Dice **de cuál de dos orígenes salió**, que es un hecho, no
+ * un juicio.
+ *
+ * Va en la pantalla de precios y en la vista expandida de la cotización. En el
+ * selector no: ahí son todos precios y nada más, que es lo que el usuario pidió
+ * con todas las letras.
  */
-export const MARCA_SUGERIDO = "sugerido";
+export const MARCA_DE_EDITADO = "*";
+
+/**
+ * Qué significa el asterisco, dicho una vez por pantalla.
+ *
+ * Tiene que estar porque una marca sin leyenda es un signo que obliga a
+ * adivinar. Y tiene que decir **sólo** eso: no nombra el acuerdo, no nombra
+ * ningún mínimo y no sugiere que haya algo que revisar. Las dos palabras son las
+ * del usuario: editado y preestablecido.
+ *
+ * **No nombra la mecánica de ninguna de las dos pantallas**, y eso es lo que la
+ * deja ser un solo literal: la versión anterior decía que elegir un servicio
+ * escribe su monto «en la línea», que es verdad en la cotización y no significa
+ * nada en la pantalla de precios. Un texto que sólo sirve en una pantalla es un
+ * segundo texto esperando a ser escrito, y dos textos para la misma marca es
+ * cómo empezó esta inconsistencia.
+ */
+export const LEYENDA_DE_LA_MARCA =
+  "El asterisco marca los precios que el bufete editó. Los demás son los" +
+  " preestablecidos, y son precios igual: se usan tal cual y se pueden editar" +
+  " encima.";
+
+/** El nombre accesible de la marca, para quien no ve el asterisco. */
+export const MARCA_DE_EDITADO_LEIDA = "precio editado por el bufete";
 
 /**
  * El rótulo del enlace a la tabla del arancel.
@@ -121,7 +176,7 @@ export const ROTULO_DE_PROCEDENCIA = "de dónde sale este precio";
 export const AYUDA_DEL_PRECIO_PROPIO =
   "El punto separa los centavos: 1500.75. La coma, si se usa, es de los" +
   " miles. Dejar el campo vacío y guardar quita el precio propio del" +
-  " servicio y vuelve a dejar a la vista el valor que el sistema sugiere.";
+  " servicio y vuelve a dejar a la vista el preestablecido.";
 
 /** El encabezado de la nota de procedencia, en la tabla del arancel. */
 export const TITULO_DE_PROCEDENCIA = "De dónde salen estos valores";
@@ -169,14 +224,18 @@ export const NOTA_DE_PROCEDENCIA: readonly string[] = [
  *  - `bufete`: lo decidió el bufete. **Un cero entra acá**, y la distinción
  *    no es sutileza: cero es «esto no lo cobramos» y es una decisión, así que
  *    no se le puede poner encima la sugerencia del acuerdo.
- *  - `sugerido`: todavía no hay precio propio y lo que se ve es el valor que
- *    el sistema sugiere. El sistema sabe cuánto cuesta; que lo diga.
+ *  - `preestablecido`: todavía no hay precio propio y lo que se ve es el valor
+ *    que el sistema trae puesto. **No es un estado menor**: es la norma hasta
+ *    que alguien lo edite, y por eso la fila no lleva ninguna marca. El nombre
+ *    es la palabra del usuario y no «sugerido», que es la que se fue del
+ *    vocabulario: el `origen` no se dibuja, pero es con lo que se piensa la
+ *    pantalla, y dejarlo con la palabra vieja es dejar puesta la idea.
  *  - `sin_precio`: no hay nada que mostrar. Son los rubros —los 74
  *    encabezados que el acuerdo imprime sin valor— y las reglas por cuantía
- *    todavía sin precio propio, que no tienen monto que sugerir porque el
- *    acuerdo las imprimió como un porcentaje y no como un número.
+ *    todavía sin precio propio, que no tienen ninguna cifra porque el acuerdo
+ *    las imprimió como un porcentaje y no como un número.
  */
-export type OrigenDelPrecio = "bufete" | "sugerido" | "sin_precio";
+export type OrigenDelPrecio = "bufete" | "preestablecido" | "sin_precio";
 
 /**
  * El único precio de una fila.
@@ -243,7 +302,7 @@ export function precioALaVista(renglon: RenglonDelArancel): PrecioALaVista {
   if (renglon.montoOficial !== null) {
     return {
       centavos: renglon.montoOficial,
-      origen: "sugerido",
+      origen: "preestablecido",
       texto: montoEditable(renglon.montoOficial),
     };
   }
@@ -405,9 +464,16 @@ function filtrarRenglones(
  * `editado` dice si la cifra la escribió el bufete. **No es una categoría del
  * servicio y no cambia lo que se puede hacer con él**: los dos se ofrecen
  * igual, los dos prellenan igual y los dos son editables encima. Existe para
- * una marca sutil —un asterisco— que sólo se dibuja en la vista expandida, con
- * su leyenda. Es la palabra del usuario: «un indicativo visual si es
+ * `MARCA_DE_EDITADO`, que la vista expandida dibuja con su leyenda y el
+ * selector no. Es la palabra del usuario: «un indicativo visual si es
  * preestablecido o editado, algo sutil».
+ *
+ * Es el mismo hecho que `PrecioALaVista.origen` cuenta en la pantalla de
+ * precios, visto desde el otro lado de la misma tabla, y por eso las dos
+ * pantallas dibujan la misma marca con la misma leyenda. Son dos campos y no
+ * uno porque son dos formas distintas de la misma fila: acá la cifra ya está
+ * resuelta y es un `number`, y allá hay un campo editable que puede estar
+ * vacío.
  *
  * `rubro` es el concepto del encabezado que agrupa al servicio, cuando el
  * numeral demuestra que cuelga de él. Hace falta porque el acuerdo imprime «3.
@@ -670,36 +736,6 @@ export function serviciosPorCategoria(
   return grupos;
 }
 
-/**
- * La marca sutil de que la cifra la escribió el bufete.
- *
- * **Un asterisco, y eso es todo lo que puede ser.** Es la palabra del usuario
- * —«algo sutil, una marca, un asterisco»— y es deliberadamente lo contrario de
- * un aviso: no es un color, no es un ícono de alerta y no dice nada de si el
- * número está bien. Dice **de cuál de dos orígenes salió**, que es un hecho, no
- * un juicio.
- *
- * Y va **sólo en la vista expandida**. En el selector no: ahí son todos precios
- * y nada más, que es lo que el usuario pidió con todas las letras.
- */
-export const MARCA_DE_EDITADO = "*";
-
-/**
- * Qué significa el asterisco, dicho una vez debajo de la lista.
- *
- * Tiene que estar porque una marca sin leyenda es un signo que obliga a
- * adivinar. Y tiene que decir **sólo** eso: no nombra el acuerdo, no nombra
- * ningún mínimo y no sugiere que haya algo que revisar. Las dos palabras son las
- * del usuario: editado y preestablecido.
- */
-export const LEYENDA_DE_LA_MARCA =
-  "El asterisco marca los precios que el bufete editó. Los demás son los" +
-  " preestablecidos, y se usan igual: elegirlos escribe su monto en la línea y" +
-  " el monto se edita encima.";
-
-/** El nombre accesible de la marca, para quien no ve el asterisco. */
-export const MARCA_DE_EDITADO_LEIDA = "precio editado por el bufete";
-
 /* ==========================================================================
    Los grupos de la pantalla de precios
    ========================================================================== */
@@ -752,6 +788,27 @@ export function gruposDePrecios(
   }
 
   return grupos;
+}
+
+/**
+ * Si entre lo que se ve hay alguna cifra que escribió el bufete.
+ *
+ * Es lo único que decide si la leyenda de la marca se dibuja, y la regla es la
+ * misma que la vista expandida de la cotización aplica con su `hayAlgunEditado`:
+ * **una leyenda que explica un signo que no aparece en ninguna parte manda a
+ * buscarlo**, y acá eso serían 453 filas repartidas en 29 tablas.
+ *
+ * Se mide sobre los grupos **ya filtrados** y no sobre el catálogo entero, y la
+ * diferencia importa: lo que decide es si hay una marca a la vista, no si
+ * existe alguna en el sistema. Una búsqueda que deja afuera todas las filas
+ * editadas apaga la leyenda.
+ */
+export function hayPrecioDelBufete(
+  grupos: readonly GrupoDePrecios[],
+): boolean {
+  return grupos.some((grupo) =>
+    grupo.filas.some((fila) => fila.precio.origen === "bufete"),
+  );
 }
 
 /** Cuántas filas quedaron a la vista, para el conteo de la búsqueda. */
@@ -832,7 +889,7 @@ export function montoParaGuardar(texto: string): PrecioEscrito {
  *
  * Se compara contra `renglon.monto` y no contra el precio a la vista, y la
  * diferencia es la que hace que adoptar la sugerencia sea posible: en una
- * fila sin precio propio el campo muestra el valor sugerido, y guardarlo
+ * fila sin precio propio el campo muestra el preestablecido, y guardarlo
  * convierte una referencia en una decisión del bufete. Eso es un cambio y el
  * botón tiene que poder apretarse.
  *

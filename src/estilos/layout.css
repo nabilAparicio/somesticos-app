@@ -1073,19 +1073,35 @@
 }
 
 /*
- * La marca de que el número todavía es una sugerencia.
+ * La marca de que esa cifra la escribió el bufete.
  *
- * Apagada, chica y en minúscula: es lo más callado que puede ser sin dejar
- * de ser honesto. No es una `.etiqueta` —que es la forma de un distintivo de
- * estado— porque esto no es un estado del servicio: es una aclaración sobre
- * quién puso ese número. Y **no lleva color de alarma de ninguna clase**: lo
- * que esta pantalla no hace es juzgar el precio del bufete.
+ * **Una sola declaración para las dos pantallas que la dibujan** —la de
+ * precios y la vista expandida de la cotización—, porque la marca tiene que
+ * leerse como la misma cosa en las dos: el mismo cuerpo, la misma tinta y la
+ * misma separación. Dos bloques que hay que mantener idénticos son el par que
+ * se desincroniza sin que nadie lo note.
+ *
+ * Y «sutil» acá es una medida: el asterisco va en el color apagado del sistema
+ * y en el cuerpo chico, pegado a lo que marca con un espacio fino. **Lo que no
+ * es** está en la ausencia de declaraciones: no hay `color` de alarma, no hay
+ * `background`, no hay `border` y no hay ningún ícono. No es una `.etiqueta`
+ * —que es la forma de un distintivo de estado— porque esto no es un estado del
+ * servicio: dice de cuál de dos orígenes salió la cifra, no si está bien.
+ */
+.precio__marca,
+.lista-de-servicios__marca {
+  margin-inline-start: var(--espacio-3xs);
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+}
+
+/*
+ * En la pantalla de precios la marca vive en la franja del campo, que es un
+ * `.fila` alineada al inicio: sin esto, el asterisco quedaría a la altura del
+ * borde de arriba del campo y no de su número.
  */
 .precio__marca {
   align-self: center;
-  color: var(--color-tinta-apagada);
-  font-size: var(--texto-xs);
-  font-style: italic;
 }
 
 /*
@@ -1470,16 +1486,8 @@
 }
 
 /*
- * La marca sutil, y «sutil» acá es una medida: el asterisco va en el color
- * apagado del sistema y en el cuerpo chico, pegado al nombre con un espacio
- * fino.
- *
- * **Lo que no es** está en la ausencia de declaraciones: no hay `color` de
- * alarma, no hay `background`, no hay `border` y no hay ningún ícono. Dice de
- * cuál de dos orígenes salió la cifra, no si está bien.
+ * La marca sutil **no se declara acá**: comparte bloque con `.precio__marca`,
+ * arriba, en la sección de la pantalla de precios. Las dos pantallas dibujan la
+ * misma marca y tiene que leerse igual en las dos, así que es una sola
+ * declaración y no dos que haya que mantener iguales.
  */
-.lista-de-servicios__marca {
-  margin-inline-start: var(--espacio-3xs);
-  color: var(--color-tinta-apagada);
-  font-size: var(--texto-xs);
-}
