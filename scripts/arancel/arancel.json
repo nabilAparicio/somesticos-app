@@ -1,0 +1,4491 @@
+{
+  "fuente": {
+    "acuerdo": "Acuerdo No 49 de 24 de abril de 2001",
+    "organo": "Sala Cuarta de Negocios Generales de la Corte Suprema de Justicia de Panamá",
+    "titulo": "Tarifa de Honorarios Profesionales Mínimos de los Abogados en la República de Panamá",
+    "aprobadaPor": "Asamblea General de Abogados de 19 de febrero de 2000",
+    "archivo": "docs/fuentes/acuerdo-49-2001-tarifa-abogados.pdf",
+    "advertencia": "Son honorarios mínimos de 2001 y nunca se indexaron. Sirven de preset; lo que el bufete cobra es su propia columna."
+  },
+  "conteo": {
+    "total": 453,
+    "conMonto": 282,
+    "conRegla": 97,
+    "rubros": 74,
+    "categorias": 27,
+    "porCategoria": {
+      "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)": {
+        "total": 24,
+        "conMonto": 21,
+        "conRegla": 0,
+        "rubros": 3
+      },
+      "MINISTERIO DE COMERCIO": {
+        "total": 14,
+        "conMonto": 13,
+        "conRegla": 0,
+        "rubros": 1
+      },
+      "ASUNTO ANTE LA COMISIÓN DE VALORES": {
+        "total": 9,
+        "conMonto": 5,
+        "conRegla": 3,
+        "rubros": 1
+      },
+      "AUTORIDAD MARÍTIMA NACIONAL": {
+        "total": 16,
+        "conMonto": 15,
+        "conRegla": 0,
+        "rubros": 1
+      },
+      "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA": {
+        "total": 11,
+        "conMonto": 6,
+        "conRegla": 3,
+        "rubros": 2
+      },
+      "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS": {
+        "total": 13,
+        "conMonto": 8,
+        "conRegla": 4,
+        "rubros": 1
+      },
+      "TRAMITES ANTE EL ENTE REGULADOR": {
+        "total": 6,
+        "conMonto": 1,
+        "conRegla": 5,
+        "rubros": 0
+      },
+      "TRÁMITES ANTE COMISIÓN DE LIBRE COMPETENCIA Y ASUNTOS DEL CONSUMIDOR (CLICAC)": {
+        "total": 4,
+        "conMonto": 1,
+        "conRegla": 3,
+        "rubros": 0
+      },
+      "GESTIONES ADMINISTRATIVAS ANTE EL TRIBUNAL ELECTORAL Y SUS DEPENDENCIAS ADMINISTRATIVO": {
+        "total": 5,
+        "conMonto": 5,
+        "conRegla": 0,
+        "rubros": 0
+      },
+      "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL": {
+        "total": 22,
+        "conMonto": 20,
+        "conRegla": 0,
+        "rubros": 2
+      },
+      "CONSULTAS Y CONCEPTOS SOLICITADAS A ABOGADOS O FIRMAS DE ABOGADOS": {
+        "total": 4,
+        "conMonto": 0,
+        "conRegla": 4,
+        "rubros": 0
+      },
+      "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS": {
+        "total": 12,
+        "conMonto": 9,
+        "conRegla": 2,
+        "rubros": 1
+      },
+      "ELABORACIÓN DE OTROS DOCUMENTOS LEGALES": {
+        "total": 4,
+        "conMonto": 3,
+        "conRegla": 0,
+        "rubros": 1
+      },
+      "ESTUDIOS DE TÍTULOS": {
+        "total": 7,
+        "conMonto": 0,
+        "conRegla": 7,
+        "rubros": 0
+      },
+      "ASUNTOS DE DERECHO SANITARIO": {
+        "total": 16,
+        "conMonto": 15,
+        "conRegla": 0,
+        "rubros": 1
+      },
+      "ASUNTOS DE DERECHO DEL TRABAJO": {
+        "total": 79,
+        "conMonto": 30,
+        "conRegla": 23,
+        "rubros": 26
+      },
+      "ASUNTOS DE DERECHO COMERCIAL": {
+        "total": 27,
+        "conMonto": 23,
+        "conRegla": 0,
+        "rubros": 4
+      },
+      "OTROS PROCESOS EN MATERIA DE COMERCIO": {
+        "total": 7,
+        "conMonto": 5,
+        "conRegla": 1,
+        "rubros": 1
+      },
+      "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS": {
+        "total": 12,
+        "conMonto": 10,
+        "conRegla": 1,
+        "rubros": 1
+      },
+      "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS": {
+        "total": 14,
+        "conMonto": 11,
+        "conRegla": 1,
+        "rubros": 2
+      },
+      "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS": {
+        "total": 20,
+        "conMonto": 12,
+        "conRegla": 5,
+        "rubros": 3
+      },
+      "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA": {
+        "total": 17,
+        "conMonto": 15,
+        "conRegla": 1,
+        "rubros": 1
+      },
+      "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)": {
+        "total": 53,
+        "conMonto": 15,
+        "conRegla": 23,
+        "rubros": 15
+      },
+      "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES": {
+        "total": 14,
+        "conMonto": 12,
+        "conRegla": 2,
+        "rubros": 0
+      },
+      "MENORES": {
+        "total": 10,
+        "conMonto": 9,
+        "conRegla": 0,
+        "rubros": 1
+      },
+      "PROCESOS ESPECIALES SOBRE": {
+        "total": 4,
+        "conMonto": 0,
+        "conRegla": 4,
+        "rubros": 0
+      },
+      "ACTUACIONES EN NEGOCIOS CRIMINALES": {
+        "total": 29,
+        "conMonto": 18,
+        "conRegla": 5,
+        "rubros": 6
+      }
+    }
+  },
+  "sinClasificar": [],
+  "notas": [
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "texto": "Obtención de Visas y Prórrogas;"
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "texto": "PARÁGRAFO: En todo trámite se cargarán B/.200.00 por cada dependiente."
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "texto": "PARÁGRAFO: En los procesos ante la Sala Tercera, los honorarios se aplican por las"
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "texto": "actuaciones ante esa corporación."
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "PARÁGRAFO PRIMERO: Los honorarios por las operaciones cuyo monto exceda de dos"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "millones de balboas (B/.2,000,000.00) se calcularán convencionalmente."
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "PARÁGRAFO SEGUNDO: Si la complejidad, novedad o dificultad del asunto sometido al"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "abogado obliga a utilizar más del tiempo del normal, podrá fijar sus honorarios en base a la"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "Tarifa-Hora, con un mínimo de B/.150.00 por hora."
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "PARÁGRAFO TERCERO: En los documentos que contenga varias operaciones, lo honorarios se"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "causarán sobre el valor de cada operación salvo lo dispuesto en el encabezamiento de este"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "artículo sobre los documentos de préstamos y siempre que se trate del mismo acreedor."
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "PARÁGRAFO CUARTO: En los contratos de arrendamiento y otros semejantes, el monto de los"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "honorarios se calculará sobre lo que deba pagarse durante el plazo del contrato. En caso de"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "arrendamiento por tiempo indeterminado, el cálculo se hará sobre los cánones de arrendamiento"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "durante dos años."
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "PARÁGRAFO QUINTO: En la redacción de los documentos de incorporación al régimen de"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "Propiedad Horizontal, se aplicará la tarifa del uno por mil sobre el valor atribuido al respectivo"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "inmueble con un mínimo de Tres Mil Balboas (B/,3,000.00) por documento."
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "PARÁGRAFO SEXTO: La cancelación de hipotecas y la de cualquiera otra garantía causarán"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "honorarios mínimo de Trescientos Balboas (B/.300.00), salvo pacto en contrario."
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "PARÁGRAFO SÉPTIMO: Los títulos supletorios causarán honorarios mínimos sobre el valor"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "atribuido al respectivo bien, conforme a la tarifa establecida en la primera parte de este artículo,"
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "texto": "y con la limitación prevista en su parágrafo primero."
+    },
+    {
+      "categoria": "ELABORACIÓN DE OTROS DOCUMENTOS LEGALES",
+      "texto": "* (Los honorarios anteriores no incluyen actuación alguna)"
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "texto": "(no incluyen la elaboración de minuta)"
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "texto": "PARÁGRAFO PRIMERO: Cuando, se incluye la elaboración de minutas el porcentaje se puede"
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "texto": "doblar pero nunca los honorarios serán superiores a B/.50,000.00 excepto que el servicio se"
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "texto": "compute a base de B/.150.00 por hora de trabajo, en cuyo caso los honorarios no tienen límite."
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "texto": "Parágrafo: Habrá lugar a un anticipo convencional con el cliente"
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "texto": "Parágrafo: Podrá aumentarse la tarifa por razón de la cuantía del"
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "texto": "proceso"
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "texto": "y el trabajo por desarrollar."
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "texto": "NOTA: Si la gestión se realiza fuera del país, la Tarifa puede ser"
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "texto": "aumentada proporcionalmente"
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "texto": "En ambos casos se puede convenir un porcentaje sobre los resultados de la"
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "texto": "gestión en adición a los honorarios antes señalados."
+    },
+    {
+      "categoria": "OTROS ASUNTOS",
+      "texto": "En cada una de las actuaciones de los Abogados, sea que actúen representando intereses o sea"
+    },
+    {
+      "categoria": "OTROS ASUNTOS",
+      "texto": "que actúen en su propio interés, en lo no señalado en la tarifa anterior, los Abogados cobrarán"
+    },
+    {
+      "categoria": "OTROS ASUNTOS",
+      "texto": "sus servicios, o cargarán los mismos, a razón de B/.150.00 por hora de gestión o actuación."
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "texto": "Se aplicarán los mismos honorarios para la tercerías coadyuvantes o excluyentes."
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "texto": "Si se practicase secuestro de bienes o inspecciones judiciales, fuera del domicilio del"
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "texto": "abogado, se aumentará la tarifa un 15%."
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "texto": "Nota: La tarifa mínima anterior se aplicará de manera progresiva y combinada. Quedan"
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "texto": "asimilados a los procesos ordinarios para los efectos de esta tarifa, los procesos sumarios"
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "texto": "y contenciosos sobre cuentas y los que se sigan ante árbitros o arbitradores, salvo los"
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "texto": "que se sujeten a tarifas fijadas por reglamentos."
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "texto": "Nota:"
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "texto": "La cuantía se determina por el valor de los derechos que corresponden al"
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "texto": "interesado."
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "texto": "(Los Tribunales podrán variar los honorarios del Defensor de Ausente según el caso)"
+    },
+    {
+      "categoria": "PROCESO DE SEPARACIONES DE BIENES, AISLADOS O ACCESORIOS A CUALQUIERA DE LOS QUE TRATA LA SECCIÓN ANTERIOR",
+      "texto": "La misma tarifa de la sección 2 (PROCESO ORDINARIO)"
+    },
+    {
+      "categoria": "PROCESOS ESPECIALES SOBRE",
+      "texto": "Nota: En caso de no existir controversia podrá el abogado reducir la tarifa hasta un 25%"
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "texto": "Cuando por razón de la consulta sea necesario comparecer ante Autoridad ésta"
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "texto": "comparecencia causará un 50% del recargo."
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "texto": "Cuando la defensa penal se inicia en la etapa sumarial, los honorarios se regirán por lo"
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "texto": "establecido en esta misma Sección."
+    }
+  ],
+  "registros": [
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "1",
+      "concepto": "Visitantes Temporales (por persona)",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 1
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "1",
+      "concepto": "y por cada prórroga",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 2
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "2",
+      "concepto": "Visitantes Temporales Especiales",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 3
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "3",
+      "concepto": "Inmigrantes",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 4
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "3.a",
+      "concepto": "Casado con nacional panameño",
+      "clase": "monto",
+      "montoOficial": 80000,
+      "reglaOficial": null,
+      "orden": 5
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "3.b",
+      "concepto": "Inversionista",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 6
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "b.1",
+      "concepto": "primer año",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 7
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "b.2",
+      "concepto": "segundo año",
+      "clase": "monto",
+      "montoOficial": 80000,
+      "reglaOficial": null,
+      "orden": 8
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "4",
+      "concepto": "Naturalizaciones",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 9
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "5",
+      "concepto": "Visa de Estudiantes",
+      "clase": "monto",
+      "montoOficial": 40000,
+      "reglaOficial": null,
+      "orden": 10
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "6",
+      "concepto": "Visas de Religiosos",
+      "clase": "monto",
+      "montoOficial": 40000,
+      "reglaOficial": null,
+      "orden": 11
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "7",
+      "concepto": "Visa de Visitante Familiar",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 12
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "8",
+      "concepto": "Permisos Especiales",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 13
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "9",
+      "concepto": "Salvo Conductos",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 14
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "10",
+      "concepto": "Permiso simple de salida / regreso",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 15
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "11",
+      "concepto": "Visa de salida y regreso múltiple",
+      "clase": "monto",
+      "montoOficial": 35000,
+      "reglaOficial": null,
+      "orden": 16
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "12",
+      "concepto": "Visa de Artista",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 17
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "13",
+      "concepto": "Visa de Turista Pensionado",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 18
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "14",
+      "concepto": "Visa de Rentista",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 19
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "15",
+      "concepto": "Visa de Visitante en calidad de ejecutivo de Zona Libre o zona franca",
+      "clase": "monto",
+      "montoOficial": 75000,
+      "reglaOficial": null,
+      "orden": 20
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "16",
+      "concepto": "Visa bajo resolución del Ministerio de Trabajo",
+      "clase": "monto",
+      "montoOficial": 75000,
+      "reglaOficial": null,
+      "orden": 21
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "17",
+      "concepto": "Recursos Administrativos",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 22
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "17.a",
+      "concepto": "Reconsideración",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 23
+    },
+    {
+      "categoria": "ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)",
+      "numeral": "17.b",
+      "concepto": "Apelación",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 24
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "1",
+      "concepto": "Obtención de Licencias Comerciales o Industriales",
+      "clase": "monto",
+      "montoOficial": 40000,
+      "reglaOficial": null,
+      "orden": 25
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "2",
+      "concepto": "Modificaciones o Cambios de Licencias Comerciales o Industriales y cancelaciones",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 26
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "3",
+      "concepto": "Obtención de Registro Comercial",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 27
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "4",
+      "concepto": "Registro de Propiedad Industrial (Marca de Fábrica, de Comercio. De Servicios o Denominación Comercial, Uso de expresiones Publicitarias y otros).",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 28
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "5",
+      "concepto": "Obtención de Licencias o Registros Comerciales a personas naturales",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 29
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "6",
+      "concepto": "Autorización para operar empresas financieras",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 30
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "7",
+      "concepto": "Autorización para operar empresas de arrendamiento de Bienes muebles (leasing)",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 31
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "8",
+      "concepto": "Cancelaciones",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 32
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "9",
+      "concepto": "Asesoría externa a empresas financieras",
+      "clase": "monto",
+      "montoOficial": 75000,
+      "reglaOficial": null,
+      "orden": 33
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "10",
+      "concepto": "Gestiones administrativas ante la dirección de empresas Financieras",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 34
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "11",
+      "concepto": "Cambios y modificaciones a las autorizaciones",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 35
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "12",
+      "concepto": "Obtención de licencias de corredor de bienes raíces",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 36
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "12.a",
+      "concepto": "Persona Jurídica",
+      "clase": "monto",
+      "montoOficial": 75000,
+      "reglaOficial": null,
+      "orden": 37
+    },
+    {
+      "categoria": "MINISTERIO DE COMERCIO",
+      "numeral": "12.b",
+      "concepto": "Persona Natural",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 38
+    },
+    {
+      "categoria": "ASUNTO ANTE LA COMISIÓN DE VALORES",
+      "numeral": "1",
+      "concepto": "Licencia para operar ante la Bolsa de Valores",
+      "clase": "monto",
+      "montoOficial": 1000000,
+      "reglaOficial": null,
+      "orden": 39
+    },
+    {
+      "categoria": "ASUNTO ANTE LA COMISIÓN DE VALORES",
+      "numeral": "2",
+      "concepto": "Licencia para operar puestos de Bolsa",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 40
+    },
+    {
+      "categoria": "ASUNTO ANTE LA COMISIÓN DE VALORES",
+      "numeral": "3",
+      "concepto": "Licencia para Corredor de Valores",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 41
+    },
+    {
+      "categoria": "ASUNTO ANTE LA COMISIÓN DE VALORES",
+      "numeral": "3.a",
+      "concepto": "Persona Natural",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 42
+    },
+    {
+      "categoria": "ASUNTO ANTE LA COMISIÓN DE VALORES",
+      "numeral": "3.b",
+      "concepto": "Persona Jurídica",
+      "clase": "monto",
+      "montoOficial": 400000,
+      "reglaOficial": null,
+      "orden": 43
+    },
+    {
+      "categoria": "ASUNTO ANTE LA COMISIÓN DE VALORES",
+      "numeral": "4",
+      "concepto": "Trámite de emisión de valores",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Según convenio",
+      "orden": 44
+    },
+    {
+      "categoria": "ASUNTO ANTE LA COMISIÓN DE VALORES",
+      "numeral": "5",
+      "concepto": "Gestiones administrativas ante la comisión de valores",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.150.00 p/h",
+      "orden": 45
+    },
+    {
+      "categoria": "ASUNTO ANTE LA COMISIÓN DE VALORES",
+      "numeral": "6",
+      "concepto": "Asesoría legal a sociedades que operen ante la Bolsa",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Según convenio",
+      "orden": 46
+    },
+    {
+      "categoria": "ASUNTO ANTE LA COMISIÓN DE VALORES",
+      "numeral": "7",
+      "concepto": "Asesoramiento y tramitación para la emisión de bonos Corporativos",
+      "clase": "monto",
+      "montoOficial": 400000,
+      "reglaOficial": null,
+      "orden": 47
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "1",
+      "concepto": "Abanderamientos, que incluye: Obtención de Patente Provisional y Definitiva de Navegación (Incluye Registro de Título de Propiedad, Licencia de radio provisional y definitiva)",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 48
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "1.a",
+      "concepto": "Cada Prórroga",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 49
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "2",
+      "concepto": "Obtención de Licencia Especial de Navegación",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 50
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "2.a",
+      "concepto": "Cada Prórroga",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 51
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "3",
+      "concepto": "Registro de Hipotecas Navales (Preliminar)",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 52
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "4",
+      "concepto": "Registro de Hipotecas Navales Definitiva)",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 53
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "5",
+      "concepto": "Cancelación de Hipotecas Navales",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 54
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "6",
+      "concepto": "Cambio de Nombre",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 55
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "7",
+      "concepto": "Cambio de domicilio",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 56
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "8",
+      "concepto": "Cambio de Propietario (Trámite completo de abanderamiento)",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 57
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "9",
+      "concepto": "Cancelación de registros",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 58
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "10",
+      "concepto": "Agente Residente (1 año)",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 59
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "11",
+      "concepto": "Obtención de Certificado de paz y salvo",
+      "clase": "monto",
+      "montoOficial": 10000,
+      "reglaOficial": null,
+      "orden": 60
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "12",
+      "concepto": "Recursos Administrativos",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 61
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "12.a",
+      "concepto": "Reconsideración",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 62
+    },
+    {
+      "categoria": "AUTORIDAD MARÍTIMA NACIONAL",
+      "numeral": "12.b",
+      "concepto": "Apelación",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 63
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "1",
+      "concepto": "Acción de nulidad",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 64
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "2",
+      "concepto": "Acción de plena jurisdicción",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 65
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "3",
+      "concepto": "Oposición de demanda contencioso administrativo",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 66
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "4",
+      "concepto": "Representación de tercero en proceso contencioso administrativo",
+      "clase": "monto",
+      "montoOficial": 300000,
+      "reglaOficial": null,
+      "orden": 67
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "5",
+      "concepto": "Procesos Indemnizatorios contra el Estado",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/,2,000.00 más el 35% de lo que se obtenga o lo que convengan las partes.",
+      "orden": 68
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "6",
+      "concepto": "Procesos de impuestos o alcances por contribuciones de entidades públicas",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 69
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "6.a",
+      "concepto": "De cuantía inferior a B/.10,000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "10% sobre el valor de la o la reclamación con un mínimo de B/.250.00",
+      "orden": 70
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "6.b",
+      "concepto": "De cuantía superior a B/.10,000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "7.5% sobre el valor de la o la reclamación con un mínimo de B/.1,000.00",
+      "orden": 71
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "6.7",
+      "concepto": "Agotamiento de la vía gubernativa",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 72
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "6.7.a",
+      "concepto": "Reconsideración",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 73
+    },
+    {
+      "categoria": "PROCESOS ANTE LA JURISDICCIÓN CONTENCIOSA ADMINISTRATIVA",
+      "numeral": "6.7.b",
+      "concepto": "Apelación",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 74
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "1",
+      "concepto": "Asesoría permanente a entidades oficiales sin ser servidor público en dicha institución por mes",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 75
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "2",
+      "concepto": "Asesoría para casos especiales a la administración pública",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 76
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "3",
+      "concepto": "Contratos Administrativos",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 77
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "3",
+      "concepto": "Elaboración",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 78
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "3",
+      "concepto": "Revisión",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 79
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "4",
+      "concepto": "Asesoría a personas naturales o jurídicas en la realización de contratos con la administración",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 80
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "5",
+      "concepto": "Asesoría a personas que intervienen en licitaciones y actos de contratación",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Según convenio",
+      "orden": 81
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "6",
+      "concepto": "Asistencia legal ante funcionarios administrativos",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.150.00 p/h",
+      "orden": 82
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "7",
+      "concepto": "Registro de Propiedad Intelectual, Literaria o Artística y otros (Derecho de Autor)",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 83
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "8",
+      "concepto": "Contrato de concesión y operación",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Según convenio",
+      "orden": 84
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "9",
+      "concepto": "Tramitación de permiso o licencia de explotación",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Según convenio",
+      "orden": 85
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "10",
+      "concepto": "Tramitación de Personería Jurídica para asociaciones sin fines de lucro",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 86
+    },
+    {
+      "categoria": "OTROS ASUNTOS DE DERECHO ADMINISTRATIVOS",
+      "numeral": "11",
+      "concepto": "Tramitación de Certificados de Idoneidad para el ejercicio de Profesionales liberales",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 87
+    },
+    {
+      "categoria": "TRAMITES ANTE EL ENTE REGULADOR",
+      "numeral": "1",
+      "concepto": "Tramitación de concesiones de agua",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 88
+    },
+    {
+      "categoria": "TRAMITES ANTE EL ENTE REGULADOR",
+      "numeral": "2",
+      "concepto": "Tramitación de servicios radiotelefónico",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 89
+    },
+    {
+      "categoria": "TRAMITES ANTE EL ENTE REGULADOR",
+      "numeral": "3",
+      "concepto": "Tramitación de Licencia funcionamiento de emisoras de radio",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 90
+    },
+    {
+      "categoria": "TRAMITES ANTE EL ENTE REGULADOR",
+      "numeral": "4",
+      "concepto": "Tramitación de la Licencia Funcionamiento de T.V.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 91
+    },
+    {
+      "categoria": "TRAMITES ANTE EL ENTE REGULADOR",
+      "numeral": "5",
+      "concepto": "Licencia de Transmisión de señal Vía Satélite",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 92
+    },
+    {
+      "categoria": "TRAMITES ANTE EL ENTE REGULADOR",
+      "numeral": "6",
+      "concepto": "Otras gestiones administrativas ante este organismo",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 93
+    },
+    {
+      "categoria": "TRÁMITES ANTE COMISIÓN DE LIBRE COMPETENCIA Y ASUNTOS DEL CONSUMIDOR (CLICAC)",
+      "numeral": "1",
+      "concepto": "Denuncia",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 94
+    },
+    {
+      "categoria": "TRÁMITES ANTE COMISIÓN DE LIBRE COMPETENCIA Y ASUNTOS DEL CONSUMIDOR (CLICAC)",
+      "numeral": "2",
+      "concepto": "Procedimiento Conciliatorio",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 95
+    },
+    {
+      "categoria": "TRÁMITES ANTE COMISIÓN DE LIBRE COMPETENCIA Y ASUNTOS DEL CONSUMIDOR (CLICAC)",
+      "numeral": "3",
+      "concepto": "Proceso de Salvaguardia",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 96
+    },
+    {
+      "categoria": "TRÁMITES ANTE COMISIÓN DE LIBRE COMPETENCIA Y ASUNTOS DEL CONSUMIDOR (CLICAC)",
+      "numeral": "4",
+      "concepto": "Proceso de Concentraciones",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 97
+    },
+    {
+      "categoria": "GESTIONES ADMINISTRATIVAS ANTE EL TRIBUNAL ELECTORAL Y SUS DEPENDENCIAS ADMINISTRATIVO",
+      "numeral": "1",
+      "concepto": "Obtención de certificados y/o certificaciones.",
+      "clase": "monto",
+      "montoOficial": 10000,
+      "reglaOficial": null,
+      "orden": 98
+    },
+    {
+      "categoria": "GESTIONES ADMINISTRATIVAS ANTE EL TRIBUNAL ELECTORAL Y SUS DEPENDENCIAS ADMINISTRATIVO",
+      "numeral": "2",
+      "concepto": "Inscripción de actos vitales de panameños en el extranjero",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 99
+    },
+    {
+      "categoria": "GESTIONES ADMINISTRATIVAS ANTE EL TRIBUNAL ELECTORAL Y SUS DEPENDENCIAS ADMINISTRATIVO",
+      "numeral": "3",
+      "concepto": "Corrección de inscripción y marginales",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 100
+    },
+    {
+      "categoria": "GESTIONES ADMINISTRATIVAS ANTE EL TRIBUNAL ELECTORAL Y SUS DEPENDENCIAS ADMINISTRATIVO",
+      "numeral": "4",
+      "concepto": "Cambios de nombre por derecho de usos y costumbre",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 101
+    },
+    {
+      "categoria": "GESTIONES ADMINISTRATIVAS ANTE EL TRIBUNAL ELECTORAL Y SUS DEPENDENCIAS ADMINISTRATIVO",
+      "numeral": "5",
+      "concepto": "Gestiones administrativas y peticiones generales acompañado al interesado",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 102
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "1",
+      "concepto": "Trámite de inscripción de partidos Políticos",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 103
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "2",
+      "concepto": "Oposición a inscripción de partidos políticos, registros de Símbolos y bandera",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 104
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "3",
+      "concepto": "Impugnación de actas y/o resoluciones internas de Organismos de los partidos políticos inscritos.",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 105
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "4",
+      "concepto": "Impugnación a inscripción de adherentes de partidos Políticos.",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 106
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "5",
+      "concepto": "Impugnación a cambio de residencia y registro en el padrón electoral.",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 107
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "6",
+      "concepto": "Representación en procesos de expulsión de miembros de Partidos Políticos",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 108
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "7",
+      "concepto": "Representación en impugnaciones de postulaciones a Cargos de elección popular.",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 109
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "7.a",
+      "concepto": "Representantes o Concejales",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 110
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "7.b",
+      "concepto": "Alcaldes",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 111
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "7.c",
+      "concepto": "Legisladores y suplentes",
+      "clase": "monto",
+      "montoOficial": 75000,
+      "reglaOficial": null,
+      "orden": 112
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "7.d",
+      "concepto": "Diputados al Parlacen y suplentes",
+      "clase": "monto",
+      "montoOficial": 75000,
+      "reglaOficial": null,
+      "orden": 113
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "7.e",
+      "concepto": "Presidentes o Vicepresidentes de la República",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 114
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "8",
+      "concepto": "Representación en impugnación de proclamaciones de candidatos a cargos de elección popular",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 115
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "8.a",
+      "concepto": "Representantes o Consejales y suplentes",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 116
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "8.b",
+      "concepto": "Alcaldes o suplentes",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 117
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "8.c",
+      "concepto": "Legisladores o Diputados al Parlacen y suplentes",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 118
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "8.d",
+      "concepto": "Presidentes o Vicepresidentes de la República",
+      "clase": "monto",
+      "montoOficial": 1000000,
+      "reglaOficial": null,
+      "orden": 119
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "9",
+      "concepto": "Trámite de registro de disolución de partidos políticos",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 120
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "10",
+      "concepto": "Abogado registrado del partido en el Tribunal Electoral por mes",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 121
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "11",
+      "concepto": "Procesos de nulidad de elecciones",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 122
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "12",
+      "concepto": "Procesos por faltas electorales y administrativas",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 123
+    },
+    {
+      "categoria": "PROCEDIMIENTOS ANTE LA JURISDICCIÓN ELECTORAL",
+      "numeral": "13",
+      "concepto": "Procesos seguidos para delitos electorales",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 124
+    },
+    {
+      "categoria": "CONSULTAS Y CONCEPTOS SOLICITADAS A ABOGADOS O FIRMAS DE ABOGADOS",
+      "numeral": "1",
+      "concepto": "Consulta verbal con honorario mínimo de",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/. 50.00 p/h",
+      "orden": 125
+    },
+    {
+      "categoria": "CONSULTAS Y CONCEPTOS SOLICITADAS A ABOGADOS O FIRMAS DE ABOGADOS",
+      "numeral": "2",
+      "concepto": "Consulta verbal con examen de documentos",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.150.00 p/h",
+      "orden": 126
+    },
+    {
+      "categoria": "CONSULTAS Y CONCEPTOS SOLICITADAS A ABOGADOS O FIRMAS DE ABOGADOS",
+      "numeral": "3",
+      "concepto": "Concepto escrito",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.150.00 p/h",
+      "orden": 127
+    },
+    {
+      "categoria": "CONSULTAS Y CONCEPTOS SOLICITADAS A ABOGADOS O FIRMAS DE ABOGADOS",
+      "numeral": "4",
+      "concepto": "Consultas por medios electrónicos",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Según convenio",
+      "orden": 128
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "1",
+      "concepto": "Un horario convencional sobre un mínimo de B/.200.00 (por hora) teniendo en cuenta la complejidad del trabajo, tiempo demandado y valores vinculados a la operación.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Un horario convencional sobre un mínimo de B/.200.00 (por hora) teniendo en cuenta la complejidad del trabajo, tiempo demandado y valores vinculados a la operación.",
+      "orden": 129
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2",
+      "concepto": "La redacción de documentos que contenga contratos de compra venta, permuta arrendamientos, cesiones de créditos y acciones, opciones de compra y venta, dación en pago, préstamos con garantía o sin ella, prendario o fiduciaria, derechos reales limitados, capitulaciones matrimoniales, transacciones fuera de juicio, contratados de obra y otros de naturaleza similar, los títulos supletorios y en general, los documentos relativos o contratos, transacciones y actos en que se entregue, se prometa, se reciba, se pague o se declare alguna suma de dinero, o efectivos, o bienes equivalentes, causarán honorarios sobre el valor de las respectivas operaciones, conforme a la siguiente tarifa en forma progresiva:",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 130
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2.a",
+      "concepto": "De B/.0.01 hasta B/.3,000.00",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 131
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2.b",
+      "concepto": "De B/.3,001.00 hasta B/.5,000.00",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 132
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2.c",
+      "concepto": "De B/.5,001.00 hasta B/.10,000.00",
+      "clase": "monto",
+      "montoOficial": 27500,
+      "reglaOficial": null,
+      "orden": 133
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2.d",
+      "concepto": "De B/.10,001.00 hasta B/.30,000.00",
+      "clase": "monto",
+      "montoOficial": 40000,
+      "reglaOficial": null,
+      "orden": 134
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2.e",
+      "concepto": "De B/.30,001.00 hasta B/.50,000.00",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 135
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2.f",
+      "concepto": "De B/.50,001.00 hasta B/.100,000.00",
+      "clase": "monto",
+      "montoOficial": 80000,
+      "reglaOficial": null,
+      "orden": 136
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2.g",
+      "concepto": ") De B/.100,001.00 hasta B/.150,000.00",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 137
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2.h",
+      "concepto": "De B/.150,001.00 hasta B/.200,000.00",
+      "clase": "monto",
+      "montoOficial": 155000,
+      "reglaOficial": null,
+      "orden": 138
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2.i",
+      "concepto": "De B/.200,001.00 hasta B/.250,000.00",
+      "clase": "monto",
+      "montoOficial": 157500,
+      "reglaOficial": null,
+      "orden": 139
+    },
+    {
+      "categoria": "ELABORACIÓN DE MINUTAS SIN ESTUDIOS DE TÍTULOS Y ELABORACIÓN DE DOCUMENTOS",
+      "numeral": "2.j",
+      "concepto": "De B/.250.001.00 hasta B/.2,000.000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "3.5%",
+      "orden": 140
+    },
+    {
+      "categoria": "ELABORACIÓN DE OTROS DOCUMENTOS LEGALES",
+      "numeral": "1",
+      "concepto": "Preparación de Minutas de declaración de mejoras según la cuantía, con un mínimo de",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 141
+    },
+    {
+      "categoria": "ELABORACIÓN DE OTROS DOCUMENTOS LEGALES",
+      "numeral": "2",
+      "concepto": "La redacción de poderes causará honorarios mínimo conforme a la siguiente tarifa:",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 142
+    },
+    {
+      "categoria": "ELABORACIÓN DE OTROS DOCUMENTOS LEGALES",
+      "numeral": "2.a",
+      "concepto": "Poder otorgado por persona natural",
+      "clase": "monto",
+      "montoOficial": 10000,
+      "reglaOficial": null,
+      "orden": 143
+    },
+    {
+      "categoria": "ELABORACIÓN DE OTROS DOCUMENTOS LEGALES",
+      "numeral": "2.b",
+      "concepto": "Poder otorgado por persona jurídica para asuntos judiciales",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 144
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "numeral": "2.a",
+      "concepto": "Para operaciones cuyo valor no sea mayor de B/.10,000.00 un horarios convencional sobre un mínimo de B/.150.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Para operaciones cuyo valor no sea mayor de B/.10,000.00 un horarios convencional sobre un mínimo de B/.150.00",
+      "orden": 145
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "numeral": "2.b",
+      "concepto": "Para operaciones cuyo valor sea superior a B/.10,000.00 sin pasar de B/.25,000.00 un honorario convencional mayor de B/350.00 sin que exceda del 2% del valor de la operación.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Para operaciones cuyo valor sea superior a B/.10,000.00 sin pasar de B/.25,000.00 un honorario convencional mayor de B/350.00 sin que exceda del 2% del valor de la operación.",
+      "orden": 146
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "numeral": "2.c",
+      "concepto": "Para operaciones cuyo valor sea superior a B/.25.000.00 sin pasar de B/50,000.00 un honorario convencional mayor de B/.450.00 sin que exceda del 11/2 del valor de la operación.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Para operaciones cuyo valor sea superior a B/.25.000.00 sin pasar de B/50,000.00 un honorario convencional mayor de B/.450.00 sin que exceda del 11/2 del valor de la operación.",
+      "orden": 147
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "numeral": "2.d",
+      "concepto": "Para operaciones cuyo valor sea superior de B/.50,000.00 sin pasar de B/.100,000.00 un honorario convencional mayor de B/750.00 sin que se exceda de 1% del valor de operación.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Para operaciones cuyo valor sea superior de B/.50,000.00 sin pasar de B/.100,000.00 un honorario convencional mayor de B/750.00 sin que se exceda de 1% del valor de operación.",
+      "orden": 148
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "numeral": "2.e",
+      "concepto": "Para operaciones cuyo valor sea mayor de B/.100,000.00 sin pasar de B/250,000.00 un honorario convencional mayor de B/.1,000.00 sin que exceda del 0.0085%.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Para operaciones cuyo valor sea mayor de B/.100,000.00 sin pasar de B/250,000.00 un honorario convencional mayor de B/.1,000.00 sin que exceda del 0.0085%.",
+      "orden": 149
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "numeral": "2.f",
+      "concepto": "Para operaciones cuyo valor sea superior de B/.250,000.00 sin pasar de B/.1,000.000.00 un horario convencional mayor de B/.1,000.00 sin que exceda del 0.0075%.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Para operaciones cuyo valor sea superior de B/.250,000.00 sin pasar de B/.1,000.000.00 un horario convencional mayor de B/.1,000.00 sin que exceda del 0.0075%.",
+      "orden": 150
+    },
+    {
+      "categoria": "ESTUDIOS DE TÍTULOS",
+      "numeral": "2.g",
+      "concepto": "Para operaciones cuyo valor exceda de B/.1,000.000.00 un honorario convencional sobre un mínimo equivalente al 0.0065% pero siempre con mínimo de B/.1,875.00 de la operación.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Para operaciones cuyo valor exceda de B/.1,000.000.00 un honorario convencional sobre un mínimo equivalente al 0.0065% pero siempre con mínimo de B/.1,875.00 de la operación.",
+      "orden": 151
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "1",
+      "concepto": "Registro sanitario de medicamentos, cosméticos, alimentos y licores cada registro",
+      "clase": "monto",
+      "montoOficial": 35000,
+      "reglaOficial": null,
+      "orden": 152
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "2",
+      "concepto": "Renovación",
+      "clase": "monto",
+      "montoOficial": 35000,
+      "reglaOficial": null,
+      "orden": 153
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "3",
+      "concepto": "Supresión o cambio o modificación de contraindicaciones o de indicaciones o de advertencias o de excipientes o de la dosis o de colores.",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 154
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "4",
+      "concepto": "Traspaso",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 155
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "5",
+      "concepto": "Modificación del nombre del producto",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 156
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "6",
+      "concepto": "Modificación de la fórmula del producto o reformulación",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 157
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "7",
+      "concepto": "Supresión de exigencia venta con fórmula médica",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 158
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "8",
+      "concepto": "Cambio del nombre del titular",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 159
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "9",
+      "concepto": "Licencia sanitaria de funcionamiento (Clase A, B, C, y E) inscripción de Laboratorios",
+      "clase": "monto",
+      "montoOficial": 40000,
+      "reglaOficial": null,
+      "orden": 160
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "10",
+      "concepto": "Memoria de impulso procesal",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 161
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "11",
+      "concepto": "Solicitud de aprobación de etiquetas o su modificación de propaganda.",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 162
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "12",
+      "concepto": "Cambio de fabricante.",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 163
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "13",
+      "concepto": "Identificación o determinación del nombre genérico del producto",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 164
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "14",
+      "concepto": "Modificación o reforma de resoluciones",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 165
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "15",
+      "concepto": "Desistimiento",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 166
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO SANITARIO",
+      "numeral": "16",
+      "concepto": "En lo demás, deben seguirse, en lo posible, las tarifas de propiedad Industrial.",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 167
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "1",
+      "concepto": "Representación ante el Ministerio de Trabajo",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 168
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "1.a",
+      "concepto": "Para el trabajador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.50.00 p/h",
+      "orden": 169
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "1.b",
+      "concepto": "Para el empleador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.50.00 p/h",
+      "orden": 170
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "2",
+      "concepto": "Permiso de trabajo (obtención o prórroga)",
+      "clase": "monto",
+      "montoOficial": 40000,
+      "reglaOficial": null,
+      "orden": 171
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "3",
+      "concepto": "Presentación de reconsideraciones y/o apelaciones en solicitudes de Permisos de Trabajo",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 172
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "4",
+      "concepto": "Concepto verbal",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 173
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "4.a",
+      "concepto": "Para el trabajador",
+      "clase": "monto",
+      "montoOficial": 5000,
+      "reglaOficial": null,
+      "orden": 174
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "4.b",
+      "concepto": "Para el empleador",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 175
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "5",
+      "concepto": "Concepto por escrito",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 176
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "5.a",
+      "concepto": "Para el trabajador",
+      "clase": "monto",
+      "montoOficial": 5000,
+      "reglaOficial": null,
+      "orden": 177
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "5.b",
+      "concepto": "Para el empleador",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 178
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "6",
+      "concepto": "Revisión de cálculo laborales",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 179
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "6.a",
+      "concepto": "Para el trabajador",
+      "clase": "monto",
+      "montoOficial": 5000,
+      "reglaOficial": null,
+      "orden": 180
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "6.b",
+      "concepto": "Para el empleador",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 181
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "7",
+      "concepto": "Elaboración de Contrato de Trabajo",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 182
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "7.a",
+      "concepto": "Para el empleador",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 183
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "8",
+      "concepto": "Reglamento Interno de Trabajo",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 184
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "8.a",
+      "concepto": "Elaboración",
+      "clase": "monto",
+      "montoOficial": 60000,
+      "reglaOficial": null,
+      "orden": 185
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "8.b",
+      "concepto": "Trámite para su aprobación",
+      "clase": "monto",
+      "montoOficial": 40000,
+      "reglaOficial": null,
+      "orden": 186
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "9",
+      "concepto": "Estatuto Sindical",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 187
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "9.a",
+      "concepto": "Elaboración",
+      "clase": "monto",
+      "montoOficial": 60000,
+      "reglaOficial": null,
+      "orden": 188
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "9.b",
+      "concepto": "Trámite para su aprobación",
+      "clase": "monto",
+      "montoOficial": 40000,
+      "reglaOficial": null,
+      "orden": 189
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "10",
+      "concepto": "Solicitud de Personería Jurídica a Organizaciones Sociales",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 190
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "10.a",
+      "concepto": "de empleadores",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 191
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "10.b",
+      "concepto": "de trabajadores",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 192
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "11",
+      "concepto": "Conciliación judicial mutuo acuerdo(extra judicial)",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.250.00 B/.250.00",
+      "orden": 193
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "12",
+      "concepto": "Elaboración de pliego de peticiones",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 194
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "13",
+      "concepto": "Convenciones Colectivas por negociación directa",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 195
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "13.a",
+      "concepto": "Para el empleador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/. 1,000.00 ó B/. 150.00 p/h",
+      "orden": 196
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "13.b",
+      "concepto": "Para el trabajador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "20% de los resultados",
+      "orden": 197
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "14",
+      "concepto": "Asesoría permanente de Sindicato mensuales",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 198
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "15",
+      "concepto": "Asesoría permanente a patronos",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.300.00 p/m",
+      "orden": 199
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "16",
+      "concepto": "Asesoría a trabajadores en conflictos colectivos con firma de negociación colectiva",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 200
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "16.a",
+      "concepto": "Trabajadores",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "1,000.00 más el 20%",
+      "orden": 201
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "16.b",
+      "concepto": "Empleadores",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/. 1,500.00 ó 150.00 p/h",
+      "orden": 202
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "17",
+      "concepto": "Gestión extra-judicial en reconocimiento de Derechos Laborales (remuneraciones, prestaciones, indemnizaciones y otros)",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "15% de lo cobrado",
+      "orden": 203
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "18",
+      "concepto": "Elaboración de documentos de terminación; de Contrato del trabajo por mutuo consentimiento que incluya el cálculo de las prestaciones Laborales",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 204
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "18.a",
+      "concepto": "En representación del empleador",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 205
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "18.b",
+      "concepto": "En representación del trabajador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "15% del resultado",
+      "orden": 206
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "19",
+      "concepto": "Proceso de única instancia",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 207
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "19.a",
+      "concepto": "Para el trabajador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "30% del valor de las condenas o transacción",
+      "orden": 208
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "19.b",
+      "concepto": "Para el empleador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.500.00 salvo convenio",
+      "orden": 209
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "20",
+      "concepto": "Solicitud de Autorización de despido a trabajadores con fuero Sindical, fuero de Maternidad o fuero de pliego de peticiones",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 210
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "20.a",
+      "concepto": "En primera instancia",
+      "clase": "monto",
+      "montoOficial": 70000,
+      "reglaOficial": null,
+      "orden": 211
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "20.b",
+      "concepto": "En segunda instancia",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 212
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "21",
+      "concepto": "Solicitud de autorización de despido por causa económica y otros Ante la Dirección General de Trabajo",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 213
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "22",
+      "concepto": "Procesos relativos al incumplimiento del artículo 215 del Código de Trabajo",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.250.00 y 20% de lo obtenido",
+      "orden": 214
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "23",
+      "concepto": "Proceso de Conocimiento",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 215
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "23.a",
+      "concepto": "En representación del trabajador",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 216
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "a.1",
+      "concepto": "Por la primera instancia",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "25% de lo obtenido",
+      "orden": 217
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "a.2",
+      "concepto": "Por la segunda instancia",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "15% de lo obtenido",
+      "orden": 218
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "a.3",
+      "concepto": "Por ambas instancias, o cuando el proceso termine en la primera, por falta de apelación del empleador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "el 25%",
+      "orden": 219
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "23.b",
+      "concepto": "En representación del empleador",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 220
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "b.1",
+      "concepto": "Por la primera instancia",
+      "clase": "monto",
+      "montoOficial": 75000,
+      "reglaOficial": null,
+      "orden": 221
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "b.2",
+      "concepto": "Por la segunda instancia",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 222
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "b.3",
+      "concepto": "Por ambas instancias",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 223
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "24",
+      "concepto": "Proceso de Fuero Sindical",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 224
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "24.a",
+      "concepto": "Reintegros",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.250.00 más el 25%",
+      "orden": 225
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "24.b",
+      "concepto": "Para el Empleador",
+      "clase": "monto",
+      "montoOficial": 75000,
+      "reglaOficial": null,
+      "orden": 226
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "25",
+      "concepto": "Proceso Ejecutivo",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 227
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "25.a",
+      "concepto": "Para el demandante",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "25% de lo obtenido",
+      "orden": 228
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "25.b",
+      "concepto": "Para el demandado",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 229
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "b.1",
+      "concepto": "Con presentación de excepciones",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 230
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "26",
+      "concepto": "Proceso arbitral",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 231
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "26.a",
+      "concepto": "De carácter individual",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 232
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "a.1",
+      "concepto": "Para el trabajador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "15%",
+      "orden": 233
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "a.2",
+      "concepto": "Para el empleador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "15%",
+      "orden": 234
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "a.3",
+      "concepto": "Como arbitro, conforme a la tarifa correspondiente al organismo donde se ventile el arbitraje.",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 235
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "26.b",
+      "concepto": "De carácter colectivo originado en compromiso o en cláusula compromisoria",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 236
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "b.1",
+      "concepto": "Para los Trabajadores",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 237
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "b.2",
+      "concepto": "Para el empleador",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 238
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "b.3",
+      "concepto": "Como arbitro, conforme a la tarifa correspondiente al organismo donde se ventile el arbitraje",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 239
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "27",
+      "concepto": "Casación Laboral",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 240
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "27.a",
+      "concepto": "Demanda de Casación",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 241
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "a.1",
+      "concepto": "Para el trabajador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.500.00 ó B/.250.00 más el 10% de lo obtenido",
+      "orden": 242
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "a.2",
+      "concepto": "Para el empleador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.1,000.00 ó B/.500.00 más el 10% de la cuantía",
+      "orden": 243
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "27.b",
+      "concepto": "Oposición a la demanda de casación",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 244
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "b.1",
+      "concepto": "Para el trabajador",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.350.00 ó B/.250.00 más el 10% de lo obtenido",
+      "orden": 245
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO DEL TRABAJO",
+      "numeral": "b.2",
+      "concepto": "Para el empleador",
+      "clase": "monto",
+      "montoOficial": 80000,
+      "reglaOficial": null,
+      "orden": 246
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "1",
+      "concepto": "Tarifa mínima por hora",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 247
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "2",
+      "concepto": "Consultas o conceptos",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 248
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "2.a",
+      "concepto": "Consulta Verbal",
+      "clase": "monto",
+      "montoOficial": 10000,
+      "reglaOficial": null,
+      "orden": 249
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "2.b",
+      "concepto": "Consulta o concepto escrito",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 250
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "2.c",
+      "concepto": "Consultas sobre temas extensos",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 251
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "3",
+      "concepto": "Constitución de Personas Jurídicas",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 252
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "3.a",
+      "concepto": "Colectiva, en comandita simple y de responsabilidad limitada",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 253
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "3.b",
+      "concepto": "En Comandita por acciones",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 254
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "3.c",
+      "concepto": "Anónima",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 255
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "3.d",
+      "concepto": "Fundación de Interés Privado",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 256
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "3.e",
+      "concepto": "Administradora de fondos de pensiones",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 257
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "4",
+      "concepto": "Confección de estatutos para sociedades y asociaciones",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 258
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "4.a",
+      "concepto": "Reconocimiento de asociación sin fines de lucro",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 259
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "4.b",
+      "concepto": "Reconocimiento de asociación educativa, como organización no-gubernamental y de bienestar social, laboral, etc",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 260
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "5",
+      "concepto": "Confección de Actas de sociedades y asociaciones",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 261
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "6",
+      "concepto": "Confección de Poderes de sociedades y asociaciones",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 262
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "7",
+      "concepto": "Disolución de Sociedades y asociaciones",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 263
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "8",
+      "concepto": "Certificado del Registro Público sobre la vigencia y personería de la Sociedad y Asociación",
+      "clase": "monto",
+      "montoOficial": 10000,
+      "reglaOficial": null,
+      "orden": 264
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "9",
+      "concepto": "Actuación como Directores en Sociedades Anónimas (Al año)",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 265
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "9.a",
+      "concepto": "Si son abogados",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 266
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "9.b",
+      "concepto": "Si no son Abogados",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 267
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "9.c",
+      "concepto": "Si el Abogado es el Presidente o el Representante Legal",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 268
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "10",
+      "concepto": "Agente Residente (Al año)",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 269
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "11",
+      "concepto": "Asesoría en la organización y celebración de Asamblea o Junta Directiva de Sociedades o Asociaciones, incluida asistencia a la reunión, redacción de actas y gestiones posteriores por hora",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 270
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "11.a",
+      "concepto": "en oficina del abogado",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 271
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "11.b",
+      "concepto": "fuera de la oficina",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 272
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO COMERCIAL",
+      "numeral": "12",
+      "concepto": "Asesoramiento en trámite de expedición de acciones de la Sociedad",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 273
+    },
+    {
+      "categoria": "OTROS PROCESOS EN MATERIA DE COMERCIO",
+      "numeral": "1",
+      "concepto": "Medidas Cautelares de Propiedad Industrial, en primera instancia Según el caso,",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 274
+    },
+    {
+      "categoria": "OTROS PROCESOS EN MATERIA DE COMERCIO",
+      "numeral": "2",
+      "concepto": "Cancelaciones, nulidades, competencia desleal, justificación del proceder, prohibición del uso, etc.,",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 275
+    },
+    {
+      "categoria": "OTROS PROCESOS EN MATERIA DE COMERCIO",
+      "numeral": "2.a",
+      "concepto": "en primera o única instancia, según el caso,",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 276
+    },
+    {
+      "categoria": "OTROS PROCESOS EN MATERIA DE COMERCIO",
+      "numeral": "2.b",
+      "concepto": "En segunda instancia, según el caso, mínimo",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 277
+    },
+    {
+      "categoria": "OTROS PROCESOS EN MATERIA DE COMERCIO",
+      "numeral": "4",
+      "concepto": "Inspección judicial anticipada",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 278
+    },
+    {
+      "categoria": "OTROS PROCESOS EN MATERIA DE COMERCIO",
+      "numeral": "5",
+      "concepto": "Dictamen pericial anticipado",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 279
+    },
+    {
+      "categoria": "OTROS PROCESOS EN MATERIA DE COMERCIO",
+      "numeral": "6",
+      "concepto": "En caso de cobro de honorarios",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.200.00 por hora",
+      "orden": 280
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "1",
+      "concepto": "Obtención de Licencia Bancaria",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 281
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "1.a",
+      "concepto": "General",
+      "clase": "monto",
+      "montoOficial": 2500000,
+      "reglaOficial": null,
+      "orden": 282
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "1.b",
+      "concepto": "Internacional",
+      "clase": "monto",
+      "montoOficial": 2500000,
+      "reglaOficial": null,
+      "orden": 283
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "1.c",
+      "concepto": "De Representación",
+      "clase": "monto",
+      "montoOficial": 2500000,
+      "reglaOficial": null,
+      "orden": 284
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "2",
+      "concepto": "Asesoría externa a Bancos (Mensualidades)",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 285
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "3",
+      "concepto": "Obtención de la Licencia Bancaria (adicional)",
+      "clase": "monto",
+      "montoOficial": 1250000,
+      "reglaOficial": null,
+      "orden": 286
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "4",
+      "concepto": "Cancelación de Licencia Bancaria",
+      "clase": "monto",
+      "montoOficial": 1250000,
+      "reglaOficial": null,
+      "orden": 287
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "5",
+      "concepto": "Gestiones Administrativas ante la Superintendencia de Bancos, tales como (quejas por deficiencia en el servicio, apertura de sucursales y similares)",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 288
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "6",
+      "concepto": "Constitución de Fideicomisos",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 289
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "7",
+      "concepto": "Trámite de obtención de licencias para fiduciario",
+      "clase": "monto",
+      "montoOficial": 1500000,
+      "reglaOficial": null,
+      "orden": 290
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "8",
+      "concepto": "Agente Residente Fideicomiso (Al año)",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 291
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE BANCOS",
+      "numeral": "9",
+      "concepto": "Asesorías administrativas ante la superintendencia de Bancos, incluyendo recursos contra sus resoluciones",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.150.00 por hora",
+      "orden": 292
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "1",
+      "concepto": "Obtención de Licencia de Corredores de Seguro",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 293
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "1.a",
+      "concepto": "Persona natural",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 294
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "1.b",
+      "concepto": "Persona Jurídica",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 295
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "2",
+      "concepto": "Obtención de Licencia para Compañías Aseguradoras",
+      "clase": "monto",
+      "montoOficial": 250000,
+      "reglaOficial": null,
+      "orden": 296
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "3",
+      "concepto": "Obtención de Licencia para Compañías Reaseguradoras",
+      "clase": "monto",
+      "montoOficial": 350000,
+      "reglaOficial": null,
+      "orden": 297
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "4",
+      "concepto": "Trámite de cesión de cartera de Seguros y/o Reaseguros",
+      "clase": "monto",
+      "montoOficial": 250000,
+      "reglaOficial": null,
+      "orden": 298
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "5",
+      "concepto": "Trámite de aprobación de pólizas o endosos",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 299
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "6",
+      "concepto": "Obtención de Licencia para aseguradoras cautivas y Administradoras de Aseguradoras cautivas",
+      "clase": "monto",
+      "montoOficial": 250000,
+      "reglaOficial": null,
+      "orden": 300
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "7",
+      "concepto": "Obtención de Licencia para Administradora de Aseguradoras y de Corredores de Seguros",
+      "clase": "monto",
+      "montoOficial": 250000,
+      "reglaOficial": null,
+      "orden": 301
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "8",
+      "concepto": "Recursos administrativos ante la Superintendencia o Consejo Técnico de Seguros y Reaseguro:",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 302
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "8.a",
+      "concepto": "Reconsideración",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 303
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "8.b",
+      "concepto": "Apelación",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 304
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "9",
+      "concepto": "Trámite de consulta",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 305
+    },
+    {
+      "categoria": "ASUNTOS ANTE LA SUPERINTENDENCIA DE SEGUROS Y REASEGUROS",
+      "numeral": "10",
+      "concepto": "Otras gestiones",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 306
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "1",
+      "concepto": "Exoneraciones de Impuestos de Inmuebles por finca",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 307
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "2",
+      "concepto": "Exoneraciones del pago del impuesto de transferencia de Bienes Inmuebles por finca:",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 308
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "2.a",
+      "concepto": "Persona Natural",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 309
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "2.b",
+      "concepto": "Persona Jurídica",
+      "clase": "monto",
+      "montoOficial": 35000,
+      "reglaOficial": null,
+      "orden": 310
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "3",
+      "concepto": "Pago de tasas únicas y obtención de paz y salvo nacional o de inmueble",
+      "clase": "monto",
+      "montoOficial": 10000,
+      "reglaOficial": null,
+      "orden": 311
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "4",
+      "concepto": "Obtención de resolución de exoneración de donaciones",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 312
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "5",
+      "concepto": "Procesos de prescripción de tributos nacionales",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 313
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "5.a",
+      "concepto": "Hasta B/.5.000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "25% de lo concedido",
+      "orden": 314
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "5.b",
+      "concepto": "Más de B/.5.000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "20% de lo concedido",
+      "orden": 315
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "6",
+      "concepto": "Procesos de alcances tributarios",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 316
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "6.a",
+      "concepto": "Reconsideración",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 317
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "6.b",
+      "concepto": "Apelación",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 318
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "7",
+      "concepto": "Gestión de negociación y trámite de Contratos con la nación",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.1,500.00 ó suma mayor según el tiempo ó importancia del Contrato.",
+      "orden": 319
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "8",
+      "concepto": "Gestiones de aprobación de rifas, tómbola y otras actividades ante la Junta de Control de Juegos",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.500.00 ó según convenio",
+      "orden": 320
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "9",
+      "concepto": "Trámite de reconsideración y apelación de resoluciones de la Junta de Control de Juegos (por cada instancia)",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 321
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "10",
+      "concepto": "Permisos de Operación de salas de juegos de suerte de azar",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 322
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "11",
+      "concepto": "Procesos por contrabando o defraudación fiscal",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/. 1,000.00 ó 150.00 p/h",
+      "orden": 323
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "12",
+      "concepto": "Permisos para instalación de depósitos aduaneros",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 324
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "13",
+      "concepto": "Permiso para licencia de transporte asegurado",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 325
+    },
+    {
+      "categoria": "TRÁMITES ANTE EL MINISTERIO DE ECONOMÍA Y FINANZAS",
+      "numeral": "14",
+      "concepto": "Gestiones y memoriales antes la Dirección General de Aduanas",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 326
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "1",
+      "concepto": "Confección de Arrendamiento",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 327
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "2",
+      "concepto": "a) Habitacional",
+      "clase": "monto",
+      "montoOficial": 5000,
+      "reglaOficial": null,
+      "orden": 328
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "3",
+      "concepto": "b) Comercial",
+      "clase": "monto",
+      "montoOficial": 10000,
+      "reglaOficial": null,
+      "orden": 329
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "4",
+      "concepto": "Solicitudes de desahucio ante la Comisión de Vivienda sin apelaciones",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 330
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "5",
+      "concepto": "Solicitudes de desahucio ante la Comisión de Vivienda con apelaciones",
+      "clase": "monto",
+      "montoOficial": 25000,
+      "reglaOficial": null,
+      "orden": 331
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "6",
+      "concepto": "Solicitudes de lanzamiento ante la Comisión de Vivienda",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 332
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "7",
+      "concepto": "Solicitudes de aumento de cánones",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 333
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "8",
+      "concepto": "Incorporación de régimen de propiedad horizontal",
+      "clase": "monto",
+      "montoOficial": 300000,
+      "reglaOficial": null,
+      "orden": 334
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "9",
+      "concepto": "Modificación de Reglamento de propiedad horizontal",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 335
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "10",
+      "concepto": "Tramitación de quejas ante la Comisión de Vivienda",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 336
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "11",
+      "concepto": "Tramitación de descuentos directos",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 337
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "12",
+      "concepto": "Trámites de devolución de depósitos",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 338
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "13",
+      "concepto": "Subsidios de modificación de zonas, de sin apelación",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 339
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "14",
+      "concepto": "Solicitudes de modificación de zonas, con apelación",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 340
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "15",
+      "concepto": "Trámites de certificaciones",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 341
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "16",
+      "concepto": "Devoluciones de aumento ilegales de cánones",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 342
+    },
+    {
+      "categoria": "ASUNTOS ANTE EL MINISTERIO DE VIVIENDA",
+      "numeral": "17",
+      "concepto": "Procesos de condena y rehabilitación",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 343
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "1",
+      "concepto": "PROCESO EJECUTIVO",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 344
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "1.a",
+      "concepto": "De menor cuantía",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "25%",
+      "orden": 345
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "1.b",
+      "concepto": "De mayor cuantía hasta B/,2,000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "20%",
+      "orden": 346
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "1.c",
+      "concepto": "De B/.2,000.00 en adelante hasta B/. 10,000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "15%",
+      "orden": 347
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "1.d",
+      "concepto": "De B/,10,000.00 a B/.100,000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "10%",
+      "orden": 348
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "1.e",
+      "concepto": "De B/. 100,000.00 en adelante",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "15%",
+      "orden": 349
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "2",
+      "concepto": "PROCESO ORDINARIO",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 350
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "2.1",
+      "concepto": "De menor cuantía",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "25%",
+      "orden": 351
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "2.2",
+      "concepto": "De mayor cuantía hasta B/,20,000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "25%",
+      "orden": 352
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "2.3",
+      "concepto": "De B/.20,000.00 en adelante hasta B/. 100,000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "20%",
+      "orden": 353
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "2.4",
+      "concepto": "De B/,100,000.00 a B/.500,000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "15%",
+      "orden": 354
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "2.5",
+      "concepto": "De B/. 500,000.00 a 1,000,000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "10%",
+      "orden": 355
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "2.6",
+      "concepto": "Representación de tercero",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "50% de la tarifa",
+      "orden": 356
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "2.7",
+      "concepto": "Representación al llamado al proceso",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "tarifa plena",
+      "orden": 357
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "3",
+      "concepto": "PROCESOS NO CONTENCIOSOS Declarativos, acertivos, informaciones para perpetua memoria y otros similares Mínimo B/.2,000.00. Si se transformaren en contenciosos se estará a las reglas generales.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "PROCESOS NO CONTENCIOSOS Declarativos, acertivos, informaciones para perpetua memoria y otros similares Mínimo B/.2,000.00. Si se transformaren en contenciosos se estará a las reglas generales.",
+      "orden": 358
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "4",
+      "concepto": "PROCESO DE SUCESIÓN TESTAMENTARIA O INTESTADA",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 359
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "4.1",
+      "concepto": "Hasta B/.50,000.00 (sobre el activo)",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "15%",
+      "orden": 360
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "4.2",
+      "concepto": "De B/.50,001.00 en adelante (del líquido de la sucesión)",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "10%",
+      "orden": 361
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "4.a",
+      "concepto": "Los honorarios anteriores se refieren únicamente al proceso a efecto de obtener la transmisión de los derechos y obligaciones del causante a sus herederos, suponiéndola desligada de todo proceso accesorio al de la sucesión. Pero los procesos ordinarios que han de seguirse sobre nulidad de testamento, alimentos de hijos menores, reivindicación de bienes herenciales, declaratoria contenciosa de herederos, etc., se fijarán de acuerdo a los honorarios señalados en la Sección 2 anterior",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 362
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "4.b",
+      "concepto": "Cuando se liquiden y adjudiquen ganancias al cónyuge sobreviviente, se aplicará la tarifa que establece al Sección de PROCESOS DE FAMILIA Y MENORES.",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 363
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "4.c",
+      "concepto": "Cuando en una sucesión haya varios herederos representantes por distintos abogados los honorarios se computaran sobre las hijuelas del heredero que cada abogados represente.",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 364
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "4.d",
+      "concepto": "En caso de que los créditos pasivos alcancen o excedan a la mitad del activos, los honorarios anteriores se aumentarán proporcionalmente del 25% al 50%.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "En caso de que los créditos pasivos alcancen o excedan a la mitad del activos, los honorarios anteriores se aumentarán proporcionalmente del 25% al 50%.",
+      "orden": 365
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "5",
+      "concepto": "PROCESOS ANTE LOS TRIBUNALES DE COMERCIO Para la fijación de los Honorarios Profesionales por las gestiones antes los Tribunales de Comercio, se aplicará la Tarifa señalada para los procesos en la jurisdicción ordinaria, de acuerdo a la cuantía y a la naturaleza del negocio.",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 366
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "6",
+      "concepto": "PROCESOS MARÍTIMOS En los procesos marítimos se aplicará en lo posible la tarifa aprobada para los procesos de la jurisdicción ordinaria. En aquellas diligencias judiciales o extrajudiciales en que se requiera prestación de servicios profesionales de Abogado se aplicará una tarifa de B/.200.00 por hora.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "PROCESOS MARÍTIMOS En los procesos marítimos se aplicará en lo posible la tarifa aprobada para los procesos de la jurisdicción ordinaria. En aquellas diligencias judiciales o extrajudiciales en que se requiera prestación de servicios profesionales de Abogado se aplicará una tarifa de B/.200.00 por hora.",
+      "orden": 367
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7",
+      "concepto": "PROCESOS ESPECIALES",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 368
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.1",
+      "concepto": "Deslinde y Amojonamiento o División o Venta de Bien Común:",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 369
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.1.a",
+      "concepto": "Hasta B/.20,000.00",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "25%",
+      "orden": 370
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.1.b",
+      "concepto": "De adelante",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "20,001.00 en 10%",
+      "orden": 371
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.2",
+      "concepto": "Procesos Posesorios: Se pactará en forma convencional con base a un mínimo de B/.1,000.00 teniendo en cuenta la complejidad del negocio, la cuantía de los bienes la labor requerida, las condiciones especiales de la práctica, especialidad profesional y la capacidad económica del interesado.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Procesos Posesorios: Se pactará en forma convencional con base a un mínimo de B/.1,000.00 teniendo en cuenta la complejidad del negocio, la cuantía de los bienes la labor requerida, las condiciones especiales de la práctica, especialidad profesional y la capacidad económica del interesado.",
+      "orden": 372
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.3",
+      "concepto": "Redención de cuentas. Se aplica la tarifa de los proceso ejecutivos.",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 373
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.4",
+      "concepto": "Pago por consignación 20% de la cuantía, con un mínimo B/.300.00 de",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Pago por consignación 20% de la cuantía, con un mínimo B/.300.00 de",
+      "orden": 374
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.5",
+      "concepto": "Desahucio y Lanzamiento ante Tribunales Ordinarios",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 375
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.6",
+      "concepto": "Restitución de bienes con reserva de dominio",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 376
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.7",
+      "concepto": "Inspecciones sobre medidas y linderos",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 377
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.7.a",
+      "concepto": "Predios urbanos",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.500.00 a 2,000.00",
+      "orden": 378
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "7.7.b",
+      "concepto": "Predios rurales",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.500.00 a 3,000.00",
+      "orden": 379
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8",
+      "concepto": "RECURSOS EXTRAORDINARIOS",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 380
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.1",
+      "concepto": "Casación",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 381
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.1.a",
+      "concepto": "Con cuantía hasta B/.50.000.00",
+      "clase": "monto",
+      "montoOficial": 300000,
+      "reglaOficial": null,
+      "orden": 382
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.1.b",
+      "concepto": "Con cuantía superior a B/.50,000.00",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 383
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.2",
+      "concepto": "Oposición a la demanda de Casación",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 384
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3",
+      "concepto": "Revisión (Interposición del recurso o intervención de terceros)",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 385
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.a",
+      "concepto": "Sentencia de la Corte o el Tribunal Superior",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 386
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.b",
+      "concepto": "Sentencia del Juez del Circuito",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 387
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.c",
+      "concepto": "Sentencia del Juez Municipal",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 388
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.c",
+      "concepto": "Ejecución de Sentencia Extranjera",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 389
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.4",
+      "concepto": "Amparo de Garantías y Acciones de Inconstitucionalidad",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 390
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.4.a",
+      "concepto": "Juzgado de Circuito",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 391
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.4.b",
+      "concepto": "Tribunal Superior",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 392
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.4.c",
+      "concepto": "Corte Suprema",
+      "clase": "monto",
+      "montoOficial": 300000,
+      "reglaOficial": null,
+      "orden": 393
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.4.d",
+      "concepto": "Acción de Inconstitucionalidad",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 394
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.4.e",
+      "concepto": "Advertencia de Inconstitucionalidad",
+      "clase": "monto",
+      "montoOficial": 500000,
+      "reglaOficial": null,
+      "orden": 395
+    },
+    {
+      "categoria": "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)",
+      "numeral": "8.3.4.f",
+      "concepto": "Habeas Corpus",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 396
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "1",
+      "concepto": "Divorcio - Nulidad de Matrimonio - de B/.500.00 a B/.2,000.00 en cada caso según convenio",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "Divorcio - Nulidad de Matrimonio - de B/.500.00 a B/.2,000.00 en cada caso según convenio",
+      "orden": 397
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "2",
+      "concepto": "Guarda, Crianza y Educación",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 398
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "3",
+      "concepto": "Reglamentación de Visitas",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 399
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "4",
+      "concepto": "Interdicción o Rehabilitación de interdicto",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 400
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "5",
+      "concepto": "Filiación",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 401
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "6",
+      "concepto": "Adopción",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 402
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "7",
+      "concepto": "Impugnación de Paternidad",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 403
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "8",
+      "concepto": "Reconocimientos Voluntarios",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 404
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "9",
+      "concepto": "Alimentos (2da. Instancia)",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 405
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "10",
+      "concepto": "Emancipación",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 406
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "11",
+      "concepto": "Matrimonios de Hecho",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 407
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "12",
+      "concepto": "Disoluciones y Liquidación de Régimen Económico Matrimonial",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "500.00 más 20% del activo neto",
+      "orden": 408
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "13",
+      "concepto": "Otros procesos de familia no incluidos",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 409
+    },
+    {
+      "categoria": "PROCESO ANTE LA JURISDICCIÓN DE FAMILIA Y MENORES",
+      "numeral": "14",
+      "concepto": "Defensor de Ausente",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 410
+    },
+    {
+      "categoria": "MENORES",
+      "numeral": "1",
+      "concepto": "Procesos de Protección",
+      "clase": "monto",
+      "montoOficial": 200000,
+      "reglaOficial": null,
+      "orden": 411
+    },
+    {
+      "categoria": "MENORES",
+      "numeral": "2",
+      "concepto": "Reintegro de Menores",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 412
+    },
+    {
+      "categoria": "MENORES",
+      "numeral": "2.a",
+      "concepto": "Nacional",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 413
+    },
+    {
+      "categoria": "MENORES",
+      "numeral": "2.b",
+      "concepto": "Internacional",
+      "clase": "monto",
+      "montoOficial": 300000,
+      "reglaOficial": null,
+      "orden": 414
+    },
+    {
+      "categoria": "MENORES",
+      "numeral": "3",
+      "concepto": "Menores infractores",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 415
+    },
+    {
+      "categoria": "MENORES",
+      "numeral": "4",
+      "concepto": "Violencia Intrafamiliar",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 416
+    },
+    {
+      "categoria": "MENORES",
+      "numeral": "5",
+      "concepto": "Pensiones Prenatales",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 417
+    },
+    {
+      "categoria": "MENORES",
+      "numeral": "6",
+      "concepto": "Impedimentos de salidas",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 418
+    },
+    {
+      "categoria": "MENORES",
+      "numeral": "6.7",
+      "concepto": "Permisos de salida de menores",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 419
+    },
+    {
+      "categoria": "MENORES",
+      "numeral": "6.8",
+      "concepto": "Denuncias relativas a menores en circunstancias difíciles, abandono, y/o riesgo social y medidas de protección",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 420
+    },
+    {
+      "categoria": "PROCESOS ESPECIALES SOBRE",
+      "numeral": "1",
+      "concepto": "Ausencia y Presunción de Muerte",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.300.00 a B/,3,000.00",
+      "orden": 421
+    },
+    {
+      "categoria": "PROCESOS ESPECIALES SOBRE",
+      "numeral": "2",
+      "concepto": "Suspención de la Patria Potestad",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.300.00 a B/.3,000.00",
+      "orden": 422
+    },
+    {
+      "categoria": "PROCESOS ESPECIALES SOBRE",
+      "numeral": "3",
+      "concepto": "Nombramiento y Remoción de tutores o guardadores",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.500.00 a B/.3,000.00",
+      "orden": 423
+    },
+    {
+      "categoria": "PROCESOS ESPECIALES SOBRE",
+      "numeral": "4",
+      "concepto": "Impugnación de paternidad o maternidad",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/.500.00 a B/.3,000.00",
+      "orden": 424
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "1",
+      "concepto": "CONSULTAS",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 425
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "1.1",
+      "concepto": "Verbales",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/. 100.00 a 300.00 ó 150.00 por hora",
+      "orden": 426
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "1.2",
+      "concepto": "Escritas",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 427
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "2",
+      "concepto": "ASISTENCIA DEL ABOGADO AL CITADO Y/O DETENIDO",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 428
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "2.1",
+      "concepto": "En actuaciones policiales previas a la indagatoria",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 429
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "2.2",
+      "concepto": "En la declaración indagatoria",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "B/. 300.00 o tarifa de 150.00 por hora",
+      "orden": 430
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "2.3",
+      "concepto": "En asistencia a los citados en cualquier etapa del proceso",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 431
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "4",
+      "concepto": "FORMALIZACIÓN DE DENUNCIAS",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 432
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "4.1",
+      "concepto": "Ante Personerías Municipales",
+      "clase": "monto",
+      "montoOficial": 50000,
+      "reglaOficial": null,
+      "orden": 433
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "2",
+      "concepto": "Ante Fiscalías de Circuito",
+      "clase": "monto",
+      "montoOficial": 100000,
+      "reglaOficial": null,
+      "orden": 434
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "3",
+      "concepto": "Ante Fiscalías Superiores de Distrito",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 435
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "4",
+      "concepto": "Ante Autoridades con Jurisdicción en todo el territorio",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 436
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "5",
+      "concepto": "DEFENSA EN NEGOCIOS CRIMINALES",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 437
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "1",
+      "concepto": "Ante la esfera Municipal",
+      "clase": "monto",
+      "montoOficial": 150000,
+      "reglaOficial": null,
+      "orden": 438
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "2",
+      "concepto": "Ante la esfera de Circuito",
+      "clase": "monto",
+      "montoOficial": 250000,
+      "reglaOficial": null,
+      "orden": 439
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "3",
+      "concepto": "Ante las esferas Superiores",
+      "clase": "monto",
+      "montoOficial": 350000,
+      "reglaOficial": null,
+      "orden": 440
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "4",
+      "concepto": "Ante Autoridades con Jurisdicción en todo el territorio nacional",
+      "clase": "monto",
+      "montoOficial": 450000,
+      "reglaOficial": null,
+      "orden": 441
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "5",
+      "concepto": "Tercerías Incidentales para recuperación de bienes y levantamientos de medidas cautelares",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 442
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "6",
+      "concepto": "Finanzas de excarcelación",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "según convenio",
+      "orden": 443
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "5",
+      "concepto": "QUERELLAS Y ACCIONES PENALES DE LAS VÍCTIMAS DEL DELITO Cuando se trate de la interposición de Querellas y Acciones Penales de las Víctimas, los honorarios profesionales aplicables serán establecidos para la defensa en negocios criminales, con un aumento no menor del 25% de la tarifa allí indicada.",
+      "clase": "regla",
+      "montoOficial": null,
+      "reglaOficial": "QUERELLAS Y ACCIONES PENALES DE LAS VÍCTIMAS DEL DELITO Cuando se trate de la interposición de Querellas y Acciones Penales de las Víctimas, los honorarios profesionales aplicables serán establecidos para la defensa en negocios criminales, con un aumento no menor del 25% de la tarifa allí indicada.",
+      "orden": 444
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "6",
+      "concepto": "ACTUACIONES ANTE AUTORIDADES DE POLICÍA",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 445
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "1",
+      "concepto": "Ante Jueces o Corregidores Nocturnos",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 446
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "2",
+      "concepto": "Corregidores",
+      "clase": "monto",
+      "montoOficial": 20000,
+      "reglaOficial": null,
+      "orden": 447
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "3",
+      "concepto": "Alcaldía",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 448
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "4",
+      "concepto": "Gobernación",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 449
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "5",
+      "concepto": "Juicio ante Juzgado de Tránsito",
+      "clase": "monto",
+      "montoOficial": 30000,
+      "reglaOficial": null,
+      "orden": 450
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "5.6",
+      "concepto": "Cuando se trate de apelaciones en antes indicados, los honorarios serán:",
+      "clase": "rubro",
+      "montoOficial": null,
+      "reglaOficial": null,
+      "orden": 451
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "5.a",
+      "concepto": "Contra Resoluciones de Jueces Nocturnos y Corregidores",
+      "clase": "monto",
+      "montoOficial": 10000,
+      "reglaOficial": null,
+      "orden": 452
+    },
+    {
+      "categoria": "ACTUACIONES EN NEGOCIOS CRIMINALES",
+      "numeral": "5.b",
+      "concepto": "Contra Resoluciones de Alcaldes, Jueces y Tránsito y Gobernador",
+      "clase": "monto",
+      "montoOficial": 15000,
+      "reglaOficial": null,
+      "orden": 453
+    }
+  ]
+}

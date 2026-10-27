@@ -132,16 +132,16 @@ moneda (`cotizacion.moneda` es un `CHECK` cerrado en `'USD'`).
 
 ### T-1 · Sacar el arancel del PDF sin inventar nada
 
-- [ ] Script de extracción reproducible, con el PDF como entrada y datos
+- [x] Script de extracción reproducible, con el PDF como entrada y datos
       estructurados como salida. No se transcribe a mano: 358 montos
       copiados a ojo es una errata nuestra encima de las del documento.
-- [ ] Cada renglón lleva categoría, numeral tal como aparece, concepto,
+- [x] Cada renglón lleva categoría, numeral tal como aparece, concepto,
       monto en centavos enteros, y —cuando no hay monto— el texto de la
       regla.
-- [ ] Las erratas del documento se transcriben **como están** y se anota
+- [x] Las erratas del documento se transcriben **como están** y se anota
       aparte la lectura, con el renglón que la motiva. Ninguna corrección
       silenciosa.
-- [ ] Un conteo de control contra el PDF: cuántos renglones, cuántos con
+- [x] Un conteo de control contra el PDF: cuántos renglones, cuántos con
       monto, cuántos con regla. Si no cuadra, no se sigue.
 
 ### T-2 · La tabla
@@ -199,4 +199,27 @@ merge siguen siendo decisión del usuario.
 ## Progreso
 
 - Documento creado. Ninguna tarea cerrada.
-- Próximo paso: T-1, la extracción.
+- **T-1 cerrada.** `pnpm arancel:extraer` lee
+  `docs/fuentes/acuerdo-49-2001-tarifa-abogados.pdf` con `pdftotext -layout`
+  y escribe `scripts/arancel/arancel.json`. El parseo puro vive en
+  `scripts/arancel/parseo.mjs` y lo ejercen 58 pruebas en
+  `test/arancel-api.spec.ts`. Las lecturas de las erratas, numeradas, en
+  `scripts/arancel/lecturas.md`.
+- **Los números de este documento estaban mal, y los medidos son otros.**
+  No son 358 montos ni 54 reglas ni 22 categorías: son **453 renglones en 29
+  categorías** —27 con renglones, 2 con solo prosa—, de los cuales **282
+  llevan monto fijo**, **97 llevan regla en texto** y **74 son rubros** que
+  el acuerdo imprime sin valor porque solo agrupan a sus hijos. Las 358
+  tarifas estimadas eran un conteo de apariciones del sigilo `B/` sobre el
+  volcado: de las 399 que hay dentro del Artículo 4, 282 son el valor de un
+  renglón, 41 están dentro de un texto de regla, 68 dentro de un concepto
+  —son topes de cuantía, «De B/.0.01 hasta B/.3,000.00»— y 8 en los
+  parágrafos. La suma cuadra exacto y es el control que el script corre.
+- **`sinClasificar` quedó vacío**: ninguna línea del Artículo 4 se descartó.
+- Hay dos cosas que el criterio de aceptación 1 tiene que corregir cuando se
+  reescriba: los renglones son 453, no 358, y la clave de un renglón es
+  `orden`, no `numeral` —el acuerdo repite numerales en 31 renglones, ver la
+  lectura 13—.
+- Próximo paso: T-2, la tabla. Con `clase` en la mano, la siembra puede
+  distinguir el rubro del renglón cotizado y no darle a un encabezado una
+  columna de precio editable.
