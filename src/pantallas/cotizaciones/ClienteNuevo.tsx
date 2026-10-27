@@ -11,10 +11,16 @@
  *
  * **No es un segundo formulario de cliente.** La validación es
  * `validarBorrador` y el cuerpo que viaja lo arma `aPeticion`, las dos de
- * `clientes/formulario.ts` y sin una línea propia. La costura entre los
- * cuatro campos de acá y los nueve del borrador está en `cliente-nuevo.ts`,
- * con el porqué. Lo único que este archivo agrega es el diálogo y el
- * cableado.
+ * `clientes/formulario.ts` y sin una línea propia. Qué controles se dibujan
+ * está en `cliente-nuevo.ts`, con el porqué. Lo único que este archivo agrega
+ * es el diálogo y el cableado.
+ *
+ * Y desde el pedido del usuario —«Deja los campos opcionales, están bien. El
+ * modal es compacto y tenemos espacio.»— es **la ficha completa**: los ocho
+ * campos del borrador, con los mismos rótulos y las mismas ayudas que
+ * `/clientes/nuevo`. El estado es un `BorradorDeCliente` entero y no un
+ * subconjunto, así que no hay ninguna conversión entre lo que el modal tiene
+ * y lo que la validación espera: son el mismo objeto.
  *
  * Por eso tampoco busca duplicados: «¿este cliente ya existe?» es un problema
  * real, pero es otro, y resolverlo a medias acá —comparando nombres, que es
@@ -81,19 +87,22 @@ import { Pila } from "../../layout/Pila";
 import { Rejilla } from "../../layout/Rejilla";
 import { cargarTipos, crearCliente, textoDeProblema } from "../clientes/api";
 import {
+  BORRADOR_VACIO,
   aPeticion,
   mensajeDeFalla,
   tiposSeleccionables,
   validarBorrador,
+  type BorradorDeCliente,
+  type CampoDelBorrador,
 } from "../clientes/formulario";
 import {
   AYUDA_DEL_CLIENTE_NUEVO,
   CAMPOS_DEL_CLIENTE_NUEVO,
   ROTULO_DE_CREAR_CLIENTE,
   TITULO_DEL_CLIENTE_NUEVO,
-  VALORES_DEL_CLIENTE_NUEVO_VACIOS,
-  borradorDelClienteNuevo,
-  type ValoresDelClienteNuevo,
+  esCampoDeProsa,
+  esCampoDeTexto,
+  type CampoDelClienteNuevo,
 } from "./cliente-nuevo";
 
 type Props = {
@@ -113,14 +122,15 @@ export function ClienteNuevo({ alCrear, alCerrar }: Props) {
    */
   const base = useId();
   const idDelTitulo = `cliente-nuevo-${base}`;
-  const idDeLaAyuda = `cliente-nuevo-ayuda-${base}`;
+  const idDeLaIntro = `cliente-nuevo-intro-${base}`;
   const idDe = (campo: string) => `cliente-nuevo-${campo}-${base}`;
+  /** El párrafo que aclara un campo, para que el campo pueda apuntarle. */
+  const idDeLaAyudaDe = (campo: string) =>
+    `cliente-nuevo-ayuda-${campo}-${base}`;
 
   const dialogo = useRef<HTMLDialogElement>(null);
 
-  const [valores, setValores] = useState<ValoresDelClienteNuevo>(
-    VALORES_DEL_CLIENTE_NUEVO_VACIOS,
-  );
+  const [valores, setValores] = useState<BorradorDeCliente>(BORRADOR_VACIO);
   const [tipos, setTipos] = useState<TipoCliente[]>([]);
   const [fallas, setFallas] = useState<FallaDeValidacion[]>([]);
   const [problema, setProblema] = useState<string | null>(null);
@@ -161,7 +171,7 @@ export function ClienteNuevo({ alCrear, alCerrar }: Props) {
     };
   }, []);
 
-  function cambiar(campo: keyof ValoresDelClienteNuevo, valor: string) {
+  function cambiar(campo: CampoDelBorrador, valor: string) {
     setValores((anterior) => ({ ...anterior, [campo]: valor }));
   }
 
@@ -169,17 +179,15 @@ export function ClienteNuevo({ alCrear, alCerrar }: Props) {
     evento.preventDefault();
     if (guardando) return;
 
-    const borrador = borradorDelClienteNuevo(valores);
-
     // El aviso temprano, con la validación compartida. La que manda es la del
     // Worker, y su respuesta se muestra igual más abajo.
-    const previas = validarBorrador(borrador);
+    const previas = validarBorrador(valores);
     setFallas(previas);
     setProblema(null);
     if (previas.length > 0) return;
 
     setGuardando(true);
-    const resultado = await crearCliente(aPeticion(borrador));
+    const resultado = await crearCliente(aPeticion(valores));
     setGuardando(false);
 
     if (resultado.estado === "invalido") {
@@ -203,6 +211,14 @@ export function ClienteNuevo({ alCrear, alCerrar }: Props) {
       ref={dialogo}
       className="cliente-nuevo"
       aria-labelledby={idDelTitulo}
+      /*
+       * La línea de arriba es la descripción del diálogo, y se anuncia al
+       * abrirlo. Antes era un `aria-describedby` de cada campo —cuando ese
+       * párrafo llevaba la regla del contacto— y eso dejó de ser cierto al
+       * mudarse la exigencia a las etiquetas: lo que esa línea dice ahora es
+       * de qué es el formulario, o sea del diálogo entero.
+       */
+      aria-describedby={idDeLaIntro}
       /*
        * `onCancel` y **no** `onClose`: `Escape` cierra el diálogo sin pasar
        * por ningún manejador nuestro, así que hace falta escucharlo, pero
@@ -241,15 +257,15 @@ export function ClienteNuevo({ alCrear, alCerrar }: Props) {
         </div>
 
         {/*
-          Las dos ayudas van **arriba y antes de los campos**, no al pie.
+          Una línea, y las etiquetas hacen el resto.
 
-          La del contacto, porque una regla que se lee después de los campos
-          se lee después de haberlos llenado mal. Y la de la ficha completa,
-          porque la duda que contesta —«¿esto crea un cliente de segunda?»—
-          aparece al ver que hay cuatro campos y no nueve, o sea en el primer
-          segundo.
+          Acá había dos párrafos: la regla del contacto y una aclaración de
+          que el cliente no era de segunda. El primero se mudó a las
+          etiquetas, que es donde una regla se lee a tiempo; el segundo se
+          volvió falso cuando el modal pasó a preguntar la ficha completa, y
+          lo que contestaba ya no tiene pregunta.
         */}
-        <div className="cliente-nuevo__ayuda" id={idDeLaAyuda}>
+        <div className="cliente-nuevo__ayuda" id={idDeLaIntro}>
           <p className="texto-apagado">{AYUDA_DEL_CLIENTE_NUEVO}</p>
         </div>
 
@@ -274,58 +290,61 @@ export function ClienteNuevo({ alCrear, alCerrar }: Props) {
             el diálogo se monta como hermano de aquél y no adentro. */}
         <form onSubmit={(evento) => void enviar(evento)} noValidate>
           <Pila espacio="holgado">
+            {/*
+              La rejilla lleva los campos cortos y el desplegable del tipo; la
+              prosa va entera debajo. Es el mismo reparto que
+              `FormularioDeCliente.tsx`, y no es una decisión de gusto: un
+              `<textarea>` en una columna de 14rem da un renglón de cuarenta
+              caracteres, que para una nota es menos útil que no tenerla.
+
+              Quién va en cada mitad lo decide el dato —`control`— y no el
+              nombre del campo: ver el porqué en `cliente-nuevo.ts`.
+            */}
             <Rejilla minimo="14rem">
-              {CAMPOS_DEL_CLIENTE_NUEVO.map(
-                ({ campo, rotulo, tipo, exigencia }) => (
+              {CAMPOS_DEL_CLIENTE_NUEVO.filter(esCampoDeTexto).map(
+                ({ campo, rotulo, tipo, exigencia, ayuda }) => (
                   <div className="campo" key={campo}>
-                    {/*
-                      La exigencia se dibuja desde el dato y no con un
-                      condicional por caso: son tres estados —«obligatorio»,
-                      «uno de los dos», «opcional»— y el único que se dibuja
-                      apagado es el que no pide nada.
-                    */}
-                    <label className="campo__rotulo" htmlFor={idDe(campo)}>
-                      {rotulo}
-                      <span
-                        className={
-                          exigencia === "opcional"
-                            ? "campo__marca campo__marca--tenue"
-                            : "campo__marca"
-                        }
-                      >
-                        {` · ${exigencia}`}
-                      </span>
-                    </label>
+                    <Rotulo
+                      para={idDe(campo)}
+                      rotulo={rotulo}
+                      exigencia={exigencia}
+                    />
                     <input
                       id={idDe(campo)}
                       className="campo__control"
                       type={tipo}
                       /*
-                       * Ya no hace falta un `aria-describedby` hacia un
-                       * párrafo: la exigencia viaja **dentro de la etiqueta**,
-                       * que es lo que un lector de pantalla anuncia al entrar
-                       * al campo. Antes el requisito del contacto vivía en un
-                       * párrafo de arriba y el campo tenía que apuntar hacia
-                       * él; ahora lo dice su propio rótulo, y quien escucha y
-                       * quien mira reciben exactamente lo mismo.
+                       * La exigencia **no** necesita un `aria-describedby`:
+                       * viaja dentro de la etiqueta, que es lo que un lector
+                       * de pantalla anuncia al entrar al campo. Lo que sí
+                       * necesita apuntar es la ayuda, que es un párrafo
+                       * aparte y de otro modo nadie que no lo vea se entera.
                        */
+                      aria-describedby={
+                        ayuda === undefined
+                          ? undefined
+                          : idDeLaAyudaDe(campo)
+                      }
                       value={valores[campo]}
                       onChange={(evento) => {
                         cambiar(campo, evento.target.value);
                       }}
                     />
+                    {ayuda !== undefined && (
+                      <p className="campo__ayuda" id={idDeLaAyudaDe(campo)}>
+                        {ayuda}
+                      </p>
+                    )}
                   </div>
                 ),
               )}
 
               <div className="campo">
-                <label className="campo__rotulo" htmlFor={idDe("tipo")}>
-                  Tipo de cliente
-                  <span className="campo__marca campo__marca--tenue">
-                    {" "}
-                    · opcional
-                  </span>
-                </label>
+                <Rotulo
+                  para={idDe("tipo")}
+                  rotulo="Tipo de cliente"
+                  exigencia="opcional"
+                />
                 <select
                   id={idDe("tipo")}
                   className="campo__control"
@@ -350,6 +369,48 @@ export function ClienteNuevo({ alCrear, alCerrar }: Props) {
               </div>
             </Rejilla>
 
+            {/*
+              La prosa, a todo el ancho y debajo de la rejilla. Sale de la
+              misma lista que los campos cortos —por eso es un `map` y no un
+              `<textarea>` escrito a mano— y eso es lo que mantiene a la lista
+              como la única descripción de lo que el modal pregunta.
+            */}
+            {CAMPOS_DEL_CLIENTE_NUEVO.filter(esCampoDeProsa).map(
+              ({ campo, rotulo, exigencia, ayuda }) => (
+                <div className="campo" key={campo}>
+                  <Rotulo
+                    para={idDe(campo)}
+                    rotulo={rotulo}
+                    exigencia={exigencia}
+                  />
+                  <textarea
+                    id={idDe(campo)}
+                    className="campo__control campo__control--prosa"
+                    /*
+                     * Los mismos cuatro renglones que el formulario completo,
+                     * y por el mismo motivo: es el alto que el atributo deja
+                     * si la hoja de estilos no carga. Con ella cargada manda
+                     * el piso de `campo__control--prosa`, que son seis
+                     * renglones y se puede estirar en vertical.
+                     */
+                    rows={4}
+                    aria-describedby={
+                      ayuda === undefined ? undefined : idDeLaAyudaDe(campo)
+                    }
+                    value={valores[campo]}
+                    onChange={(evento) => {
+                      cambiar(campo, evento.target.value);
+                    }}
+                  />
+                  {ayuda !== undefined && (
+                    <p className="campo__ayuda" id={idDeLaAyudaDe(campo)}>
+                      {ayuda}
+                    </p>
+                  )}
+                </div>
+              ),
+            )}
+
             <Fila>
               <button
                 type="submit"
@@ -371,5 +432,43 @@ export function ClienteNuevo({ alCrear, alCerrar }: Props) {
         </form>
       </Pila>
     </dialog>
+  );
+}
+
+/**
+ * La etiqueta de un campo, con la marca de lo que exige pegada al nombre.
+ *
+ * Vive acá y no repetida en cada control porque el modal dibuja tres clases
+ * de control —`<input>`, `<select>` y `<textarea>`— y los tres llevan la
+ * misma etiqueta. La versión anterior de este archivo la escribía dos veces,
+ * y la copia del desplegable tenía la marca «· opcional» escrita a mano: dos
+ * dibujos de la misma cosa, de los cuales uno no obedecía al dato.
+ *
+ * La exigencia se dibuja desde el dato y no con un condicional por caso: son
+ * tres estados —«obligatorio», «uno de los dos», «opcional»— y el único que
+ * se dibuja apagado es el que no pide nada.
+ */
+function Rotulo({
+  para,
+  rotulo,
+  exigencia,
+}: {
+  readonly para: string;
+  readonly rotulo: string;
+  readonly exigencia: CampoDelClienteNuevo["exigencia"];
+}) {
+  return (
+    <label className="campo__rotulo" htmlFor={para}>
+      {rotulo}
+      <span
+        className={
+          exigencia === "opcional"
+            ? "campo__marca campo__marca--tenue"
+            : "campo__marca"
+        }
+      >
+        {` · ${exigencia}`}
+      </span>
+    </label>
   );
 }

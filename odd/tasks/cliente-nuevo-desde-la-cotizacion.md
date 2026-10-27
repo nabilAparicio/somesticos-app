@@ -135,3 +135,50 @@ extienden; el modal y la selección automática se miden de punta a punta.
      cotización no hacía (`GET /api/tipos-cliente`). Vive en el modal y no en
      la pantalla, así que la pantalla de siempre no paga por una puerta que
      la mayoría de las veces no se abre.
+
+- **El modal pasó a ser la ficha completa.** Lo pidió el usuario después de
+  mirar el modal en pantalla: «Deja los campos opcionales, están bien. El
+  modal es compacto y tenemos espacio.» Con los ocho campos del borrador
+  adentro, el modal **es** `/clientes/nuevo` sin salir de la cotización, y la
+  categoría de «cliente cargado a medias» —por la que un párrafo del modal
+  pedía disculpas antes de `b686c72`— deja de existir.
+
+  Prueba primero: las once aserciones nuevas se escribieron antes del código.
+  Fallaron como tenían que fallar —siete unitarias por una lista de tres
+  campos donde se esperaban siete, y cuatro de punta a punta esperando
+  controles que no estaban— y la que compara las dos pantallas imprimió
+  exactamente los cuatro rótulos que faltaban.
+
+  Lo que cambió:
+
+  - `cliente-nuevo.ts` — la lista pasa a los siete campos editables, con los
+    rótulos y las dos ayudas del formulario completo **letra por letra**.
+    Cada campo dice qué control es (`control: "texto" | "prosa"`), así que
+    las notas se dibujan en un `<textarea>` sin que el componente las
+    distinga por su nombre. Se fueron `ValoresDelClienteNuevo` —que con la
+    ficha completa sería un `Pick` de todas las claves— y
+    `borradorDelClienteNuevo`, que habría quedado como la función identidad:
+    el modal guarda un `BorradorDeCliente` que nace de `BORRADOR_VACIO`.
+  - `ClienteNuevo.tsx` — la rejilla lleva los campos cortos y el desplegable
+    del tipo; la prosa va entera debajo, que es el mismo reparto del
+    formulario completo. Las ayudas van cableadas con `aria-describedby`, y
+    la línea de arriba pasó a ser la descripción del diálogo. Un `Rotulo`
+    propio borra la copia de la etiqueta que el desplegable tenía escrita a
+    mano.
+  - Los rótulos quedan **dos veces y no compartidos**, a propósito: las dos
+    pantallas describen sus campos con tipos distintos, y lo que las mantiene
+    iguales es una medición —`e2e/cotizaciones.spec.ts` enfrenta las
+    etiquetas de las dos puertas en un navegador— y no una constante que la
+    primera divergencia partiría en dos.
+
+  Verificación observada: `pnpm lint` limpio · `pnpm typecheck` limpio ·
+  `pnpm test` 2516 pruebas en 49 archivos, todas en verde · `pnpm test:e2e`
+  509 en verde. La inestabilidad conocida de `e2e/sin-scroll-horizontal.spec.ts`
+  no apareció.
+
+  Medido a mano en el navegador: a 1280px el diálogo mide 608×786 con dos
+  columnas y la nota a todo el ancho, sin recorrido interno; a 320px queda en
+  una columna de 280px, sin desborde de página y recorriendo dentro del
+  propio diálogo, que es para lo que `.cliente-nuevo` ya traía
+  `overflow-y: auto` y `overscroll-behavior: contain`. No hizo falta tocar
+  `layout.css`.

@@ -20,7 +20,7 @@
  * dibujaría como un aviso de error: medir el layout de un párrafo suelto
  * sería la vacuidad que T-4 descubrió en su propia rejilla.
  */
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { medirDesborde, porQueSeSale } from "./desborde";
 
@@ -3294,7 +3294,7 @@ test.describe("abrir los procesos de una cotización recién ganada", () => {
  * El camino más frecuente del negocio: entra un interesado nuevo y se le
  * cotiza sin salir de la pantalla.
  *
- * Lo que este bloque protege son cuatro cosas, y ninguna se puede ver sin un
+ * Lo que este bloque protege son cinco cosas, y ninguna se puede ver sin un
  * navegador:
  *
  *  1. **Que el cliente quede elegido.** Ése es el punto entero de la tajada:
@@ -3310,6 +3310,13 @@ test.describe("abrir los procesos de una cotización recién ganada", () => {
  *  4. **Que el modal sea modal**: `Escape`, foco que vuelve, y lo de atrás
  *     inerte. Es lo que se pierde si alguien cambia `showModal()` por el
  *     atributo `open`, que se parece tanto a lo correcto.
+ *  5. **Que las dos puertas pregunten lo mismo.** El modal lleva la ficha
+ *     completa desde que el usuario cerró la diferencia —«Deja los campos
+ *     opcionales, están bien. El modal es compacto y tenemos espacio.»—, y
+ *     esa igualdad sólo se puede medir enfrentando los dos dibujos: las
+ *     etiquetas de `/clientes/nuevo` contra las del modal, en un navegador.
+ *     Una prueba de función lee la lista del modal y no la del otro
+ *     formulario, que es privada de un módulo React.
  */
 test.describe("un cliente nace desde el alta de cotización", () => {
   /** El modal, buscado por su elemento y no por un rol: es un `<dialog>`. */
@@ -3362,6 +3369,24 @@ test.describe("un cliente nace desde el alta de cotización", () => {
       .evaluate((nodo) => (nodo as HTMLInputElement).value);
   }
 
+  /**
+   * Los rótulos de un formulario, **sin** la marca de exigencia.
+   *
+   * Lo que se lee es el nodo de texto que está antes del `<span>` de la marca,
+   * y por eso no sirve `innerText`: el modal y el formulario completo marcan
+   * los contactos distinto —«uno de los dos» allá donde el otro dice
+   * «opcional»— y comparar la etiqueta entera convertiría una diferencia
+   * deliberada en una falla. Lo que tiene que coincidir es **cómo se llama el
+   * campo**.
+   */
+  function rotulosDe(ambito: Locator): Promise<string[]> {
+    return ambito
+      .locator(".campo__rotulo")
+      .evaluateAll((nodos) =>
+        nodos.map((nodo) => (nodo.firstChild?.textContent ?? "").trim()),
+      );
+  }
+
   test("el botón junto al selector abre un modal cuyas etiquetas dicen lo que exigen", async ({
     page,
   }) => {
@@ -3412,13 +3437,107 @@ test.describe("un cliente nace desde el alta de cotización", () => {
       ).toHaveCount(0);
     }
 
-    // Los cuatro campos, cada uno con rótulo visible. Ni el documento ni las
-    // notas: ésos son de la pantalla completa.
-    await expect(caja.getByLabel("Nombre")).toBeVisible();
-    await expect(caja.getByLabel("Teléfono")).toBeVisible();
-    await expect(caja.getByLabel("Correo")).toBeVisible();
-    await expect(caja.getByLabel("Tipo de cliente")).toBeVisible();
-    await expect(caja.getByLabel("Número de documento")).toHaveCount(0);
+    /*
+     * **La ficha completa**, cada campo con rótulo visible.
+     *
+     * Hasta esta tajada acá se afirmaba lo contrario: cuatro campos, y que el
+     * documento y las notas **no** estuvieran. El usuario cerró esa
+     * diferencia —«Deja los campos opcionales, están bien. El modal es
+     * compacto y tenemos espacio.»— y con eso desaparece la categoría de
+     * «cliente cargado a medias» que un párrafo del modal pedía disculpas por
+     * tener.
+     */
+    for (const rotulo of [
+      "Nombre",
+      "Teléfono",
+      "Correo",
+      "Tipo de documento",
+      "Número de documento",
+      "Representante legal",
+      "Tipo de cliente",
+      "Notas",
+    ]) {
+      await expect(
+        caja.getByLabel(rotulo),
+        `«${rotulo}» no está en el modal, o no está asociado a su etiqueta:` +
+          " un control sin etiqueta no tiene nombre para quien lo oye",
+      ).toBeVisible();
+    }
+
+    // Las dos ayudas del formulario completo, que viajan con sus campos: un
+    // «tipo de documento» sin ejemplos no dice qué se espera adentro.
+    await expect(caja.getByText("Cédula, RUC, pasaporte…")).toBeVisible();
+    await expect(
+      caja.getByText("Quién firma, cuando el cliente es una entidad."),
+    ).toBeVisible();
+
+    // Y están **cableadas al campo**, no sueltas al pie: quien usa un lector
+    // de pantalla las oye al entrar al control, no al barrer la página.
+    const tipoDeDocumento = caja.getByLabel("Tipo de documento");
+    const idDeLaAyuda = await tipoDeDocumento.getAttribute("aria-describedby");
+    expect(
+      idDeLaAyuda,
+      "el campo del tipo de documento no apunta a su ayuda con" +
+        " `aria-describedby`: el ejemplo está dibujado y nadie que no lo vea" +
+        " se entera",
+    ).not.toBeNull();
+    await expect(caja.locator(`#${String(idDeLaAyuda)}`)).toHaveText(
+      "Cédula, RUC, pasaporte…",
+    );
+
+    /*
+     * Las notas son un `<textarea>` y no un `<input>`. No es un detalle de
+     * dibujo: una nota de dos renglones en un campo de una línea esconde lo
+     * que ya se escribió, y el formulario completo las dibuja así desde que
+     * existe.
+     */
+    const notas = caja.getByLabel("Notas");
+    expect(
+      await notas.evaluate((nodo) => nodo.tagName),
+      "las notas se dibujan en un `<input>` de una línea: el texto escrito se" +
+        " va para el costado y no se puede releer",
+    ).toBe("TEXTAREA");
+  });
+
+  test("el modal pregunta los mismos campos, y con los mismos nombres, que `/clientes/nuevo`", async ({
+    page,
+  }) => {
+    /*
+     * La prueba que de verdad sostiene la decisión de esta tajada, y la única
+     * que puede: enfrenta **los dos dibujos**.
+     *
+     * La lista de campos del formulario completo es privada de un módulo
+     * React, así que no hay prueba de función que la lea; y los rótulos son
+     * dos juegos de literales a propósito —las dos pantallas describen sus
+     * campos con tipos distintos, y una constante compartida que una de las
+     * dos necesite cambiar mañana es su propia trampa—. Lo que mantiene a los
+     * dos juegos iguales es esta medición: si alguien renombra «Correo» a
+     * «Email» en cualquiera de las dos puertas, acá se ve.
+     */
+    await conCotizacionesCargadas(page);
+
+    await page.goto("/clientes/nuevo");
+    await expect(page.getByRole("heading", { name: "Nuevo cliente" })).toBeVisible();
+    const laFichaCompleta = await rotulosDe(page.locator("form"));
+
+    expect(
+      laFichaCompleta.length,
+      "no se encontraron los campos de `/clientes/nuevo`: la prueba está" +
+        " rota, no el modal",
+    ).toBeGreaterThan(5);
+
+    await page.goto("/cotizaciones/nuevo");
+    await abrirElModal(page).click();
+    const caja = modal(page);
+    await expect(caja).toBeVisible();
+
+    expect(
+      await rotulosDe(caja),
+      "el modal y `/clientes/nuevo` ya no preguntan lo mismo. Quien carga un" +
+        " cliente por las dos puertas tiene que reconocer los campos, y un" +
+        " campo que sólo existe en una de las dos obliga al viaje que este" +
+        " modal vino a ahorrar",
+    ).toEqual(laFichaCompleta);
   });
 
   test("el desplegable de tipos no ofrece los dados de baja", async ({
@@ -3521,6 +3640,98 @@ test.describe("un cliente nace desde el alta de cotización", () => {
       "el cliente recién creado no quedó elegido en el desplegable: hay que" +
         " ir a buscarlo, que es justo el viaje que el modal venía a ahorrar",
     ).toBe(NOMBRE_DEL_LEAD);
+  });
+
+  test("los campos opcionales que se llenan viajan, y los que no, van en `null`", async ({
+    page,
+  }) => {
+    /*
+     * La medición de la tajada: los cuatro campos que el modal agregó se
+     * dibujan **y se mandan**. Un campo dibujado que se pierde al guardar es
+     * la peor de las dos mitades, porque quien lo llenó cree que lo cargó.
+     *
+     * Y la otra mitad en la misma prueba: el correo, que acá se deja en
+     * blanco, viaja como `null` y no como `""`. Un `""` guardado es un dato
+     * que existe y está vacío, y después nada lo distingue de uno que nadie
+     * preguntó.
+     */
+    await conCotizacionesCargadas(page);
+
+    const enviados: string[] = [];
+    await conElAltaDeClienteAtendida(page, enviados);
+
+    await page.goto("/cotizaciones/nuevo");
+    await abrirElModal(page).click();
+
+    const caja = modal(page);
+    await caja.getByLabel("Nombre").fill("Inversiones del Istmo, S.A.");
+    await caja.getByLabel("Teléfono").fill(TELEFONO_DEL_LEAD);
+    await caja.getByLabel("Tipo de documento").fill("RUC");
+    await caja.getByLabel("Número de documento").fill("155555555-2-2015");
+    await caja.getByLabel("Representante legal").fill(NOMBRE_DEL_LEAD);
+    await caja
+      .getByLabel("Notas")
+      .fill("Llamó por una sociedad nueva.\nPidió el trámite completo.");
+    await caja.getByRole("button", { name: "Crear cliente" }).click();
+
+    await expect(modal(page)).toHaveCount(0);
+
+    await expect.poll(() => enviados.length).toBe(1);
+    expect(
+      JSON.parse(enviados[0]),
+      "lo que se llenó en el modal no llegó entero al servidor: hay campos" +
+        " dibujados que el alta descarta",
+    ).toEqual({
+      nombre: "Inversiones del Istmo, S.A.",
+      tipoClienteId: null,
+      documentoTipo: "RUC",
+      documentoNumero: "155555555-2-2015",
+      representanteLegal: NOMBRE_DEL_LEAD,
+      email: null,
+      telefono: TELEFONO_DEL_LEAD,
+      notas: "Llamó por una sociedad nueva.\nPidió el trámite completo.",
+    });
+  });
+
+  test("medio documento se rechaza adentro, y se puede arreglar sin salir", async ({
+    page,
+  }) => {
+    /*
+     * La falla que la ficha completa volvió alcanzable. `documento_incompleto`
+     * existía en `validarBorrador` desde siempre y era inalcanzable desde el
+     * modal de cuatro campos; con los dos campos del documento a la vista, la
+     * regla vale acá, y lo que hay que medir es que **se pueda corregir
+     * adentro**: una falla sobre un campo que no se dibuja es una falla que
+     * nadie puede resolver.
+     */
+    await conCotizacionesCargadas(page);
+
+    const enviados: string[] = [];
+    await conElAltaDeClienteAtendida(page, enviados);
+
+    await page.goto("/cotizaciones/nuevo");
+    await abrirElModal(page).click();
+
+    const caja = modal(page);
+    await caja.getByLabel("Nombre").fill(NOMBRE_DEL_LEAD);
+    await caja.getByLabel("Teléfono").fill(TELEFONO_DEL_LEAD);
+    await caja.getByLabel("Tipo de documento").fill("RUC");
+    await caja.getByRole("button", { name: "Crear cliente" }).click();
+
+    await expect(
+      caja.getByRole("alert"),
+      "el documento a medias pasó, o la falla no se dibuja dentro del modal",
+    ).toContainText("El documento va con tipo y número");
+    expect(enviados, "se mandó una petición que ya se sabía inválida").toEqual(
+      [],
+    );
+
+    // Y se arregla acá: completar el número y volver a guardar alcanza.
+    await caja.getByLabel("Número de documento").fill("155555555-2-2015");
+    await caja.getByRole("button", { name: "Crear cliente" }).click();
+
+    await expect(modal(page)).toHaveCount(0);
+    await expect.poll(() => enviados.length).toBe(1);
   });
 
   test("lo que ya estaba escrito en el alta sigue ahí después del modal", async ({

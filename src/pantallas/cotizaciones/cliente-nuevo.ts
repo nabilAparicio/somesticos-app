@@ -15,25 +15,54 @@
  * la que acepta un cliente que `/clientes/nuevo` rechaza — y sería ésa la que
  * se afloje, porque la otra ya tiene pruebas.
  *
- * Lo único que hace falta inventar es la costura entre los cuatro campos que
- * el modal muestra y los nueve del borrador, y es la razón de
- * `borradorDelClienteNuevo`: los cinco campos que el modal no pregunta tienen
- * que llegar a `aPeticion` como cadena vacía para que salgan como `null`. Un
- * `""` guardado es un documento que existe y está en blanco, y después nada
- * lo distingue de uno que nadie preguntó; el argumento completo está en
- * `clientes/formulario.ts`. Pasar por `BORRADOR_VACIO` en vez de armar el
- * objeto a mano es lo que mantiene esa garantía cuando el borrador crezca un
- * campo: el campo nuevo nace vacío acá sin que nadie lo recuerde.
+ * Lo único que hace falta inventar es **qué controles dibuja el modal**, que
+ * es la lista de abajo. El estado que esos controles llenan es el borrador
+ * entero, de `clientes/formulario.ts`, sin ninguna conversión intermedia: ver
+ * «Qué campos» para el porqué de que ya no haga falta ninguna.
  *
- * ## Qué campos, y por qué no más
+ * ## Qué campos: la ficha completa
  *
- * Nombre, teléfono, correo y tipo. Son los que alcanzan para que el cliente
- * exista —el criterio de T-5: nombre y un medio de contacto— más el tipo, que
- * ya era opcional y es una sola elección de una lista. El documento, el
- * representante legal y las notas no entran: el resto de la ficha se completa
- * después, desde la pantalla del cliente, y el modal lo dice. Un campo más
- * acá es la pantalla completa metida en un modal, que es exactamente lo que
- * esta tajada no es.
+ * Los ocho del borrador, que es un cambio de alcance y las palabras del
+ * usuario lo decidieron:
+ *
+ * > «Deja los campos opcionales, están bien. El modal es compacto y tenemos
+ * > espacio.»
+ *
+ * Hasta acá eran cuatro —nombre, teléfono, correo y tipo— con el argumento de
+ * que el resto de la ficha se completaba después, desde la pantalla del
+ * cliente. Ese argumento tenía un costo que el modal pagaba en voz alta: un
+ * párrafo que pedía disculpas por el cliente «cargado a medias», y que el
+ * commit `b686c72` sacó por inútil. Con la ficha completa **esa categoría no
+ * existe**: el modal es `/clientes/nuevo` sin salir de la cotización, y nada
+ * de lo que se carga por esta puerta queda a medio llenar.
+ *
+ * Lo que no cambió es qué se exige: nombre y un medio de contacto, el
+ * criterio de T-5. Los cuatro campos nuevos son opcionales de verdad, y su
+ * propia etiqueta lo dice.
+ *
+ * Y una consecuencia que el alcance viejo tapaba: `documento_incompleto` —la
+ * regla de `validarBorrador` que pide el documento con tipo **y** número—
+ * era inalcanzable desde un modal que no preguntaba el documento. Ahora vale
+ * acá, y se puede corregir acá, que es la condición para que una falla se
+ * pueda mostrar: una falla sobre un campo que no se dibuja es una falla que
+ * nadie puede resolver.
+ *
+ * ## Por qué los rótulos están dos veces, y no compartidos
+ *
+ * Los rótulos y las dos ayudas son **letra por letra** los de
+ * `FormularioDeCliente.tsx`, y son literales escritos dos veces a propósito.
+ * No es descuido: las dos pantallas describen sus campos con tipos distintos
+ * —allá un `obligatorio?: boolean`, acá una `exigencia` de tres estados,
+ * porque el modal tiene que poder decir «uno de los dos»— y una constante
+ * compartida entre dos listas que ya difieren en forma es una constante que
+ * la primera divergencia parte en dos. El día que el modal necesite un rótulo
+ * más corto por el ancho, una constante común lo cambiaría también en la
+ * pantalla completa, que tiene el espacio.
+ *
+ * Lo que mantiene a los dos juegos iguales es una medición, no un tipo:
+ * `e2e/cotizaciones.spec.ts` lee las etiquetas de `/clientes/nuevo` y las del
+ * modal en un navegador y las enfrenta. Un renombre en cualquiera de las dos
+ * puertas falla ahí.
  *
  * ## Y los textos del campo al que ese botón acompaña (T-1 de
  * `odd/tasks/el-selector-de-cliente-busca.md`)
@@ -48,47 +77,37 @@
  * una de las dos mitades se renombra sola.
  */
 
-import {
-  BORRADOR_VACIO,
-  type BorradorDeCliente,
-} from "../clientes/formulario";
+import type { CampoDelBorrador } from "../clientes/formulario";
 
 /**
- * Lo que el modal tiene en la mano: cuatro de los nueve campos del borrador.
+ * Qué campo del borrador llena un control del modal.
  *
- * Es un `Pick` del borrador y no un tipo propio, así que el día que alguno de
- * esos cuatro campos se renombre allá, acá deja de compilar. Un tipo paralelo
- * se habría quedado viejo en silencio.
- */
-export type ValoresDelClienteNuevo = Pick<
-  BorradorDeCliente,
-  "nombre" | "telefono" | "email" | "tipoClienteId"
->;
-
-export const VALORES_DEL_CLIENTE_NUEVO_VACIOS: ValoresDelClienteNuevo = {
-  nombre: "",
-  telefono: "",
-  email: "",
-  tipoClienteId: "",
-};
-
-/**
- * Los campos de texto del modal, que son los tres que no son el tipo.
+ * Es `CampoDelBorrador` menos el tipo de cliente, y las dos mitades de ese
+ * `Exclude` hacen trabajo. La primera: la lista de abajo no puede nombrar un
+ * campo que el borrador no tenga, así que el control sin estado —el error de
+ * tipeo que dibuja un campo que no guarda nada— deja de ser posible de
+ * escribir. La segunda: el tipo de cliente **no puede** entrar en la lista,
+ * porque no es un control de texto sino un desplegable que necesita el
+ * catálogo, y el componente lo dibuja aparte.
  *
- * Se escribe como `Exclude` sobre las claves de `ValoresDelClienteNuevo` y no
- * como una unión a mano: así la lista de abajo no puede nombrar un campo que
- * el modal no tiene en la mano, y el control sin estado —el defecto de tipeo
- * que dibuja un campo que no guarda nada— deja de ser posible de escribir.
+ * Hasta esta tajada acá había un `Pick` del borrador —`ValoresDelClienteNuevo`,
+ * los cuatro campos que el modal tenía en la mano— y el modal guardaba su
+ * estado en ese subconjunto. Con la ficha completa ese `Pick` sería el
+ * borrador entero, o sea un alias que no dice nada y que hay que recordar
+ * ampliar; se fue, y con él `borradorDelClienteNuevo`, que completaba los
+ * campos faltantes con cadenas vacías y hoy sería la función identidad. El
+ * modal guarda directamente un `BorradorDeCliente`, que nace de
+ * `BORRADOR_VACIO`: el campo que el borrador gane mañana nace vacío sin que
+ * nadie lo recuerde, que era la garantía por la que esa función existía.
  */
-export type CampoDeTextoDelClienteNuevo = Exclude<
-  keyof ValoresDelClienteNuevo,
+export type CampoEditableDelClienteNuevo = Exclude<
+  CampoDelBorrador,
   "tipoClienteId"
 >;
 
-export type CampoDelClienteNuevo = {
-  readonly campo: CampoDeTextoDelClienteNuevo;
+type RasgosDelCampo = {
+  readonly campo: CampoEditableDelClienteNuevo;
   readonly rotulo: string;
-  readonly tipo: "text" | "email" | "tel";
   /**
    * Qué exige este campo, dicho **en su propia etiqueta**.
    *
@@ -103,52 +122,142 @@ export type CampoDelClienteNuevo = {
    * «este campo» ni «ninguno», sino **uno de estos dos**.
    */
   readonly exigencia: "obligatorio" | "uno de los dos" | "opcional";
+  /**
+   * La aclaración al pie del campo, cuando el rótulo no alcanza.
+   *
+   * Sólo dos campos la llevan, y son los mismos dos del formulario completo:
+   * «tipo de documento» no dice qué se espera adentro, y el representante
+   * legal sólo tiene sentido cuando el cliente es una entidad.
+   */
+  readonly ayuda?: string;
 };
 
 /**
- * Los tres campos de texto, en el orden de la conversación telefónica:
- * primero cómo se llama, después cómo se le vuelve a hablar.
+ * Un campo de una línea: un `<input>`, con el teclado que le corresponde.
+ *
+ * `tipo` vive en esta mitad de la unión y no en los rasgos comunes porque un
+ * `<textarea>` no tiene `type`: un `tipo: "email"` sobre las notas sería un
+ * dato que el dibujo no puede obedecer.
+ */
+export type CampoDeTextoDelClienteNuevo = RasgosDelCampo & {
+  readonly control: "texto";
+  readonly tipo: "text" | "email" | "tel";
+};
+
+/** Un campo de varias líneas: un `<textarea>`. */
+export type CampoDeProsaDelClienteNuevo = RasgosDelCampo & {
+  readonly control: "prosa";
+};
+
+/**
+ * Qué control es cada campo, dicho **en el dato**.
+ *
+ * La alternativa era la del formulario completo: la lista asume `<input>` y
+ * las notas se dibujan aparte, a mano, debajo de la rejilla. Acá no sirve, y
+ * la razón es la asimetría que esta tajada creó: allá hay un solo campo fuera
+ * de la lista y la lista es de seis; acá el modal **es** la ficha completa, y
+ * un campo que vive fuera de la lista es un campo que ninguna prueba de
+ * función ve. La lista es lo que `test/cliente-nuevo-ui.spec.ts` lee para
+ * afirmar que las dos puertas preguntan lo mismo, y un `<textarea>` escrito
+ * en el JSX queda afuera de esa cuenta.
+ *
+ * La otra forma del mismo defecto es un `if (campo === "notas")` enterrado en
+ * el componente: distinguir un campo por su nombre funciona hasta que hay un
+ * segundo campo de prosa, y entonces falla en silencio dibujando un `<input>`.
+ * Con un discriminante el dibujo sale del dato y no del nombre.
+ */
+export type CampoDelClienteNuevo =
+  | CampoDeTextoDelClienteNuevo
+  | CampoDeProsaDelClienteNuevo;
+
+/**
+ * La ficha completa, en el orden del formulario completo: primero cómo se
+ * llama y cómo se le vuelve a hablar, después lo que se averigua con el
+ * expediente en la mano, y las notas al final porque son las que más ocupan.
  *
  * Es el mismo orden y los mismos rótulos que `FormularioDeCliente.tsx`, y eso
  * no es decoración: quien carga un cliente por las dos puertas tiene que
  * reconocer los campos, y «Correo» en una y «Email» en la otra se lee como
- * dos campos distintos.
+ * dos campos distintos. El porqué de que sean literales y no una constante
+ * compartida está en el encabezado.
  *
  * El tipo de cliente no está en esta lista porque no es un campo de texto: es
- * un desplegable que necesita el catálogo, y el componente lo dibuja aparte.
+ * un desplegable que necesita el catálogo, y el componente lo dibuja aparte,
+ * en el mismo lugar de la rejilla en que lo dibuja el formulario completo.
  */
 export const CAMPOS_DEL_CLIENTE_NUEVO: readonly CampoDelClienteNuevo[] = [
   {
     campo: "nombre",
     rotulo: "Nombre",
+    control: "texto",
     tipo: "text",
     exigencia: "obligatorio",
   },
   {
     campo: "telefono",
     rotulo: "Teléfono",
+    control: "texto",
     tipo: "tel",
     exigencia: "uno de los dos",
   },
   {
     campo: "email",
     rotulo: "Correo",
+    control: "texto",
     tipo: "email",
     exigencia: "uno de los dos",
   },
+  {
+    campo: "documentoTipo",
+    rotulo: "Tipo de documento",
+    control: "texto",
+    tipo: "text",
+    exigencia: "opcional",
+    ayuda: "Cédula, RUC, pasaporte…",
+  },
+  {
+    campo: "documentoNumero",
+    rotulo: "Número de documento",
+    control: "texto",
+    tipo: "text",
+    exigencia: "opcional",
+  },
+  {
+    campo: "representanteLegal",
+    rotulo: "Representante legal",
+    control: "texto",
+    tipo: "text",
+    exigencia: "opcional",
+    ayuda: "Quién firma, cuando el cliente es una entidad.",
+  },
+  {
+    campo: "notas",
+    rotulo: "Notas",
+    control: "prosa",
+    exigencia: "opcional",
+  },
 ] as const;
 
-/**
- * Los cuatro valores del modal, completados hasta ser un borrador entero.
+/*
+ * Las dos guardias que el componente usa para partir la lista en dos dibujos:
+ * los campos cortos van en la rejilla, junto al desplegable del tipo, y la
+ * prosa va entera debajo, a todo el ancho.
  *
- * Lo que agrega es lo que falta: los cinco campos que el modal no pregunta,
- * vacíos. Vacíos y no ausentes, porque es `aPeticion` quien los convierte en
- * `null`, y es ahí donde «no lo sabemos» se distingue de «no tiene».
+ * Son funciones y no un `filter` con la comparación escrita en el JSX porque
+ * lo que hace falta es el estrechamiento de tipo: sin él, `tipo` no existe
+ * sobre la unión y el `<input>` se quedaría sin su teclado.
  */
-export function borradorDelClienteNuevo(
-  valores: ValoresDelClienteNuevo,
-): BorradorDeCliente {
-  return { ...BORRADOR_VACIO, ...valores };
+
+export function esCampoDeTexto(
+  campo: CampoDelClienteNuevo,
+): campo is CampoDeTextoDelClienteNuevo {
+  return campo.control === "texto";
+}
+
+export function esCampoDeProsa(
+  campo: CampoDelClienteNuevo,
+): campo is CampoDeProsaDelClienteNuevo {
+  return campo.control === "prosa";
 }
 
 /* --- Los textos del modal ------------------------------------------------
@@ -176,11 +285,13 @@ export const ROTULO_DE_ABRIR_CLIENTE_NUEVO = "Crear un cliente nuevo";
  * El primero existía para **corregir una etiqueta que mentía**: los dos
  * contactos decían «opcional» cuando uno de los dos hace falta. Arreglada la
  * etiqueta (ver `exigencia`), el párrafo sobra. El segundo contestaba una
- * pregunta que nadie se hace frente a cuatro campos; y si alguien se la hace,
+ * pregunta que nadie se hace frente a un formulario; y si alguien se la hace,
  * la respuesta está donde se busca, que es la ficha del cliente.
  *
- * Un modal con cuatro campos no necesita justificar su existencia antes de
- * dejar escribir.
+ * Y con la ficha completa adentro el segundo párrafo quedó además **falso**:
+ * ya no hay un cliente de segunda del que avisar, porque el modal pregunta lo
+ * mismo que `/clientes/nuevo`. Una línea que diga de qué es el formulario
+ * alcanza; lo que exige cada campo lo dice su etiqueta.
  */
 export const AYUDA_DEL_CLIENTE_NUEVO = "Complete los datos del cliente nuevo.";
 

@@ -1,33 +1,36 @@
 /**
  * El cliente que nace desde el alta de cotización, en su parte pura.
  *
- * Lo que este archivo protege es **que no haya una segunda validación**. El
- * modal del alta de cotización muestra cuatro campos de los nueve del
- * formulario completo, y la tentación obvia —escribir acá «nombre y uno de
- * los dos contactos»— produciría la peor clase de defecto: dos puertas al
- * mismo invariante que aceptan cosas distintas. La que acepta más es siempre
- * la nueva, porque la vieja ya tiene pruebas.
+ * Lo que este archivo protege son dos cosas, y la segunda es nueva.
+ *
+ * ## Que no haya una segunda validación
+ *
+ * El modal da de alta un cliente, y la tentación obvia —escribir acá «nombre
+ * y uno de los dos contactos»— produciría la peor clase de defecto: dos
+ * puertas al mismo invariante que aceptan cosas distintas. La que acepta más
+ * es siempre la nueva, porque la vieja ya tiene pruebas.
  *
  * Así que lo que se mide es la reutilización, no la regla: la regla ya está
  * probada en `test/clientes-ui.spec.ts` —y su copia que manda, la del Worker,
- * en `test/clientes-api.spec.ts`—. Acá se comprueba que el modal llegue a
- * `validarBorrador` y a `aPeticion` con un borrador **completo**, y que los
- * cinco campos que no muestra viajen como «todavía nadie lo sabe» y no como
- * «está vacío».
+ * en `test/clientes-api.spec.ts`—. Acá se comprueba que los valores del modal
+ * lleguen a `validarBorrador` y a `aPeticion` **sin pasar por nada propio**.
  *
- * Esa distinción es la razón de ser de `borradorDelClienteNuevo`. Un `""` en
- * `documentoNumero` es un documento que existe y está en blanco, y después
- * nada lo distingue de uno que no se preguntó: el argumento entero está en
- * `src/pantallas/clientes/formulario.ts`.
+ * ## Que las dos puertas pregunten lo mismo
  *
- * ## Y los textos del campo al que ese botón acompaña (T-1 de
- * `odd/tasks/el-selector-de-cliente-busca.md`)
+ * El modal llevaba cuatro campos de los ocho del formulario completo, y el
+ * usuario cerró esa diferencia: «Deja los campos opcionales, están bien. El
+ * modal es compacto y tenemos espacio.» Con la ficha entera adentro, lo que
+ * hay que medir es que la lista del modal **sea** la del formulario completo:
+ * los mismos campos, los mismos rótulos y las mismas ayudas.
  *
- * El selector de cliente pasó de `<select>` a combobox buscable, y sus textos
- * viven en el mismo módulo que el botón de al lado por una razón que se lee en
- * las frases: **lo que se dice cuando no hay ningún cliente es un puntero a ese
- * botón**. Separarlos dejaría la frase en un archivo y el control que nombra en
- * otro, que es cómo una de las dos mitades se renombra sola.
+ * Los rótulos se afirman acá contra literales y no contra la lista real de
+ * `FormularioDeCliente.tsx`, y no por comodidad: esa lista es privada de un
+ * módulo React, y este proyecto de pruebas compila **sin DOM** a propósito
+ * (ver el comentario de `test/tsconfig.json`), así que importarlo no es
+ * posible ni deseable. Quien compara los dos dibujos de verdad es
+ * `e2e/cotizaciones.spec.ts`, que lee las etiquetas de las dos pantallas en un
+ * navegador y las enfrenta. Esta prueba es la red de abajo: fija el texto para
+ * que un renombre acá se vea sin arrancar Playwright.
  */
 import { describe, expect, it } from "vitest";
 
@@ -35,6 +38,7 @@ import {
   BORRADOR_VACIO,
   aPeticion,
   validarBorrador,
+  type BorradorDeCliente,
 } from "../src/pantallas/clientes/formulario";
 import {
   AYUDA_DEL_CLIENTE,
@@ -44,16 +48,13 @@ import {
   ROTULO_DEL_CLIENTE,
   ROTULO_DE_ABRIR_CLIENTE_NUEVO,
   SIN_CLIENTES,
-  VALORES_DEL_CLIENTE_NUEVO_VACIOS,
-  borradorDelClienteNuevo,
   sinClienteQueCoincida,
-  type ValoresDelClienteNuevo,
 } from "../src/pantallas/cotizaciones/cliente-nuevo";
 
-function valores(
-  ajustes: Partial<ValoresDelClienteNuevo> = {},
-): ValoresDelClienteNuevo {
-  return { ...VALORES_DEL_CLIENTE_NUEVO_VACIOS, ...ajustes };
+function borrador(
+  ajustes: Partial<BorradorDeCliente> = {},
+): BorradorDeCliente {
+  return { ...BORRADOR_VACIO, ...ajustes };
 }
 
 function motivos(fallas: readonly { motivo: string }[]): string[] {
@@ -65,26 +66,30 @@ function motivos(fallas: readonly { motivo: string }[]): string[] {
 // ---------------------------------------------------------------------------
 
 describe("CAMPOS_DEL_CLIENTE_NUEVO", () => {
-  it("lleva el nombre y los dos medios de contacto, en ese orden", () => {
+  it("lleva la ficha entera, en el orden del formulario completo", () => {
     // El orden es el de la conversación telefónica, igual que en el
-    // formulario completo: cómo se llama y cómo se le vuelve a hablar.
+    // formulario completo: cómo se llama, cómo se le vuelve a hablar, y
+    // después los datos que se averiguan con el expediente en la mano.
+    //
+    // El tipo de cliente no está en esta lista y no falta: es un desplegable
+    // que necesita el catálogo, y el componente lo dibuja aparte. Que no
+    // pueda estar lo garantiza el tipo de `campo`, que lo excluye.
     expect(CAMPOS_DEL_CLIENTE_NUEVO.map((campo) => campo.campo)).toEqual([
       "nombre",
       "telefono",
       "email",
+      "documentoTipo",
+      "documentoNumero",
+      "representanteLegal",
+      "notas",
     ]);
   });
 
   it("cada campo dice en su etiqueta qué exige", () => {
-    // Esta prueba afirmaba lo contrario —«de los contactos alcanza uno, y eso
-    // lo dice la ayuda del modal, no una marca por campo»— y se dio vuelta
-    // con el diseño, a pedido del usuario: la ayuda eran dos párrafos arriba
-    // del formulario y el primero existía sólo para **corregir una etiqueta
-    // que mentía**. Los dos contactos decían «opcional» cuando uno de los dos
-    // hace falta.
-    //
-    // Es además la convención que `FormularioDeCliente.tsx` ya tenía escrita:
-    // la exigencia va en la propia etiqueta, no en una ayuda al pie.
+    // La convención que `FormularioDeCliente.tsx` tiene escrita: la exigencia
+    // va en la propia etiqueta, no en una ayuda al pie. Son tres estados y no
+    // un booleano porque hay un requisito que no es ni «este campo» ni
+    // «ninguno», sino **uno de estos dos**.
     expect(
       Object.fromEntries(
         CAMPOS_DEL_CLIENTE_NUEVO.map((campo) => [campo.campo, campo.exigencia]),
@@ -93,19 +98,27 @@ describe("CAMPOS_DEL_CLIENTE_NUEVO", () => {
       nombre: "obligatorio",
       telefono: "uno de los dos",
       email: "uno de los dos",
+      documentoTipo: "opcional",
+      documentoNumero: "opcional",
+      representanteLegal: "opcional",
+      notas: "opcional",
     });
   });
 
   it("ningún contacto se marca «opcional», porque sería mentira", () => {
-    // El contrapeso de la de arriba, y la que de verdad atrapa la regresión:
-    // `validarBorrador` rechaza un cliente sin teléfono **y** sin correo, así
-    // que una etiqueta que diga «opcional» en cualquiera de los dos está
-    // prometiendo algo que el guardado no cumple.
+    // La que de verdad atrapa la regresión: `validarBorrador` rechaza un
+    // cliente sin teléfono **y** sin correo, así que una etiqueta que diga
+    // «opcional» en cualquiera de los dos está prometiendo algo que el
+    // guardado no cumple. Y ahora que el modal sí tiene campos opcionales de
+    // verdad, la marca equivocada es más fácil de pegar por descuido.
     const contactos = CAMPOS_DEL_CLIENTE_NUEVO.filter(
       ({ campo }) => campo === "telefono" || campo === "email",
     );
 
-    expect(contactos.length, "la prueba está rota: no encontró los contactos").toBe(2);
+    expect(
+      contactos.length,
+      "la prueba está rota: no encontró los contactos",
+    ).toBe(2);
     for (const contacto of contactos) {
       expect(
         contacto.exigencia,
@@ -113,6 +126,88 @@ describe("CAMPOS_DEL_CLIENTE_NUEVO", () => {
           " ninguno de los dos contactos falla con `contacto_requerido`",
       ).not.toBe("opcional");
     }
+  });
+
+  it("los rótulos son los del formulario completo, letra por letra", () => {
+    // No es cosmética. Quien carga un cliente por las dos puertas tiene que
+    // reconocer los campos, y «Correo» en una y «Email» en la otra se leen
+    // como dos campos distintos. El porqué de que acá haya literales y no una
+    // constante compartida está en el encabezado de este archivo.
+    expect(
+      Object.fromEntries(
+        CAMPOS_DEL_CLIENTE_NUEVO.map((campo) => [campo.campo, campo.rotulo]),
+      ),
+    ).toEqual({
+      nombre: "Nombre",
+      telefono: "Teléfono",
+      email: "Correo",
+      documentoTipo: "Tipo de documento",
+      documentoNumero: "Número de documento",
+      representanteLegal: "Representante legal",
+      notas: "Notas",
+    });
+  });
+
+  it("las ayudas son las del formulario completo, letra por letra", () => {
+    // Las dos ayudas que el formulario completo escribe, y sólo esas dos. La
+    // del tipo de documento existe porque «tipo de documento» no dice qué se
+    // espera adentro; la del representante, porque el campo sólo tiene
+    // sentido cuando el cliente es una entidad.
+    expect(
+      Object.fromEntries(
+        CAMPOS_DEL_CLIENTE_NUEVO.filter(
+          (campo) => campo.ayuda !== undefined,
+        ).map((campo) => [campo.campo, campo.ayuda]),
+      ),
+    ).toEqual({
+      documentoTipo: "Cédula, RUC, pasaporte…",
+      representanteLegal: "Quién firma, cuando el cliente es una entidad.",
+    });
+  });
+
+  it("las notas son el único campo de prosa, y el resto son de una línea", () => {
+    // El campo dice **qué control es**, y el componente no distingue las
+    // notas por su nombre. Un `control` por dato es lo que impide la otra
+    // forma de este defecto: un `if (campo === "notas")` enterrado en el JSX,
+    // que es invisible desde acá y se olvida al agregar la segunda nota.
+    const prosa = CAMPOS_DEL_CLIENTE_NUEVO.filter(
+      (campo) => campo.control === "prosa",
+    );
+
+    expect(
+      prosa.map((campo) => campo.campo),
+      "las notas no se dibujan como prosa: un `<input>` de una línea para un" +
+        " texto de varias esconde lo que ya se escribió",
+    ).toEqual(["notas"]);
+
+    // Y la otra mitad: ningún campo corto quedó marcado como prosa, porque un
+    // teléfono en un `<textarea>` acepta saltos de línea.
+    for (const campo of CAMPOS_DEL_CLIENTE_NUEVO) {
+      if (campo.control === "texto") {
+        expect(
+          ["text", "email", "tel"],
+          `«${campo.rotulo}» no declara un tipo de control válido`,
+        ).toContain(campo.tipo);
+      }
+    }
+  });
+
+  it("los dos contactos declaran el teclado que les corresponde", () => {
+    // `type="tel"` y `type="email"` no son decoración: en un teléfono abren
+    // el teclado numérico y el de correo. Cargar un lead desde el celular es
+    // el caso que esta tajada existe para servir.
+    const porCampo = new Map(
+      CAMPOS_DEL_CLIENTE_NUEVO.map((campo) => [campo.campo, campo]),
+    );
+
+    expect(porCampo.get("telefono")).toMatchObject({
+      control: "texto",
+      tipo: "tel",
+    });
+    expect(porCampo.get("email")).toMatchObject({
+      control: "texto",
+      tipo: "email",
+    });
   });
 
   it("no nombra ningún campo que el borrador de cliente no tenga", () => {
@@ -123,53 +218,25 @@ describe("CAMPOS_DEL_CLIENTE_NUEVO", () => {
     }
   });
 
-  it("no pide el documento, el representante ni las notas", () => {
-    // El alcance de la tajada: el resto de la ficha se completa después,
-    // desde la pantalla del cliente. Un campo más acá es la pantalla
-    // completa metida en un modal, que es lo que esta tarea no es.
-    const pedidos = CAMPOS_DEL_CLIENTE_NUEVO.map((campo) => campo.campo);
-    for (const ajeno of [
-      "documentoTipo",
-      "documentoNumero",
-      "representanteLegal",
-      "notas",
-    ]) {
-      expect(pedidos).not.toContain(ajeno);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// El borrador completo que sale de los cuatro valores
-// ---------------------------------------------------------------------------
-
-describe("borradorDelClienteNuevo", () => {
-  it("completa con lo vacío los cinco campos que el modal no muestra", () => {
-    const borrador = borradorDelClienteNuevo(
-      valores({ nombre: "Carlos Pérez", telefono: "+507 6123-4567" }),
+  it("cubre el borrador entero salvo el tipo, que se dibuja aparte", () => {
+    // El contrapeso del de arriba, y el que de verdad dice qué es este modal
+    // ahora: **la ficha completa**. Un campo del borrador que no esté en esta
+    // lista y no sea el tipo es un dato que el modal no puede cargar y que
+    // obliga a pasar por `/clientes/nuevo`, que es el viaje que esta pantalla
+    // existe para ahorrar.
+    const pedidos = new Set<string>(
+      CAMPOS_DEL_CLIENTE_NUEVO.map((campo) => campo.campo),
+    );
+    const faltantes = Object.keys(BORRADOR_VACIO).filter(
+      (campo) => campo !== "tipoClienteId" && !pedidos.has(campo),
     );
 
-    expect(borrador).toEqual({
-      ...BORRADOR_VACIO,
-      nombre: "Carlos Pérez",
-      telefono: "+507 6123-4567",
-    });
-  });
-
-  it("deja pasar los cuatro valores que sí muestra", () => {
-    const borrador = borradorDelClienteNuevo(
-      valores({
-        nombre: "Istmo S.A.",
-        telefono: "+507 200-0000",
-        email: "contacto@istmo.test",
-        tipoClienteId: "t1",
-      }),
-    );
-
-    expect(borrador.nombre).toBe("Istmo S.A.");
-    expect(borrador.telefono).toBe("+507 200-0000");
-    expect(borrador.email).toBe("contacto@istmo.test");
-    expect(borrador.tipoClienteId).toBe("t1");
+    expect(
+      faltantes,
+      "el borrador de cliente tiene campos que el modal no pregunta: el modal" +
+        " dejó de ser la ficha completa y vuelve a haber clientes cargados a" +
+        " medias",
+    ).toEqual([]);
   });
 });
 
@@ -183,59 +250,100 @@ describe("la validación del modal es la del formulario completo", () => {
     // texto en `src/mensajes.ts` desde T-6. Un motivo nuevo inventado acá se
     // dibujaría sin texto, y eso es la señal de que alguien escribió una
     // segunda validación.
-    expect(
-      motivos(
-        validarBorrador(borradorDelClienteNuevo(valores({ nombre: "Carlos" }))),
-      ),
-    ).toContain("contacto_requerido");
+    expect(motivos(validarBorrador(borrador({ nombre: "Carlos" })))).toContain(
+      "contacto_requerido",
+    );
   });
 
   it("el alta mínima con teléfono pasa, igual que en la pantalla completa", () => {
+    // Lo que el usuario pidió conservar: los campos nuevos son opcionales de
+    // verdad. Que estén dibujados no los vuelve exigibles.
     expect(
       validarBorrador(
-        borradorDelClienteNuevo(
-          valores({ nombre: "Carlos Pérez", telefono: "+507 6123-4567" }),
-        ),
+        borrador({ nombre: "Carlos Pérez", telefono: "+507 6123-4567" }),
       ),
     ).toEqual([]);
   });
 
   it("un correo que no tiene forma de correo no pasa", () => {
     expect(
-      motivos(
-        validarBorrador(
-          borradorDelClienteNuevo(
-            valores({ nombre: "Carlos Pérez", email: "carlos" }),
-          ),
-        ),
-      ),
+      motivos(validarBorrador(borrador({ nombre: "Carlos Pérez", email: "carlos" }))),
     ).toContain("correo_invalido");
   });
 
-  it("nunca puede fallar por un documento que el modal no pide", () => {
-    // La otra mitad de reusar la validación entera: `documento_incompleto`
-    // existe en `validarBorrador` y es inalcanzable desde acá. Si apareciera,
-    // el modal mostraría una falla sobre un campo que no dibuja, o sea una
-    // falla que nadie puede corregir.
-    const nombres = [
-      "",
-      "Carlos",
-      "   ",
-      "Inversiones y Desarrollos del Istmo, S.A.",
-    ];
+  it("medio documento no pasa, y ahora esa falla se puede corregir adentro", () => {
+    // El giro que trajo la ficha completa. `documento_incompleto` existía en
+    // `validarBorrador` y era **inalcanzable** desde el modal de cuatro
+    // campos: la prueba vieja afirmaba justamente eso, porque una falla sobre
+    // un campo que no se dibuja es una falla que nadie puede corregir.
+    //
+    // Ahora los dos campos del documento están a la vista, así que la regla
+    // vale y se mide: tipo sin número, y número sin tipo.
+    expect(
+      motivos(
+        validarBorrador(
+          borrador({
+            nombre: "Istmo S.A.",
+            telefono: "+507 200-0000",
+            documentoTipo: "RUC",
+          }),
+        ),
+      ),
+      "el documento a medias pasó: se guardaría un tipo sin número, que" +
+        " después nadie puede interpretar",
+    ).toContain("documento_incompleto");
 
-    for (const nombre of nombres) {
-      for (const telefono of ["", "sin números", "+507 6000-0000"]) {
-        for (const email of ["", "carlos", "carlos@istmo.test"]) {
-          expect(
-            motivos(
-              validarBorrador(
-                borradorDelClienteNuevo(valores({ nombre, telefono, email })),
-              ),
-            ),
-          ).not.toContain("documento_incompleto");
-        }
-      }
+    expect(
+      motivos(
+        validarBorrador(
+          borrador({
+            nombre: "Istmo S.A.",
+            telefono: "+507 200-0000",
+            documentoNumero: "155555555-2-2015",
+          }),
+        ),
+      ),
+    ).toContain("documento_incompleto");
+  });
+
+  it("el documento entero pasa, y ninguno de los dos pasa también", () => {
+    const entero = validarBorrador(
+      borrador({
+        nombre: "Istmo S.A.",
+        telefono: "+507 200-0000",
+        documentoTipo: "RUC",
+        documentoNumero: "155555555-2-2015",
+      }),
+    );
+    expect(entero).toEqual([]);
+
+    const sinDocumento = validarBorrador(
+      borrador({ nombre: "Istmo S.A.", telefono: "+507 200-0000" }),
+    );
+    expect(sinDocumento).toEqual([]);
+  });
+
+  it("el representante y las notas no son exigibles por sí mismos", () => {
+    // La guardia contra la regresión más probable de esta tajada: que alguien
+    // confunda «dibujado» con «obligatorio». Cargar un lead con el nombre y
+    // un teléfono tiene que seguir alcanzando.
+    for (const extra of [
+      { representanteLegal: "Marcela Quintero" },
+      { notas: "Llamó por una sociedad nueva." },
+      {
+        representanteLegal: "Marcela Quintero",
+        notas: "Llamó por una sociedad nueva.",
+      },
+    ]) {
+      expect(
+        validarBorrador(
+          borrador({
+            nombre: "Istmo S.A.",
+            telefono: "+507 200-0000",
+            ...extra,
+          }),
+        ),
+      ).toEqual([]);
     }
   });
 });
@@ -246,10 +354,12 @@ describe("la validación del modal es la del formulario completo", () => {
 
 describe("lo que el modal manda", () => {
   it("manda `null` y no `\"\"` en todo lo que no se preguntó", () => {
+    // La razón por la que el estado del modal es el borrador entero y no un
+    // objeto de los campos que se tocaron: `aPeticion` convierte lo vacío en
+    // `null`, y es ahí donde «todavía nadie lo sabe» se distingue de «no
+    // tiene». Un `""` guardado es un documento que existe y está en blanco.
     const datos = aPeticion(
-      borradorDelClienteNuevo(
-        valores({ nombre: "Carlos Pérez", telefono: "+507 6123-4567" }),
-      ),
+      borrador({ nombre: "Carlos Pérez", telefono: "+507 6123-4567" }),
     );
 
     expect(datos).toEqual({
@@ -264,14 +374,41 @@ describe("lo que el modal manda", () => {
     });
   });
 
+  it("manda la ficha entera cuando se cargó entera", () => {
+    // Lo que la tajada agrega, medido en el cuerpo que viaja: los cuatro
+    // campos nuevos llegan al servidor. Sin esto el modal los dibujaría y los
+    // perdería, que es la peor de las dos mitades.
+    const datos = aPeticion(
+      borrador({
+        nombre: "Inversiones del Istmo, S.A.",
+        telefono: "+507 200-0000",
+        email: "contacto@istmo.test",
+        tipoClienteId: "6d1f0b11-1111-4111-8111-000000000001",
+        documentoTipo: "RUC",
+        documentoNumero: "155555555-2-2015",
+        representanteLegal: "Marcela Quintero Ríos",
+        notas: "Llamó por una sociedad nueva.",
+      }),
+    );
+
+    expect(datos).toEqual({
+      nombre: "Inversiones del Istmo, S.A.",
+      tipoClienteId: "6d1f0b11-1111-4111-8111-000000000001",
+      documentoTipo: "RUC",
+      documentoNumero: "155555555-2-2015",
+      representanteLegal: "Marcela Quintero Ríos",
+      email: "contacto@istmo.test",
+      telefono: "+507 200-0000",
+      notas: "Llamó por una sociedad nueva.",
+    });
+  });
+
   it("recorta el nombre y baja el correo, como la pantalla completa", () => {
     // No es cosmética: `aPeticion` ya lo hace, y que el modal pase por ahí es
     // lo que evita que el mismo cliente entre con dos correos distintos según
     // por qué puerta se cargó.
     const datos = aPeticion(
-      borradorDelClienteNuevo(
-        valores({ nombre: "  Carlos Pérez  ", email: "Carlos@Istmo.TEST" }),
-      ),
+      borrador({ nombre: "  Carlos Pérez  ", email: "Carlos@Istmo.TEST" }),
     );
 
     expect(datos.nombre).toBe("Carlos Pérez");
@@ -280,20 +417,16 @@ describe("lo que el modal manda", () => {
 
   it("manda el tipo cuando se eligió uno, y `null` cuando no", () => {
     const conTipo = aPeticion(
-      borradorDelClienteNuevo(
-        valores({
-          nombre: "Istmo S.A.",
-          telefono: "+507 200-0000",
-          tipoClienteId: "6d1f0b11-1111-4111-8111-000000000001",
-        }),
-      ),
+      borrador({
+        nombre: "Istmo S.A.",
+        telefono: "+507 200-0000",
+        tipoClienteId: "6d1f0b11-1111-4111-8111-000000000001",
+      }),
     );
     expect(conTipo.tipoClienteId).toBe("6d1f0b11-1111-4111-8111-000000000001");
 
     const sinTipo = aPeticion(
-      borradorDelClienteNuevo(
-        valores({ nombre: "Istmo S.A.", telefono: "+507 200-0000" }),
-      ),
+      borrador({ nombre: "Istmo S.A.", telefono: "+507 200-0000" }),
     );
     expect(sinTipo.tipoClienteId).toBeNull();
   });
