@@ -175,10 +175,67 @@ Prueba primero en las tres: el esquema de salida y el generador son lógica
 pura con pruebas unitarias; el editor y el prellenado se miden de punta a
 punta.
 
+### T-2 bis · Todos los precios son precios
+
+Corrección del usuario sobre T-2, vista en la pantalla, y la primera frase
+deshace un error conceptual mío:
+
+> «Siempre debemos mostrar todos los precios, hayan sido modificados por mí o
+> sean los preestablecidos. Los preestablecidos son eso, preestablecidos:
+> siempre pueden ser editables, pero **son la norma hasta que se editen, no
+> son una subcategoría**. El panel "Tus precios" desaparece y el dropdown que
+> los lista pasa a tener una barra de búsqueda, y las opciones el monto al
+> lado, y un botón que diga "listar todos". Esto abre un modal que me permite
+> ver todos en una vista más expandida, y con un indicativo visual si es
+> preestablecido o editado, algo sutil, una marca, un asterisco. Y aquí los
+> distintos inputs deben tener un label: no me queda claro qué hace cada uno.»
+
+**El error que esto corrige.** T-2 ofreció en la cotización sólo los
+renglones con precio propio —7 de 453 en la base de desarrollo— y dejó los
+275 que tienen la cifra del acuerdo afuera, bajo la etiqueta «sugerido». Eso
+es **dos criterios distintos para la misma pregunta** en dos pantallas del
+mismo sistema: la pantalla de precios muestra la cifra del acuerdo como el
+valor del campo, y la cotización la trataba como si no existiera. Y la
+palabra «sugerido» hacía exactamente lo que el usuario nombra: convertir en
+subcategoría algo que es el valor por defecto.
+
+- [ ] **El catálogo ofrecido son los 282 renglones con cifra**: los que el
+      bufete editó y los que todavía dicen lo que dice el acuerdo. Los 97 de
+      regla por cuantía no entran porque no tienen cifra, y los 74 rubros
+      tampoco porque son títulos.
+- [ ] **Aflojar la guarda de `0013`/`0014`**, que hoy exige `monto` propio.
+      Pasa a exigir **una cifra**: `monto` o, en su defecto, `monto_oficial`.
+      Es un invariante que se relaja a propósito y con el motivo escrito; la
+      validación de la ruta se mueve igual, y sigue rechazando rubros y
+      renglones de sólo regla.
+- [ ] **Se va el panel «Tus precios».** Lo reemplaza el propio selector.
+- [ ] **El selector pasa a ser buscable**, con el monto al lado de cada
+      opción. Un `<select>` nativo no puede: hace falta un combobox de
+      verdad, con su rol, su teclado y su `aria-activedescendant`. No se
+      compra una librería por esto.
+- [ ] **Botón «listar todos»** que abre un modal con la vista expandida:
+      categoría, concepto y monto, con búsqueda.
+- [ ] **La marca sutil, y sólo en el modal**: un asterisco —o equivalente—
+      que distinga editado de preestablecido, con su leyenda. En el selector
+      no va: ahí son todos precios y nada más.
+- [ ] **Labels visibles en los cuatro controles de una línea.** Hoy son
+      concepto, clase, monto, trámite y servicio sin un solo rótulo a la
+      vista, y no se entiende qué hace cada uno. Es deuda anterior a esta
+      tajada y se paga acá porque es donde se vio.
+- [ ] La palabra «sugerido» sale del vocabulario de la cotización. En la
+      pantalla de precios se decide aparte (ver abajo).
+
+**Lo que queda inconsistente y no entra sin que el usuario lo pida.** La
+pantalla `/catalogos/precios` sigue marcando «sugerido» al lado del campo.
+Por el principio que el usuario acaba de fijar, esa palabra también sobra
+ahí, y lo coherente sería el mismo asterisco. No se cambia en esta tarea
+porque es una pantalla entregada con sus pruebas y el usuario habló del flujo
+de cotización; queda anotado para preguntarlo.
+
 ## Entrega
 
-Tres commits de unidad de trabajo en `feat/r1-fundacion`, uno por tarea. PR y
-merge siguen siendo decisión del usuario.
+Tres commits de unidad de trabajo en `feat/r1-fundacion`, uno por tarea, más
+los de corrección. PR y merge siguen siendo decisión del usuario.
 
 ## Progreso
 
