@@ -1185,3 +1185,158 @@
     max-inline-size: none;
   }
 }
+
+/* ======================================================================
+   Tus precios al lado de las líneas (T-2 de
+   `odd/tasks/precios-en-la-cotizacion.md`)
+
+   El usuario lo pidió así: «también en la vista de cotización debe poder
+   verse, para que el usuario sepa sus propios precios en todo momento». Lo
+   que estas reglas sostienen es el «al lado» —y, cuando no hay lado, lo que
+   el al lado se vuelve—.
+
+   **Consulta de contenedor y no de ventana**, y acá eso no es una preferencia
+   de estilo: lo que decide si el panel cabe al costado es el hueco real que
+   la sección tiene, que en esta pantalla no es el ancho del navegador — el
+   detalle de la cotización vive dentro del armazón, con su propia columna y
+   su propio relleno. Con una `@media (min-width: 64rem)` el panel se pondría
+   al lado a 1024px de ventana aunque la columna midiera cuatrocientos
+   píxeles, y lo que se vería es un panel de veinte caracteres de ancho al
+   lado de un formulario que no entra. Ni una medida fija y ni una `@media`
+   (§9).
+   ====================================================================== */
+
+/*
+ * El contenedor se declara en la **sección** y no en la rejilla, y no es una
+ * preferencia: una `@container` no puede mirar al elemento que la establece,
+ * sólo a sus descendientes. Con `container` puesto en `.lineas-con-precios`, la
+ * regla de dos pistas de más abajo nunca se aplicaría — medido en el navegador,
+ * con el panel quedándose debajo a 1920px.
+ */
+.seccion-de-lineas {
+  container: lineas / inline-size;
+}
+
+.lineas-con-precios {
+  display: grid;
+  gap: var(--espacio-l);
+}
+
+/*
+ * El punto en el que el panel deja de robarle ancho al trabajo.
+ *
+ * Las dos pistas son `minmax(0, …)`: la primera para que el contenido que no
+ * envuelve —un concepto largo, una fila de botones— no empuje la rejilla más
+ * allá del hueco, y la segunda como **tope** y no como ancho, así que en un
+ * hueco justo el panel mide lo que sobra y no 24rem a la fuerza.
+ */
+@container lineas (min-width: 52rem) {
+  .lineas-con-precios {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+    align-items: start;
+  }
+
+  /*
+   * El panel acompaña el recorrido de la lista. Una cotización larga hace
+   * scrollear la página entera, y un panel de consulta que se va hacia arriba
+   * obliga a volver justo cuando hace falta.
+   *
+   * `inset-block-start` y no `top`, como el resto del sistema. El tope de alto
+   * es `100dvh` menos el aire de arriba y abajo, para que el panel scrollee
+   * por dentro en vez de desbordar la ventana en una pantalla baja.
+   */
+  .tus-precios {
+    position: sticky;
+    inset-block-start: var(--espacio-m);
+    max-block-size: calc(100dvh - var(--espacio-xl) * 2);
+    overflow-y: auto;
+  }
+}
+
+.tus-precios {
+  padding: var(--espacio-m);
+  border: var(--borde-fino);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+}
+
+/*
+ * El rótulo del panel, a la altura de un encabezado de sección y no de una
+ * familia de líneas: lo que hay debajo es una consulta, no una parte del
+ * documento que el cliente va a leer.
+ */
+.tus-precios__rotulo {
+  font-size: var(--texto-l);
+}
+
+.tus-precios__lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-xs);
+}
+
+/*
+ * Una fila del panel: el servicio a la izquierda y **una sola** cifra de
+ * dinero a la derecha, la del bufete.
+ *
+ * No hay regla para una segunda cifra porque no hay segunda cifra: el monto
+ * del Acuerdo No 49 de 2001 no viaja hasta acá —`ServicioTarifado` no tiene
+ * dónde ponerlo— y `e2e/precios-en-cotizacion.spec.ts` cuenta las cifras de
+ * cada fila para que agregarla, con cualquier rótulo y cualquier clase, se
+ * ponga rojo.
+ *
+ * `baseline` y no `center`: el concepto puede ocupar dos renglones y el
+ * importe tiene que alinearse con el primero, que es donde el ojo lo busca.
+ */
+.tus-precios__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--espacio-xs);
+  padding-block: var(--espacio-xs);
+  border-block-end: var(--borde-fino);
+  font-size: var(--texto-s);
+}
+
+.tus-precios__item:last-child {
+  border-block-end: none;
+}
+
+/*
+ * El nombre del servicio. `min-inline-size: 0` es lo que lo deja envolver
+ * dentro del flex en vez de imponer su renglón: sin eso, un concepto del
+ * acuerdo de setenta caracteres empuja la fila y con ella la rejilla.
+ */
+.tus-precios__servicio {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow-wrap: break-word;
+}
+
+/*
+ * El rubro que encabeza al servicio, arriba y apagado. Hace falta porque el
+ * acuerdo imprime «3. Inmigrantes» una vez y cuelga de ahí sus letras sin
+ * repetir la palabra: sin el rubro, dos filas del panel dirían «a)» sin decir
+ * de qué.
+ */
+.tus-precios__rubro {
+  display: block;
+  color: var(--color-tinta-apagada);
+  font-size: var(--texto-xs);
+}
+
+/*
+ * La cifra. Tabular para que la columna de importes se lea como una columna, y
+ * **sin color de alarma de ninguna clase**: lo que este panel no hace es
+ * juzgar el precio del bufete.
+ */
+.tus-precios__importe {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--peso-fuerte);
+  white-space: nowrap;
+}

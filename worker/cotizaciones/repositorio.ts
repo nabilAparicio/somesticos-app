@@ -33,6 +33,7 @@ import type {
   Cotizacion,
   DatosDeCotizacion,
   DatosDeLinea,
+  DatosDeLineaConOrigen,
   DatosDeModulo,
   DocumentoCongelado,
   EstadoDeCotizacion,
@@ -375,16 +376,23 @@ export interface ServicioDeCotizaciones {
     tenantId: string,
     cotizacionId: string,
   ): Promise<LineaDeCotizacion[]>;
+  /*
+   * Las dos escrituras de una persona reciben `DatosDeLineaConOrigen`: lo de
+   * `DatosDeLinea` **más** de qué renglón del arancel salió el precio (T-2 de
+   * `odd/tasks/precios-en-la-cotizacion.md`). `crearDesdePropuesta`, más
+   * abajo, sigue recibiendo `DatosDeLinea` a secas, porque el modelo todavía
+   * no puede nombrar un servicio — el porqué está entero en el contrato.
+   */
   agregarLinea(
     tenantId: string,
     cotizacionId: string,
-    datos: DatosDeLinea,
+    datos: DatosDeLineaConOrigen,
   ): Promise<ResultadoDeLineas>;
   editarLinea(
     tenantId: string,
     cotizacionId: string,
     lineaId: string,
-    datos: DatosDeLinea,
+    datos: DatosDeLineaConOrigen,
   ): Promise<ResultadoDeLineas>;
   quitarLinea(
     tenantId: string,
@@ -939,6 +947,80 @@ export function cotizacionesSobreD1(
     if (fila !== null) return [];
 
     return [{ campo: "tipoProcesoId", motivo: "tipo_proceso_desconocido" }];
+  }
+
+  /**
+   * De dónde salió el precio, si viene, tiene que ser un renglón del arancel
+   * **de este tenant y con precio del bufete** (T-2 de
+   * `odd/tasks/precios-en-la-cotizacion.md`).
+   *
+   * ## Por qué se cuenta acá y no se deja saltar a la base
+   *
+   * El mismo argumento que `validarTipoDeProceso`, elevado un escalón: acá hay
+   * **dos** guardas de la base esperando detrás —el disparador de tenencia de
+   * `0013` y el del origen del precio, con la llave foránea debajo— y las dos
+   * mueren con un `RAISE(ABORT)` que sale envuelto en un 500. Lo que llega es
+   * un identificador elegido en un desplegable que pudo quedar viejo entre que
+   * la pantalla cargó y se envió, y «ese servicio ya no tiene precio tuyo» es
+   * una respuesta de negocio. Los disparadores siguen siendo la red de abajo y
+   * **no se tocan**: son los que sobreviven al primer script de importación
+   * (§5) y los que atrapan la carrera entre esta consulta y la escritura.
+   *
+   * ## Un motivo para la fila que no está y otro para la que no tiene precio
+   *
+   * `arancel_renglon_desconocido` cubre el inventado y el del bufete vecino
+   * —desde acá son lo mismo— y `arancel_renglon_sin_precio` cubre el renglón
+   * sin tarifar **y el rubro**, que es un solo hecho por el `CHECK`
+   * `un_rubro_no_lleva_precio` de `0012`. El reparto es el que `0013` ya
+   * argumentó para tener un disparador y no dos, con el añadido de que acá la
+   * fila ausente y la fila sin precio sí mandan a hacer cosas distintas: una a
+   * volver a cargar la lista, la otra a ponerle precio al servicio.
+   *
+   * ## `previo` es la lección de `0014`, y es el parámetro que más importa
+   *
+   * `0014` acotó el disparador de `UPDATE` al **cambio** de la referencia,
+   * porque la forma anterior dejaba el borrador inescribible en cuanto alguien
+   * vaciaba un precio en la pantalla de precios: ni se le podía corregir una
+   * falta de ortografía al concepto. El invariante es sobre el acto de
+   * **tomar** el precio de un renglón, no sobre la fila para siempre.
+   *
+   * Así que esta función recibe la referencia que la línea ya tenía y **no
+   * valida nada cuando no cambia**. Sin eso, la ruta reintroduciría arriba de
+   * la base el defecto que esa migración arregló, y encima desde la pantalla
+   * que no causó el problema. En el alta `previo` es `null` siempre, y ahí toda
+   * escritura es por definición un «poner».
+   */
+  async function validarOrigenDelPrecio(
+    tenantId: string,
+    datos: DatosDeLineaConOrigen,
+    previo: string | null,
+  ): Promise<FallaDeValidacion[]> {
+    const elegido = datos.arancelRenglonId;
+    if (elegido === null || elegido === previo) return [];
+
+    const fila = await db
+      .prepare(
+        "SELECT monto FROM arancel_renglon WHERE tenant_id = ? AND id = ?",
+      )
+      .bind(tenantId, elegido)
+      .first<{ monto: number | null }>();
+
+    if (fila === null) {
+      return [
+        { campo: "arancelRenglonId", motivo: "arancel_renglon_desconocido" },
+      ];
+    }
+
+    // `monto` y no `clase`: preguntar por el precio ya excluye a los 74
+    // rubros, siempre, sin nombrarlos. Preguntar además por la clase sería la
+    // segunda guarda para el mismo hecho.
+    if (fila.monto === null) {
+      return [
+        { campo: "arancelRenglonId", motivo: "arancel_renglon_sin_precio" },
+      ];
+    }
+
+    return [];
   }
 
   /**
@@ -1869,7 +1951,15 @@ export function cotizacionesSobreD1(
       const bloqueo = await borradorParaEscribir(tenantId, cotizacionId);
       if (bloqueo !== null) return bloqueo;
 
-      const fallas = await validarTipoDeProceso(tenantId, datos);
+      // Las dos comprobaciones salen juntas y no en cascada: una línea puede
+      // traer el trámite y el servicio mal a la vez, y un formulario que
+      // corrige de a un error por envío es el que nadie usa. En el alta el
+      // `previo` es nulo —no hay fila anterior— así que toda referencia que
+      // llegue es un «poner» y se valida entera.
+      const fallas = [
+        ...(await validarTipoDeProceso(tenantId, datos)),
+        ...(await validarOrigenDelPrecio(tenantId, datos, null)),
+      ];
       if (fallas.length > 0) return { estado: "invalido", fallas };
 
       // **El `orden` se calcula dentro de la sentencia, no antes**, por la
@@ -1896,8 +1986,9 @@ export function cotizacionesSobreD1(
         },
         sentencia(
           "INSERT INTO cotizacion_linea (id, tenant_id, cotizacion_id," +
-            " clase, concepto, monto, tipo_proceso_id, orden)" +
-            " SELECT ?, ?, ?, ?, ?, ?, ?," +
+            " clase, concepto, monto, tipo_proceso_id, arancel_renglon_id," +
+            " orden)" +
+            " SELECT ?, ?, ?, ?, ?, ?, ?, ?," +
             " (SELECT COALESCE(MAX(orden), -1) + 1 FROM cotizacion_linea" +
             " WHERE tenant_id = ? AND cotizacion_id = ?) WHERE" +
             SOBRE_UN_BORRADOR,
@@ -1910,8 +2001,16 @@ export function cotizacionesSobreD1(
           // ya garantizó que es un entero seguro de cero en adelante, y
           // cualquier aritmética acá lo volvería un flotante que el `CHECK`
           // de `0004` rechazaría con un 500.
+          //
+          // **Y es el monto que llegó, no el del renglón.** Aunque la línea
+          // diga de qué servicio tarifado salió, el importe que se guarda es el
+          // que la persona aceptó o editó: el prellenado es una propuesta. Que
+          // el precio lo ponga el sistema es la regla de T-3 **para el
+          // modelo**, y esta sentencia no la implementa ni la puede
+          // implementar — no lee el catálogo.
           datos.monto,
           datos.tipoProcesoId,
+          datos.arancelRenglonId,
           tenantId,
           cotizacionId,
           tenantId,
@@ -1946,11 +2045,25 @@ export function cotizacionesSobreD1(
       // sin esto, editar una línea ajena y perder la carrera contra una
       // emisión se contestarían iguales, y son cosas muy distintas.
       const existentes = await leerLineas(tenantId, cotizacionId);
-      if (!existentes.some((linea) => linea.id === lineaId)) {
+      const anterior = existentes.find((linea) => linea.id === lineaId);
+      if (anterior === undefined) {
         return { estado: "no_encontrado" };
       }
 
-      const fallas = await validarTipoDeProceso(tenantId, datos);
+      // La referencia que la línea **ya tenía** entra en la validación del
+      // origen, y es la lección de `migrations/0014`: lo que el invariante
+      // vigila es tomar el precio de un renglón, no la fila para siempre. Una
+      // línea cuyo servicio dejó de estar tarifado se sigue pudiendo editar; lo
+      // que no se puede es mudarla a otro renglón sin precio. El argumento
+      // entero está en `validarOrigenDelPrecio`.
+      const fallas = [
+        ...(await validarTipoDeProceso(tenantId, datos)),
+        ...(await validarOrigenDelPrecio(
+          tenantId,
+          datos,
+          anterior.arancelRenglonId,
+        )),
+      ];
       if (fallas.length > 0) return { estado: "invalido", fallas };
 
       // El `SET` no menciona `orden`: editar una línea no la mueve de lugar.
@@ -1966,13 +2079,18 @@ export function cotizacionesSobreD1(
         },
         sentencia(
           "UPDATE cotizacion_linea SET clase = ?, concepto = ?, monto = ?," +
-            " tipo_proceso_id = ?" +
+            " tipo_proceso_id = ?, arancel_renglon_id = ?" +
             " WHERE tenant_id = ? AND cotizacion_id = ? AND id = ? AND" +
             SOBRE_UN_BORRADOR,
           datos.clase,
           datos.concepto,
           datos.monto,
           datos.tipoProcesoId,
+          // `PUT` y no `PATCH`: el cuerpo es el juego completo de campos
+          // editables, así que un cuerpo que no nombra el origen **lo borra**.
+          // Es lo mismo que ya pasa con el trámite, y lo que hace que
+          // desvincular un servicio sea una operación y no una omisión.
+          datos.arancelRenglonId,
           tenantId,
           cotizacionId,
           lineaId,

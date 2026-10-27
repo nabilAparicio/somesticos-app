@@ -143,10 +143,10 @@ mover acá.
 
 ### T-2 · El editor muestra tus precios
 
-- [ ] Elegir un servicio tarifado prellena concepto y monto, editable.
-- [ ] Los precios del bufete, visibles y buscables mientras se arma la
+- [x] Elegir un servicio tarifado prellena concepto y monto, editable.
+- [x] Los precios del bufete, visibles y buscables mientras se arma la
       cotización.
-- [ ] Ninguna comparación con el monto oficial. Se prueba, no se promete.
+- [x] Ninguna comparación con el monto oficial. Se prueba, no se promete.
 
 ### T-3 · El agente elige y el sistema tarifa
 
@@ -258,3 +258,154 @@ tienen prueba propia igual, en `test/arancel-linea.spec.ts`.
   `test/impresion-ui.spec.ts`.
 
 - Próximo paso: T-2, el editor con los precios del bufete a la vista.
+
+### T-2 cerrada · el editor muestra tus precios
+
+**Qué entró.** La ruta de líneas aprende a guardar de dónde salió el precio
+—`arancelRenglonId` en el cuerpo, validado antes de llegar a los disparadores de
+`0013`/`0014`—, el editor gana un desplegable de servicios tarifados que
+prellena concepto y monto, y **un panel con tus precios al lado de las líneas**,
+buscable, que es lo que el usuario pidió explícitamente. Ninguna de las dos
+mitades muestra el monto oficial, y eso se prueba contando cifras y no buscando
+palabras.
+
+**Checks observados, en primer plano:** `lint` limpio, `typecheck` limpio,
+`test` **2421 en 47 archivos** (eran 2363 en 47), `test:e2e` **467** (eran 452;
++15 de `e2e/precios-en-cotizacion.spec.ts`).
+
+#### La decisión de forma que la tarea obligó a tomar: dos tipos de línea
+
+`DatosDeLinea` **no** gana el campo. Nace `DatosDeLineaConOrigen extends
+DatosDeLinea` en el contrato, y la separación no es comodidad para no tocar
+`worker/ia/`: es la frontera que T-3 tiene que mover a conciencia.
+`worker/ia/esquema.ts` declara las claves que la salida del modelo admite con un
+`satisfies readonly (keyof DatosDeLinea)[]` y una red `DebeSerVacio` que impide
+que la unión y la lista se separen, así que meter el campo en `DatosDeLinea`
+**obliga** a declararlo allá — o sea, a abrirle la puerta al modelo antes de la
+regla del `xor` que T-3 existe para escribir. Hoy hay dos escritores de líneas y
+escriben cosas distintas; el día que T-3 mueva esa frontera, los dos tipos se
+colapsan en uno y `DatosDeLineaConOrigen` desaparece. Queda escrito en el
+contrato para que sea una decisión y no un descubrimiento.
+
+#### La validación mira el **cambio**, y es la lección de `0014` repetida arriba
+
+`0014` acotó el disparador de `UPDATE` al cambio de la referencia porque la
+forma anterior dejaba el borrador inescribible en cuanto alguien vaciaba un
+precio en otra pantalla. Una validación de ruta que preguntara «¿este renglón
+tiene precio?» en **cada** escritura reintroduce ese defecto por encima de la
+guarda arreglada, y encima desde la pantalla que no causó el problema. Así que
+`validarOrigenDelPrecio` recibe la referencia que la línea ya tenía y no valida
+nada cuando no cambia. Hay una prueba con el nombre de ese defecto: «una línea
+cuyo renglón se quedó sin precio se sigue pudiendo editar».
+
+Los motivos son dos y el reparto está argumentado: `arancel_renglon_desconocido`
+cubre el inventado **y el del bufete vecino** —desde acá son el mismo hecho— y
+`arancel_renglon_sin_precio` cubre el renglón sin tarifar **y el rubro**, que
+también son el mismo hecho por el `CHECK un_rubro_no_lleva_precio` de `0012`. Es
+el mismo criterio con el que `0013` escribió un disparador y no dos.
+
+#### El monto sigue viajando, y hay una prueba con el importe distinto a propósito
+
+Una referencia registra **de dónde salió el precio**, no cuánto vale. El
+servidor guarda el importe que llegó y no vuelve a mirar el catálogo: el
+prellenado es una propuesta y editarla encima es legítimo y esperado. «El sistema
+pone el precio» es la regla de T-3 **para el modelo**, no para una persona
+tecleando. La prueba manda 99.900 sobre un servicio tarifado a 40.000 — si los
+dos números fueran iguales, un servidor que pisara el importe pasaría sin que
+nada lo notara.
+
+#### Dos cosas que el navegador desmintió, y las dos cambiaron el código
+
+1. **«El rubro de más arriba» atribuía mal, y el rótulo mentía.** El panel decía
+   **«Inversionista · Naturalizaciones»**. Es falso: en migración el acuerdo
+   imprime el rubro `3.b` «Inversionista» con sus hijos `b.1` y `b.2`, y después
+   sigue con `4` «Naturalizaciones», que es **hermano del rubro**. Tomar el
+   último rubro visto adopta todo lo que venga hasta el final de la categoría.
+   Un rótulo que falta obliga a mirar el documento; uno que miente manda a
+   cotizar otro servicio. La regla nueva —`cuelgaDelRubro`— exige que el numeral
+   lo demuestre: que sea el mismo (los 5 renglones que el acuerdo imprime sin
+   numerar y heredan el del padre), que extienda el del rubro (`3` → `3.a`) o
+   que extienda su último tramo, porque las letras reinician bajo cada padre
+   (`3.b` → `b.1`). Medido sobre `scripts/arancel/arancel.json`: **147 renglones
+   quedan adoptados** y los no adoptados son exactamente los hermanos de nivel
+   superior. Falla hacia el hueco, que es la dirección correcta.
+2. **El prellenado proponía un fragmento.** El primer diseño escribía el
+   concepto del renglón a secas, con el argumento de que el rubro es un recurso
+   del desplegable y no prosa del documento. El navegador lo desmintió en la
+   primera prueba a mano: el servicio «primer año» prellenaba una línea que
+   decía «primer año», que es la definición misma de `concepto_requerido` —un
+   monto que el cliente no sabe por qué paga—. Y no es un borde: son esos mismos
+   **147 renglones**, con «Reconsideración», «Apelación», «Persona Natural»,
+   «Elaboración» y «Revisión» entre ellos. Ahora se propone el rótulo completo,
+   que además hace que lo que se elige sea exactamente lo que se escribe.
+
+#### Lo demás que se midió a mano, con seis precios sembrados en la D1 local
+
+- **A 1440px**: panel de 384px al lado de una columna de 630px, `position:
+  sticky`, fila típica de 39px, cero desborde horizontal, **cero** elementos con
+  `role="alert"`.
+- **A 390px**: el panel baja —343px, el mismo ancho que la columna—, deja de ser
+  pegajoso y el buscador sigue estando. Cero desborde.
+- **Contra la D1 de verdad**, por `fetch`: el alta con `arancelRenglonId` guarda
+  310.000 centavos sobre un servicio tarifado a 250.000 y resuelve
+  `arancelConcepto` en lectura; el rubro y el renglón sin tarifar vuelven 422
+  `arancel_renglon_sin_precio`, y el inventado 422
+  `arancel_renglon_desconocido`. **Ninguno es un 500.**
+- **El monto oficial no aparece**: lo único que casaba con una cita era `500.00`
+  dentro de `USD 2,500.00`, que es el precio del bufete.
+
+#### Lo que el contenedor de consulta costó, y por qué no es una `@media`
+
+Lo que decide si el panel cabe al lado es el hueco real de la sección, que no es
+el ancho de la ventana: el detalle vive dentro del armazón, con su propia
+columna. Con una `@media (min-width: 64rem)` el panel se pondría al lado a
+1024px de ventana aunque la columna midiera cuatrocientos píxeles. Y el
+contenedor se declara en la **sección** y no en la rejilla, porque una
+`@container` no puede mirar al elemento que la establece, sólo a sus
+descendientes: con `container` puesto en `.lineas-con-precios`, la regla de dos
+pistas no se aplicaba nunca —medido, con el panel quedándose debajo a 1920px—.
+
+#### Dos archivos de prueba fuera de la superficie de la tarea
+
+Por obligación mecánica y no por alcance nuevo, que es el mismo precio que pagó
+T-1 con cuatro:
+
+- **`src/mensajes.ts`**: el `Record<MotivoDeFalla, string>` es exhaustivo a
+  propósito, así que los dos motivos nuevos no compilan hasta tener su frase.
+- **`e2e/cotizaciones.spec.ts`**: sus siete dobles de línea no traían las claves
+  que la API escribe siempre, y los dos cuerpos esperados de escritura tampoco.
+  El primero no era cosmético: con `arancelRenglonId` en `undefined`,
+  `hayCambioEnLinea` comparaba `null` contra `undefined` y dejaba el botón
+  «Guardar» encendido sobre una línea sin cambios. El doble tiene que decir lo
+  mismo que la API.
+
+#### Deuda que T-2 deja a la vista
+
+- **El buscador de la pantalla de precios atribuye el rubro sin demostrarlo.**
+  `filtrarRenglones` toma el rubro inmediatamente anterior, igual que hacía el
+  panel antes de esta corrección, así que buscar «inversionista» ahí también
+  encuentra «Naturalizaciones». Es sobre-coincidencia y no un rótulo falso —el
+  dibujo de esa pantalla no muestra el rubro—, así que no rompe nada visible.
+  `cuelgaDelRubro` ya está escrita y medida al lado; aplicarla ahí cambia los
+  resultados de búsqueda de una pantalla entregada y de sus pruebas, que están
+  fuera de la superficie de esta tarea.
+- **El panel no tiene un botón «usar este precio».** Lo que hay es el
+  desplegable del formulario, que es donde se elige, y el panel es consulta. Un
+  botón por fila sería un segundo camino de escritura para lo mismo.
+- **`e2e/cotizaciones.spec.ts` contesta 404 a `GET /api/arancel`**, así que en
+  esa suite el panel se dibuja con su aviso neutro de «no se pudieron traer tus
+  precios». Es deliberado que ese aviso **no** sea de error: un `role="alert"`
+  por un panel de consulta que no cargó rompería los seis `getByRole("alert")`
+  sin acotar de esa suite, y antes que eso, interrumpiría la lectura de la
+  pantalla entera para avisar de algo que no impide cotizar.
+- **La base local quedó exactamente como se encontró**, y está medido: 453
+  renglones con **0 precios**, 49 líneas con **0 orígenes**, 57 notas, 8
+  clientes, 10 cotizaciones, 9 procesos y 156 asientos de bitácora. Los seis
+  precios de desarrollo se pusieron en nulo y la línea de prueba se borró
+  restaurando el respaldo que se tomó antes de sembrar: la entrada de bitácora
+  que esa prueba dejó no se puede borrar —`0002_bitacora_inmutable.sql` lo
+  prohíbe— y restaurar el archivo era la única forma de no dejarla.
+
+- Próximo paso: T-3, el agente elige y el sistema tarifa. El prompt, el esquema
+  de salida con su `xor` y el generador. `DatosDeLineaConOrigen` y
+  `CLAVES_DE_LINEA` son las dos puntas que esa tarea tiene que unir.

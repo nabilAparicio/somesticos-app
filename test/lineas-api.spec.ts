@@ -285,6 +285,8 @@ interface LineaEnElCable {
   monto: number;
   tipoProcesoId: string | null;
   tipoProcesoNombre: string | null;
+  arancelRenglonId: string | null;
+  arancelConcepto: string | null;
   orden: number;
 }
 
@@ -308,6 +310,77 @@ let cotizacionAjenaId: string;
 let lineaAjenaId: string;
 let tipoProcesoId: string;
 let tipoProcesoAjenoId: string;
+
+/* --- El arancel, que es de dónde sale el precio de una línea (T-2 de
+       `odd/tasks/precios-en-la-cotizacion.md`) ---
+
+   Los cuatro renglones se siembran **una sola vez**, en `beforeAll`, y no en
+   `beforeEach` como todo lo demás de esta suite. No es una preferencia: el
+   disparador `arancel_renglon_no_se_borra` de
+   `migrations/0012_arancel_de_honorarios.sql` aborta todo `DELETE` sobre esa
+   tabla, así que una siembra por prueba no tendría forma de limpiar lo
+   anterior y chocaría contra `arancel_renglon_orden_unico`. Ninguna prueba de
+   acá escribe su `monto`, así que la muestra se mantiene estable sola.
+
+   El cuarto es del bufete vecino, y es la única forma de expresar la fuga: un
+   identificador ajeno es, desde acá, un identificador que no existe. */
+
+/** Un renglón con precio del bufete: el único origen que la base acepta. */
+const RENGLON_TARIFADO_ID = "b1000000-0000-4000-8000-000000000001";
+/** Un renglón del acuerdo que el bufete **todavía no tarifó**. */
+const RENGLON_SIN_PRECIO_ID = "b1000000-0000-4000-8000-000000000002";
+/** Uno de los 74 encabezados: por su `CHECK`, nunca puede llevar precio. */
+const RUBRO_ID = "b1000000-0000-4000-8000-000000000003";
+/** Un renglón tarifado **del bufete vecino**. */
+const RENGLON_AJENO_ID = "b1000000-0000-4000-8000-000000000004";
+
+/** Lo que el bufete cobra por el servicio tarifado de la muestra. */
+const PRECIO_DEL_BUFETE = 40_000;
+/**
+ * El monto del acuerdo del mismo renglón, **distinto** del anterior.
+ *
+ * Distinto a propósito: si coincidieran, una respuesta que trajera la cita de
+ * 2001 en lugar del precio del bufete pasaría sin que nada lo notara.
+ */
+const MONTO_OFICIAL = 13_755;
+
+function sembrarRenglon(fila: {
+  id: string;
+  tenantId: string;
+  orden: number;
+  concepto: string;
+  clase: "monto" | "regla" | "rubro";
+  montoOficial: number | null;
+  monto: number | null;
+}): D1PreparedStatement {
+  return env.DB.prepare(
+    "INSERT INTO arancel_renglon (id, tenant_id, orden, categoria, numeral," +
+      " concepto, clase, monto_oficial, regla_oficial, monto, activo)" +
+      " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1)",
+  ).bind(
+    fila.id,
+    fila.tenantId,
+    fila.orden,
+    "ACTUACIONES ANTE EL SERVICIO NACIONAL DE MIGRACIÓN",
+    "a",
+    fila.concepto,
+    fila.clase,
+    fila.montoOficial,
+    fila.monto,
+  );
+}
+
+/** El origen guardado de una línea, leído de la base y no del eco de nada. */
+async function origenGuardadoDe(lineaId: string): Promise<string | null> {
+  const fila = await env.DB.prepare(
+    "SELECT arancel_renglon_id FROM cotizacion_linea WHERE id = ?",
+  )
+    .bind(lineaId)
+    .first<{ arancel_renglon_id: string | null }>();
+
+  expect(fila, `la línea ${lineaId} tiene que existir`).not.toBeNull();
+  return fila?.arancel_renglon_id ?? null;
+}
 
 function entorno(): Env {
   // Hermético, por la misma razón que en `test/acceso.spec.ts`: un
@@ -454,6 +527,54 @@ beforeAll(async () => {
   )
     .bind(autorId, TENANT_UNICO_ID, "Itzel", EMAIL_AUTOR)
     .run();
+
+  // El tenant vecino nace acá y no en el `beforeEach`, porque los renglones
+  // del arancel que cuelgan de él viven toda la corrida: su llave foránea está
+  // en `NO ACTION`, así que la fila del tenant tiene que existir antes.
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO tenant (id, nombre) VALUES (?, ?)",
+  )
+    .bind(OTRO_TENANT_ID, "Otro bufete")
+    .run();
+
+  await env.DB.batch([
+    sembrarRenglon({
+      id: RENGLON_TARIFADO_ID,
+      tenantId: TENANT_UNICO_ID,
+      orden: 1,
+      concepto: "Visa de pensionado o jubilado",
+      clase: "monto",
+      montoOficial: MONTO_OFICIAL,
+      monto: PRECIO_DEL_BUFETE,
+    }),
+    sembrarRenglon({
+      id: RENGLON_SIN_PRECIO_ID,
+      tenantId: TENANT_UNICO_ID,
+      orden: 2,
+      concepto: "Permiso de trabajo por contrato",
+      clase: "monto",
+      montoOficial: 30_000,
+      monto: null,
+    }),
+    sembrarRenglon({
+      id: RUBRO_ID,
+      tenantId: TENANT_UNICO_ID,
+      orden: 3,
+      concepto: "Inmigrantes",
+      clase: "rubro",
+      montoOficial: null,
+      monto: null,
+    }),
+    sembrarRenglon({
+      id: RENGLON_AJENO_ID,
+      tenantId: OTRO_TENANT_ID,
+      orden: 1,
+      concepto: "El servicio tarifado del vecino",
+      clase: "monto",
+      montoOficial: MONTO_OFICIAL,
+      monto: 99_900,
+    }),
+  ]);
 });
 
 beforeEach(async () => {
@@ -492,11 +613,15 @@ beforeEach(async () => {
   )
     .bind(TENANT_UNICO_ID)
     .run();
+  // `arancel_renglon` entra en la lista por lo mismo que las otras tres: su
+  // llave foránea hacia `tenant` está en `NO ACTION`, y los renglones de la
+  // muestra viven toda la corrida porque la base no los deja borrar.
   await env.DB.prepare(
     "DELETE FROM tenant WHERE id <> ?" +
       " AND id NOT IN (SELECT tenant_id FROM cotizacion)" +
       " AND id NOT IN (SELECT tenant_id FROM cliente)" +
-      " AND id NOT IN (SELECT tenant_id FROM usuario)",
+      " AND id NOT IN (SELECT tenant_id FROM usuario)" +
+      " AND id NOT IN (SELECT tenant_id FROM arancel_renglon)",
   )
     .bind(TENANT_UNICO_ID)
     .run();
@@ -1002,6 +1127,299 @@ describe("el tipo de proceso de una línea", () => {
 });
 
 // ---------------------------------------------------------------------------
+// De dónde salió el precio de una línea (T-2 de
+// `odd/tasks/precios-en-la-cotizacion.md`)
+//
+// `migrations/0013` y `0014` dejaron la columna y sus dos disparadores puestos
+// **antes** de que existiera un escritor, y esta ruta es el primer escritor.
+// Lo que esta sección mide es la mitad amable de esas guardas: que las cuatro
+// formas de nombrar un origen imposible —uno que no existe, uno del bufete
+// vecino, un rubro y un renglón que el bufete no tarifó— vuelvan como una
+// negativa con el sobre de la casa y su motivo, y **no como un 500 crudo de
+// SQLite**, que no es una negativa sino una caída.
+//
+// Y mide la otra mitad, que es la que define la forma de la tarea: **el monto
+// sigue viajando y sigue siendo el que se mandó.** La referencia dice de dónde
+// salió el precio, no cuánto vale: el prellenado es una propuesta editable, y
+// un servidor que pisara el importe con el del catálogo convertiría la
+// propuesta en una imposición. Que el modelo no pueda hacerlo es otra cosa, y
+// es T-3.
+// ---------------------------------------------------------------------------
+
+describe("el origen del precio de una línea", () => {
+  const LINEA_TARIFADA = {
+    clase: "honorario",
+    concepto: "Visa de pensionado o jubilado",
+    monto: PRECIO_DEL_BUFETE,
+    arancelRenglonId: RENGLON_TARIFADO_ID,
+  };
+
+  it("guarda de qué renglón salió el precio, y lo resuelve en lectura", async () => {
+    await agregar(LINEA_TARIFADA);
+
+    const [releida] = await listar();
+    expect(releida.arancelRenglonId).toBe(RENGLON_TARIFADO_ID);
+    expect(releida.arancelConcepto).toBe("Visa de pensionado o jubilado");
+  });
+
+  it("una línea sin origen lo trae en nulo, que es el caso corriente", async () => {
+    // Una consulta, una mensajería, un cobro que no corresponde a ningún
+    // servicio tarifado. El nulo dice la verdad: nadie sabe de dónde salió ese
+    // precio.
+    await agregar();
+
+    const [releida] = await listar();
+    expect(releida.arancelRenglonId).toBeNull();
+    expect(releida.arancelConcepto).toBeNull();
+  });
+
+  /*
+   * **La regla que define la forma de la tarea.** El monto que se manda es el
+   * que se guarda, aunque la línea diga de qué renglón salió y aunque ese
+   * renglón tenga otro precio: el prellenado del editor es una propuesta y
+   * editarla encima es legítimo y esperado.
+   *
+   * El importe va escrito a mano y es **distinto** del precio del catálogo: si
+   * fueran iguales, un servidor que pisara el monto con el del renglón pasaría
+   * esta prueba sin que nada lo notara.
+   */
+  it("no pisa el monto que se mandó con el del catálogo", async () => {
+    await agregar({ ...LINEA_TARIFADA, monto: 99_900 });
+
+    const [releida] = await listar();
+    expect(
+      releida.monto,
+      "el servidor reemplazó el importe que la persona editó por el del" +
+        " catálogo. La referencia dice de dónde salió el precio, no cuánto" +
+        " vale: poner el precio es la regla de T-3 para el modelo, no para" +
+        " alguien que está tecleando",
+    ).toBe(99_900);
+    expect(releida.arancelRenglonId).toBe(RENGLON_TARIFADO_ID);
+  });
+
+  it("de la lectura no sale ningún monto del renglón, ni el del acuerdo", async () => {
+    // El monto que vale es el de la línea. Un segundo número de dinero al lado
+    // sería la comparación que `odd/tasks/arancel-de-honorarios.md` prohibió, y
+    // `monto_oficial` sería además la cita de 2001 dentro de una cotización.
+    await agregar(LINEA_TARIFADA);
+
+    const serializado = JSON.stringify(await listar());
+    expect(
+      serializado.includes(String(MONTO_OFICIAL)),
+      "la línea trae el monto del Acuerdo No 49 de 2001 adentro",
+    ).toBe(false);
+    expect(serializado).not.toContain("montoOficial");
+  });
+
+  it("un renglón que no existe da 422 y no un 500", async () => {
+    // Se **cuenta** el renglón antes de escribir, igual que con el trámite. Sin
+    // esto, el identificador inventado llegaría a la llave foránea y saldría
+    // como un 500 que nadie puede leer.
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeLineas(), "POST", {
+        ...LINEA_TARIFADA,
+        arancelRenglonId: nuevoId(),
+      }),
+    );
+
+    expect(respuesta.status, await respuesta.clone().text()).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toEqual([
+      "arancel_renglon_desconocido",
+    ]);
+    expect(await listar()).toHaveLength(0);
+  });
+
+  it("el renglón del bufete vecino no existe desde acá", async () => {
+    // Es el mismo motivo que el inventado, y a propósito: desde este bufete una
+    // fila ajena **es** una fila que no existe, y un motivo propio diría que
+    // del otro lado hay algo.
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeLineas(), "POST", {
+        ...LINEA_TARIFADA,
+        arancelRenglonId: RENGLON_AJENO_ID,
+      }),
+    );
+
+    expect(respuesta.status, await respuesta.clone().text()).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toEqual([
+      "arancel_renglon_desconocido",
+    ]);
+    expect(await listar()).toHaveLength(0);
+  });
+
+  it("un rubro no puede ser el origen de un precio", async () => {
+    // Uno de los 74 encabezados que el acuerdo imprime sin valor. Cae en el
+    // mismo motivo que el renglón sin tarifar porque es el mismo hecho: por el
+    // `CHECK un_rubro_no_lleva_precio` de `0012`, un rubro **no puede** tener
+    // precio del bufete. Es el reparto que `0013` argumentó para tener un
+    // disparador y no dos.
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeLineas(), "POST", {
+        ...LINEA_TARIFADA,
+        arancelRenglonId: RUBRO_ID,
+      }),
+    );
+
+    expect(respuesta.status, await respuesta.clone().text()).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toEqual([
+      "arancel_renglon_sin_precio",
+    ]);
+    expect(await listar()).toHaveLength(0);
+  });
+
+  it("un renglón que el bufete todavía no tarifó tampoco", async () => {
+    // Hoy son los 453: el catálogo nació con `monto` en nulo. El origen de un
+    // precio tiene que tener precio, y lo sostiene el disparador
+    // `cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar`.
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeLineas(), "POST", {
+        ...LINEA_TARIFADA,
+        arancelRenglonId: RENGLON_SIN_PRECIO_ID,
+      }),
+    );
+
+    expect(respuesta.status, await respuesta.clone().text()).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toEqual([
+      "arancel_renglon_sin_precio",
+    ]);
+    expect(await listar()).toHaveLength(0);
+  });
+
+  it("editar pone el origen donde no había, y lo quita", async () => {
+    const [linea] = await agregar();
+
+    const puesto = await comoAutor(
+      conCuerpo(`${rutaDeLineas()}/${linea.id}`, "PUT", LINEA_TARIFADA),
+    );
+    expect(puesto.status, await puesto.clone().text()).toBe(200);
+    expect(await origenGuardadoDe(linea.id)).toBe(RENGLON_TARIFADO_ID);
+
+    const quitado = await comoAutor(
+      conCuerpo(`${rutaDeLineas()}/${linea.id}`, "PUT", {
+        clase: "honorario",
+        concepto: "Ahora es un monto libre",
+        monto: 12_345,
+        arancelRenglonId: null,
+      }),
+    );
+    expect(quitado.status, await quitado.clone().text()).toBe(200);
+    expect(await origenGuardadoDe(linea.id)).toBeNull();
+  });
+
+  it("editar tampoco acepta el renglón del vecino, y no guarda nada", async () => {
+    const [linea] = await agregar();
+
+    const respuesta = await comoAutor(
+      conCuerpo(`${rutaDeLineas()}/${linea.id}`, "PUT", {
+        ...LINEA_TARIFADA,
+        arancelRenglonId: RENGLON_AJENO_ID,
+      }),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(await origenGuardadoDe(linea.id)).toBeNull();
+  });
+
+  /**
+   * **La lección de `migrations/0014`, del lado de la ruta.**
+   *
+   * El bufete puede dejar de tarifar un servicio —`fijarMonto(…, null)` es
+   * legítimo— y la línea que ya lo nombraba sigue nombrándolo. `0014` acotó el
+   * disparador al **cambio** de la referencia justamente porque la forma
+   * anterior dejaba el borrador inescribible: no se le podía ni corregir una
+   * falta de ortografía al concepto.
+   *
+   * Una validación que preguntara «¿este renglón tiene precio?» en cada
+   * escritura reintroduciría ese defecto por arriba de la guarda arreglada, y
+   * encima desde la pantalla que no causó el problema. Así que la pregunta es
+   * la misma que hace la base: **¿está cambiando la referencia?**
+   */
+  it("una línea cuyo renglón se quedó sin precio se sigue pudiendo editar", async () => {
+    const [linea] = await agregar(LINEA_TARIFADA);
+
+    // Lo que haría la pantalla de precios: el bufete deja de tarifar ese
+    // servicio. Va por SQL porque la ruta que lo hace es la del arancel.
+    await env.DB.prepare("UPDATE arancel_renglon SET monto = NULL WHERE id = ?")
+      .bind(RENGLON_TARIFADO_ID)
+      .run();
+
+    try {
+      const respuesta = await comoAutor(
+        conCuerpo(`${rutaDeLineas()}/${linea.id}`, "PUT", {
+          ...LINEA_TARIFADA,
+          concepto: "Visa de pensionado o jubilado, con la falta corregida",
+        }),
+      );
+
+      expect(
+        respuesta.status,
+        "una línea quedó inescribible porque alguien vació un precio en otra" +
+          " pantalla. Es el defecto que `0014` arregló en la base, repetido" +
+          " acá: lo que el invariante vigila es **tomar** el precio de un" +
+          " renglón, no la fila para siempre",
+      ).toBe(200);
+      expect(await origenGuardadoDe(linea.id)).toBe(RENGLON_TARIFADO_ID);
+    } finally {
+      // La muestra se repone: los renglones viven toda la corrida porque la
+      // base no los deja borrar, así que dejarla sin precio contaminaría las
+      // pruebas siguientes.
+      await env.DB.prepare(
+        "UPDATE arancel_renglon SET monto = ? WHERE id = ?",
+      )
+        .bind(PRECIO_DEL_BUFETE, RENGLON_TARIFADO_ID)
+        .run();
+    }
+  });
+
+  it("y aun así no se puede mudar a otro renglón sin precio", async () => {
+    // La otra mitad de la misma regla: lo que la guarda vigila es el cambio, y
+    // un cambio hacia un renglón sin tarifar sigue siendo el invariante entero.
+    const [linea] = await agregar(LINEA_TARIFADA);
+
+    const respuesta = await comoAutor(
+      conCuerpo(`${rutaDeLineas()}/${linea.id}`, "PUT", {
+        ...LINEA_TARIFADA,
+        arancelRenglonId: RENGLON_SIN_PRECIO_ID,
+      }),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toEqual([
+      "arancel_renglon_sin_precio",
+    ]);
+    expect(await origenGuardadoDe(linea.id)).toBe(RENGLON_TARIFADO_ID);
+  });
+
+  it("el origen no lo pisa una edición que no lo nombra", async () => {
+    // El cuerpo es el juego completo de campos editables —`PUT` y no `PATCH`—,
+    // así que un cuerpo sin `arancelRenglonId` **sí** borra el origen. Es lo
+    // mismo que ya pasa con `tipoProcesoId`, y la prueba existe para que la
+    // regla esté escrita en algún lado y no se descubra en producción.
+    const [linea] = await agregar(LINEA_TARIFADA);
+
+    const respuesta = await comoAutor(
+      conCuerpo(`${rutaDeLineas()}/${linea.id}`, "PUT", {
+        clase: "honorario",
+        concepto: "Sin nombrar el origen",
+        monto: 1_000,
+      }),
+    );
+
+    expect(respuesta.status, await respuesta.clone().text()).toBe(200);
+    expect(await origenGuardadoDe(linea.id)).toBeNull();
+  });
+
+  it("un origen que no es una cadena es un tipo_invalido", async () => {
+    const respuesta = await comoAutor(
+      conCuerpo(rutaDeLineas(), "POST", { ...LINEA_TARIFADA, arancelRenglonId: 7 }),
+    );
+
+    expect(respuesta.status).toBe(422);
+    expect(motivos(await fallasDe(respuesta))).toEqual(["tipo_invalido"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // El reordenamiento, que es donde vive el índice único
 // ---------------------------------------------------------------------------
 
@@ -1213,6 +1631,7 @@ describe("una cotización que ya no es borrador no acepta líneas", () => {
       concepto: "Por el puerto",
       monto: 10,
       tipoProcesoId: null,
+      arancelRenglonId: null,
     });
 
     expect(resultado).toEqual({ estado: "no_es_borrador", actual: "emitida" });
@@ -1259,6 +1678,7 @@ describe("una cotización que ya no es borrador no acepta líneas", () => {
         concepto: "Tarde",
         monto: 1,
         tipoProcesoId: null,
+        arancelRenglonId: null,
       }),
     ).toEqual({ estado: "no_es_borrador", actual: "emitida" });
 
@@ -1332,6 +1752,7 @@ describe("una escritura que no tocó ninguna fila dice por qué de verdad", () =
       concepto: "Carrera",
       monto: 5,
       tipoProcesoId: null,
+      arancelRenglonId: null,
     });
 
     expect(resultado).toEqual({ estado: "no_encontrado" });
@@ -1403,6 +1824,7 @@ describe("una escritura que no tocó ninguna fila dice por qué de verdad", () =
       concepto: "Tarde",
       monto: 1,
       tipoProcesoId: null,
+      arancelRenglonId: null,
     });
 
     expect(resultado).toEqual({ estado: "no_es_borrador", actual: "emitida" });
@@ -1440,6 +1862,7 @@ describe("el orden del alta se decide dentro del batch", () => {
       concepto: "La que llega segunda",
       monto: 2,
       tipoProcesoId: null,
+      arancelRenglonId: null,
     });
 
     expect(resultado.estado, "no puede estallar el índice único").toBe(
@@ -1778,6 +2201,34 @@ describe("la normalización, sin base ni HTTP", () => {
 
     expect(sinCampo.ok && sinCampo.datos.tipoProcesoId).toBeNull();
     expect(conNulo.ok && conNulo.datos.tipoProcesoId).toBeNull();
+  });
+
+  it("el origen del precio ausente y el nulo son lo mismo", () => {
+    // Igual que el trámite: una línea con monto libre es el caso corriente, así
+    // que la ausencia no es una falla. Y por eso el campo **no** puede ser una
+    // cadena vacía: eso es un identificador que no identifica nada.
+    const sinCampo = normalizarLinea({
+      clase: "honorario",
+      concepto: "a",
+      monto: 1,
+    });
+    const conNulo = normalizarLinea({
+      clase: "honorario",
+      concepto: "a",
+      monto: 1,
+      arancelRenglonId: null,
+    });
+
+    expect(sinCampo.ok && sinCampo.datos.arancelRenglonId).toBeNull();
+    expect(conNulo.ok && conNulo.datos.arancelRenglonId).toBeNull();
+    expect(
+      normalizarLinea({
+        clase: "honorario",
+        concepto: "a",
+        monto: 1,
+        arancelRenglonId: "   ",
+      }).ok,
+    ).toBe(false);
   });
 
   it("el orden tiene que ser un arreglo de cadenas con algo adentro", () => {

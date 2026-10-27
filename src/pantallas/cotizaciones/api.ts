@@ -36,7 +36,7 @@ import type {
   DatosDeCuota,
   DatosDeApertura,
   DatosDeGeneracion,
-  DatosDeLinea,
+  DatosDeLineaConOrigen,
   DatosDeModulo,
   DatosDeProcesoPorAbrir,
   DocumentoCongelado,
@@ -419,6 +419,13 @@ function conLaLista(
    devuelven no es la lista sino `RespuestaDeLineas`, que es la lista **y sus
    totales**.
 
+   Y **una segunda diferencia, desde T-2 de
+   `odd/tasks/precios-en-la-cotizacion.md`**: lo que estas dos escrituras mandan
+   es `DatosDeLineaConOrigen`, que es `DatosDeLinea` más de qué renglón del
+   arancel salió el precio. El tipo es el de una persona escribiendo en el
+   editor; el del modelo sigue siendo `DatosDeLinea` a secas, y el porqué está
+   entero en el contrato del Worker.
+
    Por eso estas cinco no desenvuelven nada y las de módulos sí. El cuerpo
    entero es lo que la pantalla necesita, y sacarle la lista para dejar los
    totales afuera obligaría a la pantalla a conseguirlos por otro lado — que
@@ -447,7 +454,7 @@ export function cargarLineas(
 
 export function agregarLinea(
   cotizacionId: string,
-  datos: DatosDeLinea,
+  datos: DatosDeLineaConOrigen,
 ): Promise<Resultado<RespuestaDeLineas>> {
   return pedir<RespuestaDeLineas>(direccionDeLineas(cotizacionId), {
     method: "POST",
@@ -459,7 +466,7 @@ export function agregarLinea(
 export function editarLinea(
   cotizacionId: string,
   lineaId: string,
-  datos: DatosDeLinea,
+  datos: DatosDeLineaConOrigen,
 ): Promise<Resultado<RespuestaDeLineas>> {
   return pedir<RespuestaDeLineas>(
     `${direccionDeLineas(cotizacionId)}/${encodeURIComponent(lineaId)}`,

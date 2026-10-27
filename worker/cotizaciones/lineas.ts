@@ -55,7 +55,7 @@
 
 import type {
   ClaseDeLinea,
-  DatosDeLinea,
+  DatosDeLineaConOrigen,
   FallaDeValidacion,
   MotivoDeFalla,
   TotalesDeCotizacion,
@@ -381,7 +381,7 @@ export function totalesDe(
    ========================================================================== */
 
 export type NormalizacionDeLinea =
-  | { ok: true; datos: DatosDeLinea }
+  | { ok: true; datos: DatosDeLineaConOrigen }
   | { ok: false; fallas: FallaDeValidacion[] };
 
 export type NormalizacionDeOrdenDeLineas =
@@ -403,7 +403,7 @@ function esObjeto(cuerpo: unknown): cuerpo is Record<string, unknown> {
  * Devuelve **todas** las fallas y no la primera, igual que el alta de una
  * cotización y la de un módulo: un formulario que corrige de a un error por
  * envío es el formulario que nadie usa. Y acá importa más que allá, porque
- * una línea tiene cuatro campos y tres de ellos se pueden equivocar.
+ * una línea tiene cinco campos y cuatro de ellos se pueden equivocar.
  *
  * `orden` **se ignora en silencio** si viene, igual que en un módulo: ninguna
  * pantalla lo manda, así que un 422 no le hablaría a nadie, y lo que de
@@ -473,6 +473,27 @@ export function normalizarLinea(cuerpo: unknown): NormalizacionDeLinea {
     }
   }
 
+  // De dónde salió el precio (T-2 de `odd/tasks/precios-en-la-cotizacion.md`).
+  // **Exactamente el mismo trato que el trámite**, y por las mismas tres
+  // razones: es opcional —una línea con monto libre es el caso corriente—, la
+  // ausencia y el nulo son lo mismo, y que el identificador exista, sea de este
+  // bufete y tenga precio del bufete lo decide el repositorio, que es el único
+  // que lo puede saber.
+  //
+  // Lo que acá **no** se hace es tocar `monto`. Una referencia no es una
+  // restricción sobre el importe: el prellenado del editor es una propuesta y
+  // editarla encima es legítimo. La regla de «el sistema pone el precio» es
+  // para el modelo y la escribe T-3; esta función no sabe quién teclea.
+  const renglon = cuerpo.arancelRenglonId;
+  let arancelRenglonId: string | null = null;
+  if (renglon !== undefined && renglon !== null) {
+    if (typeof renglon !== "string" || renglon.trim() === "") {
+      fallas.push(falla("arancelRenglonId", "tipo_invalido"));
+    } else {
+      arancelRenglonId = renglon;
+    }
+  }
+
   if (fallas.length > 0) return { ok: false, fallas };
 
   return {
@@ -482,6 +503,7 @@ export function normalizarLinea(cuerpo: unknown): NormalizacionDeLinea {
       concepto,
       monto: monto as number,
       tipoProcesoId,
+      arancelRenglonId,
     },
   };
 }

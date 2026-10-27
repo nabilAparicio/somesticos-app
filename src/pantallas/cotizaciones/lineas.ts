@@ -88,7 +88,7 @@
 
 import type {
   ClaseDeLinea,
-  DatosDeLinea,
+  DatosDeLineaConOrigen,
   FallaDeValidacion,
   LineaDeCotizacion,
   MotivoDeFalla,
@@ -102,6 +102,7 @@ import {
   rotuloDeClase,
 } from "../../../worker/cotizaciones/lineas";
 import { ORDEN_ES, VACIO } from "../../formatos";
+import { enlaceDe } from "../../ruteo";
 
 export { CATALOGO_DE_CLASES, rotuloDeClase };
 export { mensajeDeFalla } from "../../mensajes";
@@ -724,9 +725,9 @@ export function ordenDeLineas(
    ========================================================================== */
 
 /**
- * Lo que se escribe en los cuatro controles de una línea.
+ * Lo que se escribe en los cinco controles de una línea.
  *
- * Los cuatro son `string` y ninguno está tipado estrecho, y cada uno por su
+ * Los cinco son `string` y ninguno está tipado estrecho, y cada uno por su
  * motivo:
  *
  *  - `clase` arranca **vacía**, así que tiparla `ClaseDeLinea` obligaría a
@@ -740,28 +741,39 @@ export function ordenDeLineas(
  *  - `tipoProcesoId` usa la cadena vacía para «ninguno» porque eso es lo que
  *    vale un `<option value="">`. La traducción a `null` la hace
  *    `normalizarBorradorDeLinea`, que es la frontera.
+ *  - `arancelRenglonId` es lo mismo un control más abajo: de qué servicio
+ *    tarifado del bufete salió el precio de esta línea (T-2 de
+ *    `odd/tasks/precios-en-la-cotizacion.md`). Cadena vacía es «ninguno», y
+ *    entonces el monto es libre.
  */
 export interface BorradorDeLinea {
   clase: string;
   concepto: string;
   monto: string;
   tipoProcesoId: string;
+  arancelRenglonId: string;
 }
 
 /**
- * El alta arranca **sin clase, sin monto y sin trámite**.
+ * El alta arranca **sin clase, sin monto, sin trámite y sin servicio**.
  *
  * Un desplegable que arranca en «Honorarios» es el que hace guardar un
  * honorario donde alguien quería anotar una tasa de migración; y un campo
  * de monto preescrito en «0.00» es un importe que se puede mandar sin
  * haberlo pensado. Es la misma razón por la que el cliente de la cotización
  * tampoco viene preelegido.
+ *
+ * Y tampoco viene preelegido un servicio del arancel, aunque el bufete tenga
+ * uno solo tarifado: eso prellenaría concepto y monto sin que nadie lo pidiera,
+ * y dejaría una línea diciendo que su precio salió de un servicio que quien la
+ * escribió nunca eligió.
  */
 export const BORRADOR_DE_LINEA_VACIO: BorradorDeLinea = {
   clase: "",
   concepto: "",
   monto: "",
   tipoProcesoId: "",
+  arancelRenglonId: "",
 };
 
 /** De una línea guardada a lo que se edita en pantalla. */
@@ -771,6 +783,7 @@ export function borradorDesdeLinea(linea: LineaDeCotizacion): BorradorDeLinea {
     concepto: linea.concepto,
     monto: montoEditable(linea.monto),
     tipoProcesoId: linea.tipoProcesoId ?? "",
+    arancelRenglonId: linea.arancelRenglonId ?? "",
   };
 }
 
@@ -780,8 +793,14 @@ function tramiteDe(borrador: BorradorDeLinea): string | null {
   return elegido === "" ? null : elegido;
 }
 
+/** El servicio elegido, o la ausencia dicha como la entiende el Worker. */
+function origenDe(borrador: BorradorDeLinea): string | null {
+  const elegido = borrador.arancelRenglonId.trim();
+  return elegido === "" ? null : elegido;
+}
+
 export type LineaNormalizada =
-  | { ok: true; datos: DatosDeLinea }
+  | { ok: true; datos: DatosDeLineaConOrigen }
   | { ok: false; fallas: FallaDeValidacion[] };
 
 function falla(campo: string, motivo: MotivoDeFalla): FallaDeValidacion {
@@ -801,6 +820,14 @@ function falla(campo: string, motivo: MotivoDeFalla): FallaDeValidacion {
  * único que esta función hace con él es traducir el `""` del desplegable al
  * `null` del contrato — mandarlo como cadena vacía sería un `tipo_invalido`
  * del Worker por un campo que la persona dejó deliberadamente en blanco.
+ *
+ * **El servicio tarifado tampoco**, y por lo mismo elevado un escalón: que el
+ * renglón exista, sea de este bufete y **tenga precio del bufete** son tres
+ * cosas que sólo el repositorio puede contestar, y las contesta con dos motivos
+ * propios. Y hay algo más que esta función no hace y conviene que esté
+ * escrito: **no vuelve a mirar el catálogo para corregir el monto.** El
+ * prellenado es una propuesta y editarla encima es legítimo, así que lo que
+ * viaja es el importe que quedó en el campo.
  */
 export function normalizarBorradorDeLinea(
   borrador: BorradorDeLinea,
@@ -829,6 +856,7 @@ export function normalizarBorradorDeLinea(
       concepto,
       monto: monto.ok ? monto.centavos : 0,
       tipoProcesoId: tramiteDe(borrador),
+      arancelRenglonId: origenDe(borrador),
     },
   };
 }
@@ -858,6 +886,7 @@ export function hayCambioEnLinea(
   if (borrador.clase !== linea.clase) return true;
   if (borrador.concepto.trim() !== linea.concepto) return true;
   if (tramiteDe(borrador) !== linea.tipoProcesoId) return true;
+  if (origenDe(borrador) !== linea.arancelRenglonId) return true;
 
   const monto = centavosDesdeTexto(borrador.monto);
   return !monto.ok || monto.centavos !== linea.monto;
@@ -911,4 +940,232 @@ const OBLIGAN_A_RECARGAR: readonly MotivoDeFalla[] = [
 
 export function exigeRecarga(fallas: readonly FallaDeValidacion[]): boolean {
   return fallas.some((una) => OBLIGAN_A_RECARGAR.includes(una.motivo));
+}
+
+/* ==========================================================================
+   Tus precios, dentro de la cotización (T-2 de
+   `odd/tasks/precios-en-la-cotizacion.md`)
+
+   Son dos cosas y la segunda es la que el usuario pidió con todas las letras:
+
+     1. elegir un servicio tarifado **prellena concepto y monto**, editable
+        encima;
+     2. «también en la vista de cotización debe poder verse, para que el
+        usuario sepa sus propios precios en todo momento».
+
+   Lo primero es un desplegable más al lado del de trámites; lo segundo es un
+   panel con lo que el bufete tarifó y su precio, al lado de las líneas, para
+   no tener que acordarse de un número ni irse a otra pantalla a mirarlo.
+
+   **Y rige la regla de la tajada anterior, que no se renegocia: una sola cifra
+   de dinero por servicio, la del bufete.** Ninguna comparación con el monto
+   oficial, ningún aviso de estar por debajo, ningún color. Acá eso es
+   estructura y no disciplina: `ServicioTarifado`, en
+   `src/pantallas/catalogos/precios.ts`, no tiene dónde poner un segundo
+   número.
+   ========================================================================== */
+
+/**
+ * El servicio tarifado del que salió el precio de una línea guardada.
+ *
+ * `concepto` es `arancelConcepto`, resuelto en lectura por el Worker, y viene
+ * nulo si la fila apuntada cruzara la frontera del tenant — igual que
+ * `tipoProcesoNombre`.
+ */
+export interface ServicioDeLaLinea {
+  readonly id: string;
+  readonly concepto: string | null;
+}
+
+/** De dónde salió el precio de una línea guardada, o `null` si de nadie. */
+export function servicioDeLaLinea(
+  linea: LineaDeCotizacion,
+): ServicioDeLaLinea | null {
+  return linea.arancelRenglonId === null
+    ? null
+    : { id: linea.arancelRenglonId, concepto: linea.arancelConcepto };
+}
+
+/**
+ * Elegir un servicio tarifado: **concepto, monto y de dónde salió**.
+ *
+ * El parámetro es estructural y no `ServicioTarifado` a propósito: ese tipo
+ * vive en `src/pantallas/catalogos/precios.ts`, que **importa de este archivo**
+ * la conversión de dinero. Pedirlo por su nombre crearía una importación
+ * circular en tiempo de ejecución entre dos módulos que hoy tienen la flecha en
+ * un solo sentido; pedir los tres campos que hacen falta deja el grafo como
+ * estaba y `ServicioTarifado` sigue siendo asignable sin un solo `as`.
+ *
+ * ## Qué pisa y qué no, que es la decisión entera
+ *
+ * **Pisa concepto y monto**, incluso lo que ya estuviera escrito: elegir un
+ * servicio del catálogo es pedirle al sistema lo que sabe de ese servicio, y un
+ * prellenado que respetara el texto viejo dejaría una línea cuyo concepto dice
+ * una cosa y cuya procedencia dice otra — justamente el dato que la columna
+ * existe para que no pase.
+ *
+ * **No toca la clase ni el trámite.** Si la línea es un honorario o un gasto de
+ * terceros, y qué proceso abre si la cotización se gana, son dos decisiones que
+ * el arancel no contesta: el acuerdo tarifa servicios, no decide quién cobra.
+ *
+ * ## El concepto que se propone es el **rótulo completo**, y eso se midió
+ *
+ * La primera versión proponía el concepto del renglón a secas, con el argumento
+ * de que el rubro es un recurso del desplegable y no prosa del documento.
+ * **Estaba mal, y el navegador lo mostró en la primera prueba a mano**: el
+ * servicio tarifado «primer año» prellenó una línea de cotización que decía
+ * «primer año», que es exactamente la definición de `concepto_requerido` —un
+ * monto que el cliente no sabe por qué está pagando—.
+ *
+ * No es un caso de borde: **147 de los 453 renglones del acuerdo cuelgan de un
+ * rubro**, medido sobre `scripts/arancel/arancel.json`, y entre ellos están
+ * «Reconsideración», «Apelación», «Persona Natural», «Elaboración» y
+ * «Revisión». El documento los imprime así porque su encabezado está una línea
+ * más arriba; una cotización no tiene ese encabezado.
+ *
+ * Con el rótulo, además, lo que se elige es lo que se escribe: el desplegable
+ * dice «Inversionista · primer año» y el campo queda con esa misma frase. Para
+ * los servicios sin rubro el rótulo **es** el concepto, así que no cambia nada.
+ * Y sigue siendo editable, que es el punto.
+ */
+export function prellenarDesdeServicio(
+  borrador: BorradorDeLinea,
+  servicio: {
+    readonly id: string;
+    /** El nombre completo del servicio: el rubro delante, si tiene. */
+    readonly rotulo: string;
+    /** Centavos enteros. */
+    readonly monto: number;
+  },
+): BorradorDeLinea {
+  return {
+    ...borrador,
+    concepto: servicio.rotulo,
+    monto: montoEditable(servicio.monto),
+    arancelRenglonId: servicio.id,
+  };
+}
+
+/**
+ * Desvincular el servicio: la línea vuelve a tener **monto libre**.
+ *
+ * **No borra el concepto ni el monto**, y es la mitad de la decisión que esta
+ * función existe para sostener: lo que se quita es la procedencia, no la cifra.
+ * La base admite el nulo en `arancel_renglon_id` justamente porque una línea
+ * con monto libre es el caso corriente, y tirar el importe que alguien ya
+ * aceptó —o el concepto que ya corrigió— sería perder trabajo ajeno por haber
+ * tocado un desplegable.
+ */
+export function sinServicioTarifado(borrador: BorradorDeLinea): BorradorDeLinea {
+  return { ...borrador, arancelRenglonId: "" };
+}
+
+/**
+ * Qué queda en el borrador cuando alguien mueve el desplegable de servicios.
+ *
+ * Son **tres** ramas y no dos, y la tercera es la que no se ve venir:
+ *
+ *  1. el hueco —`""`, que es lo que vale `<option value="">`— desvincula y
+ *     deja el monto libre;
+ *  2. un servicio del catálogo prellena concepto y monto;
+ *  3. un servicio que el desplegable ofreció y **el catálogo no trae** se
+ *     vincula sin prellenar nada.
+ *
+ * La tercera existe porque `serviciosSeleccionables` inyecta el servicio que la
+ * línea ya tenía aunque el bufete haya dejado de tarifarlo. Sin esta rama,
+ * volver a elegir esa misma opción —o elegirla después de haber mirado otra—
+ * caería en «no lo encontré» y borraría la procedencia que la línea sí tiene.
+ * Y no se puede prellenar: de un servicio sin precio del bufete no hay número
+ * que proponer, que es exactamente por lo que dejó de estar en la lista.
+ *
+ * Que esta decisión viva acá y no en el `.tsx` es la regla del archivo: elegir
+ * cuál de las tres ramas aplica es decidir, y el `.tsx` no decide.
+ */
+export function conServicioElegido(
+  borrador: BorradorDeLinea,
+  elegido: string,
+  servicios: readonly {
+    readonly id: string;
+    readonly rotulo: string;
+    readonly monto: number;
+  }[],
+): BorradorDeLinea {
+  if (elegido.trim() === "") return sinServicioTarifado(borrador);
+
+  const servicio = servicios.find((uno) => uno.id === elegido);
+  if (servicio === undefined) {
+    return { ...borrador, arancelRenglonId: elegido };
+  }
+
+  return prellenarDesdeServicio(borrador, servicio);
+}
+
+/* --------------------------------------------------------------------------
+   Los textos del panel
+   -------------------------------------------------------------------------- */
+
+/** El encabezado del panel. Dice de quién son los precios: del bufete. */
+export const TITULO_DE_TUS_PRECIOS = "Tus precios";
+
+/**
+ * Qué es el panel y qué se puede hacer con él.
+ *
+ * Dice que el precio se puede **editar** encima, porque es lo que separa esta
+ * pantalla de una lista de tarifas: el prellenado es una propuesta. Y no nombra
+ * el acuerdo ni la palabra «mínimo»: acá no hay nada que comparar.
+ */
+export const AYUDA_DE_TUS_PRECIOS =
+  "Los servicios que el bufete ya tarifó, con su precio. Elegir uno en una" +
+  " línea escribe su concepto y su monto, y el monto se puede editar encima" +
+  " sin que eso cambie nada en el catálogo.";
+
+/**
+ * El panel cuando el bufete todavía no tarifó nada.
+ *
+ * **Hoy es el caso de todo el mundo, y está medido**: los 453 renglones del
+ * acuerdo nacen con `monto` en nulo, así que en una instalación recién sembrada
+ * este panel está vacío. Una caja en blanco al lado de la cotización no dice
+ * nada; lo que hace falta es decir que la lista está vacía porque nadie puso
+ * precios todavía —y no porque algo se haya roto— y adónde ir a ponerlos.
+ */
+export const SIN_PRECIOS_TARIFADOS =
+  "El bufete todavía no le puso precio a ningún servicio, así que no hay nada" +
+  " que proponer acá. Los precios se escriben en la pantalla de precios del" +
+  " bufete, y desde entonces aparecen en esta lista y prellenan las líneas.";
+
+/** Lo que se dice debajo del desplegable de servicio, en el alta. */
+export const AYUDA_DEL_SERVICIO_TARIFADO =
+  "Elegir uno escribe el concepto y el monto de tu precio. El monto se edita" +
+  " encima y lo que se guarda es lo que quede en el campo.";
+
+/**
+ * La dirección de la pantalla de precios del bufete.
+ *
+ * Sale de `enlaceDe` y no de un literal, por lo mismo que en el resto del
+ * proyecto: una dirección armada a mano es la que se desincroniza del
+ * resolvedor sin que nadie lo note.
+ */
+export function enlaceALosPrecios(): string {
+  return enlaceDe({ nombre: "precios" });
+}
+
+/**
+ * El pie del panel cuando el catálogo del bufete no se pudo traer.
+ *
+ * Es el gemelo de `avisoDeTramites` y tiene su misma forma por su mismo
+ * argumento: el panel es una ayuda para no tener que acordarse de un número, no
+ * un requisito para cotizar, así que lo que se pierde es el prellenado y no la
+ * cotización. La frase lo dice con todas las letras.
+ *
+ * **Y el aviso no es de error**, que es una decisión del dibujo y no de este
+ * texto: un `role="alert"` por un panel de consulta que no cargó interrumpiría
+ * la lectura de la pantalla entera para avisar de algo que no bloquea nada.
+ */
+export function avisoDePrecios(problema: string | null): string | null {
+  if (problema === null) return null;
+
+  return (
+    `${problema} Tus precios son una ayuda y no un requisito: las líneas se` +
+    " pueden escribir igual, con el concepto y el monto a mano."
+  );
 }

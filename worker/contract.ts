@@ -334,6 +334,52 @@ export type MotivoDeFalla =
    * llega a la base como número.
    */
   | "monto_invalido"
+  /* --- De dónde salió el precio de una línea (T-2 de
+     `odd/tasks/precios-en-la-cotizacion.md`) --- */
+  /**
+   * El `arancelRenglonId` no es una fila de `arancel_renglon` de ESTE tenant.
+   *
+   * El gemelo exacto de `tipo_proceso_desconocido`, y por el mismo motivo: el
+   * identificador sale de un desplegable que puede haber quedado viejo entre
+   * que la pantalla cargó y se envió, así que «ese servicio ya no existe» es
+   * una respuesta de negocio y no un defecto. Se **cuenta** la fila antes de
+   * escribir, en vez de dejar que salte la llave foránea hacia
+   * `arancel_renglon` y salga como un 500 ilegible.
+   *
+   * **Cubre también el renglón del bufete vecino**, y es deliberado: desde
+   * este bufete una fila ajena *es* una fila que no existe, y un motivo propio
+   * para ella diría que del otro lado hay algo. Es el mismo reparto que
+   * `tipo_proceso_desconocido` ya hacía.
+   */
+  | "arancel_renglon_desconocido"
+  /**
+   * El renglón existe en este bufete y **no tiene precio del bufete**.
+   *
+   * Es la mitad amable de
+   * `cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar`
+   * (`migrations/0013_el_precio_sabe_de_donde_salio.sql`), y las dos hacen
+   * falta: sin esto, nombrar un renglón sin tarifar sale como un `RAISE(ABORT)`
+   * de SQLite envuelto en un 500, que no es una negativa sino una caída.
+   *
+   * **Es un solo motivo para dos situaciones** —un renglón que el bufete
+   * todavía no tarifó y uno de los 74 `rubro` del acuerdo— por el mismo
+   * argumento con el que `0013` escribió **un** disparador y no dos: el
+   * `CHECK un_rubro_no_lleva_precio` de `0012` hace imposible que un rubro
+   * tenga `monto`, así que «el renglón tiene precio» ya excluye a los
+   * encabezados, siempre, sin nombrarlos. Dos motivos serían dos guardas para
+   * el mismo hecho, y neutralizar cualquiera de las dos dejaría a la otra
+   * atrapando el caso sin que ninguna prueba se pusiera roja.
+   *
+   * ## Lo que este motivo **no** dice, y es la lección de `0014`
+   *
+   * No dice «esta línea apunta a un renglón sin precio». Dice «no se puede
+   * **tomar** el precio de un renglón que no lo tiene». La diferencia es la
+   * corrección entera de `migrations/0014_la_guarda_del_origen_mira_el_cambio.sql`:
+   * el bufete puede dejar de tarifar un servicio que una línea ya nombra, y
+   * esa línea tiene que seguir siendo editable. La validación mira el
+   * **cambio** de la referencia, igual que el disparador.
+   */
+  | "arancel_renglon_sin_precio"
   /**
    * El reordenamiento nombra una línea que no es de esta cotización.
    *
@@ -1623,6 +1669,53 @@ export interface DatosDeLinea {
   /** Centavos enteros, cero o más. */
   monto: number;
   tipoProcesoId: string | null;
+}
+
+/**
+ * Lo que una **persona** manda al agregar o editar una línea: lo de arriba,
+ * más de dónde salió el precio (T-2 de
+ * `odd/tasks/precios-en-la-cotizacion.md`).
+ *
+ * ## Por qué son dos tipos y no un campo más en `DatosDeLinea`
+ *
+ * Porque hoy hay **dos escritores de líneas y escriben cosas distintas**, y el
+ * tipo lo dice en vez de dejarlo en un comentario:
+ *
+ *  - una persona en el editor —esta tarea— elige un servicio tarifado del
+ *    catálogo del bufete, y el sistema le propone concepto y monto para que
+ *    los edite encima;
+ *  - el modelo —T-3— todavía **no puede** nombrar un servicio.
+ *    `worker/ia/esquema.ts` declara el juego de claves que la salida del
+ *    modelo admite con un `satisfies readonly (keyof DatosDeLinea)[]` y una
+ *    red `DebeSerVacio` que impide que la unión y la lista se separen. Meter
+ *    el campo en `DatosDeLinea` obligaría a declararlo allá, y eso es abrirle
+ *    la puerta al modelo **antes** de la regla que T-3 existe para escribir:
+ *    o un servicio tarifado sin monto, o un monto sin servicio tarifado, nunca
+ *    las dos y nunca ninguna. Sin esa regla, un modelo que mandara las dos
+ *    cosas estaría contradiciéndose sobre quién pone el precio y nadie se
+ *    enteraría.
+ *
+ * O sea: la separación no es una comodidad para no tocar `worker/ia/`, es la
+ * frontera que esa tarea tiene que mover a conciencia. **Cuando T-3 la mueva,
+ * los dos tipos se colapsan en uno** y esta interfaz desaparece; queda escrito
+ * acá para que el día que eso pase sea una decisión y no un descubrimiento.
+ *
+ * `extends` y no una copia, para que todo lo que ya recibe `DatosDeLinea`
+ * —`validarTipoDeProceso`, `totalesDe`— siga sirviendo sin un solo cambio.
+ */
+export interface DatosDeLineaConOrigen extends DatosDeLinea {
+  /**
+   * El renglón del arancel del que salió el precio, o `null`.
+   *
+   * Nulo es el caso corriente: una consulta, una mensajería, un cobro que no
+   * corresponde a ningún servicio tarifado.
+   *
+   * **No es una restricción sobre `monto`.** El prellenado del editor es una
+   * propuesta y editarla encima es legítimo, así que el servidor guarda el
+   * importe que llegó y no vuelve a mirar el catálogo. Lo que la referencia
+   * registra es de dónde salió el precio, no cuánto vale.
+   */
+  arancelRenglonId: string | null;
 }
 
 /**

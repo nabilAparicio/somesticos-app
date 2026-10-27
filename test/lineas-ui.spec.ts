@@ -42,17 +42,23 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  CategoriaDelArancel,
   FallaDeValidacion,
   LineaDeCotizacion,
+  RenglonDelArancel,
   TipoProceso,
   TotalesDeCotizacion,
 } from "../worker/contract";
 import { CATALOGO_DE_CLASES } from "../worker/cotizaciones/lineas";
 import {
+  AYUDA_DE_TUS_PRECIOS,
   BORRADOR_DE_LINEA_VACIO,
+  SIN_PRECIOS_TARIFADOS,
   TOTALES_EN_CERO,
+  avisoDePrecios,
   borradorDesdeLinea,
   centavosDesdeTexto,
+  enlaceALosPrecios,
   exigeRecarga,
   familiasDeLineas,
   renglonDelImpuesto,
@@ -66,11 +72,21 @@ import {
   normalizarBorradorDeLinea,
   ordenDeLineas,
   podarBorradoresDeLinea,
+  conServicioElegido,
+  prellenarDesdeServicio,
   avisoDeTramites,
+  servicioDeLaLinea,
+  sinServicioTarifado,
   tramiteDeLaLinea,
   tramitesSeleccionables,
   type BorradorDeLinea,
 } from "../src/pantallas/cotizaciones/lineas";
+import {
+  rotuloDeServicio,
+  serviciosQueCoinciden,
+  serviciosSeleccionables,
+  serviciosTarifados,
+} from "../src/pantallas/catalogos/precios";
 import { ROTULO_DEL_ITBMS } from "../worker/cotizaciones/lineas";
 
 const UNO = "11111111-1111-4111-8111-111111111111";
@@ -812,6 +828,7 @@ describe("normalizarBorradorDeLinea", () => {
         concepto: "Gestión",
         monto: 150_000,
         tipoProcesoId: null,
+        arancelRenglonId: null,
       },
     });
   });
@@ -1223,5 +1240,716 @@ describe("avisoDeTramites", () => {
 
     expect(aviso).toContain("No se pudo leer el catálogo.");
     expect(aviso).toContain("El trámite es opcional");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Los precios del bufete, dentro de la cotización (T-2 de
+// `odd/tasks/precios-en-la-cotizacion.md`)
+//
+// Lo que se prueba acá es la lógica pura de las dos mitades de la tarea: qué
+// produce el prellenado, qué produce desvincular el servicio, qué encuentra el
+// buscador del panel y qué dice el panel cuando el bufete todavía no tarifó
+// nada. El dibujo —que el panel esté al lado, que el prellenado llegue a los
+// campos y que ninguna fila muestre dos cifras— vive en
+// `e2e/precios-en-cotizacion.spec.ts`.
+//
+// `serviciosTarifados`, `rotuloDeServicio` y `serviciosQueCoinciden` viven en
+// `src/pantallas/catalogos/precios.ts` y se prueban desde acá, y no desde
+// `test/precios-ui.spec.ts`, por una razón de pertenencia: lo que contestan es
+// una pregunta de **esta** pantalla —qué servicios se le pueden ofrecer a una
+// línea— y están escritas sobre el buscador que aquella pantalla ya tenía.
+// ---------------------------------------------------------------------------
+
+const MIGRACION_DEL_ACUERDO =
+  "ACTUACIONES ANTE EL SERVICIO NACIONAL DE MIGRACIÓN";
+const CIVIL_DEL_ACUERDO = "ASUNTOS DE DERECHO PROCESAL (CIVIL-COMERCIAL)";
+const PROSA_DEL_ACUERDO = "OTROS ASUNTOS";
+
+const RUBRO_INMIGRANTES = "a1111111-1111-4111-8111-a11111111111";
+const RENGLON_PENSIONADO = "a2222222-2222-4222-8222-a22222222222";
+const RENGLON_TRABAJO = "a3333333-3333-4333-8333-a33333333333";
+const RENGLON_CUANTIA = "a4444444-4444-4444-8444-a44444444444";
+
+/**
+ * El monto del acuerdo de la visa de pensionado, **distinto** del que el
+ * bufete cobra.
+ *
+ * Distinto a propósito: es lo que deja distinguir «el servicio lleva el precio
+ * del bufete» de «el servicio lleva la cita de 2001», y es el número que la
+ * prueba hostil de más abajo persigue dentro del objeto.
+ */
+const OFICIAL_DEL_PENSIONADO = 13_755;
+const PROPIO_DEL_PENSIONADO = 40_000;
+const PROPIO_DE_LA_CUANTIA = 250_000;
+
+function renglon(ajustes: Partial<RenglonDelArancel>): RenglonDelArancel {
+  return {
+    id: RENGLON_PENSIONADO,
+    orden: 1,
+    categoria: MIGRACION_DEL_ACUERDO,
+    numeral: "3.a",
+    concepto: "Visa de pensionado o jubilado",
+    clase: "monto",
+    montoOficial: OFICIAL_DEL_PENSIONADO,
+    reglaOficial: null,
+    monto: PROPIO_DEL_PENSIONADO,
+    activo: true,
+    ...ajustes,
+  };
+}
+
+/**
+ * El catálogo de la muestra, con **una de cada cosa que el acuerdo imprime**:
+ * un rubro que encabeza, un renglón tarifado debajo de él, un renglón que el
+ * bufete todavía no tarifó, una regla por cuantía **con** precio propio y una
+ * categoría de pura prosa.
+ *
+ * Los cuatro casos hacen falta: sin el rubro no se puede medir que un
+ * encabezado nunca es un servicio, sin el renglón sin precio no se puede medir
+ * que el panel ofrece lo tarifado y nada más, y sin la regla con precio se
+ * perderían los 97 servicios que el acuerdo tarifa por tramos y que el bufete
+ * sí puede tarifar.
+ */
+function catalogoDelAcuerdo(): CategoriaDelArancel[] {
+  return [
+    {
+      nombre: MIGRACION_DEL_ACUERDO,
+      renglones: [
+        renglon({
+          id: RUBRO_INMIGRANTES,
+          orden: 1,
+          numeral: "3",
+          concepto: "Inmigrantes",
+          clase: "rubro",
+          montoOficial: null,
+          monto: null,
+        }),
+        renglon({ id: RENGLON_PENSIONADO, orden: 2 }),
+        renglon({
+          id: RENGLON_TRABAJO,
+          orden: 3,
+          numeral: "3.b",
+          concepto: "Permiso de trabajo por contrato",
+          montoOficial: 30_000,
+          monto: null,
+        }),
+      ],
+      notas: [],
+    },
+    {
+      nombre: CIVIL_DEL_ACUERDO,
+      renglones: [
+        renglon({
+          id: RENGLON_CUANTIA,
+          orden: 4,
+          categoria: CIVIL_DEL_ACUERDO,
+          numeral: "1",
+          concepto: "Procesos de mayor cuantía",
+          clase: "regla",
+          montoOficial: null,
+          reglaOficial: "25% de lo que se obtenga, sobre la menor cuantía.",
+          monto: PROPIO_DE_LA_CUANTIA,
+        }),
+      ],
+      notas: [],
+    },
+    { nombre: PROSA_DEL_ACUERDO, renglones: [], notas: [] },
+  ];
+}
+
+describe("serviciosTarifados", () => {
+  /*
+   * La secuencia de la tajada: hoy las 453 filas tienen `monto` en nulo, así
+   * que lo que el bufete no tarifó **no existe** para esta pantalla. Ofrecer un
+   * servicio sin precio del bufete sería ofrecer un prellenado sin número, y la
+   * base lo rechaza con
+   * `cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar`.
+   */
+  it("trae sólo los servicios que el bufete tarifó, en el orden del documento", () => {
+    expect(
+      serviciosTarifados(catalogoDelAcuerdo()).map((servicio) => servicio.id),
+    ).toEqual([RENGLON_PENSIONADO, RENGLON_CUANTIA]);
+  });
+
+  it("un rubro nunca es un servicio, ni cuando encabeza uno tarifado", () => {
+    // Los 74 encabezados que el acuerdo imprime sin valor. Por el `CHECK`
+    // `un_rubro_no_lleva_precio` no pueden tener `monto`, así que el filtro ya
+    // los deja afuera — y esta prueba es la que lo exige en vez de confiarlo.
+    const ids = serviciosTarifados(catalogoDelAcuerdo()).map(
+      (servicio) => servicio.id,
+    );
+
+    expect(ids).not.toContain(RUBRO_INMIGRANTES);
+  });
+
+  it("una regla por cuantía con precio propio sí es un servicio", () => {
+    // Son 97 renglones. La tajada anterior decidió que el bufete puede
+    // escribirles su propio monto al lado del texto de la regla; dejarlos
+    // afuera de acá los volvería inofrecibles en una cotización.
+    const cuantia = serviciosTarifados(catalogoDelAcuerdo()).find(
+      (servicio) => servicio.id === RENGLON_CUANTIA,
+    );
+
+    expect(cuantia?.monto).toBe(PROPIO_DE_LA_CUANTIA);
+  });
+
+  /**
+   * **El defecto que se midió en el navegador, con los 453 renglones de
+   * verdad.** El panel decía «Inversionista · Naturalizaciones», y es falso: en
+   * migración el acuerdo imprime el rubro `3.b` «Inversionista» con sus hijos
+   * `b.1` y `b.2`, y después sigue con `4` «Naturalizaciones», que es hermano
+   * del rubro. Tomar el último rubro visto adopta todo lo que venga después
+   * hasta el final de la categoría, y un rótulo que miente manda a cotizar el
+   * servicio equivocado.
+   */
+  it("no le atribuye el rubro a un hermano de nivel superior", () => {
+    const migracion = catalogoDelAcuerdo()[0];
+    const hermano = renglon({
+      id: "a5555555-5555-4555-8555-a55555555555",
+      orden: 4,
+      numeral: "4",
+      concepto: "Naturalizaciones",
+      monto: 420_000,
+    });
+
+    const servicios = serviciosTarifados([
+      { ...migracion, renglones: [...migracion.renglones, hermano] },
+    ]);
+    const naturalizaciones = servicios.find(
+      (servicio) => servicio.concepto === "Naturalizaciones",
+    );
+
+    expect(
+      naturalizaciones?.rubro,
+      "«Naturalizaciones» quedó colgada del rubro que la precede en el" +
+        " documento sin ser su hija: su numeral no extiende el del rubro." +
+        " Un rótulo que miente manda a cotizar otro servicio",
+    ).toBeNull();
+  });
+
+  it("le atribuye el rubro cuando el numeral lo demuestra", () => {
+    // Las dos formas que el acuerdo usa: extender el numeral del rubro —`3` →
+    // `3.a`— y extender su último tramo, porque las letras reinician bajo cada
+    // padre: `3.b` → `b.1`.
+    const nieto = renglon({
+      id: "a6666666-6666-4666-8666-a66666666666",
+      orden: 5,
+      numeral: "b.1",
+      concepto: "primer año",
+      monto: 250_000,
+    });
+
+    const servicios = serviciosTarifados([
+      {
+        nombre: MIGRACION_DEL_ACUERDO,
+        renglones: [
+          renglon({
+            id: RUBRO_INMIGRANTES,
+            numeral: "3.b",
+            concepto: "Inversionista",
+            clase: "rubro",
+            montoOficial: null,
+            monto: null,
+          }),
+          nieto,
+        ],
+        notas: [],
+      },
+    ]);
+
+    expect(servicios[0].rubro).toBe("Inversionista");
+  });
+
+  it("lleva el rubro que lo encabeza, y nulo cuando no hay ninguno", () => {
+    const servicios = serviciosTarifados(catalogoDelAcuerdo());
+
+    expect(servicios[0].rubro).toBe("Inmigrantes");
+    expect(servicios[1].rubro).toBeNull();
+  });
+
+  /*
+   * **La prueba hostil, y es la mitad del criterio de aceptación 4 que se puede
+   * medir sin navegador.** Si alguien agrega el monto del acuerdo al servicio
+   * —con cualquier nombre de campo— el número aparece dentro del objeto y esto
+   * se pone rojo. Una prueba que mirara sólo `montoOficial` pasaría en verde
+   * con el mismo dato bajo otro nombre.
+   */
+  it("ningún servicio carga el monto del acuerdo", () => {
+    const serializado = JSON.stringify(serviciosTarifados(catalogoDelAcuerdo()));
+
+    expect(
+      serializado.includes(String(OFICIAL_DEL_PENSIONADO)),
+      "el servicio lleva adentro el monto del Acuerdo No 49 de 2001. El único" +
+        " número de dinero que viaja a la cotización es el del bufete: un" +
+        " segundo abre la comparación que la tajada anterior prohibió",
+    ).toBe(false);
+    expect(serializado.includes(String(PROPIO_DEL_PENSIONADO))).toBe(true);
+  });
+});
+
+describe("rotuloDeServicio", () => {
+  it("antepone el rubro, porque el acuerdo no repite la palabra en cada hijo", () => {
+    // «a) Visa de pensionado» cuelga de «3. Inmigrantes» y el documento no
+    // vuelve a escribir la palabra. En un desplegable, el concepto solo pierde
+    // la mitad del nombre del servicio.
+    const [pensionado] = serviciosTarifados(catalogoDelAcuerdo());
+
+    expect(pensionado.rotulo).toBe(
+      "Inmigrantes · Visa de pensionado o jubilado",
+    );
+  });
+
+  it("es el concepto a secas cuando el servicio no cuelga de ningún rubro", () => {
+    const cuantia = serviciosTarifados(catalogoDelAcuerdo())[1];
+
+    expect(cuantia.rotulo).toBe("Procesos de mayor cuantía");
+    // Y la función que lo arma, ejercida por su cuenta: es la única definición
+    // de cómo se escribe un nombre completo, y la usa el constructor.
+    expect(
+      rotuloDeServicio({ concepto: "primer año", rubro: "Inversionista" }),
+    ).toBe("Inversionista · primer año");
+    expect(rotuloDeServicio({ concepto: "Suelto", rubro: null })).toBe("Suelto");
+  });
+});
+
+describe("serviciosQueCoinciden", () => {
+  const SERVICIOS = serviciosTarifados(catalogoDelAcuerdo());
+
+  it("con la consulta vacía devuelve todos", () => {
+    expect(serviciosQueCoinciden(SERVICIOS, "").map((uno) => uno.id)).toEqual([
+      RENGLON_PENSIONADO,
+      RENGLON_CUANTIA,
+    ]);
+  });
+
+  it("busca también por el rubro que encabeza al servicio", () => {
+    // Es la regla que la pantalla de precios ya tenía: buscar «inmigrantes» y
+    // no encontrar la visa de pensionado sería buscar en la mitad del nombre.
+    expect(
+      serviciosQueCoinciden(SERVICIOS, "inmigrantes").map((uno) => uno.id),
+    ).toEqual([RENGLON_PENSIONADO]);
+  });
+
+  it("no le importan los acentos ni las mayúsculas", () => {
+    expect(
+      serviciosQueCoinciden(SERVICIOS, "CUANTIA").map((uno) => uno.id),
+    ).toEqual([RENGLON_CUANTIA]);
+  });
+
+  it("devuelve la lista vacía cuando nada coincide", () => {
+    expect(serviciosQueCoinciden(SERVICIOS, "sociedad anónima")).toEqual([]);
+  });
+});
+
+describe("el prellenado desde un servicio tarifado", () => {
+  const PENSIONADO = serviciosTarifados(catalogoDelAcuerdo())[0];
+
+  /*
+   * El valor esperado del monto va **escrito a mano** y no sacado de
+   * `montoEditable`, que es la función que lo produce (restricción 6).
+   */
+  it("pone el concepto, el monto y de dónde salió", () => {
+    expect(prellenarDesdeServicio(BORRADOR_DE_LINEA_VACIO, PENSIONADO)).toEqual({
+      clase: "",
+      concepto: "Inmigrantes · Visa de pensionado o jubilado",
+      monto: "400.00",
+      tipoProcesoId: "",
+      arancelRenglonId: RENGLON_PENSIONADO,
+    });
+  });
+
+  /**
+   * **El concepto propuesto es el rótulo completo, y eso se midió a mano.**
+   *
+   * La primera versión proponía el concepto del renglón a secas. El navegador
+   * lo desmintió en la primera prueba: el servicio «primer año» —que en el
+   * acuerdo cuelga del rubro «Inversionista»— prellenaba una línea de
+   * cotización que decía «primer año», que es la definición misma de
+   * `concepto_requerido`: un monto que el cliente no sabe por qué paga.
+   *
+   * Y no es un borde: **147 de los 453 renglones cuelgan de un rubro**, y entre
+   * ellos están «Reconsideración», «Apelación», «Persona Natural»,
+   * «Elaboración» y «Revisión».
+   */
+  it("el concepto propuesto no es un fragmento cuando el servicio cuelga de un rubro", () => {
+    const fragmento = serviciosTarifados([
+      {
+        nombre: MIGRACION_DEL_ACUERDO,
+        renglones: [
+          renglon({
+            id: RUBRO_INMIGRANTES,
+            numeral: "3.b",
+            concepto: "Inversionista",
+            clase: "rubro",
+            montoOficial: null,
+            monto: null,
+          }),
+          renglon({
+            id: "a7777777-7777-4777-8777-a77777777777",
+            numeral: "b.1",
+            concepto: "primer año",
+            monto: 250_000,
+          }),
+        ],
+        notas: [],
+      },
+    ])[0];
+
+    const prellenado = prellenarDesdeServicio(
+      BORRADOR_DE_LINEA_VACIO,
+      fragmento,
+    );
+
+    expect(
+      prellenado.concepto,
+      "el prellenado dejó «primer año» como concepto de una línea de" +
+        " cotización. El documento lo imprime así porque su encabezado está una" +
+        " línea más arriba; una cotización no tiene ese encabezado",
+    ).toBe("Inversionista · primer año");
+  });
+
+  /*
+   * **No toca la clase ni el trámite**, y es deliberado: de qué lado del
+   * documento cae la línea —honorario o gasto de terceros— y qué proceso abre
+   * si la cotización se gana son dos decisiones que el arancel no contesta. El
+   * acuerdo tarifa servicios, no decide quién cobra.
+   */
+  it("no toca la clase ni el trámite que ya estaban elegidos", () => {
+    const empezado = borrador({ clase: "honorario", tipoProcesoId: TRAMITE });
+    const prellenado = prellenarDesdeServicio(empezado, PENSIONADO);
+
+    expect(prellenado.clase).toBe("honorario");
+    expect(prellenado.tipoProcesoId).toBe(TRAMITE);
+  });
+
+  /*
+   * **Sí pisa lo que había escrito**, y conviene decir por qué: elegir un
+   * servicio del catálogo es pedirle al sistema lo que sabe de ese servicio.
+   * Un prellenado que respetara el texto viejo dejaría una línea cuyo concepto
+   * dice una cosa y cuya procedencia dice otra, que es exactamente el dato que
+   * la columna existe para que no pase.
+   */
+  it("reemplaza el concepto y el monto que ya había", () => {
+    const escrito = borrador({ concepto: "Lo que escribí antes", monto: "12.50" });
+    const prellenado = prellenarDesdeServicio(escrito, PENSIONADO);
+
+    expect(prellenado.concepto).toBe("Inmigrantes · Visa de pensionado o jubilado");
+    expect(prellenado.monto).toBe("400.00");
+  });
+
+  it("no muta el borrador que recibe", () => {
+    const empezado = borrador({ concepto: "Lo mío" });
+    prellenarDesdeServicio(empezado, PENSIONADO);
+
+    expect(empezado.concepto).toBe("Lo mío");
+    expect(empezado.arancelRenglonId).toBe("");
+  });
+});
+
+describe("conServicioElegido", () => {
+  const SERVICIOS = serviciosTarifados(catalogoDelAcuerdo());
+
+  it("el hueco del desplegable desvincula y deja el monto donde estaba", () => {
+    const prellenado = borrador({
+      concepto: "Visa de pensionado o jubilado",
+      monto: "400.00",
+      arancelRenglonId: RENGLON_PENSIONADO,
+    });
+
+    const quedo = conServicioElegido(prellenado, "", SERVICIOS);
+    expect(quedo.arancelRenglonId).toBe("");
+    expect(quedo.monto).toBe("400.00");
+  });
+
+  it("un servicio del catálogo prellena concepto y monto", () => {
+    const quedo = conServicioElegido(
+      BORRADOR_DE_LINEA_VACIO,
+      RENGLON_PENSIONADO,
+      SERVICIOS,
+    );
+
+    expect(quedo.concepto).toBe("Inmigrantes · Visa de pensionado o jubilado");
+    expect(quedo.monto).toBe("400.00");
+    expect(quedo.arancelRenglonId).toBe(RENGLON_PENSIONADO);
+  });
+
+  /*
+   * **La tercera rama, y es la que no se ve venir.**
+   * `serviciosSeleccionables` ofrece el servicio que la línea ya tenía aunque
+   * el bufete haya dejado de tarifarlo. Volver a elegir esa opción tiene que
+   * conservar la procedencia: sin esta rama caería en «no lo encontré» y
+   * borraría el dato que la línea sí tiene. Y no se prellena nada, porque de un
+   * servicio sin precio del bufete no hay número que proponer.
+   */
+  it("un servicio que el catálogo ya no trae se vincula sin prellenar", () => {
+    const guardado = borrador({
+      concepto: "Visa de pensionado o jubilado",
+      monto: "400.00",
+      arancelRenglonId: RENGLON_PENSIONADO,
+    });
+
+    const quedo = conServicioElegido(guardado, RENGLON_PENSIONADO, []);
+
+    expect(
+      quedo.arancelRenglonId,
+      "volver a elegir el servicio que la línea ya tenía borró su" +
+        " procedencia. El desplegable lo ofrece justamente porque el bufete" +
+        " pudo dejar de tarifarlo",
+    ).toBe(RENGLON_PENSIONADO);
+    expect(quedo.concepto).toBe("Visa de pensionado o jubilado");
+    expect(quedo.monto).toBe("400.00");
+  });
+});
+
+describe("sinServicioTarifado", () => {
+  /*
+   * Desvincular el servicio **no borra el monto**, y es la decisión que esta
+   * función existe para sostener: lo que se quita es la procedencia, no la
+   * cifra. La base admite el nulo en `arancel_renglon_id` justamente porque una
+   * línea con monto libre es el caso corriente, y tirar el importe que alguien
+   * ya aceptó sería perder trabajo ajeno por haber tocado un desplegable.
+   */
+  it("quita la procedencia y deja el concepto y el monto donde estaban", () => {
+    const prellenado = borrador({
+      clase: "honorario",
+      concepto: "Visa de pensionado o jubilado",
+      monto: "400.00",
+      arancelRenglonId: RENGLON_PENSIONADO,
+    });
+
+    expect(sinServicioTarifado(prellenado)).toEqual({
+      clase: "honorario",
+      concepto: "Visa de pensionado o jubilado",
+      monto: "400.00",
+      tipoProcesoId: "",
+      arancelRenglonId: "",
+    });
+  });
+
+  it("no muta el borrador que recibe", () => {
+    const prellenado = borrador({ arancelRenglonId: RENGLON_PENSIONADO });
+    sinServicioTarifado(prellenado);
+
+    expect(prellenado.arancelRenglonId).toBe(RENGLON_PENSIONADO);
+  });
+});
+
+describe("el borrador lleva de dónde salió el precio", () => {
+  it("el alta arranca sin procedencia", () => {
+    expect(BORRADOR_DE_LINEA_VACIO.arancelRenglonId).toBe("");
+  });
+
+  it("una línea guardada abre su borrador con la procedencia que tenía", () => {
+    const guardada = linea({
+      arancelRenglonId: RENGLON_PENSIONADO,
+      arancelConcepto: "Visa de pensionado o jubilado",
+    });
+
+    expect(borradorDesdeLinea(guardada).arancelRenglonId).toBe(
+      RENGLON_PENSIONADO,
+    );
+  });
+
+  it("una línea sin procedencia abre su borrador con la cadena vacía", () => {
+    expect(borradorDesdeLinea(linea()).arancelRenglonId).toBe("");
+  });
+
+  /*
+   * La traducción del `""` del desplegable al `null` del contrato. Mandar la
+   * cadena vacía sería un `tipo_invalido` del Worker por un campo que la
+   * persona dejó deliberadamente en blanco.
+   */
+  it("la normalización traduce el hueco del desplegable a nulo", () => {
+    const resultado = normalizarBorradorDeLinea(
+      borrador({ clase: "honorario", concepto: "Consulta", monto: "50.00" }),
+    );
+
+    expect(resultado.ok && resultado.datos.arancelRenglonId).toBeNull();
+  });
+
+  it("la normalización pasa el identificador elegido tal cual", () => {
+    const resultado = normalizarBorradorDeLinea(
+      borrador({
+        clase: "honorario",
+        concepto: "Visa de pensionado o jubilado",
+        monto: "400.00",
+        arancelRenglonId: RENGLON_PENSIONADO,
+      }),
+    );
+
+    expect(resultado.ok && resultado.datos.arancelRenglonId).toBe(
+      RENGLON_PENSIONADO,
+    );
+  });
+
+  /*
+   * **El monto editado viaja tal como quedó**, y es la mitad de la tarea que
+   * más fácil sería romper: el prellenado es una propuesta y no una
+   * restricción, así que la normalización no vuelve a mirar el catálogo. Que el
+   * servidor tampoco lo haga se mide en `test/lineas-api.spec.ts`.
+   */
+  it("el monto editado encima del prellenado es el que se manda", () => {
+    const resultado = normalizarBorradorDeLinea(
+      borrador({
+        clase: "honorario",
+        concepto: "Visa de pensionado o jubilado",
+        monto: "999.00",
+        arancelRenglonId: RENGLON_PENSIONADO,
+      }),
+    );
+
+    expect(resultado.ok && resultado.datos.monto).toBe(99_900);
+    expect(resultado.ok && resultado.datos.arancelRenglonId).toBe(
+      RENGLON_PENSIONADO,
+    );
+  });
+
+  it("hayCambioEnLinea lo dice cuando se elige un servicio donde no había", () => {
+    const guardada = linea({ arancelRenglonId: null });
+
+    expect(
+      hayCambioEnLinea(guardada, {
+        ...borradorDesdeLinea(guardada),
+        arancelRenglonId: RENGLON_PENSIONADO,
+      }),
+    ).toBe(true);
+  });
+
+  it("hayCambioEnLinea lo dice cuando se desvincula el que había", () => {
+    const guardada = linea({ arancelRenglonId: RENGLON_PENSIONADO });
+
+    expect(
+      hayCambioEnLinea(guardada, {
+        ...borradorDesdeLinea(guardada),
+        arancelRenglonId: "",
+      }),
+    ).toBe(true);
+  });
+
+  it("hayCambioEnLinea lo niega cuando la procedencia es la misma", () => {
+    const guardada = linea({ arancelRenglonId: RENGLON_PENSIONADO });
+
+    expect(hayCambioEnLinea(guardada, borradorDesdeLinea(guardada))).toBe(false);
+  });
+});
+
+describe("servicioDeLaLinea", () => {
+  it("no devuelve ninguno cuando la línea no sabe de dónde salió su precio", () => {
+    expect(servicioDeLaLinea(linea({ arancelRenglonId: null }))).toBeNull();
+  });
+
+  it("devuelve el identificador y el concepto resuelto en lectura", () => {
+    const suya = linea({
+      arancelRenglonId: RENGLON_PENSIONADO,
+      arancelConcepto: "Visa de pensionado o jubilado",
+    });
+
+    expect(servicioDeLaLinea(suya)).toEqual({
+      id: RENGLON_PENSIONADO,
+      concepto: "Visa de pensionado o jubilado",
+    });
+  });
+
+  it("conserva el hueco cuando el concepto no se pudo resolver", () => {
+    const suya = linea({
+      arancelRenglonId: RENGLON_PENSIONADO,
+      arancelConcepto: null,
+    });
+
+    expect(servicioDeLaLinea(suya)).toEqual({
+      id: RENGLON_PENSIONADO,
+      concepto: null,
+    });
+  });
+});
+
+describe("serviciosSeleccionables", () => {
+  const SERVICIOS = serviciosTarifados(catalogoDelAcuerdo());
+
+  it("ofrece los tarifados, ordenados por su rótulo", () => {
+    expect(
+      serviciosSeleccionables(SERVICIOS, null).map((opcion) => opcion.rotulo),
+    ).toEqual([
+      "Inmigrantes · Visa de pensionado o jubilado",
+      "Procesos de mayor cuantía",
+    ]);
+  });
+
+  /*
+   * **El defecto que esta función existe para impedir, y acá es alcanzable sin
+   * que nadie se equivoque.** El bufete puede dejar de tarifar un servicio
+   * —`fijarMonto(…, null)` es legítimo— y la línea que ya lo nombraba sigue
+   * nombrándolo. Sin la opción inyectada, el `<select>` controlado cae en la
+   * primera —«Ninguno»— mientras el estado conserva el identificador: quien
+   * mira lee que la línea no tiene procedencia, y si toca el control creyendo
+   * que confirma, la borra.
+   */
+  it("ofrece el servicio que la línea ya tiene aunque el bufete ya no lo tarife", () => {
+    const opciones = serviciosSeleccionables([], {
+      id: RENGLON_PENSIONADO,
+      concepto: "Visa de pensionado o jubilado",
+    });
+
+    expect(opciones).toEqual([
+      { id: RENGLON_PENSIONADO, rotulo: "Visa de pensionado o jubilado" },
+    ]);
+  });
+
+  it("no lo duplica cuando el catálogo sí lo trae", () => {
+    const opciones = serviciosSeleccionables(SERVICIOS, {
+      id: RENGLON_PENSIONADO,
+      concepto: "Visa de pensionado o jubilado",
+    });
+
+    expect(opciones).toHaveLength(2);
+  });
+
+  it("dice el hueco cuando el concepto de la línea no se pudo nombrar", () => {
+    const opciones = serviciosSeleccionables([], {
+      id: RENGLON_PENSIONADO,
+      concepto: null,
+    });
+
+    expect(opciones[0].rotulo).toBe("El servicio que la línea ya tenía");
+  });
+});
+
+describe("el panel de precios cuando no hay nada que mostrar", () => {
+  /*
+   * **Hoy éste es el caso de todo el mundo, y está medido**: las 453 filas del
+   * acuerdo tienen `monto` en nulo hasta que alguien escriba el primero. Un
+   * panel vacío que no dice nada es una caja en blanco al lado de la
+   * cotización; lo que hace falta es decir que el bufete todavía no tarifó
+   * nada y dónde se tarifa.
+   */
+  it("dice que el bufete todavía no tarifó nada, y adónde ir", () => {
+    expect(SIN_PRECIOS_TARIFADOS.toLowerCase()).toContain("todavía");
+    expect(SIN_PRECIOS_TARIFADOS).toContain("precios");
+  });
+
+  it("el enlace a la pantalla de precios sale del resolvedor de rutas", () => {
+    // Escrito a mano y no derivado de `enlaceDe`, que es la función que lo
+    // produce: una expectativa calculada con la misma fuente pasa aunque las
+    // dos estén mal (restricción 6).
+    expect(enlaceALosPrecios()).toBe("/catalogos/precios");
+  });
+
+  it("la ayuda del panel dice que el precio se puede editar encima", () => {
+    expect(AYUDA_DE_TUS_PRECIOS.toLowerCase()).toContain("editar");
+  });
+
+  /*
+   * Es el gemelo de `avisoDeTramites`, y por el mismo argumento: el panel es
+   * una ayuda para no tener que acordarse de un número, así que un fallo suyo
+   * no puede impedir cotizar. La frase lo dice con todas las letras, y el
+   * aviso **no es de error** — el dibujo lo sostiene con un tono neutro.
+   */
+  it("un fallo del catálogo dice que se puede cotizar igual", () => {
+    expect(avisoDePrecios(null)).toBeNull();
+
+    const aviso = avisoDePrecios("No se pudo leer el catálogo.");
+    expect(aviso).toContain("No se pudo leer el catálogo.");
+    expect(aviso?.toLowerCase()).toContain("a mano");
   });
 });

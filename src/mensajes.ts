@@ -128,6 +128,24 @@ const MENSAJES: Record<MotivoDeFalla, string> = {
   monto_invalido:
     "Ese monto no es un importe. Va un número de cero en adelante, sin" +
     " centavos partidos.",
+  /* El servicio sale de un desplegable que la pantalla dibuja con lo que el
+     bufete tarifó, así que la frase no habla de identificadores: habla de la
+     lista, que es lo que hay que volver a cargar. Y dice la salida que casi
+     siempre sirve —escribir el monto a mano—, porque el origen es opcional. */
+  arancel_renglon_desconocido:
+    "Ese servicio ya no está en tus precios. Hay que volver a cargar la" +
+    " cotización para ver la lista al día, o escribir el monto a mano sin" +
+    " elegir servicio.",
+  /* Una sola frase para el renglón sin tarifar y para el encabezado del
+     acuerdo, por el mismo criterio con el que `monto_invalido` cubre cuatro:
+     desde donde está la persona las dos son «ese servicio todavía no tiene
+     precio tuyo» y se arreglan igual, poniéndole precio en la pantalla de
+     precios. Y dice dónde, porque un rechazo que no lo dice obliga a
+     buscarlo. */
+  arancel_renglon_sin_precio:
+    "Ese servicio todavía no tiene un precio del bufete, así que no hay de" +
+    " dónde sacar el monto. Se le pone precio en Catálogos → Los precios del" +
+    " bufete, o se escribe el monto a mano sin elegir servicio.",
   linea_desconocida:
     "Una de las líneas ya no es de esta cotización. Hay que volver a" +
     " cargarla.",

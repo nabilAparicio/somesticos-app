@@ -73,14 +73,26 @@ import type {
   TotalesDeCotizacion,
 } from "../../../worker/contract";
 import { Aviso } from "../../layout/Aviso";
+import { Enlace } from "../../layout/Enlace";
 import { Fila } from "../../layout/Fila";
 import { Pila } from "../../layout/Pila";
+import { Prosa } from "../../layout/Prosa";
 import { Rejilla } from "../../layout/Rejilla";
 import type { Resultado } from "../../api/peticiones";
+import {
+  cargarArancel,
+  textoDeProblemaDelArancel,
+} from "../../api/arancel";
 import {
   textoDeProblema as textoDeProblemaDeCatalogo,
   cargarTiposProceso,
 } from "../catalogos/api";
+import {
+  serviciosQueCoinciden,
+  serviciosSeleccionables,
+  serviciosTarifados,
+  type ServicioTarifado,
+} from "../catalogos/precios";
 import {
   agregarLinea,
   cargarLineas,
@@ -93,12 +105,19 @@ import {
   AVISO_DEL_TOTAL,
   AVISO_LINEAS_CONGELADAS,
   AVISO_SIN_RELECTURA_DE_LINEAS,
+  AYUDA_DEL_SERVICIO_TARIFADO,
   AYUDA_DE_LINEAS,
+  AYUDA_DE_TUS_PRECIOS,
   BORRADOR_DE_LINEA_VACIO,
   CATALOGO_DE_CLASES,
+  SIN_PRECIOS_TARIFADOS,
+  TITULO_DE_TUS_PRECIOS,
   TOTALES_EN_CERO,
+  avisoDePrecios,
   avisoDeTramites,
   borradorDesdeLinea,
+  conServicioElegido,
+  enlaceALosPrecios,
   exigeRecarga,
   familiasDeLineas,
   hayCambioEnLinea,
@@ -114,10 +133,12 @@ import {
   ordenDeLineas,
   podarBorradoresDeLinea,
   renglonDelImpuesto,
+  servicioDeLaLinea,
   tramiteDeLaLinea,
   tramitesSeleccionables,
   type BorradorDeLinea,
   type BorradoresDeLinea,
+  type ServicioDeLaLinea,
   type TramiteDeLaLinea,
 } from "./lineas";
 import { VACIO } from "./presentacion";
@@ -172,6 +193,181 @@ function Tramites({
   );
 }
 
+/**
+ * El desplegable de servicios tarifados del bufete, con el que la línea ya
+ * tiene siempre ofrecido aunque el catálogo no lo traiga (T-2 de
+ * `odd/tasks/precios-en-la-cotizacion.md`).
+ *
+ * El porqué de esa inyección está en `serviciosSeleccionables`, y acá importa
+ * más que en el de trámites: el bufete puede dejar de tarifar un servicio que
+ * una línea ya nombra, así que el caso es alcanzable sin que nadie se
+ * equivoque.
+ */
+function Servicios({
+  servicios,
+  actual,
+}: {
+  readonly servicios: readonly ServicioTarifado[];
+  readonly actual: ServicioDeLaLinea | null;
+}) {
+  return (
+    <>
+      <option value="">Ninguno</option>
+      {serviciosSeleccionables(servicios, actual).map((opcion) => (
+        <option key={opcion.id} value={opcion.id}>
+          {opcion.rotulo}
+        </option>
+      ))}
+    </>
+  );
+}
+
+/**
+ * **Tus precios, a la vista mientras se arma la cotización.**
+ *
+ * Es lo que el usuario pidió explícitamente, y es más que el prellenado: «para
+ * que el usuario sepa sus propios precios en todo momento». Sin esto habría que
+ * acordarse de un número o irse a otra pantalla a mirarlo, y volver.
+ *
+ * ## Una sola cifra por servicio, y la regla no se renegocia
+ *
+ * El precio del bufete y nada más. Ningún monto del Acuerdo No 49 de 2001, ni
+ * al lado, ni abajo, ni en un color, ni como un «mínimo: X». Acá eso es
+ * estructura: `ServicioTarifado` no tiene dónde ponerlo, así que no hay un
+ * segundo número que se pueda dibujar por descuido.
+ * `e2e/precios-en-cotizacion.spec.ts` cuenta las cifras que cada fila de este
+ * panel renderiza para que agregar la segunda —con cualquier rótulo— se ponga
+ * rojo.
+ *
+ * ## El vacío es el caso de hoy, y por eso tiene su propio párrafo
+ *
+ * Los 453 renglones del acuerdo nacen con `monto` en nulo, así que en una
+ * instalación recién sembrada este panel no tiene una sola fila. Decir «no hay
+ * resultados» sería mentir por omisión: lo que pasa es que nadie puso precios
+ * todavía, y lo útil es decirlo y llevar a donde se ponen.
+ *
+ * El buscador sólo aparece cuando hay algo que buscar: un campo de búsqueda
+ * sobre una lista vacía es un control que no puede hacer nada.
+ */
+function TusPrecios({
+  servicios,
+  problema,
+  consulta,
+  alBuscar,
+  moneda,
+}: {
+  readonly servicios: readonly ServicioTarifado[];
+  readonly problema: string | null;
+  readonly consulta: string;
+  readonly alBuscar: (texto: string) => void;
+  readonly moneda: string;
+}) {
+  const aviso = avisoDePrecios(problema);
+  const visibles = serviciosQueCoinciden(servicios, consulta);
+
+  return (
+    <aside
+      className="tus-precios"
+      aria-labelledby="tus-precios"
+    >
+      <Pila espacio="ceñido">
+        <h3 id="tus-precios" className="tus-precios__rotulo">
+          {TITULO_DE_TUS_PRECIOS}
+        </h3>
+
+        {/*
+          `Prosa` y no un `<p>` pelado (§9): a ancho completo, un párrafo sin
+          tope ocupa la columna entera y obliga al ojo a buscar dónde sigue.
+        */}
+        <Prosa como="p" className="texto-apagado">
+          {AYUDA_DE_TUS_PRECIOS}
+        </Prosa>
+
+        {/*
+          Neutro y no de error, a propósito: un `role="alert"` por un panel de
+          consulta que no cargó interrumpiría la lectura de la pantalla entera
+          para avisar de algo que no impide cotizar. El argumento está en
+          `avisoDePrecios`.
+        */}
+        {aviso !== null && <Aviso>{aviso}</Aviso>}
+
+        {aviso === null && servicios.length === 0 && (
+          <Prosa como="p" className="texto-apagado">
+            {SIN_PRECIOS_TARIFADOS}{" "}
+            <Enlace href={enlaceALosPrecios()}>Ir a tus precios</Enlace>
+          </Prosa>
+        )}
+
+        {servicios.length > 0 && (
+          <>
+            <div className="campo campo--busqueda">
+              <label
+                className="campo__rotulo"
+                htmlFor="busqueda-de-tus-precios"
+              >
+                Buscar en tus precios
+              </label>
+              <input
+                id="busqueda-de-tus-precios"
+                className="campo__control"
+                type="search"
+                value={consulta}
+                placeholder="Nombre del servicio"
+                onChange={(evento) => {
+                  alBuscar(evento.target.value);
+                }}
+              />
+            </div>
+
+            {visibles.length === 0 ? (
+              <p className="texto-apagado">
+                Ningún servicio tuyo coincide con «{consulta}».
+              </p>
+            ) : (
+              <ul className="tus-precios__lista">
+                {visibles.map((servicio) => (
+                  <li key={servicio.id} className="tus-precios__item">
+                    <span className="tus-precios__servicio">
+                      {servicio.rubro !== null && (
+                        <span className="tus-precios__rubro">
+                          {servicio.rubro}
+                        </span>
+                      )}
+                      {servicio.concepto}
+                    </span>
+                    {/*
+                      La única cifra de dinero de la fila, y es la del bufete.
+                      Con la moneda delante, por lo mismo que los subtotales:
+                      ningún importe de esta pantalla queda sin unidad.
+                    */}
+                    <span className="tus-precios__importe">
+                      {importeLegible(servicio.monto, moneda)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <p className="texto-apagado" aria-live="polite">
+              {visibles.length === servicios.length
+                ? `${String(servicios.length)} servicio(s) tarifado(s).`
+                : `${String(visibles.length)} de ${String(
+                    servicios.length,
+                  )} servicio(s) tarifado(s).`}
+            </p>
+
+            <p className="campo__ayuda">
+              <Enlace href={enlaceALosPrecios()}>
+                Editar tus precios
+              </Enlace>
+            </p>
+          </>
+        )}
+      </Pila>
+    </aside>
+  );
+}
+
 /** Una línea en modo lectura: concepto, trámite si lleva, e importe. */
 function Leida({ linea }: { readonly linea: LineaDeCotizacion }) {
   return (
@@ -201,6 +397,12 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
   const [totales, setTotales] = useState<TotalesDeCotizacion>(TOTALES_EN_CERO);
   const [tipos, setTipos] = useState<TipoProceso[]>([]);
   const [problemaDeTipos, setProblemaDeTipos] = useState<string | null>(null);
+  /** Lo que el bufete tarifó, para prellenar y para tener a la vista (T-2). */
+  const [servicios, setServicios] = useState<ServicioTarifado[]>([]);
+  const [problemaDePrecios, setProblemaDePrecios] = useState<string | null>(
+    null,
+  );
+  const [consultaDePrecios, setConsultaDePrecios] = useState("");
   const [abiertos, setAbiertos] = useState<BorradoresDeLinea>({});
   const [nueva, setNueva] = useState<BorradorDeLinea>(BORRADOR_DE_LINEA_VACIO);
   const [fallas, setFallas] = useState<FallaDeValidacion[]>([]);
@@ -248,6 +450,44 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
       control.abort();
     };
   }, [cotizacionId]);
+
+  /*
+   * El catálogo de precios del bufete, en su **propio** efecto (T-2 de
+   * `odd/tasks/precios-en-la-cotizacion.md`).
+   *
+   * Aparte del de arriba y no colgado de él, por dos razones que son la misma
+   * dicha de dos maneras: el catálogo es del **bufete** y no de la cotización,
+   * así que no se vuelve a pedir al pasar de una cotización a otra; y sólo hace
+   * falta mientras se pueda escribir, que es lo que `editable` dice. Sobre una
+   * emitida no se pide: no hay nada que prellenar ni nada que elegir, y una
+   * lectura de 453 renglones para dibujar un panel que no se dibuja es una
+   * petición que no le sirve a nadie.
+   *
+   * Y es una lectura **aparte** por lo mismo que la de trámites: un fallo suyo
+   * no puede dejar las líneas sin dibujar, así que su problema va a su propio
+   * estado y no a `carga`.
+   */
+  useEffect(() => {
+    if (!editable) return;
+
+    const control = new AbortController();
+
+    void cargarArancel(control.signal).then((resultado) => {
+      if (control.signal.aborted) return;
+
+      if (resultado.estado === "ok") {
+        setServicios(serviciosTarifados(resultado.valor));
+        setProblemaDePrecios(null);
+        return;
+      }
+
+      setProblemaDePrecios(textoDeProblemaDelArancel(resultado));
+    });
+
+    return () => {
+      control.abort();
+    };
+  }, [editable]);
 
   /** La lista y sus totales se reemplazan juntos. Nunca uno sin el otro. */
   function recibir(cuerpo: {
@@ -377,6 +617,24 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
     }));
   }
 
+  /**
+   * Mover el desplegable de servicios de una línea guardada.
+   *
+   * Las tres ramas —desvincular, prellenar y vincular sin prellenar— las decide
+   * `conServicioElegido`, en `./lineas.ts`. Acá queda sólo el cableado del
+   * estado, que es lo que este archivo hace.
+   */
+  function elegirServicio(linea: LineaDeCotizacion, elegido: string) {
+    setAbiertos((anteriores) => ({
+      ...anteriores,
+      [linea.id]: conServicioElegido(
+        anteriores[linea.id] ?? borradorDesdeLinea(linea),
+        elegido,
+        servicios,
+      ),
+    }));
+  }
+
   function olvidarBorrador(id: string) {
     setAbiertos((anteriores) =>
       Object.fromEntries(
@@ -458,14 +716,39 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
   const impuesto = renglonDelImpuesto(totales);
 
   return (
-    <section aria-labelledby="lineas-de-la-cotizacion">
+    /*
+      La clase existe para **declarar el contenedor de consulta**, y nada más:
+      lo que decide si tus precios caben al lado de las líneas es el hueco real
+      de esta sección y no el ancho de la ventana (§9). El contenedor se declara
+      acá y no sobre la rejilla de abajo porque una `@container` no puede mirar
+      al elemento que la establece: sólo a sus descendientes.
+    */
+    <section
+      className="seccion-de-lineas"
+      aria-labelledby="lineas-de-la-cotizacion"
+    >
       <Pila>
         <h2 id="lineas-de-la-cotizacion">Líneas</h2>
 
         {carga.fase === "problema" ? (
           <Aviso tono="error">{carga.mensaje}</Aviso>
         ) : (
-          <>
+          /*
+            El trabajo a la izquierda y tus precios al lado (T-2).
+
+            Es una rejilla de dos pistas **con consulta de contenedor y no de
+            ventana** (§9): lo que decide si el panel cabe al lado es el hueco
+            real que la sección tiene, que en esta pantalla no es el ancho del
+            navegador —el detalle vive dentro del armazón, con su propia
+            columna—. Con una `@media` el panel se pondría al lado a 1024px
+            aunque la columna midiera cuatrocientos píxeles.
+
+            Y el orden del documento es **las líneas primero**: en un hueco
+            angosto las dos pistas se vuelven una, y lo que queda arriba es la
+            cotización. El panel es una consulta, no el trabajo.
+          */
+          <div className="lineas-con-precios">
+            <Pila className="lineas-con-precios__lineas">
             {editable ? (
               <p className="texto-apagado">{AYUDA_DE_LINEAS}</p>
             ) : (
@@ -670,6 +953,32 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                                         />
                                       </select>
                                     </div>
+
+                                    {/*
+                                      De dónde salió el precio (T-2). Elegir
+                                      uno prellena concepto y monto encima de
+                                      lo que haya; el hueco desvincula y deja
+                                      el monto libre. Las tres ramas las decide
+                                      `conServicioElegido`.
+                                    */}
+                                    <div className="campo">
+                                      <select
+                                        className="campo__control"
+                                        aria-label={`Servicio tarifado de la ${puesto}`}
+                                        value={borrador.arancelRenglonId}
+                                        onChange={(evento) => {
+                                          elegirServicio(
+                                            linea,
+                                            evento.target.value,
+                                          );
+                                        }}
+                                      >
+                                        <Servicios
+                                          servicios={servicios}
+                                          actual={servicioDeLaLinea(linea)}
+                                        />
+                                      </select>
+                                    </div>
                                   </Rejilla>
 
                                   {/*
@@ -857,6 +1166,45 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                         proceso.
                       </p>
                     </div>
+
+                    {/*
+                      El servicio tarifado del bufete (T-2). Va **después** del
+                      trámite y no antes, aunque prellene: el orden de los
+                      controles es el orden en que se piensa la línea —qué se
+                      cobra, de qué clase es, cuánto, qué trámite abre— y este
+                      es un atajo sobre dos de ellos, no el punto de partida.
+                      Quien ya sabe el número no tiene por qué pasar por acá.
+                    */}
+                    <div className="campo">
+                      <label
+                        className="campo__rotulo"
+                        htmlFor="linea-nueva-servicio"
+                      >
+                        Servicio tarifado{" "}
+                        <span className="campo__marca campo__marca--tenue">
+                          opcional
+                        </span>
+                      </label>
+                      <select
+                        id="linea-nueva-servicio"
+                        className="campo__control"
+                        value={nueva.arancelRenglonId}
+                        onChange={(evento) => {
+                          setNueva((anterior) =>
+                            conServicioElegido(
+                              anterior,
+                              evento.target.value,
+                              servicios,
+                            ),
+                          );
+                        }}
+                      >
+                        <Servicios servicios={servicios} actual={null} />
+                      </select>
+                      <p className="campo__ayuda">
+                        {AYUDA_DEL_SERVICIO_TARIFADO}
+                      </p>
+                    </div>
                   </Rejilla>
 
                   <Fila>
@@ -879,7 +1227,24 @@ export function EditorDeLineas({ cotizacionId, moneda, editable }: Props) {
                 </Pila>
               </form>
             )}
-          </>
+            </Pila>
+
+            {/*
+              Tus precios, al lado. **Sólo sobre un borrador**: en lo que ya
+              salió no hay nada que prellenar ni nada que elegir, y un panel de
+              consulta al lado de un documento congelado es ruido sobre algo que
+              el cliente ya tiene.
+            */}
+            {editable && (
+              <TusPrecios
+                servicios={servicios}
+                problema={problemaDePrecios}
+                consulta={consultaDePrecios}
+                alBuscar={setConsultaDePrecios}
+                moneda={moneda}
+              />
+            )}
+          </div>
         )}
       </Pila>
     </section>

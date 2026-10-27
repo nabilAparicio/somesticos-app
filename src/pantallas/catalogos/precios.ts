@@ -70,7 +70,7 @@ import type {
   CategoriaDelArancel,
   RenglonDelArancel,
 } from "../../../worker/contract";
-import { plano } from "../../formatos";
+import { ORDEN_ES, plano } from "../../formatos";
 import { centavosDesdeTexto, montoEditable } from "../cotizaciones/lineas";
 import { enlaceDe } from "../../ruteo";
 
@@ -342,6 +342,260 @@ function filtrarRenglones(
   }
 
   return resultado;
+}
+
+/* ==========================================================================
+   Los servicios que el bufete tarifó, para la cotización (T-2 de
+   `odd/tasks/precios-en-la-cotizacion.md`)
+
+   Esta sección no es de las dos pantallas del arancel: es lo que el editor de
+   líneas de una cotización necesita saber del catálogo. Vive acá y no en
+   `src/pantallas/cotizaciones/lineas.ts` por pertenencia —lo que contesta es
+   una pregunta sobre el arancel, y el buscador que usa es el que esta pantalla
+   ya tenía escrito y probado— y porque la flecha de importación no se puede
+   invertir: este archivo ya importa la conversión de dinero de allá.
+
+   **Acá no entra el monto oficial, y es estructura y no disciplina.**
+   `ServicioTarifado` no tiene dónde ponerlo. Es la misma decisión que
+   `PrecioALaVista` tomó para la pantalla de precios, trasladada a la
+   cotización: un segundo número de dinero al lado del propio sólo se puede
+   leer como la comparación que `odd/tasks/arancel-de-honorarios.md` prohibió,
+   y en una cotización sería peor, porque el número de al lado es un mínimo de
+   2001 debajo del precio que el cliente va a leer.
+   ========================================================================== */
+
+/**
+ * Un servicio que el bufete **ya tarifó**, listo para ofrecerle a una línea.
+ *
+ * `monto` es `number` y no `number | null`, y ésa es la definición entera de
+ * esta lista: lo que el bufete no tarifó no es un servicio ofrecible, porque no
+ * hay precio que proponer y porque la base rechaza la línea que lo nombrara
+ * —`cotizacion_linea_el_origen_del_precio_tiene_precio_al_insertar`—. Los 74
+ * rubros se caen por el mismo filtro y sin nombrarlos: el `CHECK`
+ * `un_rubro_no_lleva_precio` hace imposible que un encabezado tenga `monto`.
+ *
+ * `rubro` es el concepto del encabezado que agrupa al servicio, cuando el
+ * numeral demuestra que cuelga de él. Hace falta porque el acuerdo imprime «3.
+ * Inmigrantes» una vez y cuelga de ahí sus letras sin repetir la palabra, y
+ * porque **147 renglones del acuerdo tienen un concepto que es un fragmento**
+ * —«primer año», «Reconsideración», «Persona Natural»— que solo significa algo
+ * debajo de su encabezado.
+ *
+ * `rotulo` es el nombre completo, y es un campo y no una función suelta porque
+ * lo usan tres cosas que no pueden decidir distinto: el desplegable del editor
+ * de líneas, el buscador del panel y el concepto que el prellenado propone.
+ * Lo escribe `serviciosTarifados`, que es el único constructor, con
+ * `rotuloDeServicio`, que sigue siendo la única definición de cómo se arma.
+ */
+export interface ServicioTarifado {
+  readonly id: string;
+  readonly concepto: string;
+  readonly rubro: string | null;
+  /** El nombre completo: el rubro delante del concepto, cuando hay rubro. */
+  readonly rotulo: string;
+  readonly categoria: string;
+  /** Lo que el bufete cobra, en centavos enteros. */
+  readonly monto: number;
+}
+
+/**
+ * Si el numeral de `renglon` **demuestra** que cuelga de `rubro`.
+ *
+ * ## Por qué hace falta demostrarlo, y no alcanza «el rubro de más arriba»
+ *
+ * Defecto medido en el navegador con los 453 renglones de verdad, antes de
+ * escribir esta función: el panel de la cotización decía **«Inversionista ·
+ * Naturalizaciones»**. Y es falso. En «ASUNTOS ADMINISTRATIVOS (MIGRACIÓN)» el
+ * acuerdo imprime el rubro `3.b` «Inversionista» con sus dos hijos `b.1` y
+ * `b.2`, y después sigue con `4` «Naturalizaciones», que es **hermano del
+ * rubro y no hijo**. Tomar el último rubro visto adopta a todo lo que venga
+ * después hasta el final de la categoría.
+ *
+ * Un rótulo que miente es peor que uno que falta: el que falta obliga a mirar
+ * el documento, y el que miente manda a cotizar el servicio equivocado.
+ *
+ * ## La regla, medida sobre `scripts/arancel/arancel.json`
+ *
+ * El numeral cuelga del rubro cuando:
+ *
+ *  - **es el mismo** —son los renglones que el acuerdo imprime sin numerar y
+ *    heredan el del padre, la lectura de T-1: `3` «Contratos Administrativos»
+ *    con sus `3` «Elaboración» y `3` «Revisión»—; **5 renglones**;
+ *  - **extiende el del rubro**: `3` → `3.a`;
+ *  - **extiende su último tramo**, porque las letras reinician bajo cada
+ *    padre: `3.b` → `b.1`, `b.2`.
+ *
+ * Medido sobre los 453: **142 renglones** quedan adoptados y 237 no, y los no
+ * adoptados son los hermanos de nivel superior que venían después de un rubro.
+ * La regla **falla hacia el hueco**: ante la duda no atribuye, que es la
+ * dirección correcta para un dato que se le muestra a alguien que está
+ * poniéndole precio a su trabajo.
+ */
+function cuelgaDelRubro(
+  renglon: RenglonDelArancel,
+  rubro: RenglonDelArancel,
+): boolean {
+  const propio = renglon.numeral.trim();
+  const padre = rubro.numeral.trim();
+  if (propio === padre) return true;
+  if (propio.startsWith(`${padre}.`)) return true;
+
+  const tramos = padre.split(".");
+  const ultimo = tramos[tramos.length - 1];
+  return ultimo !== padre && propio.startsWith(`${ultimo}.`);
+}
+
+/**
+ * Los servicios tarifados del bufete, **en el orden del documento**.
+ *
+ * No se reordenan ni se reagrupan: vienen del servidor en el orden del acuerdo,
+ * y el que los ordena para un desplegable es `serviciosSeleccionables`, que es
+ * el que sabe para qué los quiere. Acá sólo se filtra y se resuelve el rubro.
+ *
+ * El rubro candidato es el **inmediatamente anterior dentro de la categoría**
+ * —el acuerdo no anida rubros dentro de rubros, y T-1 lo midió renglón por
+ * renglón— y se le atribuye el servicio sólo si `cuelgaDelRubro` lo demuestra.
+ */
+export function serviciosTarifados(
+  categorias: readonly CategoriaDelArancel[],
+): ServicioTarifado[] {
+  const servicios: ServicioTarifado[] = [];
+
+  for (const categoria of categorias) {
+    let rubro: RenglonDelArancel | null = null;
+
+    for (const renglon of categoria.renglones) {
+      if (renglon.clase === "rubro") {
+        rubro = renglon;
+        continue;
+      }
+
+      if (renglon.monto === null) continue;
+
+      const suyo = rubro !== null && cuelgaDelRubro(renglon, rubro);
+      const encabezado = suyo && rubro !== null ? rubro.concepto : null;
+
+      servicios.push({
+        id: renglon.id,
+        concepto: renglon.concepto,
+        rubro: encabezado,
+        rotulo: rotuloDeServicio({
+          concepto: renglon.concepto,
+          rubro: encabezado,
+        }),
+        categoria: categoria.nombre,
+        monto: renglon.monto,
+      });
+    }
+  }
+
+  return servicios;
+}
+
+/**
+ * Cómo se nombra un servicio donde hay que distinguirlo de otro.
+ *
+ * El rubro delante y el concepto detrás, separados por un punto medio. **No es
+ * el concepto que va a la línea**: lo que el cliente lee en la propuesta es
+ * «Visa de pensionado o jubilado», y «Inmigrantes · Visa de pensionado o
+ * jubilado» es la forma que un desplegable necesita para no ser ambiguo. Las
+ * dos cosas son distintas y por eso son dos funciones.
+ */
+export function rotuloDeServicio(partes: {
+  readonly concepto: string;
+  readonly rubro: string | null;
+}): string {
+  return partes.rubro === null
+    ? partes.concepto
+    : `${partes.rubro} · ${partes.concepto}`;
+}
+
+/**
+ * Los servicios que coinciden con `consulta`.
+ *
+ * Busca sobre el concepto **y sobre el rubro que lo encabeza**, que es la misma
+ * regla que `filtrarRenglones`: buscar «inmigrantes» y no encontrar la visa de
+ * pensionado sería buscar en la mitad del nombre del servicio. Con la consulta
+ * vacía devuelve todo, en el orden en que llegó.
+ */
+export function serviciosQueCoinciden(
+  servicios: readonly ServicioTarifado[],
+  consulta: string,
+): ServicioTarifado[] {
+  const buscado = plano(consulta.trim());
+  if (buscado === "") return [...servicios];
+
+  return servicios.filter((servicio) =>
+    plano(servicio.rotulo).includes(buscado),
+  );
+}
+
+/** Una opción del desplegable de servicios: lo único que el control necesita. */
+export interface OpcionDeServicio {
+  readonly id: string;
+  readonly rotulo: string;
+}
+
+/**
+ * Cómo se nombra al servicio que la línea tiene y no se pudo nombrar.
+ *
+ * `arancelConcepto` llega nulo si la fila apuntada cruzara la frontera del
+ * tenant. Aun así la opción necesita un texto: poner el identificador crudo
+ * sería una fila de UUID en un desplegable, y dejarlo vacío sería la misma
+ * mentira que esta función arregla. Es el mismo recurso que
+ * `TRAMITE_SIN_NOMBRE`.
+ */
+const SERVICIO_SIN_NOMBRE = "El servicio que la línea ya tenía";
+
+/**
+ * Las opciones del desplegable de servicios de una línea, ordenadas por su
+ * rótulo.
+ *
+ * ## Por qué esta función vive acá y no en el editor de líneas
+ *
+ * Es la única de este archivo que contesta una pregunta de la pantalla de
+ * cotizaciones, y está acá porque necesita `rotuloDeServicio`, que es de acá.
+ * La alternativa era tenerla del otro lado e importar el rótulo, y eso cierra
+ * un ciclo en tiempo de ejecución: este archivo ya importa de
+ * `../cotizaciones/lineas` la conversión de dinero, que no se va a duplicar.
+ * El parámetro `actual` es **estructural** por lo mismo, para no tener que
+ * importar `ServicioDeLaLinea` de allá.
+ *
+ * ## Las dos reglas, y la segunda es la que importa
+ *
+ *  - se ofrecen los **tarifados**, porque un servicio sin precio del bufete no
+ *    tiene nada que prellenar y la base rechaza la línea que lo nombrara;
+ *  - **el servicio que la línea ya tiene va siempre**, esté o no en la lista.
+ *
+ * La segunda no es defensiva y el caso es alcanzable sin que nadie se
+ * equivoque: el bufete puede dejar de tarifar un servicio —`fijarMonto(…,
+ * null)` es legítimo— y la línea que ya lo nombraba sigue nombrándolo. Sin la
+ * opción inyectada, el `<select>` controlado cae en la primera —«Ninguno»—
+ * mientras el estado conserva el identificador: quien mira lee que la línea no
+ * tiene procedencia y, si toca el control creyendo que confirma, la borra. Es
+ * el mismo defecto que `tramitesSeleccionables` documenta medido.
+ *
+ * El rótulo del inyectado es su concepto **sin rubro**, porque lo único que se
+ * sabe de él es lo que la lectura resolvió: el renglón pudo dejar de estar en
+ * la lista, así que no hay de dónde sacar el encabezado que lo agrupaba.
+ */
+export function serviciosSeleccionables(
+  servicios: readonly ServicioTarifado[],
+  actual: { readonly id: string; readonly concepto: string | null } | null,
+): OpcionDeServicio[] {
+  const opciones: OpcionDeServicio[] = servicios.map((servicio) => ({
+    id: servicio.id,
+    rotulo: servicio.rotulo,
+  }));
+
+  if (actual !== null && !opciones.some((opcion) => opcion.id === actual.id)) {
+    opciones.push({
+      id: actual.id,
+      rotulo: actual.concepto ?? SERVICIO_SIN_NOMBRE,
+    });
+  }
+
+  return opciones.sort((a, b) => ORDEN_ES.compare(a.rotulo, b.rotulo));
 }
 
 /* ==========================================================================

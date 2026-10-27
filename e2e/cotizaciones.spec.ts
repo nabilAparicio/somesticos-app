@@ -472,6 +472,8 @@ const LINEAS_DEL_BORRADOR = [
     monto: 150_000,
     tipoProcesoId: TRAMITE_VISA,
     tipoProcesoNombre: "Visa de trabajo",
+    arancelRenglonId: null,
+    arancelConcepto: null,
     orden: 0,
   },
   {
@@ -481,6 +483,8 @@ const LINEAS_DEL_BORRADOR = [
     monto: 25_000,
     tipoProcesoId: null,
     tipoProcesoNombre: null,
+    arancelRenglonId: null,
+    arancelConcepto: null,
     orden: 1,
   },
   {
@@ -490,6 +494,8 @@ const LINEAS_DEL_BORRADOR = [
     monto: 80_000,
     tipoProcesoId: null,
     tipoProcesoNombre: null,
+    arancelRenglonId: null,
+    arancelConcepto: null,
     orden: 2,
   },
 ];
@@ -535,6 +541,8 @@ const LINEAS_DE_LA_EMITIDA = [
     monto: 320_050,
     tipoProcesoId: TRAMITE_VISA,
     tipoProcesoNombre: "Visa de trabajo",
+    arancelRenglonId: null,
+    arancelConcepto: null,
     orden: 0,
   },
 ];
@@ -576,6 +584,8 @@ const LINEAS_POR_ABRIR = [
     monto: 120_000,
     tipoProcesoId: TRAMITE_VISA,
     tipoProcesoNombre: "Visa de trabajo",
+    arancelRenglonId: null,
+    arancelConcepto: null,
     orden: 0,
   },
   {
@@ -585,6 +595,8 @@ const LINEAS_POR_ABRIR = [
     monto: 80_000,
     tipoProcesoId: TRAMITE_VISA,
     tipoProcesoNombre: "Visa de trabajo",
+    arancelRenglonId: null,
+    arancelConcepto: null,
     orden: 1,
   },
   {
@@ -594,6 +606,8 @@ const LINEAS_POR_ABRIR = [
     monto: 5_000,
     tipoProcesoId: null,
     tipoProcesoNombre: null,
+    arancelRenglonId: null,
+    arancelConcepto: null,
     orden: 2,
   },
 ];
@@ -2354,6 +2368,7 @@ test.describe("las cotizaciones del bufete", () => {
       concepto: "Apostilla",
       monto: 123_456,
       tipoProcesoId: TRAMITE_VISA,
+      arancelRenglonId: null,
     });
   });
 
@@ -2535,6 +2550,7 @@ test.describe("las cotizaciones del bufete", () => {
       concepto: CONCEPTO_UNO,
       monto: 160_000,
       tipoProcesoId: TRAMITE_VISA,
+      arancelRenglonId: null,
     });
 
     // Y lo que queda en el campo son los 175025 centavos del servidor, no
