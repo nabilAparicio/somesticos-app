@@ -575,3 +575,102 @@ test.describe("y nada de esto trae scroll horizontal", () => {
     });
   }
 });
+
+test.describe("el foco y el título siguen a la navegación (T-3, T-4)", () => {
+  /*
+   * Lo que el teclado y el lector de pantalla necesitan y la vista no
+   * muestra: dónde queda el foco cuando algo se cierra o la pantalla cambia,
+   * y cómo se llama la pestaña. Sin esto el foco cae al `<body>` y quien
+   * navega con teclado vuelve a empezar desde arriba en cada clic.
+   */
+  function principal(page: Page): Locator {
+    return page.locator("main#contenido");
+  }
+
+  test("`Escape` cierra el cajón y devuelve el foco a «Secciones»", async ({
+    page,
+  }) => {
+    await page.setViewportSize(ANGOSTA);
+    await page.goto("/");
+
+    await alternar(page).click();
+    await expect(velo(page)).toBeVisible();
+    // El foco adentro del cajón, como lo dejaría quien tabula por el menú:
+    // sin esto la prueba pasaría con el foco que el clic dejó en el botón.
+    await lateral(page).getByRole("link", { name: "Clientes" }).focus();
+
+    await page.keyboard.press("Escape");
+
+    await expect(lateral(page)).not.toBeInViewport();
+    await expect(
+      alternar(page),
+      "`Escape` cerró el cajón y el foco quedó en el `<body>`: hay que" +
+        " devolverlo al botón que lo abrió",
+    ).toBeFocused();
+  });
+
+  test("elegir una sección en el cajón lleva el foco al contenido", async ({
+    page,
+  }) => {
+    await page.setViewportSize(ANGOSTA);
+    await page.goto("/");
+
+    await alternar(page).click();
+    await lateral(page).getByRole("link", { name: "Clientes" }).click();
+
+    await expect(lateral(page)).not.toBeInViewport();
+    await expect(
+      principal(page),
+      "la pantalla cambió y el foco quedó en el `<body>`",
+    ).toBeFocused();
+  });
+
+  test("en ancho elegir una sección también lleva el foco al contenido", async ({
+    page,
+  }) => {
+    await page.setViewportSize(ANCHA);
+    await page.goto("/");
+
+    await lateral(page).getByRole("link", { name: "Procesos" }).click();
+
+    await expect(page).toHaveURL(/\/procesos$/);
+    await expect(principal(page)).toBeFocused();
+  });
+
+  test("la carga inicial no le roba el foco a nadie", async ({ page }) => {
+    await page.goto("/clientes");
+    await expect(page).toHaveTitle("Clientes · Bufete");
+
+    await expect(
+      principal(page),
+      "el foco se mueve al contenido solo cuando la ruta cambia, no al abrir",
+    ).not.toBeFocused();
+  });
+
+  test("el título de la pestaña nombra la sección", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveTitle("Inicio · Bufete");
+
+    await lateral(page).getByRole("link", { name: "Catálogos" }).click();
+    await expect(page).toHaveTitle("Catálogos · Bufete");
+
+    // Una ruta hija se titula con su sección, igual que la marca del menú.
+    await page.goto("/clientes/nuevo");
+    await expect(page).toHaveTitle("Clientes · Bufete");
+  });
+
+  test("«Saltar al contenido» es lo primero que alcanza el teclado y lleva al contenido", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const saltar = page.getByRole("link", { name: "Saltar al contenido" });
+    await expect(saltar).toBeAttached();
+
+    await page.keyboard.press("Tab");
+    await expect(saltar).toBeFocused();
+    await expect(saltar, "con foco tiene que verse").toBeInViewport();
+
+    await page.keyboard.press("Enter");
+    await expect(principal(page)).toBeFocused();
+  });
+});
