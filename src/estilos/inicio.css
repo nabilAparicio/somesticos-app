@@ -1,0 +1,128 @@
+/**
+ * El tablero de Inicio (`odd/tasks/inicio-tablero.md`).
+ *
+ * ## La paleta de los cuatro estados
+ *
+ * Una sola, y la usan las dos piezas del tablero que hablan de estados —el
+ * filo de cada indicador y la marca de cada cotización—: un estado tiene un
+ * color y lo tiene en todas partes.
+ *
+ * Son los cuatro primeros tonos categóricos de la paleta de referencia de
+ * gráficos, en orden fijo, validados contra la superficie blanca de las
+ * tarjetas: separación para daltonismo ΔE 9,1 (mínimo 8) y visión normal
+ * ΔE 22,9 (mínimo 15) entre vecinos. Ganada y perdida quedan por debajo de
+ * 3:1 de contraste, y por eso **el color nunca va solo**: el indicador lleva
+ * el estado en su título y la marca va junto a la etiqueta.
+ *
+ * No son los colores de «bien» y «mal» a propósito: ganada y perdida son
+ * desenlaces, no alertas, y pintarlas de verde y rojo convertiría el tablero
+ * en un semáforo.
+ *
+ * Sin modo oscuro: `tokens.css` declara un solo esquema y esto lo respeta.
+ * Viven acá y no en `tokens.css` porque solo los usa el tablero.
+ */
+
+:root {
+  --estado-borrador: #2a78d6;
+  --estado-emitida: #eb6834;
+  --estado-ganada: #1baf7a;
+  --estado-perdida: #eda100;
+}
+
+/* ---------- Secciones y listas ---------- */
+
+.inicio__seccion {
+  min-width: 0;
+}
+
+.inicio__cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espacio-s);
+}
+
+.inicio__alcance {
+  display: flex;
+  gap: var(--espacio-3xs);
+}
+
+.inicio__grupo {
+  font-size: var(--texto-m);
+}
+
+.inicio__grupo--vencidos {
+  color: var(--color-acento);
+}
+
+.inicio__lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inicio__renglon {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-3xs);
+  min-width: 0;
+  padding-block-end: var(--espacio-xs);
+  border-block-end: var(--borde-fino);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- La muestra de color de un estado ---------- */
+
+.inicio__marca {
+  display: inline-block;
+  inline-size: 0.625rem;
+  block-size: 0.625rem;
+  margin-inline-end: var(--espacio-2xs);
+  border-radius: var(--radio-s);
+  vertical-align: baseline;
+}
+
+.inicio__marca--borrador {
+  background: var(--estado-borrador);
+}
+
+.inicio__marca--emitida {
+  background: var(--estado-emitida);
+}
+
+.inicio__marca--ganada {
+  background: var(--estado-ganada);
+}
+
+.inicio__marca--perdida {
+  background: var(--estado-perdida);
+}
+
+/* ---------- Indicadores ---------- */
+
+/* El estado se dice en el título; el filo de color lo acompaña. */
+.inicio__indicador--borrador {
+  border-block-start: 3px solid var(--estado-borrador);
+}
+
+.inicio__indicador--emitida {
+  border-block-start: 3px solid var(--estado-emitida);
+}
+
+.inicio__indicador--ganada {
+  border-block-start: 3px solid var(--estado-ganada);
+}
+
+.inicio__indicador--perdida {
+  border-block-start: 3px solid var(--estado-perdida);
+}
+
+.inicio__indicador .dato {
+  color: var(--color-tinta);
+  font-size: var(--texto-2xl);
+  font-variant-numeric: tabular-nums;
+}

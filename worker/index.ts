@@ -78,6 +78,8 @@ import {
   type ServicioDeProcesos,
 } from "./procesos/repositorio";
 import { rutasDeProcesos } from "./procesos/rutas";
+import { inicioSobreD1, type ServicioDelInicio } from "./inicio/repositorio";
+import { rutasDelInicio } from "./inicio/rutas";
 
 export interface DependenciasDelManejador extends DependenciasDeAcceso {
   /**
@@ -156,6 +158,9 @@ export interface DependenciasDelManejador extends DependenciasDeAcceso {
    * `odd/tasks/plantillas-de-modulo.md`). Idem.
    */
   plantillas?: ServicioDePlantillas;
+
+  /** El tablero de Inicio (`odd/tasks/inicio-tablero.md`). Idem. */
+  inicio?: ServicioDelInicio;
 }
 
 async function checkD1(db: D1Database): Promise<HealthReport["d1"]> {
@@ -483,6 +488,17 @@ export async function manejar(
     base,
   );
   if (procesos !== null) return procesos;
+
+  // El tablero de Inicio. Va al final porque no es subruta de nadie ni
+  // tiene subrutas: `/api/inicio` no lo reclama ninguna de las de arriba.
+  const inicio = await rutasDelInicio(
+    request,
+    url,
+    acceso.valor,
+    TENANT_UNICO_ID,
+    dependencias.inicio ?? inicioSobreD1(base),
+  );
+  if (inicio !== null) return inicio;
 
   return noEncontrado();
 }

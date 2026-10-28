@@ -342,7 +342,7 @@ test.describe("la portada ya no repite la identidad", () => {
 
     const contenido = page.locator(".esqueleto__contenido");
     await expect(
-      contenido.getByRole("heading", { name: "Procesos del bufete" }),
+      contenido.getByRole("heading", { name: "Inicio", exact: true }),
       "la portada no llegó a dibujarse: esto es la prueba rota, no una" +
         " línea duplicada que se fue",
     ).toBeVisible();

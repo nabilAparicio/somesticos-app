@@ -3363,3 +3363,70 @@ export interface PlantillaSinPreset {
   error: "plantilla_sin_preset";
   campos: string[];
 }
+
+/* ==========================================================================
+   El tablero de Inicio (`odd/tasks/inicio-tablero.md`)
+
+   **Solo lectura y sin plata**, por decisión del usuario: cuenta cotizaciones
+   y nombra pendientes, y no lleva un solo monto. Los cuatro estados viajan
+   siempre por separado; sumarlos sería mezclar trabajo en curso con
+   desenlaces.
+   ========================================================================== */
+
+/**
+ * De quién se cuentan las cotizaciones: las que creé yo, o las de todo el
+ * bufete. **No cambia mis pendientes ni mis cotizaciones por atender**: lo
+ * que me toca a mí no depende de cómo quiero mirar los números.
+ */
+export type AlcanceDelInicio = "mio" | "bufete";
+
+/** Un pendiente abierto donde soy responsable, con su proceso dicho. */
+export interface PendienteDelInicio {
+  id: string;
+  texto: string;
+  /** Día `AAAA-MM-DD`, o nulo. */
+  venceEn: string | null;
+  procesoId: string;
+  procesoTitulo: string;
+  clienteNombre: string | null;
+}
+
+/** Una cotización mía que pide atención: un borrador, o una que vence. */
+export interface CotizacionDelInicio {
+  id: string;
+  codigo: string;
+  clienteNombre: string | null;
+  estado: EstadoDeCotizacion;
+  /** Día `AAAA-MM-DD`, o nulo. */
+  venceEn: string | null;
+}
+
+/** Una cuenta por cada estado del ciclo de vida, nunca sumadas. */
+export type CuentaPorEstado = Record<EstadoDeCotizacion, number>;
+
+/**
+ * Lo que pasó en un mes del calendario de Panamá.
+ *
+ * `borrador` son los borradores **abiertos** ese mes (`creada_en`); los otros
+ * tres son las cotizaciones que **pasaron** a ese estado ese mes, según su
+ * entrada de bitácora (`emitido`, `ganado`, `perdido`). Una cotización
+ * creada en octubre y emitida en noviembre cuenta en los dos.
+ */
+export interface MesDelInicio extends CuentaPorEstado {
+  /** `AAAA-MM`. */
+  mes: string;
+}
+
+export interface RespuestaDelInicio {
+  alcance: AlcanceDelInicio;
+  /** El día de hoy en Panamá, `AAAA-MM-DD`: contra él se lee lo vencido. */
+  hoy: string;
+  /** Ordenados por vencimiento; los sin fecha al final. */
+  misPendientes: PendienteDelInicio[];
+  /** Ordenadas por vencimiento; los borradores sin fecha al final. */
+  misCotizaciones: CotizacionDelInicio[];
+  mes: MesDelInicio & {
+    /** ganadas / (ganadas + perdidas) del mes; nula si no hubo ninguna. */
+    tasaDeCierre: number | null;
+  };
+}
