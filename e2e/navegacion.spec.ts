@@ -57,9 +57,9 @@ const PANTALLAS: Record<Ruta["nombre"], Destino> = {
     exenta:
       "No es una pantalla del producto sino la ruta de diagnóstico del" +
       " layout. Vive en el bloque «Diagnóstico» del armazón, aparte y" +
-      " rotulada como tal, justamente para que nadie la confunda con una" +
-      " sección: meterla en la lista de secciones sería deshacer esa" +
-      " decisión de T-4.",
+      " rotulada como tal —y solo en desarrollo—, justamente para que nadie" +
+      " la confunda con una sección: meterla en la lista de secciones sería" +
+      " deshacer esa decisión de T-4.",
   },
 
   clientes: { ruta: { nombre: "clientes" }, bajo: "/clientes" },

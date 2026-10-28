@@ -25,7 +25,13 @@
  * diagnóstico que se perdía en cuanto alguien navegaba a cualquier otro
  * lado, y de salir no había nada.
  */
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import type { IdentidadActual } from "../../worker/contract";
 import { cargarIdentidad } from "../api/identidad";
@@ -108,6 +114,30 @@ function esSeccionActiva(ruta: string, href: string): boolean {
  * atributos distintos son dos literales que se desincronizan.
  */
 const ID_NAVEGACION = "navegacion-de-secciones";
+
+/** La ruta de diagnóstico, que no es sección pero tiene título propio. */
+const BANCO_DE_PRUEBAS = {
+  rotulo: "Banco de pruebas del layout",
+  href: "/banco-de-pruebas",
+} as const;
+
+/** El nombre de la aplicación, que es también el título sin sección. */
+const NOMBRE = "Bufete";
+
+/**
+ * El título de la pestaña para una ruta: la sección y el nombre.
+ *
+ * Sale de la misma lista y la misma regla que marcan el ítem activo, así
+ * que el título y el menú no pueden decir dos cosas distintas. Es lo que un
+ * lector de pantalla anuncia al cambiar de pantalla y lo que distingue tres
+ * pestañas abiertas; con «Bufete» en todas, las tres se llaman igual.
+ */
+function tituloDe(ruta: string): string {
+  const seccion = [...SECCIONES, BANCO_DE_PRUEBAS].find(
+    (item) => item.href !== undefined && esSeccionActiva(ruta, item.href),
+  );
+  return seccion === undefined ? NOMBRE : `${seccion.rotulo} · ${NOMBRE}`;
+}
 
 /**
  * El umbral del armazón, leído con `matchMedia`.
@@ -242,7 +272,8 @@ function QuienEntro({ quien }: { readonly quien: Quien }) {
   if (quien.estado === "sin_reconocer") {
     return (
       <span className="esqueleto__quien esqueleto__quien--sin-reconocer">
-        Sin identidad reconocida ({quien.detalle})
+        Sin identidad reconocida ({quien.detalle}). Usa «Salir» y vuelve a
+        entrar con tu cuenta del bufete.
       </span>
     );
   }
@@ -334,11 +365,21 @@ export function Esqueleto({ children, ruta }: Props) {
    */
   const cajonAbierto = !modoAncho && navegacionVisible;
 
+  const botonAlternar = useRef<HTMLButtonElement>(null);
+  const contenido = useRef<HTMLElement>(null);
+
   useEffect(() => {
     if (!cajonAbierto) return;
 
     function alTeclear(evento: KeyboardEvent) {
-      if (evento.key === "Escape") setNavegacionVisible(false);
+      if (evento.key !== "Escape") return;
+      setNavegacionVisible(false);
+      /*
+       * El foco vuelve al botón que abrió el cajón. Sin esto queda en un
+       * enlace que acaba de volverse invisible y el navegador lo tira al
+       * `<body>`: el siguiente `Tab` empieza otra vez desde arriba.
+       */
+      botonAlternar.current?.focus();
     }
 
     window.addEventListener("keydown", alTeclear);
@@ -346,6 +387,41 @@ export function Esqueleto({ children, ruta }: Props) {
       window.removeEventListener("keydown", alTeclear);
     };
   }, [cajonAbierto]);
+
+  /*
+   * Al cambiar de pantalla: el título de la pestaña y el foco.
+   *
+   * El foco va al `<main>` porque una SPA no recarga, y sin recarga el foco
+   * se queda en el enlace que se tocó —o cae al `<body>` si ese enlace se
+   * escondió con el cajón—. Moverlo al contenido es lo que hace una carga de
+   * página de verdad: quien usa teclado o lector de pantalla arranca en la
+   * pantalla nueva y no en el menú.
+   *
+   * **Solo cuando la ruta cambia, no al montar.** Al abrir la aplicación el
+   * foco es del navegador, y robárselo dejaría «Saltar al contenido» —lo
+   * primero que alcanza el `Tab`— detrás del punto de partida. La ruta del
+   * render anterior se guarda en una referencia y no en un booleano de
+   * «primera vez» porque el doble montaje de `StrictMode` corre el efecto
+   * dos veces con la misma ruta, y un booleano lo contaría como cambio.
+   */
+  const rutaAnterior = useRef(ruta);
+
+  useEffect(() => {
+    document.title = tituloDe(ruta);
+    if (rutaAnterior.current === ruta) return;
+    rutaAnterior.current = ruta;
+    contenido.current?.focus({ preventScroll: true });
+  }, [ruta]);
+
+  function saltarAlContenido(evento: MouseEvent<HTMLAnchorElement>) {
+    /*
+     * Con JavaScript se enfoca a mano en vez de dejar que el `#contenido`
+     * navegue: así la URL no se queda con un fragmento que el ruteo no
+     * conoce. El `href` queda para lo que el navegador hace solo.
+     */
+    evento.preventDefault();
+    contenido.current?.focus();
+  }
 
   function alternarNavegacion() {
     setNavegacionVisible((visible) => !visible);
@@ -372,6 +448,10 @@ export function Esqueleto({ children, ruta }: Props) {
     <div
       className={`esqueleto${navegacionVisible ? "" : " esqueleto--sin-navegacion"}`}
     >
+      <a className="saltar" href="#contenido" onClick={saltarAlContenido}>
+        Saltar al contenido
+      </a>
+
       <header className="esqueleto__encabezado">
         {/*
           El encabezado **no** recibe `inert` con el cajón abierto, y el velo
@@ -381,6 +461,7 @@ export function Esqueleto({ children, ruta }: Props) {
           único del armazón que nunca se mueve ni se apaga.
         */}
         <button
+          ref={botonAlternar}
           type="button"
           className="esqueleto__alternar"
           aria-expanded={navegacionVisible}
@@ -494,17 +575,23 @@ export function Esqueleto({ children, ruta }: Props) {
           El banco de pruebas no es una sección del producto: es la ruta de
           diagnóstico del layout. Va acá y rotulada como tal para poder
           abrirla a mano, no para que nadie la confunda con una pantalla.
+
+          Y **solo en desarrollo**: al bufete no le dice nada, y en el menú
+          de producción era una entrada más que leer. La ruta sigue
+          existiendo y se abre escribiéndola.
         */}
-        <div className="navegacion__diagnostico">
-          <p className="navegacion__titulo">Diagnóstico</p>
-          <Enlace
-            className="navegacion__item"
-            href="/banco-de-pruebas"
-            ariaCurrent={ruta === "/banco-de-pruebas" ? "page" : undefined}
-          >
-            Banco de pruebas del layout
-          </Enlace>
-        </div>
+        {import.meta.env.DEV && (
+          <div className="navegacion__diagnostico">
+            <p className="navegacion__titulo">Diagnóstico</p>
+            <Enlace
+              className="navegacion__item"
+              href={BANCO_DE_PRUEBAS.href}
+              ariaCurrent={ruta === BANCO_DE_PRUEBAS.href ? "page" : undefined}
+            >
+              {BANCO_DE_PRUEBAS.rotulo}
+            </Enlace>
+          </div>
+        )}
       </nav>
 
       {/*
@@ -514,7 +601,13 @@ export function Esqueleto({ children, ruta }: Props) {
         ahí. Y solo en modo cajón: en ancho el lateral no tapa nada, así que
         dejar el contenido inerte sería una aplicación que no se puede usar.
       */}
-      <main className="esqueleto__contenido" inert={cajonAbierto}>
+      <main
+        ref={contenido}
+        id="contenido"
+        tabIndex={-1}
+        className="esqueleto__contenido"
+        inert={cajonAbierto}
+      >
         {children}
       </main>
     </div>

@@ -221,9 +221,13 @@
   cursor: pointer;
 }
 
-.esqueleto__alternar:hover {
-  background: var(--color-superficie-tenue);
-  color: var(--color-tinta);
+/* Solo donde hay un puntero que flota. En pantalla táctil el `:hover` se
+   queda pegado después del toque y el botón parece seguir apretado. */
+@media (hover: hover) {
+  .esqueleto__alternar:hover {
+    background: var(--color-superficie-tenue);
+    color: var(--color-tinta);
+  }
 }
 
 .esqueleto__alternar-glifo {
@@ -319,7 +323,9 @@
  * motion` tendría que apagar.
  */
 .esqueleto__quien--cargando {
-  color: var(--color-borde-fuerte);
+  /* Apagado con la tinta apagada y no con el color de un borde: un borde no
+     es texto y no tiene que leerse, este rótulo sí (6,26:1 contra 1,83:1). */
+  color: var(--color-tinta-apagada);
   font-style: italic;
   font-weight: var(--peso-normal);
 }
@@ -371,9 +377,11 @@
   white-space: nowrap;
 }
 
-.esqueleto__salir:hover {
-  background: var(--color-superficie-tenue);
-  text-decoration: underline;
+@media (hover: hover) {
+  .esqueleto__salir:hover {
+    background: var(--color-superficie-tenue);
+    text-decoration: underline;
+  }
 }
 
 /* ======================================================================
@@ -517,7 +525,6 @@
   padding: 0;
   background: var(--color-velo);
   cursor: pointer;
-  transition: opacity 180ms ease;
 }
 
 /* Con el cajón cerrado no hay nada que tapar, y un velo que siguiera ahí
@@ -543,8 +550,7 @@
 @media (prefers-reduced-motion: reduce) {
   /* Quien pidió menos movimiento pidió menos movimiento. El cajón sigue
      apareciendo y desapareciendo; lo que se va es el deslizamiento. */
-  .esqueleto__navegacion,
-  .esqueleto__velo {
+  .esqueleto__navegacion {
     transition: none;
   }
 }
@@ -581,8 +587,10 @@
   text-decoration: none;
 }
 
-.navegacion__item:hover {
-  background: var(--color-superficie-tenue);
+@media (hover: hover) {
+  .navegacion__item:hover {
+    background: var(--color-superficie-tenue);
+  }
 }
 
 .navegacion__item[aria-current="page"] {
@@ -681,6 +689,64 @@
   .esqueleto--sin-navegacion .esqueleto__contenido {
     padding-inline-start: var(--espacio-xl);
   }
+}
+
+/*
+ * El contenido recibe el foco al cambiar de pantalla y con «Saltar al
+ * contenido», pero no es un control: no se le dibuja anillo cuando el foco
+ * llegó por un clic. Con teclado sí, por la regla global de `base.css`.
+ */
+.esqueleto__contenido:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/*
+ * Ventanas bajas: un teléfono acostado, o una ventana con zoom al 200 %.
+ *
+ * Ahí el encabezado solo se come buena parte de las `100svh`, y la región
+ * que scrollea queda en una rendija de pocos renglones. Debajo de 30rem de
+ * alto el armazón deja de medir la ventana y vuelve a ser la página la que
+ * scrollea: el encabezado se va con el contenido, pero el contenido se ve
+ * entero. Mínimo `100svh` para que una pantalla corta siga llenando la
+ * ventana en vez de dejar el fondo a la vista debajo.
+ */
+@media (max-height: 30rem) {
+  .esqueleto {
+    block-size: auto;
+    min-block-size: 100svh;
+  }
+
+  .esqueleto__contenido {
+    overflow-y: visible;
+  }
+}
+
+/*
+ * «Saltar al contenido». Fuera de la rejilla con `position: absolute` —un
+ * hijo más del armazón caería en una celda implícita— y recortado como
+ * `.oculto-visualmente` hasta que el teclado lo alcanza: es lo primero que
+ * se enfoca con `Tab`, y recién ahí se dibuja.
+ */
+.saltar {
+  position: absolute;
+  z-index: calc(var(--z-cajon) + 1);
+  inset-block-start: var(--espacio-xs);
+  inset-inline-start: var(--espacio-xs);
+  padding: var(--espacio-xs) var(--espacio-s);
+  border-radius: var(--radio-m);
+  background: var(--color-superficie);
+  box-shadow: var(--sombra-flotante);
+  color: var(--color-acento);
+  font-weight: var(--peso-medio);
+}
+
+.saltar:not(:focus-visible) {
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* ======================================================================
